@@ -1,0 +1,8 @@
+{
+  "name": "@@SLUG@@-workspace",
+  "private": true,
+  "description": "@@PROJECT@@ workspace, run with the cabinet kit.",
+  "devDependencies": {
+    "@tarekraafat/cabinet": "^@@KIT_VERSION@@"
+  }
+}

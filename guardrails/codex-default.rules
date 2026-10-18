@@ -1,0 +1,22 @@
+# Owner control: nothing leaves this machine without the owner.
+forbidden_why = "Only the owner pushes, merges, releases or publishes. Stop and hand this to the owner."
+prefix_rule(pattern = ["git", "push"], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = ["git", "send-pack"], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = ["env", ["-i", "-u"]], decision = "forbidden", justification = "Dropping the environment can turn off the push gate. Ask the owner.")
+prefix_rule(pattern = ["gh", "pr", "merge"], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = ["gh", "release"], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = ["gh", "repo", ["edit", "archive", "delete", "rename"]], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = [["npm", "bun", "pnpm", "yarn"], "publish"], decision = "forbidden", justification = forbidden_why)
+prefix_rule(pattern = [["npx", "yarn"], "npm", "publish"], decision = "forbidden", justification = forbidden_why)
+# Ways around the push gate or to the owner's credentials.
+prefix_rule(pattern = [["script", "expect", "unbuffer"]], decision = "forbidden", justification = "These can fake a terminal for the push gate. Ask the owner.")
+# Codex rules match only how a command starts, so `git -c ...` (which can turn hooks off) asks first.
+prefix_rule(pattern = ["git", "-c"], decision = "prompt", justification = "git -c can turn off the push gate. Ask the owner.")
+prefix_rule(pattern = ["gh", "auth", "status"], decision = "prompt", justification = "gh auth status can print the token.")
+prefix_rule(pattern = ["gh", "auth", "token"], decision = "forbidden", justification = "The GitHub token stays with the owner.")
+prefix_rule(pattern = ["security", ["find-generic-password", "dump-keychain"]], decision = "forbidden", justification = "Keychain secrets stay with the owner.")
+# Ask first: can change GitHub state or rewrite history.
+prefix_rule(pattern = ["gh", "api"], decision = "prompt", justification = "gh api can write to GitHub. Ask the owner.")
+prefix_rule(pattern = ["gh", "pr", "create"], decision = "prompt", justification = "Opening a PR is visible outside this machine.")
+prefix_rule(pattern = ["git", "reset", "--hard"], decision = "prompt", justification = "Discards work.")
+prefix_rule(pattern = ["git", "rebase"], decision = "prompt", justification = "Rewrites history.")

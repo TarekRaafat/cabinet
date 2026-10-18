@@ -1,0 +1,91 @@
+{
+  "name": "@tarekraafat/cabinet",
+  "version": "0.1.0",
+  "description": "An operating system for running products with a team of AI agents and one owner who signs off: roles with clear authority, handoffs, a daily brief and sign-off queue, independent review, push guardrails, schedules and encrypted backups. Works with any agent tool.",
+  "keywords": [
+    "ai",
+    "ai-agents",
+    "agents",
+    "agentic",
+    "multi-agent",
+    "agent-team",
+    "agent-workflow",
+    "autonomous-agents",
+    "llm",
+    "ai-coding",
+    "coding-agents",
+    "agents-md",
+    "claude",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "qwen-code",
+    "grok",
+    "opencode",
+    "antigravity",
+    "cursor",
+    "cursor-cli",
+    "workflow",
+    "automation",
+    "orchestration",
+    "operations",
+    "project-management",
+    "governance",
+    "guardrails",
+    "code-review",
+    "qa",
+    "security-review",
+    "handoffs",
+    "sign-off",
+    "solo-founder",
+    "indie-hacker",
+    "startup",
+    "productivity",
+    "cli",
+    "developer-tools",
+    "devtools",
+    "scaffolding",
+    "workspace",
+    "multi-repo",
+    "backups",
+    "macos"
+  ],
+  "author": "Tarek Raafat",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/TarekRaafat/cabinet#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TarekRaafat/cabinet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TarekRaafat/cabinet/issues"
+  },
+  "bin": {
+    "cabinet": "bin/cabinet"
+  },
+  "files": [
+    "bin",
+    "core",
+    "roles",
+    "scripts",
+    "guardrails",
+    "launchd",
+    "templates",
+    "CHANGELOG.md",
+    "docs",
+    "ROADMAP.md",
+    "llms.txt",
+    "llms-full.txt",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "test": "test/smoke.sh",
+    "docs": "python3 -I tools/build-llms-full.py"
+  },
+  "os": [
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

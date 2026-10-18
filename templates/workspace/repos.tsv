@@ -1,0 +1,4 @@
+# name	clone URL ("-" for none)	local-only files (space separated, "-" for none)	CLAUDE.md link	path (optional)
+# Tab separated. One row per product repo. bin/bootstrap.sh clones a missing repo into its path.
+# path: where the repo lives, absolute or relative to this folder (../app for one beside it); empty means <this folder>/<name>.
+# Local-only files live in the repo but are not tracked there; bin/snapshot.sh keeps a copy in local/<repo>/.

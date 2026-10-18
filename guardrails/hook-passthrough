@@ -1,0 +1,8 @@
+#!/bin/sh
+# A global core.hooksPath (the push gate) makes git skip every repo's own
+# .git/hooks. This stub passes the call on to the repo's own hook of the same
+# name, if it has one, so pre-commit scanners and other hooks keep running.
+own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/$(basename "$0")"
+# -ef: never the stub itself, even when the repo's hooks folder links to this one.
+[ -x "$own" ] && ! [ "$own" -ef "$0" ] && exec "$own" "$@"
+exit 0

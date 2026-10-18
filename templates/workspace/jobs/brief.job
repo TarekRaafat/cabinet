@@ -1,0 +1,11 @@
+# The daily brief. Run now: cabinet brief
+# WHEN: a time every day, "7:00 AM", or days and a time: "fri 4:00 PM", "sun,mon,tue,wed,thu 8:00 AM"
+# (full day names work too). Empty: only by hand.
+# After changing WHEN, or deleting this file: cabinet bootstrap adds, updates or removes the schedule.
+AGENT=chief-of-staff
+WHEN="7:00 AM"
+MINUTES="5 to 15"
+RESULT="BRIEF.md"
+PROMPT="Scheduled daily run. Write BRIEF.md as your definition says, sign-off queue first. Apply any answered queue items. Commit your HANDOFFS.md changes and any leftover finished handoff lines, then run bin/archive-handoffs.sh, as CABINET.md says."
+# AFTER: an optional shell command run in the workspace after a successful run.
+AFTER=""

@@ -1,0 +1,31 @@
+# The workspace tracks only its own files. Every product repo under this
+# folder has its own .git and is ignored here.
+/*
+!/.gitignore
+!/.cabinet/
+!/CABINET.md
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/OPERATIONS.md
+!/HANDOFFS.md
+!/handoffs/
+!/cabinet.env
+!/package.json
+!/package-lock.json
+!/bun.lock
+!/repos.tsv
+!/agents/
+!/roles/
+!/jobs/
+!/bin/
+!/local/
+!/notes/
+!/guides/
+!/specs/
+!/finance/
+!/.claude/
+/.claude/*
+!/.claude/agents/
+
+.DS_Store

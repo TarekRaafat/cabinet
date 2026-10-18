@@ -1,0 +1,21 @@
+#!/bin/sh
+# Owner push gate: every push needs "yes" typed at a real terminal.
+# Agents and scripts have no terminal, so their pushes are refused.
+refs=$(cat)
+if ! { exec 3</dev/tty; } 2>/dev/null; then
+  echo "push blocked: pushes need the owner's confirmation at a terminal" >&2
+  exit 1
+fi
+printf '\nPush to %s\n%s\nType yes to push: ' "$2" "$refs" > /dev/tty
+read -r answer <&3
+if [ "$answer" != "yes" ]; then
+  echo "push cancelled" >&2
+  exit 1
+fi
+# Chain to a repo's own pre-push hook, if it has one.
+# The repo's own hooks folder: the common dir, so it is also right inside a worktree.
+local_hook="$(git rev-parse --git-common-dir)/hooks/pre-push"
+if [ -x "$local_hook" ]; then
+  printf '%s\n' "$refs" | "$local_hook" "$@" || exit 1
+fi
+exit 0

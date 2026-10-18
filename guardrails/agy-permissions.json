@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "deny": [
+      "command(git push)",
+      "command(env -u)",
+      "command(env -i)",
+      "command(git send-pack)",
+      "command(gh pr merge)",
+      "command(gh release)",
+      "command(gh repo edit)",
+      "command(gh repo archive)",
+      "command(gh repo delete)",
+      "command(gh repo rename)",
+      "command(npm publish)",
+      "command(bun publish)",
+      "command(pnpm publish)",
+      "command(yarn publish)",
+      "command(npx npm publish)",
+      "command(yarn npm publish)",
+      "command(script)",
+      "command(gh auth token)",
+      "command(security find-generic-password)",
+      "command(security dump-keychain)",
+      "command(expect)",
+      "command(unbuffer)"
+    ],
+    "ask": [
+      "command(gh api)",
+      "command(gh pr create)",
+      "command(git reset --hard)",
+      "command(git rebase)",
+      "command(git -c)",
+      "command(gh auth status)"
+    ]
+  }
+}

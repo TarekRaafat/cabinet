@@ -1,0 +1,26 @@
+# cabinet
+
+> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, launchd schedules and encrypted backups. macOS only. npm package `@tarekraafat/cabinet`, command `cabinet`.
+
+Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Agents changing the kit itself follow `AGENTS.md` at the root of this repository.
+
+Every page below in one file, for reading in one go: [llms-full.txt](llms-full.txt).
+
+## Docs
+
+- [README](README.md): what cabinet is, quick start, the daily loop, a glossary, install, new and existing projects, settings, updates, removal
+- [Tutorial](docs/tutorial.md): the first day, step by step: create a workspace, set up the Mac, give the team a task, read the brief
+- [Recipes](docs/recipes.md): add your own rules, guides and business documents, add a role or job, change the brief or agent tool, add a repo, turn on backups, move to a new Mac, add a teammate, update the kit, use cabinet from a script or agent
+- [Commands](docs/commands.md): every `cabinet` command (new, init, next, list, digest, config, remove, doctor, bootstrap, brief, run, handoffs, backup, restore, update, status, outdated, completion) and workspace script, all options and defaults, files changed, exit codes, `cabinet.env` keys, job and `repos.tsv` formats, environment variables, removing a workspace
+- [Layouts](docs/layouts.md): new, around, inside (private or shared) and beside; what each changes in a project; which files are kit, project or built
+- [Concepts](docs/concepts.md): roles, repo ownership, handoffs, decision tiers, the brief and sign-off queue, verification, seats, slugs, agent tools and the scheduled runners
+- [Guardrails](docs/guardrails.md): the push gate and each tool's deny rules, what each tool's rule format can and cannot block, machine-wide settings, known limits, undoing them
+- [Backups](docs/backups.md): what an archive holds, setting it up, the restore rules that never lose a file, checking it
+- [Troubleshooting](docs/troubleshooting.md): every `bin/doctor.sh` message with its cause and fix, and the errors of the other commands
+
+## Optional
+
+- [Workspace rules](core/CABINET.md): the rules every agent in a workspace follows
+- [Roadmap](ROADMAP.md): Linux and Windows support, and later items
+- [Changelog](CHANGELOG.md): what changed in each version
+- [Working on the kit](AGENTS.md): rules for agents and people changing this repository

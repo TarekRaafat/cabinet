@@ -1,0 +1,84 @@
+# Owner control: nothing leaves this machine without the owner.
+# User tier. Deny rules sit above any "Always Allow" choice made in the UI.
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "git push"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner pushes. Stop and hand this to the owner."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gh pr merge"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner merges. Stop and hand this to the owner."
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gh release"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner releases. Stop and hand this to the owner."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^gh repo (edit|archive|delete|rename)\\b"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner changes repository settings."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^(npm|bun|pnpm|yarn) publish\\b"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner publishes packages."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "--no-v|[hH][oO][oO][kK][sS][pP][aA][tT][hH]|GIT_CONFIG_|\\bgit\\s+push\\b|^(script|expect|unbuffer)\\b|pty\\.spawn|send-pack|^env\\s+-[iu]\\b|unset\\s+HOME"
+decision = "deny"
+priority = 990
+denyMessage = "Skipping or replacing git hooks is not allowed."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^(npx|yarn) npm publish\\b|^(npm|pnpm|yarn|bun)\\b.*\\spublish\\b"
+decision = "deny"
+priority = 990
+denyMessage = "Only the owner publishes packages."
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = "^gh auth token\\b|^gh auth status\\b.*(--show-token|\\s-t\\b)|^security (find-generic-password|dump-keychain)\\b"
+decision = "deny"
+priority = 990
+denyMessage = "Credentials stay with the owner."
+
+# Ask first: can change GitHub state or rewrite history.
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gh api"
+decision = "ask_user"
+priority = 900
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "gh pr create"
+decision = "ask_user"
+priority = 900
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "git reset --hard"
+decision = "ask_user"
+priority = 900
+
+[[rule]]
+toolName = "run_shell_command"
+commandPrefix = "git rebase"
+decision = "ask_user"
+priority = 900
