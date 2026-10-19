@@ -111,8 +111,8 @@ Open your agent tool in the workspace and describe a feature, for example:
 The product-manager agent writes the spec in `specs/`, with any decision only you can make framed as a question. When work moves from one agent to another, it goes through `HANDOFFS.md`:
 
 ```sh
-cabinet handoffs          # every open handoff, oldest first
-cabinet handoffs owner    # everything waiting on you, in full
+cabinet handoff list          # every open handoff, oldest first
+cabinet handoff list owner    # everything waiting on you, in full
 ```
 
 ## 7. Read the brief

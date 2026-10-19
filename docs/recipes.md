@@ -27,7 +27,7 @@ Pick the place by what it is:
 |---|---|---|
 | A rule that fits in a line or two ("prices are the owner's decision", "every page works on a phone") | `AGENTS.md`: "House rules" for how the team works, "Product rules" for what the product must and must not do | every agent, every session |
 | A whole document: brand guide, writing or code style guide, security or privacy policy, pricing rules, support promises, any business document | `guides/<file>`, plus a row in the "Guides" table of `AGENTS.md` | every agent, or the roles its row names, before any work it covers |
-| Duties, paths or limits for one role ("qa tests on the staging account") | `roles/<role>.md`, plain Markdown, then `cabinet roles` | that role |
+| Duties, paths or limits for one role ("qa tests on the staging account") | `roles/<role>.md`, plain Markdown, then `cabinet role build` | that role |
 | Rules for one repo | that repo's own `AGENTS.md` | agents working in that repo |
 | How to test, and what must never be touched | "How to test" in `AGENTS.md` | qa, and every agent that runs the product |
 | Thinking, research or a decision with its reasons | `notes/`, with `status: draft` or `decided` | agents whose task touches its topic |
@@ -68,7 +68,7 @@ Turn one on with the other roles you keep: `cabinet config --roles "qa security 
 For anything else, make a role of the project's own. You need only its name:
 
 ```sh
-cabinet role new brand-strategist
+cabinet role add brand-strategist
 ```
 
 In a terminal it asks four questions: what it should do, what it owns, what it may decide on its own, and what it must bring to you. Answer what you know and press Enter for the rest; `--does`, `--owns`, `--decides` and `--escalates` give the answers as options, and `--yes` asks nothing. It writes `roles/<role>.md` with your words under "The owner's brief", turns the role on, adds its rows to the team tables, and builds it.
@@ -76,7 +76,7 @@ In a terminal it asks four questions: what it should do, what it owns, what it m
 Then have it drafted, in one of two ways:
 
 - **In your agent session:** "draft the brand-strategist role". Any agent tool follows `CABINET.md`, "Drafting a role".
-- **From the terminal:** `cabinet role draft brand-strategist` (or `--draft` on `role new`) runs your configured agent tool as chief-of-staff. It may cost money.
+- **From the terminal:** `cabinet role draft brand-strategist` (or `--draft` on `role add`) runs your configured agent tool as chief-of-staff. It may cost money.
 
 The draft starts from your brief, which wins, and learns the rest from the project: `AGENTS.md`, the specs and roadmap, the notes, the repos and the roles already on the team. It writes the role a strong specialist would hold on this product: what it owns, decides, brings to you, how its work is checked, and where it stops and its neighbours start. Every choice your brief did not make is listed under "Assumed, for the owner to confirm", and chief-of-staff puts those in your sign-off queue until you answer.
 
@@ -94,7 +94,7 @@ A new role is your decision (`CABINET.md`, "Seats").
 
 ## Give a kit role project notes
 
-Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontmatter: the paths, duties and limits this project adds. Then `cabinet roles`. The notes are added to the kit's definition under "Project notes".
+Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontmatter: the paths, duties and limits this project adds. Then `cabinet role build`. The notes are added to the kit's definition under "Project notes".
 
 ## Add a scheduled job
 
@@ -111,13 +111,13 @@ Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontm
    ```
 
 2. Name the job in `OPERATIONS.md` (the doctor checks that the manual names every job).
-3. `cabinet bootstrap` schedules it. `cabinet run <job>` runs it now.
+3. `cabinet bootstrap` schedules it. `cabinet job run <job>` runs it now.
 
 Remove a job by deleting its file and running `cabinet bootstrap`.
 
 ## Change the brief time, or turn it off
 
-`cabinet config --brief "8:30 AM" --apply` (or `--brief off`, `--brief "fri 4 PM"` for Fridays only, or `--brief "sun,mon,tue,wed,thu 8 AM"` for chosen days; full day names work too). `--apply` updates the schedule right away.
+`cabinet config --brief-time "8:30 AM" --apply` (or `--brief-time off`, `--brief-time "fri 4 PM"` for Fridays only, or `--brief-time "sun,mon,tue,wed,thu 8 AM"` for chosen days; full day names work too). `--apply` updates the schedule right away.
 
 ## Switch the agent tool for scheduled jobs
 
@@ -125,19 +125,19 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 
 ## Add a product repo
 
-`cabinet config --repo git@example.com:acme/web.git`, then let it run bootstrap (or `cabinet bootstrap`), which clones it. To remove a repo, delete its row from `repos.tsv`.
+`cabinet repo add git@example.com:acme/web.git --apply`: it adds the repo, then runs bootstrap, which clones it and gives it a builder. `cabinet repo list` shows them all; `cabinet repo remove <name>` takes one out of the workspace and leaves its folder as it is.
 
 ## Turn on backups
 
 1. `cabinet config --backup-dir ~/Backups/cabinet --apply`. The folder must be outside the workspace and its repos.
 2. Choose a passphrase, keep it in your password manager, and put it in the keychain: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w`.
-3. `cabinet backup` makes one now; the schedule makes one daily. See [backups](backups.md).
+3. `cabinet backup create` makes one now; the schedule makes one daily. Once a quarter, `cabinet backup verify`. See [backups](backups.md).
 
 ## Move to a new Mac
 
 1. Install cabinet and its needs ([Install](../README.md#install)).
 2. Put the backup passphrase in the keychain, as in step 2 of [Turn on backups](#turn-on-backups).
-3. `cabinet restore <newest archive> ~/dev/acme`. It works before the workspace exists, and never loses a file ([backups](backups.md#restoring)).
+3. `cabinet backup restore <newest archive> ~/dev/acme`. It works before the workspace exists, and never loses a file ([backups](backups.md#restoring)).
 4. `cd ~/dev/acme`, then `cabinet bootstrap` and `cabinet doctor`.
 
 Without a backup, clone the workspace's own repo instead, then `cabinet bootstrap`.
@@ -153,7 +153,7 @@ A shared workspace (`cabinet init --inside --shared`) is committed with the proj
 
 3. Backups follow the workspace's `CABINET_BACKUP_DIR`, which is shared. Each teammate sets their own folder for their Mac, or none: `cabinet config --this-mac --backup-dir ~/Backups/cabinet --apply` (or `--backup-dir off`). That also lives in `cabinet.local.env`.
 
-Any teammate can still run a job by hand (`cabinet run <job>`). To make another Mac the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
+Any teammate can still run a job by hand (`cabinet job run <job>`). To make another Mac the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
 
 ## Run several projects
 
@@ -180,7 +180,7 @@ Read JSON, never the text output, which may be reworded:
 cabinet help --json              # every command and option
 cabinet next --json              # the next steps, each with a stable id and its command
 cabinet doctor --json            # every check, each with a stable id
-cabinet handoffs owner --json    # what waits on the owner, in full
+cabinet handoff list owner --json    # what waits on the owner, in full
 ```
 
 The fields are in [commands](commands.md#output-for-agents-and-scripts). For the whole manual in one file, read `llms-full.txt` in the kit.

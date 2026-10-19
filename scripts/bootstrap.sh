@@ -131,7 +131,7 @@ done < <(repos)
 
 echo "== Shared instructions and roles"
 [[ -e "$WS/CLAUDE.md" ]] || { run ln -s AGENTS.md "$WS/CLAUDE.md"; echo "  linked CLAUDE.md"; }
-run "$WS/bin/roles.sh"
+run "$WS/bin/role.sh" build
 
 echo "== Git push gate"
 # A global core.hooksPath makes git skip every repo's own .git/hooks, so every other
@@ -272,30 +272,31 @@ AGENTS_DIR="$HOME/Library/LaunchAgents"
 JOB_PATH="$(job_path)"
 wanted=" "
 # Install, replace or keep one schedule, so an edited WHEN or backup time takes effect.
-schedule() {  # schedule <name> <program> <arg> <when>
+schedule() {  # schedule <name> <program> <verb> <arg> <when>
   local name=$1 label="$LABEL.$1" live="$AGENTS_DIR/$LABEL.$1.plist" cal new
   wanted+="$name "   # wanted even when its WHEN is wrong, so a typo never removes a working schedule
-  if ! cal="$(when_calendar "$4")"; then
-    echo "  $label: bad schedule '$4' (use a time like 7 AM for every day, or days and a time like fri 4 PM or sun,mon,tue,wed,thu 8 AM); the current one, if any, is kept"; failures=1; return 0
+  local when=$5
+  if ! cal="$(when_calendar "$when")"; then
+    echo "  $label: bad schedule '$when' (use a time like 7 AM for every day, or days and a time like fri 4 PM or sun,mon,tue,wed,thu 8 AM); the current one, if any, is kept"; failures=1; return 0
   fi
   if [[ -f "$live" ]] && ! mine "$live"; then
     echo "  $label already runs another workspace, left as is: give this one its own slug (cabinet config --slug)"; failures=1; return 0
   fi
-  new="$(L="$label" P="$2" A="$3" C="$cal" H="$HOME" D="$LOGDIR" N="$name" X="$JOB_PATH" perl -pe '
+  new="$(L="$label" P="$2" V="$3" A="$4" C="$cal" H="$HOME" D="$LOGDIR" N="$name" X="$JOB_PATH" perl -pe '
     sub x { my $s = shift; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; $s }
-    s/\@\@LABEL\@\@/x($ENV{L})/ge; s/\@\@PROGRAM\@\@/x($ENV{P})/ge; s/\@\@ARG\@\@/x($ENV{A})/ge; s/\@\@CALENDAR\@\@/$ENV{C}/g;
+    s/\@\@LABEL\@\@/x($ENV{L})/ge; s/\@\@PROGRAM\@\@/x($ENV{P})/ge; s/\@\@VERB\@\@/x($ENV{V})/ge; s/\@\@ARG\@\@/x($ENV{A})/ge; s/\@\@CALENDAR\@\@/$ENV{C}/g;
     s/\@\@PATH\@\@/x($ENV{X})/ge; s/\@\@HOME\@\@/x($ENV{H})/ge; s/\@\@LOGDIR\@\@/x($ENV{D})/ge; s/\@\@NAME\@\@/x($ENV{N})/ge' "$K/launchd/job.plist")"
   [[ -f "$live" && "$(cat "$live")" == "$new" ]] && return 0
   local verb=install past=installed; [[ -f "$live" ]] && verb=update past=updated
-  if ((DRY)); then echo "  would $verb $label ($4)"; return 0; fi
+  if ((DRY)); then echo "  would $verb $label ($when)"; return 0; fi
   mkdir -p "$AGENTS_DIR"
   [[ -f "$live" ]] && launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   printf '%s\n' "$new" > "$live"
-  if launchctl bootstrap "gui/$(id -u)" "$live"; then echo "  $past $label ($4)"
+  if launchctl bootstrap "gui/$(id -u)" "$live"; then echo "  $past $label ($when)"
   else rm -f "$live"; echo "  $label could not be loaded by launchd (see above); nothing installed"; failures=1; fi
 }
 if [[ "$(uname)" != Darwin ]]; then
-  echo "  not macOS: schedules are launchd jobs; run bin/scheduled.sh <job> from cron instead"
+  echo "  not macOS: schedules are launchd jobs; run bin/job.sh run <job> from cron instead"
 else
   # The log folder records which workspace owns this slug.
   # Claimed only when it is free, already ours, or its workspace folder is gone.
@@ -312,15 +313,15 @@ else
     echo "  scheduled jobs will not find '$runner' (install it, or run bin/bootstrap.sh from a shell where it is on PATH)"; failures=1
   fi
   if [[ "$CABINET_SCHEDULES" == off ]]; then
-    echo "  jobs are not scheduled on this Mac (another Mac runs them; cabinet bootstrap --schedules turns them on). cabinet run <job> still runs one by hand."
+    echo "  jobs are not scheduled on this Mac (another Mac runs them; cabinet bootstrap --schedules turns them on). cabinet job run <job> still runs one by hand."
   else
     for jf in "$WS"/jobs/*.job; do
       [[ -f "$jf" ]] || continue
       WHEN="$(WHEN=""; source "$jf"; echo "$WHEN")"
-      [[ -z "$WHEN" ]] || schedule "$(basename "$jf" .job)" "$WS/bin/scheduled.sh" "$(basename "$jf" .job)" "$WHEN"
+      [[ -z "$WHEN" ]] || schedule "$(basename "$jf" .job)" "$WS/bin/job.sh" run "$(basename "$jf" .job)" "$WHEN"
     done
   fi
-  [[ -z "$CABINET_BACKUP_DIR" ]] || schedule backup "$WS/bin/backup.sh" "$CABINET_BACKUP_DIR" "$CABINET_BACKUP_TIME"
+  [[ -z "$CABINET_BACKUP_DIR" ]] || schedule backup "$WS/bin/backup.sh" create "$CABINET_BACKUP_DIR" "$CABINET_BACKUP_TIME"
   # Remove this workspace's schedules that are no longer wanted: a job with an
   # empty WHEN or no job file, every job when this Mac schedules none, or the
   # backup with CABINET_BACKUP_DIR empty.
@@ -342,7 +343,7 @@ cat <<EOF
 1. Sign in: gh auth login (and each agent tool you use).
 2. Backups (if CABINET_BACKUP_DIR is set): put the passphrase, kept in your password manager, in the keychain:
    security add-generic-password -a "\$USER" -s $KEYCHAIN_ITEM -w
-3. Restoring after a loss: cabinet restore <newest archive> before step 4.
+3. Restoring after a loss: cabinet backup restore <newest archive> before step 4.
 4. Run cabinet doctor and fix anything it reports (cabinet doctor --fix runs the fixes it knows).
 EOF
 ((failures == 0)) || { echo; echo "Some steps did not complete: see the messages above."; exit 1; }

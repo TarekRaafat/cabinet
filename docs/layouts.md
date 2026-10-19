@@ -30,7 +30,7 @@ There are two kinds, set once as `CABINET_VISIBILITY`:
 - the pointer goes only into files the project does not track: `CLAUDE.local.md` (read by Claude Code and Grok), `QWEN.local.md` (Qwen), and `AGENTS.md` only when the project has none;
 - `cabinet/`, those pointer files and the role files are added to the project's `.git/info/exclude`;
 - the version pin goes in `cabinet/package.json`;
-- `bin/roles.sh` rebuilds the pointers on every update and after a restore.
+- `bin/role.sh build` rebuilds the pointers on every update and after a restore.
 
 When the project has its own `AGENTS.md`, it is left alone. Codex, opencode, Gemini and Cursor read only that file, so start them in `cabinet/`, or add the "Agent team" section to `AGENTS.md` yourself. If you later write a real `AGENTS.md` for a project that had none, remove `/AGENTS.md` from `.git/info/exclude` first, or git will ignore it.
 
@@ -52,7 +52,7 @@ The project is not changed at all. The workspace is a folder next to it and poin
 |---|---|---|
 | **Kit files** | `CABINET.md`, `bin/*.sh`, `.cabinet/` (roles, guardrails, schedule template, version, manifest) | Only `cabinet update`. Never edit them in a workspace: an update stops at an edited one. |
 | **Project files** | `AGENTS.md`, `cabinet.env`, `roles/`, `jobs/`, `HANDOFFS.md`, `OPERATIONS.md`, `repos.tsv`, `specs/`, `notes/` | You and the agents. Placed once by `new` or `init`; afterwards `cabinet config` changes only the settings it manages in them. |
-| **Built** | `agents/<role>.md`, `.claude/agents/<role>.md`: the kit's role plus your `roles/<role>.md` | `bin/roles.sh` |
+| **Built** | `agents/<role>.md`, `.claude/agents/<role>.md`: the kit's role plus your `roles/<role>.md` | `bin/role.sh build` |
 
 Instructions layer from general to specific: `CABINET.md`, then the workspace's `AGENTS.md`, then each repo's own `AGENTS.md`.
 

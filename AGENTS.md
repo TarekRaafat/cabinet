@@ -27,11 +27,48 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 4. **Untrusted values never reach a shell.** Anything from a cloned project (`package.json`, folder names, git remotes) is checked (`safe`, `url_ok`, `name_ok` in `bin/cabinet`) before it is written into `cabinet.env`, `repos.tsv` or a schedule. `cabinet.env` and job files are sourced as shell.
 5. **Never lose a user's data.** A config file is changed only through `write_into` (written only when the result is valid and non-empty); an existing file is kept, never replaced; restore copies anything it would replace to `recovered/` first.
 6. **Docs match the code.** A change to a command, option, file, message or behavior updates `docs/` (and `README.md` when it is user-facing) in the same change, then `npm run docs` rebuilds `llms-full.txt`. `npm test` fails when a command, option, script, doctor message or check ID is missing from the docs, a link or heading anchor is broken, or `llms-full.txt` is stale.
-7. **One command table.** Every `cabinet` command and option is a row in `commands_table` in `bin/cabinet`; help, `--help`, `help --json` and tab completion are made from it. A new command or option starts there, then its parser and dispatcher line; the tests fail when the three disagree.
+7. **One command table, one set of conventions.** Every `cabinet` command and option is a row in `commands_table` in `bin/cabinet`; help, `--help`, `help --json` and tab completion are made from it. A new command or option follows "Command conventions" below, starts in the table, then gets its parser and dispatcher line; the tests fail when they disagree or a convention is broken.
 8. **Stable IDs for machines.** Each doctor check has an ID (`ok <id> "message"`), and each `cabinet next` step has one. A new check gets a new ID, listed in `docs/troubleshooting.md`; an ID or a JSON field is never renamed or removed without a changelog entry that says so.
 9. **Every change has a test** in `test/smoke.sh`, and an entry in `CHANGELOG.md` under the next version.
 10. **Writing.** ASCII punctuation only (no em or en dashes, no curly quotes). Dates people read as `18 Oct 2026`; machine formats stay ISO. No personal or project names, local paths, or comparisons with other products. Name third-party tools only as facts (which tools have guardrails).
 11. **Never push, merge, publish or release.** Only the maintainer does. Commit finished, tested work locally, with no AI or tool attribution lines.
+
+## Command conventions
+
+Every command follows these, so a person or an agent who knows one command can guess the next. `test/docs_check.py` enforces the parts a script can check.
+
+1. **Two shapes.** A one-word command acts on the workspace as a whole or on this Mac: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secrets`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the Mac as a whole.
+2. **Nouns are singular,** and no two commands differ only by a plural.
+3. **Verbs come from one list, each with one meaning:**
+
+   | Verb | Means |
+   |---|---|
+   | `add` | Put a new one in the workspace, or turn on one the kit has. |
+   | `remove` | Take one out of the workspace. Never deletes what the project wrote unless its help says so. |
+   | `list` | Show them. Changes nothing. |
+   | `check` | Look for problems. Changes nothing; exit 1 when it finds one. |
+   | `create` | Make a new artifact now (a backup archive). |
+   | `verify` | Prove an artifact is sound by using it (restoring a backup). |
+   | `restore` | Bring back what an artifact holds. |
+   | `run` | Start it now. |
+   | `build` | Make generated files from their sources. |
+   | `draft` | Have an agent write it. |
+   | `archive` | Move finished ones out of the working file. |
+   | `snapshot` | Copy files that live only on this Mac into the workspace. |
+
+   A new verb is added to this list, with its meaning, in the same change.
+4. **A noun alone shows its verbs** (`cabinet role` is `cabinet role --help`).
+5. **Options mean the same everywhere.**
+   - `--json`: every command that reports (`list`, `check`, `verify`, `next`, `doctor`, `digest`, `status`, `outdated`, `changelog`, `version`, `help`) prints JSON instead, on stdout. Its fields are never renamed without a changelog entry.
+   - `--dry-run`: every command that changes the setup (settings, the team, repos, this Mac) or deletes anything prints what it would do and changes nothing.
+   - `--yes` (`-y`): every command that asks takes the defaults and asks nothing.
+   - `-C <dir>`, before the command: run as if started in `<dir>`, as git does. Commands find the workspace from the current folder upward, so none takes a folder to act on as an argument; `new` and `init` take the folder they make or adopt, which is what they act on.
+   - Names are lowercase words joined by dashes, and a setting's option is named for the setting (`--backup-dir`, `--brief-time`). A time or schedule takes a [schedule time](docs/commands.md#schedule-times) or `off`. A switch takes no value; a pair is `--<x>` and `--no-<x>`. A value follows its option after a space.
+6. **Exit codes:** 0 done (or nothing found), 1 failed or found a problem, 2 wrong usage (an unknown command or option, a missing value).
+7. **Scripts use the same words.** Each noun has one workspace script, `bin/<noun>.sh <verb>`, and a one-word command that has a script uses `bin/<command>.sh`, so agents, schedules and people use one vocabulary with or without the `cabinet` command.
+8. **Messages** are plain words, go to stderr when they report an error (starting `cabinet:` from `bin/cabinet`), and end with the command that fixes the problem when there is one.
+
+Known exceptions, each on the roadmap: `update` has no `--dry-run` yet (`cabinet update --dry-run`).
 
 ## Checks
 

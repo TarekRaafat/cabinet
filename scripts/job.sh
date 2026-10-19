@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
-# Run one scheduled agent job headless. Each job is jobs/<job>.job in the
-# workspace; launchd starts it (bin/bootstrap.sh installs the schedule), or
-# run it by hand to see it now. Logs go to ~/Library/Logs/cabinet/<slug>/.
+# The workspace's scheduled agent jobs: jobs/<job>.job, each run headless by the configured agent
+# tool. launchd starts them (bin/bootstrap.sh installs the schedules); run one by hand to see it
+# now. Logs go to ~/Library/Logs/cabinet/<slug>/.
 #
-#   bin/scheduled.sh <job>
-#
-# The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, gemini,
-# qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool).
-# A run is stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none).
+#   bin/job.sh run <job>
+#       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, gemini,
+#       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). A run is
+#       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none).
+#   bin/job.sh list [--json]
+#       Every job: its name, role, schedule and time limit.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-job="${1:?usage: scheduled.sh <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))}"
+j_list() {
+  local json=0 a jf
+  for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/job.sh list [--json]" >&2; exit 2 ;; esac; done
+  for jf in "$WS"/jobs/*.job; do
+    [[ -f "$jf" ]] || continue
+    ( AGENT="" WHEN="" TIMEOUT=""; source "$jf"
+      printf '%s\t%s\t%s\t%s\n' "$(basename "$jf" .job)" "$AGENT" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" )
+  done | if ((json)); then jq -Rn '[inputs | split("\t") | {name: .[0], role: .[1], when: .[2], timeout_minutes: (.[3] | tonumber? // null)}]'
+         else awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-16s %-18s %-34s %s min\n", $1, $2, $3, $4} END {if (!n) print "No jobs in jobs/."}'; fi
+}
+
+j_run() {
+job="${1:-}"; [[ -n "$job" ]] || { echo "usage: bin/job.sh run <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))" >&2; exit 2; }
 jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
 AGENT="" PROMPT="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT=""
@@ -58,3 +71,11 @@ if [[ -t 1 ]]; then
 fi
 limited >>"$log" 2>&1 || { echo "exit $? at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
 after
+}
+
+verb="${1:-}"; (($#)) && shift
+case "$verb" in
+  run) j_run "$@" ;;
+  list) j_list "$@" ;;
+  *) echo "usage: bin/job.sh run <job> | list [--json]" >&2; exit 2 ;;
+esac

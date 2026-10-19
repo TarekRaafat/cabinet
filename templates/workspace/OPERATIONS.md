@@ -34,7 +34,7 @@ You sign off; the team runs the rest. Every decision belongs to one of three tie
 | code-reviewer | Reviews each change's code before a push; can hold it |
 | auditor | Audits dependencies, access, personal data and configuration; changes nothing |
 
-**Builders.** Each product repo is built by a builder role: backend (servers and APIs), web (what runs in a browser), mobile (iOS and Android apps) or infrastructure (CI, deploys, infrastructure as code; it plans, and applying is yours). `bin/bootstrap.sh` picks one for each repo whose owner is `TBD` in the team table of `AGENTS.md`, from what the repo holds; change the row to choose another, then `bin/roles.sh`. Builders follow the way each repo is already built, commit locally, and hand finished work to qa; they never verify their own work and never push.
+**Builders.** Each product repo is built by a builder role: backend (servers and APIs), web (what runs in a browser), mobile (iOS and Android apps) or infrastructure (CI, deploys, infrastructure as code; it plans, and applying is yours). `bin/bootstrap.sh` picks one for each repo whose owner is `TBD` in the team table of `AGENTS.md`, from what the repo holds; change the row to choose another, then `bin/role.sh build`. Builders follow the way each repo is already built, commit locally, and hand finished work to qa; they never verify their own work and never push.
 
 To call one, start an agent session in `$WS` and name it ("use the qa agent to ..."), or `claude --agent qa`. In another tool: "act as the qa role in agents/qa.md".
 
@@ -44,7 +44,7 @@ To call one, start an agent session in `$WS` and name it ("use the qa agent to .
 - [ ] **Answer in one message** in a session in `$WS`, for example: "chief-of-staff: approve 1, 3. 2: no. 4: hold until Friday."
 - [ ] **Push what is ready** (section 3), if the brief lists anything with qa and security PASS.
 
-> **No brief this morning?** Read the log in `~/Library/Logs/cabinet/@@SLUG@@/brief.log`, or run it now: `$WS/bin/scheduled.sh brief`.
+> **No brief this morning?** Read the log in `~/Library/Logs/cabinet/@@SLUG@@/brief.log`, or run it now: `$WS/bin/job.sh run brief`.
 
 ## 3. Releasing (pushing)
 
@@ -67,17 +67,19 @@ git -C <repo> push
 | Command | What it does |
 |---|---|
 | `bin/doctor.sh` | Checks everything: repos, roles, kit files, guardrails, the manual, schedules, backups. Start here when something feels off. |
-| `bin/handoffs.sh [name]` | Every open handoff with its age; with a repo or role name, every entry addressed to it, in full. |
-| `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
-| `bin/archive-handoffs.sh` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
-| `bin/role.sh <role>` | Drafts a role you added with `cabinet role new`, from your brief and the project (it runs the agent tool). |
-| `bin/roles.sh [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
-| `bin/scheduled.sh <job>` | Runs a job from `jobs/` now (for example `brief`). |
+| `bin/handoff.sh list [name]` | Every open handoff with its age; with a repo or role name, every entry addressed to it, in full. |
+| `bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
+| `bin/handoff.sh archive` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
+| `bin/role.sh draft <role>` | Drafts a role you added with `cabinet role add`, from your brief and the project (it runs the agent tool). |
+| `bin/role.sh build [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
+| `bin/job.sh run <job>` | Runs a job from `jobs/` now (for example `brief`). |
+| `bin/role.sh list`, `bin/repo.sh list`, `bin/job.sh list` | The team, the repos, the jobs. |
 | `bin/bootstrap.sh [--dry-run]` | Sets up a machine: clones repos, restores local-only files, installs guardrails and schedules. Safe to rerun. |
-| `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's files; the pre-commit hook refuses a commit that adds one. A false alarm: add `not-a-secret` to its line. |
-| `bin/snapshot.sh` | Copies each repo's local-only files into `local/`. The backup runs it for you. |
-| `bin/backup.sh [--verify] [dir]` | One encrypted backup now; `--verify` checks that the newest one restores (once a quarter). |
-| `bin/restore.sh <archive> [dir]` | Rebuilds everything from a backup. Never loses a file: anything it would replace with different content is copied to `recovered/` first. |
+| `bin/secret.sh check [--staged]` | Looks for keys, tokens and passwords in the workspace's files; the pre-commit hook refuses a commit that adds one. A false alarm: add `not-a-secret` to its line. |
+| `bin/repo.sh snapshot` | Copies each repo's local-only files into `local/`. The backup runs it for you. |
+| `bin/backup.sh create [dir]` | One encrypted backup now. |
+| `bin/backup.sh verify [dir]` | Checks that the newest backup restores (once a quarter). |
+| `bin/backup.sh restore <archive> [dir]` | Rebuilds everything from a backup. Never loses a file: anything it would replace with different content is copied to `recovered/` first. |
 | `bin/move.sh <new-path> [--dry-run]` | Moves the workspace and updates everything that remembers its path. |
 | `cabinet config` | Changes settings after setup: the same questions, current answers as defaults; then updates schedules and repos. |
 | `cabinet update` | Updates this workspace to the installed kit's version (run from `$WS`; see the kit's README). |
@@ -103,7 +105,7 @@ launchctl kickstart -k gui/$(id -u)/ai.cabinet.@@SLUG@@.brief
 
 | Situation | Do this |
 |---|---|
-| Lost or broken machine | Passphrase into the keychain, `bin/restore.sh` the newest archive, `bin/bootstrap.sh`, `bin/doctor.sh`. |
+| Lost or broken machine | Passphrase into the keychain, `bin/backup.sh restore` the newest archive, `bin/bootstrap.sh`, `bin/doctor.sh`. |
 | A secret leaked | Rotate it at the provider first, then tell security to find every place it appeared. Never push a commit containing it. |
 | An agent did something wrong | It is a local commit until you push: `git -C <repo> revert <commit>`. Then narrow its authority in `roles/<role>.md`. |
 | A schedule stopped | `bin/doctor.sh`, then the log in `~/Library/Logs/cabinet/@@SLUG@@/`. |

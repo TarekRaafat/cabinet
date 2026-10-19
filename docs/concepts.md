@@ -21,9 +21,9 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 | auditor (optional) | audits of what is in place | severity of findings | critical findings |
 | backend, web, mobile, infrastructure | the product repos the team table assigns each (the builders) | how to build inside a repo, following its own conventions | changes to a repo's stack or tools; applying infrastructure |
 
-Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role new <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
+Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role add <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
 
-**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/roles.sh`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
+**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/role.sh build`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
 ## Rules, guides and notes
 
@@ -43,7 +43,7 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agen
 
 ## Handoffs
 
-`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh` files an entry with the next free ID and commits it; `bin/handoffs.sh <name>` shows an agent its open entries.
+`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh add` files an entry with the next free ID and commits it; `bin/handoff.sh list <name>` shows an agent its open entries.
 
 ## Decision tiers
 

@@ -38,13 +38,13 @@ grep -q '^# AGENTS.md - Demo Co$' "$W/AGENTS.md" || fail "project name not fille
 [[ -L "$W/CLAUDE.md" ]] || fail "CLAUDE.md link missing"
 [[ "$(cat "$W/.cabinet/version")" == "$(jq -r .version "$KIT/package.json")" ]] || fail "version not recorded"
 git -C "$W" log --oneline | grep -q 'create from cabinet' || fail "workspace not committed"
-[[ "$("$W/bin/handoffs.sh")" == "No open handoffs." && "$("$W/bin/handoffs.sh" --json)" == "[]" ]] || fail "handoffs with none open"
+[[ "$("$W/bin/handoff.sh" list)" == "No open handoffs." && "$("$W/bin/handoff.sh" list --json)" == "[]" ]] || fail "handoffs with none open"
   return 0   # a last "check && fail" line must not end the run
 }
 
 section "new with options" ""
 s1() {
-env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL "$F" new "$T/opt" --yes --roles "qa security" --runner codex --brief off --week-start Monday \
+env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL "$F" new "$T/opt" --yes --roles "qa security" --runner codex --brief-time off --week-start Monday \
   --backup-dir "$T/bk" --repo git@example.com:me/opt-api.git --owner "Ann Owner" --email ann@example.com >/dev/null
 O="$T/opt"
 grep -qx 'CABINET_ROLES="chief-of-staff qa security"' "$O/cabinet.env" || fail "roles option"
@@ -56,7 +56,7 @@ grep -q '| `opt-api` |' "$O/AGENTS.md" && grep -q $'^opt-api\tgit@example.com:me
 grep -q 'Ann Owner <ann@example.com>' "$O/AGENTS.md" && [[ "$(git -C "$O" log -1 --format=%an)" == "Ann Owner" ]] || fail "owner option"
 [[ "$(ls "$O/agents")" == "$(printf '%s\n' chief-of-staff.md qa.md security.md)" ]] || fail "only the chosen roles are built"
 out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual names every script, job and role' || fail "doctor: manual after dropping roles"
-"$F" new "$T/bad" --yes --brief lunchtime >/dev/null 2>&1 && fail "bad brief time accepted"
+"$F" new "$T/bad" --yes --brief-time lunchtime >/dev/null 2>&1 && fail "bad brief time accepted"
 [[ ! -e "$T/bad" ]] || fail "a refused setup left files behind"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -153,11 +153,11 @@ grep -qx 'CABINET_LAYOUT="beside"' "$T/side-hq/cabinet.env" && grep -qx 'CABINET
 section "init around a folder of repos" "2 3"
 s7() {
 R="$T/around"; mkrepo "$R/api"; mkrepo "$R/web"; mkdir -p "$R/bin"
-echo "# mine" > "$R/README.md"; echo "#!/bin/sh" > "$R/bin/handoffs.sh"
+echo "# mine" > "$R/README.md"; echo "#!/bin/sh" > "$R/bin/handoff.sh"
 # A file of the folder's own at a kit path would be run as the kit's: init refuses, and creates nothing.
 out="$("$F" init "$R" --yes 2>&1)" && fail "init accepted a file of its own at a kit path"
-echo "$out" | grep -q 'already exist at paths the kit uses: bin/handoffs.sh' && [[ ! -e "$R/.cabinet" && "$(cat "$R/bin/handoffs.sh")" == "#!/bin/sh" ]] || fail "refused init still wrote files"
-mv "$R/bin/handoffs.sh" "$R/my-handoffs.sh"; rmdir "$R/bin"
+echo "$out" | grep -q 'already exist at paths the kit uses: bin/handoff.sh' && [[ ! -e "$R/.cabinet" && "$(cat "$R/bin/handoff.sh")" == "#!/bin/sh" ]] || fail "refused init still wrote files"
+mv "$R/bin/handoff.sh" "$R/my-handoffs.sh"; rmdir "$R/bin"
 # Its own .gitignore is kept, and only setup's files are committed: never its .env or other files.
 printf 'node_modules\n' > "$R/.gitignore"; echo SECRET=1 > "$R/.env"; echo a,b > "$R/data.csv"
 out="$("$F" init "$R" --yes 2>&1)" || { echo "$out"; fail "init around failed"; }
@@ -176,17 +176,17 @@ mkdir -p "$I/sub"; (cd "$I/sub" && "$F" init --yes) >/dev/null 2>&1 && fail "ini
 section "backup and restore, inside a project" "3"
 s8() {
 BK="$T/bk"; mkdir -p "$T/bkhome"
-HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" "$BK" >/dev/null || fail "backup inside a project"
-HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/restore.sh" "$(ls "$BK"/*.enc)" "$T/r/cabinet" > "$T/rout" || fail "restore inside a project"
+HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" create "$BK" >/dev/null || fail "backup inside a project"
+HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" restore "$(ls "$BK"/*.enc)" "$T/r/cabinet" > "$T/rout" || fail "restore inside a project"
 grep -Eq '^Restoring acme-app from the backup of [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, [0-9]{1,2}:[0-9]{2} [AP]M into ' "$T/rout" || { cat "$T/rout"; fail "restore did not name the backup date in words"; }
 [[ -f "$T/r/cabinet/HANDOFFS.md" && -f "$T/r/f" ]] || fail "restore did not rebuild the project around its workspace"
 # The private pointers are ignored by the project's git, so not in the archive: rebuilding the roles brings them back.
-"$T/r/cabinet/bin/roles.sh" >/dev/null
+"$T/r/cabinet/bin/role.sh" build >/dev/null
 grep -q 'cabinet/CABINET.md' "$T/r/CLAUDE.local.md" && [[ -z "$(git -C "$T/r" status --porcelain)" ]] || fail "pointers not rebuilt after restore, or the project's git not clean"
 [[ "$(git -C "$T/r" log -1 --format=%s)" == setup && "$(git -C "$T/r" branch --show-current)" == main ]] || fail "restored project history"
 # Restored into a folder whose parent holds files of its own (like a home folder), the parent never becomes a repo.
 mkdir -p "$T/busy"; echo mine > "$T/busy/README.md"
-HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/restore.sh" "$(ls "$BK"/*.enc)" "$T/busy/cabinet" >/dev/null || fail "restore beside other files"
+HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" restore "$(ls "$BK"/*.enc)" "$T/busy/cabinet" >/dev/null || fail "restore beside other files"
 [[ ! -e "$T/busy/.git" && "$(cat "$T/busy/README.md")" == mine && -e "$T/busy/cabinet/recovered" ]] && ls -d "$T"/busy/cabinet/recovered/*/acme-app/repo/.git >/dev/null 2>&1 || fail "restore turned a folder with its own files into a repo"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -201,12 +201,12 @@ printf 'Run the api with `bun test`.\n' > "$W/roles/qa.md"
 printf -- '---\nname: growth\ndescription: Growth.\n---\n\nYou are growth.\n' > "$W/roles/growth.md"
 sed -i '' 's/^CABINET_ROLES="\(.*\)"/CABINET_ROLES="\1 growth"/' "$W/cabinet.env"
 sed -i '' 's/finance |/finance, growth |/' "$W/OPERATIONS.md"
-"$W/bin/roles.sh" --check >/dev/null 2>&1 && fail "check missed stale roles"
-"$W/bin/roles.sh" >/dev/null
+"$W/bin/role.sh" build --check >/dev/null 2>&1 && fail "check missed stale roles"
+"$W/bin/role.sh" build >/dev/null
 grep -q '## Project notes' "$W/agents/qa.md" && grep -q 'bun test' "$W/agents/qa.md" || fail "project note not appended"
 [[ -f "$W/.claude/agents/growth.md" ]] || fail "project-only role not built"
-"$W/bin/roles.sh" --check || fail "check fails on fresh roles"
-sed -i '' 's/ growth"/"/' "$W/cabinet.env"; "$W/bin/roles.sh" >/dev/null
+"$W/bin/role.sh" build --check || fail "check fails on fresh roles"
+sed -i '' 's/ growth"/"/' "$W/cabinet.env"; "$W/bin/role.sh" build >/dev/null
 [[ ! -f "$W/agents/growth.md" ]] || fail "dropped role not removed"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -229,48 +229,48 @@ cat >> "$W/HANDOFFS.md" <<'EOF'
 - Needed: y
 - Depends on: none
 EOF
-"$W/bin/handoffs.sh" | grep -q 'H-20260101-01' || fail "open entry not listed"
-"$W/bin/handoffs.sh" qa | grep -q 'first' || fail "entry for qa not printed"
-"$W/bin/handoffs.sh" founder | grep -q 'second' && fail "done entry printed as open"
-"$W/bin/handoffs.sh" --json | jq -e 'length == 1 and .[0].id == "H-20260101-01" and .[0].from == "architect" and .[0].to == "qa"
+"$W/bin/handoff.sh" list | grep -q 'H-20260101-01' || fail "open entry not listed"
+"$W/bin/handoff.sh" list qa | grep -q 'first' || fail "entry for qa not printed"
+"$W/bin/handoff.sh" list founder | grep -q 'second' && fail "done entry printed as open"
+"$W/bin/handoff.sh" list --json | jq -e 'length == 1 and .[0].id == "H-20260101-01" and .[0].from == "architect" and .[0].to == "qa"
   and .[0].status == "open" and .[0].date == "2026-01-01" and .[0].age_days > 200 and .[0].title == "first" and (.[0] | has("text") | not)' >/dev/null || fail "handoffs --json"
-"$W/bin/handoffs.sh" qa --json | jq -e '.[0].text | contains("- Needed: y")' >/dev/null && (cd "$W/specs" && "$F" handoffs owner --json) | jq -e 'length == 0' >/dev/null || fail "handoffs <name> --json"
+"$W/bin/handoff.sh" list qa --json | jq -e '.[0].text | contains("- Needed: y")' >/dev/null && (cd "$W/specs" && "$F" handoff list owner --json) | jq -e 'length == 0' >/dev/null || fail "handoffs <name> --json"
 git -C "$W" add -A && git -C "$W" commit -qm handoffs
-"$W/bin/archive-handoffs.sh" | grep -q 'archived 1' || fail "archive did not move the done entry"
+"$W/bin/handoff.sh" archive | grep -q 'archived 1' || fail "archive did not move the done entry"
 grep -q 'H-20260101-02' "$W/handoffs/archive-2026-01.md" || fail "archive file missing the entry"
 # cabinet handoff: the next free ID for today across HANDOFFS.md and the archives, the template's
 # lines, and a commit of only that entry; never someone else's uncommitted lines.
 d="$(date +%Y%m%d)"
 printf '\n### H-%s-07: archived today\n- From: qa -> To: api\n- Status: done (%s)\n' "$d" "$(date +%F)" >> "$W/handoffs/archive-2026-01.md"
 git -C "$W" add -A && git -C "$W" commit -qm "archived today"
-out="$(cd "$W/specs" && "$F" handoff --from architect --to "api, qa" --changed "GET /items: limit 50 -> 100" --needed "page by 100
+out="$(cd "$W/specs" && "$F" handoff add --from architect --to "api, qa" --changed "GET /items: limit 50 -> 100" --needed "page by 100
 in the client" "Raise the list limit")" || fail "handoff failed: $out"
 [[ "$out" == "H-$d-08 filed for api, qa and committed" ]] || fail "handoff did not take the next free ID across the archives: $out"
 git -C "$W" show --stat HEAD | grep -q "handoffs: H-$d-08 Raise the list limit" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "handoff not committed alone"
-"$W/bin/handoffs.sh" qa --json | jq -e --arg id "H-$d-08" '[.[] | select(.id == $id)][0] | .from == "architect" and .status == "open"
+"$W/bin/handoff.sh" list qa --json | jq -e --arg id "H-$d-08" '[.[] | select(.id == $id)][0] | .from == "architect" and .status == "open"
   and (.text | contains("- Needed: page by 100 in the client\n- Depends on: none"))' >/dev/null || fail "the filed handoff is not in the format the handoff tools read"
-"$W/bin/handoffs.sh" | grep -q "H-$d-01" && fail "an ID was reused"
+"$W/bin/handoff.sh" list | grep -q "H-$d-01" && fail "an ID was reused"
 echo "- leftover line" >> "$W/HANDOFFS.md"
-out="$("$W/bin/handoff.sh" --from qa --to architect --changed x --needed y "Second")"
+out="$("$W/bin/handoff.sh" add --from qa --to architect --changed x --needed y "Second")"
 [[ "$out" == "H-$d-09 filed for architect, not committed"* ]] && git -C "$W" log -1 --format=%s | grep -q "H-$d-08" || fail "handoff committed someone else's uncommitted lines"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'ok    every handoff ID is unique' || fail "handoff made a duplicate ID"
 git -C "$W" checkout -q -- HANDOFFS.md
-"$W/bin/handoff.sh" --from qa --to api "No details" >/dev/null 2>&1 && fail "a handoff without --changed and --needed was filed"
+"$W/bin/handoff.sh" add --from qa --to api "No details" >/dev/null 2>&1 && fail "a handoff without --changed and --needed was filed"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused handoff changed a file"
-"$W/bin/handoff.sh" --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
+"$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
 [[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
   return 0   # a last "check && fail" line must not end the run
 }
 
 section "update" "0"
 s11() {
-"$F" update "$W" >/dev/null || fail "clean update failed"
-echo "# local edit" >> "$W/bin/handoffs.sh"
-"$F" update "$W" >/dev/null 2>&1 && fail "update replaced an edited kit file"
-grep -q '# local edit' "$W/bin/handoffs.sh" || fail "edited kit file was overwritten"
-"$F" status "$W" | grep -q 'edited here: bin/handoffs.sh' || fail "status missed the edit"
-git -C "$W" checkout -q -- bin/handoffs.sh
-"$F" update "$W" >/dev/null || fail "update after restore failed"
+"$F" -C "$W" update >/dev/null || fail "clean update failed"
+echo "# local edit" >> "$W/bin/handoff.sh"
+"$F" -C "$W" update >/dev/null 2>&1 && fail "update replaced an edited kit file"
+grep -q '# local edit' "$W/bin/handoff.sh" || fail "edited kit file was overwritten"
+"$F" -C "$W" status | grep -q 'edited here: bin/handoff.sh' || fail "status missed the edit"
+git -C "$W" checkout -q -- bin/handoff.sh
+"$F" -C "$W" update >/dev/null || fail "update after restore failed"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -280,11 +280,11 @@ K2="$T/kit2"; cp -R "$KIT" "$K2"; rm -rf "$K2/.git"
 jq '.version = "0.1.1"' "$KIT/package.json" > "$K2/package.json"
 { echo "# Changelog"; echo; echo "## 0.1.1 - test"; echo; echo "- smoke change"; echo; tail -n +2 "$KIT/CHANGELOG.md"; } > "$K2/CHANGELOG.md"
 echo "# 0.1.1" >> "$K2/core/CABINET.md"
-out="$("$K2/bin/cabinet" update "$W")"
+out="$("$K2/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -q 'What changed since 0.1.0' && echo "$out" | grep -q 'smoke change' || fail "update did not show the changelog"
 echo "$out" | grep -q '^## 0.1.0' && fail "changelog showed the version already installed"
 [[ "$(cat "$W/.cabinet/version")" == 0.1.1 ]] && tail -1 "$W/CABINET.md" | grep -q '0.1.1' || fail "newer kit not applied"
-"$KIT/bin/cabinet" update "$W" >/dev/null || fail "could not go back to the current kit"
+"$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -365,22 +365,22 @@ cat >> "$W/cabinet.env" <<'EOF'
 CABINET_RUNNER="custom"
 CABINET_RUNNER_CMD='printf "%s|%s" "$CABINET_AGENT" "$CABINET_PROMPT" > runner.out'
 EOF
-HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || fail "custom runner failed"
+HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || fail "custom runner failed"
 grep -q '^chief-of-staff|Act as the chief-of-staff role: read agents/chief-of-staff.md' "$W/runner.out" || fail "custom runner did not get the role and prompt"
 rm -f "$W/runner.out"
 # A run past its time limit is stopped with everything it started, and the log says why
 # (CABINET_TEST_MINUTE makes a minute one second). A limit that is not a number never runs.
 echo "CABINET_RUNNER_CMD='sleep 323; :'" >> "$W/cabinet.env"
 cp "$W/jobs/brief.job" "$T/brief.bak"; sed -i '' 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
-s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || st=$?
+s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 1 && SECONDS - s < 10)) || fail "a run past its limit was not stopped (exit $st after $((SECONDS - s))s)"
 ! pgrep -f 'sleep 323' >/dev/null || fail "a stopped run left what it started running"
 grep -q "stopped after 2 min: the job's time limit" "$H/Library/Logs/cabinet/demo-co/brief.log" || fail "the log does not say why the run stopped"
 # Stopping the job (launchd's stop, or Ctrl-C by hand) stops the agent too, though it runs in its own group.
-HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM "$p"; wait "$p" || true
+HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM "$p"; wait "$p" || true
 ! pgrep -f 'sleep 323' >/dev/null || fail "stopping the job left the agent running"
 sed -i '' 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
-st=0; HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || st=$?
+st=0; HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 2)) && ! pgrep -f 'sleep 323' >/dev/null || fail "a TIMEOUT that is not whole minutes was not refused"
 cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 "$F" new "$T/c1" --yes --runner custom >/dev/null 2>&1 && fail "custom runner without a command accepted"
@@ -396,7 +396,7 @@ cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
 [[ -f "$LA/ai.cabinet.cfg.brief.plist" ]] || fail "config test setup: no schedule"
 out="$(cfg --yes --name "Acme Labs" --slug acme-labs --owner Ann --email ann@example.com --roles "qa security" \
-  --brief 06:30 --week-start Monday --repo git@example.invalid:acme/api.git --apply)" || { echo "$out"; fail "config with options"; }
+  --brief-time 06:30 --week-start Monday --repo git@example.invalid:acme/api.git --apply)" || { echo "$out"; fail "config with options"; }
 echo "$out" | grep -q 'api: clone failed (see above); everything else continues' || fail "a failed clone stopped the setup"
 grep -qx 'CABINET_PROJECT="Acme Labs"' "$C/cabinet.env" && grep -qx 'CABINET_SLUG="acme-labs"' "$C/cabinet.env" || fail "name or slug not written"
 grep -qx '# AGENTS.md - Acme Labs' "$C/AGENTS.md" && grep -qx '# Acme Labs operations manual' "$C/OPERATIONS.md" || fail "titles not renamed"
@@ -415,7 +415,7 @@ cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
 printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" off "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
-printf '<plist><string>%s/bin/scheduled.sh</string></plist>\n' "$(cd "$C" && pwd -P)" > "$LA/ai.cabinet.old-name.brief.plist"
+printf '<plist><string>%s/bin/job.sh</string></plist>\n' "$(cd "$C" && pwd -P)" > "$LA/ai.cabinet.old-name.brief.plist"
 HOME="$H" "$C/bin/doctor.sh" 2>&1 | grep -q 'ai.cabinet.old-name.brief still runs this workspace under an old name' || fail "doctor missed a leftover schedule"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -433,7 +433,7 @@ grep -qx 'CABINET_PROJECT="evil"' "$T/evil-hq/cabinet.env" || fail "unsafe name 
 [[ ! -e "$T/bad2" ]] || fail "a refused setup left its folder behind"
 # A slug another workspace uses is refused; --slug picks another.
 mkdir -p "$H/Library/LaunchAgents"
-printf '<plist><string>/elsewhere/taken/bin/scheduled.sh</string></plist>\n' > "$H/Library/LaunchAgents/ai.cabinet.taken.brief.plist"
+printf '<plist><string>/elsewhere/taken/bin/job.sh</string></plist>\n' > "$H/Library/LaunchAgents/ai.cabinet.taken.brief.plist"
 HOME="$H" "$F" new "$T/taken" --yes >/dev/null 2>&1 && fail "a slug used by another workspace was accepted"
 HOME="$H" "$F" new "$T/taken" --slug taken-2 --yes >/dev/null && grep -qx 'CABINET_SLUG="taken-2"' "$T/taken/cabinet.env" || fail "--slug"
 # Bootstrap never takes over or removes another workspace's schedule.
@@ -444,21 +444,21 @@ echo "$out" | grep -q 'ai.cabinet.taken.brief already runs another workspace' &&
 # The backup folder must be outside the workspace and its repos: setup, config and backup.sh all refuse.
 "$F" new "$T/bk1" --backup-dir "$T/bk1/backups" --yes >/dev/null 2>&1 && fail "setup accepted a backup folder inside the workspace"
 (cd "$I" && "$F" config --yes --backup-dir "$I/backups") >/dev/null 2>&1 && fail "config accepted a backup folder inside the project"
-CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" "$I/backups" >/dev/null 2>&1 && fail "backup.sh wrote into the project"
+CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" create "$I/backups" >/dev/null 2>&1 && fail "backup.sh wrote into the project"
 [[ ! -e "$I/backups" ]] || fail "a refused backup created its folder"
 (cd "$T" && "$F" new "$T/rel" --backup-dir relbk --yes >/dev/null) && grep -qx "CABINET_BACKUP_DIR=\"$(cd "$T" && pwd -P)/relbk\"" "$T/rel/cabinet.env" || fail "relative backup folder not made absolute"
 # Cleanup keeps only this workspace's archives, never another's with a longer slug; keep 0 is refused.
 "$F" new "$T/app" --yes >/dev/null; BD="$T/shared-bk"; mkdir -p "$BD"
 touch "$BD/app-web-20260101-000000.tar.gz.enc" "$BD/app-web-20260102-000000.tar.gz.enc"
 sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=1/' "$T/app/cabinet.env"
-for i in 1 2; do CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" "$BD" >/dev/null; sleep 1; done
+for i in 1 2; do CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" create "$BD" >/dev/null; sleep 1; done
 [[ "$(ls "$BD" | grep -c '^app-web-')" == 2 && "$(ls "$BD" | grep -cE '^app-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$')" == 1 ]] || { ls "$BD"; fail "cleanup removed another workspace's archives, or kept too many"; }
 sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=0/' "$T/app/cabinet.env"
-CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" "$BD" >/dev/null 2>&1 && fail "keep 0 was accepted"
+CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" create "$BD" >/dev/null 2>&1 && fail "keep 0 was accepted"
 sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=14/' "$T/app/cabinet.env"
 # Restore never replaces a file without keeping a copy.
 mkdir -p "$T/rr"; echo MINE > "$T/rr/AGENTS.md"
-CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/restore.sh" "$BD/$(ls "$BD" | grep -E '^app-[0-9]')" "$T/rr" >/dev/null || fail "restore into a folder with files"
+CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" restore "$BD/$(ls "$BD" | grep -E '^app-[0-9]')" "$T/rr" >/dev/null || fail "restore into a folder with files"
 [[ "$(cat "$T/rr/recovered/"*/workspace/AGENTS.md)" == MINE ]] && grep -q '^# AGENTS.md - app' "$T/rr/AGENTS.md" || fail "restore replaced a file without keeping a copy"
 # A mistyped WHEN keeps the working schedule; an & in the path still gives a valid schedule.
 A2="$T/R&D"; "$F" new "$A2" --slug rnd --yes >/dev/null
@@ -477,12 +477,12 @@ echo y > "$T/hooked/g"; git -C "$T/hooked" add g; git -C "$T/hooked" -c core.hoo
 # config keeps a project's own role and accepts a weekly brief.
 printf -- '---\nname: growth\ndescription: Growth.\n---\n\nYou are growth.\n' > "$C/roles/growth.md"
 (cd "$C" && "$F" config --yes --roles "qa security growth") >/dev/null || fail "config refused a project role"
-(cd "$C" && "$F" config --yes --brief "Sun 8 AM") >/dev/null || fail "config refused a weekly brief"
+(cd "$C" && "$F" config --yes --brief-time "Sun 8 AM") >/dev/null || fail "config refused a weekly brief"
 grep -q 'growth' "$C/cabinet.env" && [[ -f "$C/agents/growth.md" ]] && grep -qx 'WHEN="sun 8:00 AM"' "$C/jobs/brief.job" || fail "project role dropped or weekly brief not written"
 (cd "$C" && "$F" config --yes --name "Acme Co 2") >/dev/null || fail "config refused to run with a weekly brief"
 # Handoffs without an ISO date still show in the overview.
 printf '\n### H-20260101-09: undated\n- From: qa -> To: architect\n- Status: acknowledged (3 Oct 2026)\n' >> "$W/HANDOFFS.md"
-"$W/bin/handoffs.sh" | grep -q '?d  acknowledged  H-20260101-09' || fail "an undated open handoff is hidden"
+"$W/bin/handoff.sh" list | grep -q '?d  acknowledged  H-20260101-09' || fail "an undated open handoff is hidden"
 git -C "$W" checkout -q -- HANDOFFS.md
 # With no git identity, setup does not commit as TBD.
 env GIT_CONFIG_GLOBAL="$T/empty-config" "$F" new "$T/noid" --yes >/dev/null
@@ -513,7 +513,7 @@ G2="$T/ignoring"; mkdir -p "$G2"; printf '.claude/\nagents/\n' > "$G2/.gitignore
 "$F" init "$G2" --yes >/dev/null 2>&1 || fail "init failed when the folder's .gitignore covers kit paths"
 git -C "$G2" ls-files | grep -q '^agents/qa.md$' || fail "setup's own files were not committed"
 # A fresh workspace lists no handoffs (the template's example is not one).
-[[ "$("$G2/bin/handoffs.sh")" == "No open handoffs." ]] || fail "the handoff template is listed as an entry"
+[[ "$("$G2/bin/handoff.sh" list)" == "No open handoffs." ]] || fail "the handoff template is listed as an entry"
 # A workspace reached through a symlink is the same workspace.
 mkdir -p "$T/realdir"; ln -s "$T/realdir" "$T/linkdir"
 "$F" new "$T/linkdir/sym" --yes >/dev/null
@@ -536,16 +536,16 @@ jq -e '.name == "ignoring-two-workspace" and (.description | startswith("Ignorin
 R2="$T/rest"; "$F" new "$R2" --yes >/dev/null; echo "draft v1" > "$R2/notes/draft.md"
 mkrepo "$R2/api"; printf 'api\t-\t-\tno\n' >> "$R2/repos.tsv"; git -C "$R2" add repos.tsv; git -C "$R2" commit -qm repos
 git -C "$R2/api" checkout -q --detach; echo d > "$R2/api/d"; git -C "$R2/api" add d; git -C "$R2/api" commit -qm detached-only
-CABINET_BACKUP_PASSPHRASE=t "$R2/bin/backup.sh" "$T/bk2" >/dev/null || fail "backup for restore tests"
+CABINET_BACKUP_PASSPHRASE=t "$R2/bin/backup.sh" create "$T/bk2" >/dev/null || fail "backup for restore tests"
 mkdir -p "$T/rr2/api"; echo "draft v2" > "$T/rr2/notes-draft.tmp"; mkdir -p "$T/rr2/notes"; mv "$T/rr2/notes-draft.tmp" "$T/rr2/notes/draft.md"; echo mine > "$T/rr2/api/own.txt"
-CABINET_BACKUP_PASSPHRASE=t "$R2/bin/restore.sh" "$(ls "$T"/bk2/*.enc)" "$T/rr2" >/dev/null || fail "restore with existing files and a detached repo"
+CABINET_BACKUP_PASSPHRASE=t "$R2/bin/backup.sh" restore "$(ls "$T"/bk2/*.enc)" "$T/rr2" >/dev/null || fail "restore with existing files and a detached repo"
 [[ "$(cat "$T/rr2/notes/draft.md")" == "draft v1" && "$(cat "$T/rr2/recovered/"*/workspace/notes/draft.md)" == "draft v2" ]] || fail "an untracked file was replaced without a copy"
 [[ ! -e "$T/rr2/api/.git" && "$(cat "$T/rr2/api/own.txt")" == mine ]] || fail "a folder with files of its own was turned into a repo"
 [[ -n "$(git -C "$T/rr2/recovered/"*/api/repo rev-parse HEAD)" ]] && ! git -C "$T/rr2/recovered/"*/api/repo symbolic-ref -q HEAD >/dev/null || fail "the detached repo was not restored detached into recovered/"
 # A workspace with no commits is backed up as its files and restored.
 env GIT_CONFIG_GLOBAL="$T/empty-config" "$F" new "$T/nocommit" --yes >/dev/null
-CABINET_BACKUP_PASSPHRASE=t "$T/nocommit/bin/backup.sh" "$T/bk3" >/dev/null || fail "backup of a workspace with no commits"
-CABINET_BACKUP_PASSPHRASE=t "$T/nocommit/bin/restore.sh" "$(ls "$T"/bk3/*.enc)" "$T/rr3" >/dev/null || fail "restore of a workspace with no commits"
+CABINET_BACKUP_PASSPHRASE=t "$T/nocommit/bin/backup.sh" create "$T/bk3" >/dev/null || fail "backup of a workspace with no commits"
+CABINET_BACKUP_PASSPHRASE=t "$T/nocommit/bin/backup.sh" restore "$(ls "$T"/bk3/*.enc)" "$T/rr3" >/dev/null || fail "restore of a workspace with no commits"
 [[ -f "$T/rr3/CABINET.md" && -f "$T/rr3/AGENTS.md" ]] || fail "a workspace with no commits was not in its backup"
 # A relative clone URL in repos.tsv is cloned relative to the workspace.
 mkrepo "$T/srcrepo"; "$F" new "$T/relws" --yes >/dev/null; printf 'src\t../srcrepo\t-\tno\n' >> "$T/relws/repos.tsv"
@@ -588,7 +588,7 @@ jq -e --slurpfile k "$KIT/guardrails/cursor-permissions.json" \
 CB="$T/cursorbin"; mkdir -p "$CB"
 printf '#!/bin/sh\nprintf "%%s|" "$@" > "%s/cursor-args"\n' "$T" > "$CB/cursor-agent"; chmod +x "$CB/cursor-agent"
 cp "$W/cabinet.env" "$T/env.bak2"; echo 'CABINET_RUNNER="cursor"' >> "$W/cabinet.env"
-HOME="$H3" PATH="$CB:$PATH" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || fail "the cursor runner failed"
+HOME="$H3" PATH="$CB:$PATH" "$W/bin/job.sh" run brief >/dev/null 2>&1 || fail "the cursor runner failed"
 grep -q '^-p|--force|Act as the chief-of-staff role: read agents/chief-of-staff.md' "$T/cursor-args" || { cat "$T/cursor-args"; fail "the cursor runner did not call the CLI in print mode with the role"; }
 cp "$T/env.bak2" "$W/cabinet.env"
 # doctor checks the Cursor CLI's config, and a generic `agent` command is not taken for Cursor.
@@ -641,7 +641,7 @@ done
 section "commands from anywhere in a workspace or its project" "0 3"
 s25() {
 mkdir -p "$W/specs/deep" "$I/src/deep" "$T/nowhere"
-(cd "$W/specs/deep" && "$F" handoffs) >/dev/null || fail "handoffs from a workspace subfolder"
+(cd "$W/specs/deep" && "$F" handoff list) >/dev/null || fail "handoffs from a workspace subfolder"
 (cd "$I/src/deep" && "$F" doctor --json) | jq -e '.workspace | endswith("/acme-app/cabinet")' >/dev/null || fail "doctor from deep inside the project"
 (cd "$I/src/deep" && "$F" status) | grep -q 'no kit file edited' || fail "status from deep inside the project"
 out="$(cd "$T/nowhere" && "$F" doctor 2>&1)" && fail "doctor outside any workspace succeeded"
@@ -667,7 +667,7 @@ section "doctor summary, json and fix" "0"
 s27() {
 rm "$W/agents/qa.md"
 out="$(cd "$W" && "$F" doctor 2>&1)" && fail "doctor passed with a role missing"
-echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$out" | grep -q 'cabinet doctor --fix can run:.*roles' || { echo "$out"; fail "doctor summary"; }
+echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$out" | grep -q 'cabinet doctor --fix can run:.*role build' || { echo "$out"; fail "doctor summary"; }
 (cd "$W" && "$F" doctor --json) | jq -e '.problems > 0 and (.can_fix | index("roles")) and (.results | length > 3)
   and all(.results[]; .id | test("^[a-z]+\\.[a-z-]+$")) and (.results[] | select(.id == "kit.roles") | .level == "fix")' >/dev/null || fail "doctor --json IDs"
 (cd "$W" && "$F" doctor --fix 2>&1 </dev/null) | grep -q 'run it in a terminal, or add --yes' || fail "doctor --fix ran without asking"
@@ -679,13 +679,13 @@ echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$
 section "remove" "2"
 s28() {
 "$F" new "$T/gone" --yes >/dev/null; G="$(cd "$T/gone" && pwd -P)"
-mkdir -p "$HOME/Library/LaunchAgents"; echo "<string>$G/bin/scheduled.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.brief.plist"
-echo "<string>/elsewhere/bin/scheduled.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist"
-"$F" remove "$G" --dry-run | grep -q 'ai.cabinet.gone.brief.plist' && [[ -d "$G" ]] || fail "remove --dry-run"
-"$F" remove "$G" --yes >/dev/null 2>&1 && fail "remove deleted commits that exist on no remote"
+mkdir -p "$HOME/Library/LaunchAgents"; echo "<string>$G/bin/job.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.brief.plist"
+echo "<string>/elsewhere/bin/job.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist"
+"$F" -C "$G" remove --dry-run | grep -q 'ai.cabinet.gone.brief.plist' && [[ -d "$G" ]] || fail "remove --dry-run"
+"$F" -C "$G" remove --yes >/dev/null 2>&1 && fail "remove deleted commits that exist on no remote"
 [[ -d "$G" ]] || fail "a refused remove deleted the workspace"
-printf 'nope\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" remove "$G" --force >/dev/null 2>&1 && fail "remove went ahead with the wrong slug typed"
-printf 'gone\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" remove "$G" --force >/dev/null || fail "remove"
+printf 'nope\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null 2>&1 && fail "remove went ahead with the wrong slug typed"
+printf 'gone\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null || fail "remove"
 [[ ! -e "$G" && ! -e "$HOME/Library/LaunchAgents/ai.cabinet.gone.brief.plist" && -e "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist" ]] || fail "remove: folder, own schedule, or another's schedule"
 rm "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist"
 # Inside a project, private: the project is left exactly as it was before init.
@@ -713,13 +713,13 @@ s30() {
 bash -c 'eval "$("$1" completion bash)" && type _cabinet' _ "$F" >/dev/null || fail "bash completion"
 mkdir -p "$T/zdot"; ZDOTDIR="$T/zdot" zsh -c 'eval "$("$1" completion zsh)" && type _cabinet' _ "$F" >/dev/null 2>&1 || fail "zsh completion (a zsh without compinit in its .zshrc)"
 mkdir -p "$W/specs/deep"; printf 'WHEN=""\n' > "$W/jobs/weekly-review.job"
-jobs="$(cd "$W/specs/deep" && bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet run ""); COMP_CWORD=2; _cabinet; echo "${COMPREPLY[*]}"' _ "$F")"
-[[ " $jobs " == *" brief "* && " $jobs " == *" weekly-review "* ]] || fail "completion of job names for cabinet run: $jobs"
+jobs="$(cd "$W/specs/deep" && bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet job run ""); COMP_CWORD=3; _cabinet; echo "${COMPREPLY[*]}"' _ "$F")"
+[[ " $jobs " == *" brief "* && " $jobs " == *" weekly-review "* ]] || fail "completion of job names for cabinet job run: $jobs"
 rm "$W/jobs/weekly-review.job"
 mkdir -p "$T/npmshim"; printf '#!/bin/sh\necho 9.9.9\n' > "$T/npmshim/npm"; chmod +x "$T/npmshim/npm"
-PATH="$T/npmshim:$PATH" "$F" outdated "$W" | grep -q 'latest: cabinet 9.9.9' || fail "outdated"
-printf '#!/bin/sh\nexit 1\n' > "$T/npmshim/npm"; PATH="$T/npmshim:$PATH" "$F" outdated "$W" | grep -q 'latest: unknown' || fail "outdated offline"
-"$F" status "$W" --json | jq -e '.version == .kit_version and (.edited | length == 0)' >/dev/null || fail "status --json"
+PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: cabinet 9.9.9' || fail "outdated"
+printf '#!/bin/sh\nexit 1\n' > "$T/npmshim/npm"; PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: unknown' || fail "outdated offline"
+"$F" -C "$W" status --json | jq -e '.version == .kit_version and (.edited | length == 0)' >/dev/null || fail "status --json"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -728,7 +728,7 @@ section "help, --help and help --json come from one command table" ""
 s31() {
 mkdir -p "$T/plain"
 (cd "$T/plain" && "$F" doctor --help) | grep -q -- '--fix' || fail "doctor --help outside a workspace"
-"$F" remove -h | grep -q '^Usage: cabinet remove \[dir\] \[options\]' || fail "remove -h"
+"$F" remove -h | grep -q '^Usage: cabinet remove \[options\]' || fail "remove -h"
 "$F" help config | grep -q -- '--backup-time <time>' || fail "help <command>"
 "$F" help --json | jq -e '.name == "cabinet" and (.commands | length > 20) and (.commands | map(.name) | index("remove"))' >/dev/null || fail "help --json"
 "$F" help remove --json | jq -e '.commands | length == 1 and (.[0].options | map(.name) | index("--force"))' >/dev/null || fail "help <command> --json"
@@ -805,7 +805,7 @@ j="$(cd "$T/away" && "$F" list --json)"
 jq -e 'map(select(.slug == "demo-co"))[0] | .project == "Demo Co" and .exists and (.doctor_problems | type == "number") and (.waiting_on_owner | type == "number")' <<<"$j" >/dev/null || fail "list --json: a workspace"
 jq -e '(map(select(.slug == "listed-gone"))[0] | .exists == false and .doctor_problems == null) and (map(select(.slug == "listed-old"))[0].update_available)' <<<"$j" >/dev/null || fail "list --json: gone and older"
 (cd "$T/away" && "$F" next) | grep -q 'cabinet list shows them' || fail "next outside a workspace does not point at list"
-rm -rf "$HOME/Library/Logs/cabinet/listed-gone"; "$F" remove "$T/listed-old" --yes --force >/dev/null
+rm -rf "$HOME/Library/Logs/cabinet/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
 "$F" list --json | jq -e 'map(.slug) | (index("listed-old") or index("listed-gone")) | not' >/dev/null || fail "a removed workspace is still listed"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -845,7 +845,7 @@ for bad in 25:00 "fun 08:00" "mon"; do "$F" digest --schedule "$bad" >/dev/null 
 "$F" digest --file x.md >/dev/null 2>&1 && fail "--file without --schedule was accepted"
 "$F" digest --schedule off | grep -q 'Stopped the scheduled digest' && [[ ! -f "$PL" ]] || fail "digest --schedule off"
 "$F" digest | grep -q '^Not scheduled' || fail "digest after the schedule stopped"
-for x in dg-a dg-b dg-c; do "$F" remove "$T/$x" --yes --force >/dev/null; done
+for x in dg-a dg-b dg-c; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -860,18 +860,18 @@ r="$(/bin/bash -c 'source "$1"; for w in "7 AM" "7:05pm" "daily 7 a.m." "Friday 
 (cd "$O" && "$F" config --yes --backup-time "fri 2 PM") >/dev/null 2>&1 && fail "a backup time with a day was accepted"
 (cd "$O" && "$F" config --yes --backup-time "1 PM") >/dev/null
 # The brief, through config and bootstrap; the doctor agrees.
-(cd "$W" && "$F" config --yes --brief "Friday,saturday 9 am") >/dev/null || fail "config --brief with day names"
+(cd "$W" && "$F" config --yes --brief-time "Friday,saturday 9 am") >/dev/null || fail "config --brief-time with day names"
 grep -qx 'WHEN="fri,sat 9:00 AM"' "$W/jobs/brief.job" || { grep WHEN "$W/jobs/brief.job"; fail "the brief time is not stored in its short form"; }
 "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
 PB="$HOME/Library/LaunchAgents/ai.cabinet.demo-co.brief.plist"
 [[ "$(plutil -extract StartCalendarInterval json -o - "$PB" | jq -c '[.[] | [.Weekday, .Hour, .Minute]]')" == '[[5,9,0],[6,9,0]]' ]] || fail "the brief schedule on Friday and Saturday"
 (cd "$W" && "$F" doctor --json || true) | jq -e '.results[] | select(.id == "schedules.job" and (.message | contains("brief"))) | .level == "ok" and (.message | contains("Fri, Sat at 9:00 AM"))' >/dev/null || fail "doctor on a two-day brief"
-(cd "$W" && "$F" config --yes --brief "funday 9:00") >/dev/null 2>&1 && fail "config accepted an unknown day"
+(cd "$W" && "$F" config --yes --brief-time "funday 9:00") >/dev/null 2>&1 && fail "config accepted an unknown day"
 # A job written by hand, with a full day name and a one-digit hour.
 printf 'AGENT=qa\nWHEN="Saturday 7:30 PM"\nPROMPT="x"\n' > "$W/jobs/sat.job"
 "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
 [[ "$(plutil -extract StartCalendarInterval json -o - "$HOME/Library/LaunchAgents/ai.cabinet.demo-co.sat.plist" | jq -c '.')" == '[{"Weekday":6,"Hour":19,"Minute":30}]' ]] || fail "a hand-written job with a full day name"
-rm "$W/jobs/sat.job"; (cd "$W" && "$F" config --yes --brief "7 AM") >/dev/null; "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
+rm "$W/jobs/sat.job"; (cd "$W" && "$F" config --yes --brief-time "7 AM") >/dev/null; "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
 [[ "$(plutil -extract StartCalendarInterval json -o - "$PB" | jq -c '.')" == '[{"Hour":7,"Minute":0}]' && ! -e "$HOME/Library/LaunchAgents/ai.cabinet.demo-co.sat.plist" ]] || fail "back to every day"
 # The digest takes the same forms.
 "$F" digest --schedule "Saturday 10 AM" | grep -q 'Scheduled the digest, Sat at 10:00 AM' || fail "digest --schedule with a full day name"
@@ -880,24 +880,24 @@ rm "$W/jobs/sat.job"; (cd "$W" && "$F" config --yes --brief "7 AM") >/dev/null; 
   return 0   # a last "check && fail" line must not end the run
 }
 
-section "secrets: caught before a commit, a marked false alarm passes" "0 5 14"
+section "secret check: caught before a commit, a marked false alarm passes" "0 5 14"
 s37() {
 # Fake values are built from pieces, so no key-shaped text is ever in the kit itself.
-"$W/bin/secrets.sh" >/dev/null 2>&1 || fail "a fresh workspace has a false alarm: $("$W/bin/secrets.sh" 2>&1)"
-grep -q 'bin/secrets.sh --staged' "$W/.git/hooks/pre-commit" && [[ -x "$W/.git/hooks/pre-commit" ]] || fail "bootstrap did not place the secrets hook"
+"$W/bin/secret.sh" check >/dev/null 2>&1 || fail "a fresh workspace has a false alarm: $("$W/bin/secret.sh" check 2>&1)"
+grep -q 'bin/secret.sh check --staged' "$W/.git/hooks/pre-commit" && [[ -x "$W/.git/hooks/pre-commit" ]] || fail "bootstrap did not place the secrets hook"
 key="AKIA""QWERTYUIOPASDFGH"
 printf '# Keys\n\nThe deploy key: %s\n' "$key" > "$W/guides/keys.md"
 git -C "$W" add guides/keys.md
 out="$(git -C "$W" commit -qm "keys" 2>&1)" && fail "a commit with a key in a guide was not refused"
 echo "$out" | grep -q 'guides/keys.md:3: an AWS access key' && ! echo "$out" | grep -q "$key" || fail "the refusal does not name the file and line, or shows the key: $out"
-out="$("$W/bin/doctor.sh" 2>&1 || true)"   # cabinet secrets and the doctor see it before it is staged, too
+out="$("$W/bin/doctor.sh" 2>&1 || true)"   # cabinet secret check and the doctor see it before it is staged, too
 echo "$out" | grep -q "FIX   possible secrets in the workspace's files.*guides/keys.md:3: an AWS access key" && ! echo "$out" | grep -q "$key" || fail "the doctor missed the key, or showed it"
-(cd "$W/specs" && "$F" secrets >/dev/null 2>&1) && fail "cabinet secrets missed the key"
+(cd "$W/specs" && "$F" secret check >/dev/null 2>&1) && fail "cabinet secret check missed the key"
 printf 'DB_PASSWORD=%s\n' "hunter2""hunter2" >> "$W/guides/keys.md"; git -C "$W" add guides/keys.md
 git -C "$W" commit -qm "keys" >/dev/null 2>&1 && fail "a commit setting a password was refused only for the key"
 sed -i '' 's/$/ not-a-secret/' "$W/guides/keys.md"; git -C "$W" add guides/keys.md
 git -C "$W" commit -qm "a marked false alarm" >/dev/null 2>&1 || fail "a marked false alarm was refused"
-"$W/bin/secrets.sh" >/dev/null 2>&1 || fail "a marked false alarm is still reported"
+"$W/bin/secret.sh" check >/dev/null 2>&1 || fail "a marked false alarm is still reported"
 git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "cleanup"
 # A shared cabinet/ is committed with the project: no hook of its own, its files still scanned.
 "$S/cabinet/bin/doctor.sh" 2>&1 | grep -q 'ok    the workspace is committed with the project, whose own hooks run' || fail "shared layout: secrets hook check"
@@ -905,30 +905,31 @@ git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "
   return 0   # a last "check && fail" line must not end the run
 }
 
-section "backup --verify: a good archive passes, a damaged or incomplete one fails" "3"
+section "backup verify: a good archive passes, a damaged or incomplete one fails" "3"
 s38() {
 VH="$T/vhome" VB="$T/vbk" C="$I/cabinet"; mkdir -p "$VH"
-bk() { HOME="$VH" CABINET_BACKUP_PASSPHRASE="${PW:-t}" "$C/bin/backup.sh" "$@" "$VB" 2>&1; }
+bk() { HOME="$VH" CABINET_BACKUP_PASSPHRASE="${PW:-t}" "$C/bin/backup.sh" "${@:-create}" "$VB" 2>&1; }
 bk >/dev/null || fail "backup for verify"
-out="$(bk --verify)" || fail "a good archive failed to verify: $out"
+out="$(bk verify)" || fail "a good archive failed to verify: $out"
 echo "$out" | grep -q '^  workspace: restores exactly as it is now' && echo "$out" | grep -q '^  acme-app: restores exactly as it is now' || fail "verify did not check each repo: $out"
 [[ "$(ls "$VB" | wc -l | tr -d ' ')" == 1 ]] && [[ -f "$VH/Library/Logs/cabinet/acme-app/backup-verified" ]] || fail "verify changed the backup folder, or did not record the good result"
+bk verify --json | jq -e '.ok and .problems == 0 and (.results | map(.repo) | index("acme-app")) and (.backed_up | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))' >/dev/null || fail "backup verify --json"
 # Work done since the backup is reported, not a problem.
 echo change >> "$I/f"; git -C "$I" commit -qam "after the backup"; echo draft > "$C/specs/draft.md"
-out="$(bk --verify)" && echo "$out" | grep -q 'acme-app: restores ([0-9]* commits); 1 commit(s) since the backup' \
+out="$(bk verify)" && echo "$out" | grep -q 'acme-app: restores ([0-9]* commits); 1 commit(s) since the backup' \
   && echo "$out" | grep -q 'workspace: restores ([0-9]* commits); 1 file(s) changed since the backup' || fail "work since the backup: $out"
 rm "$C/specs/draft.md"
-out="$(PW=wrong bk --verify)" && fail "a wrong passphrase verified"
+out="$(PW=wrong bk verify)" && fail "a wrong passphrase verified"
 echo "$out" | grep -q 'PROBLEM the archive does not open' || fail "a wrong passphrase was not named: $out"
 # A damaged archive: some bytes in the middle overwritten.
 a="$VB/$(ls "$VB")"; cp -p "$a" "$T/good.enc"
 printf 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | dd of="$a" bs=1 seek=$(( $(wc -c < "$a") / 2 )) conv=notrunc 2>/dev/null
-out="$(bk --verify)" && fail "a damaged archive verified"
+out="$(bk verify)" && fail "a damaged archive verified"
 echo "$out" | grep -q "^  PROBLEM " || fail "the damage was not named: $out"
 cp -p "$T/good.enc" "$a"
 # An incomplete archive: a repo the workspace lists now that the archive does not hold.
 mkrepo "$T/later"; cp "$C/repos.tsv" "$T/repos.bak"; printf 'later\t-\t-\tno\t%s\n' "$T/later" >> "$C/repos.tsv"
-out="$(bk --verify)" && fail "an incomplete archive verified"
+out="$(bk verify)" && fail "an incomplete archive verified"
 echo "$out" | grep -q 'PROBLEM later: not in the archive' || fail "the missing repo was not named: $out"
 cp "$T/repos.bak" "$C/repos.tsv"
 # The doctor notes a verify that is missing or old.
@@ -967,7 +968,7 @@ echo "$out" | grep -q 'ok    manual names every script, job and role' && echo "$
 git -C "$B" add -A && git -C "$B" commit -qm builders
 HOME="$BH" "$B/bin/bootstrap.sh" 2>&1 | grep -q 'owned by the' && fail "bootstrap reassigned a repo that has an owner"
 sed -i '' 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGENTS.md"
-"$B/bin/roles.sh" >/dev/null && [[ ! -e "$B/agents/backend.md" ]] || fail "a builder that owns no repo is still built"
+"$B/bin/role.sh" build >/dev/null && [[ ! -e "$B/agents/backend.md" ]] || fail "a builder that owns no repo is still built"
 (cd "$B" && "$F" config --yes --roles "qa") >/dev/null 2>&1 || fail "config --roles with builders"
 [[ -f "$B/agents/web.md" && -f "$B/agents/qa.md" && ! -e "$B/agents/finance.md" ]] || fail "config --roles dropped a builder that owns a repo"
 sed -i '' 's/^| `kind-api` | TBD | owner |$/| `kind-api` | TBD | TBD |/' "$B/AGENTS.md"; cp "$B/AGENTS.md" "$T/agents.bak"
@@ -991,7 +992,7 @@ done
 ! grep -q '| auditor |' "$T/optroles/AGENTS.md" && "$T/optroles/bin/doctor.sh" 2>&1 | grep -q 'ok    manual names every script, job and role' || fail "an optional role left on, or the manual check"
 # A role of the project's own from one line; the rest is left to the draft.
 RW="$T/optroles"
-(cd "$RW/specs" && "$F" role new brand-strategist --does "Positioning and naming for a reading app, for parents") >/dev/null || fail "role new"
+(cd "$RW/specs" && "$F" role add brand-strategist --does "Positioning and naming for a reading app, for parents") >/dev/null || fail "role add"
 f="$RW/roles/brand-strategist.md"
 grep -qx -- '- What it should do: Positioning and naming for a reading app, for parents' "$f" && grep -qx -- '- What it owns: not said yet' "$f" || fail "the brief was not kept word for word"
 grep -q '^CABINET_ROLES=".* brand-strategist"' "$RW/cabinet.env" && grep -q '^name: brand-strategist$' "$RW/agents/brand-strategist.md" \
@@ -999,9 +1000,9 @@ grep -q '^CABINET_ROLES=".* brand-strategist"' "$RW/cabinet.env" && grep -q '^na
 "$RW/bin/doctor.sh" 2>&1 | grep -q 'note  the brand-strategist role is not drafted yet' || fail "the doctor did not note the undrafted role"
 # In a terminal: four questions, Enter skips, then whether to draft now.
 printf 'Weekly growth experiments\n\nWhich experiment runs next\nAny spend\nn\n' > "$T/role-answers"
-(cd "$RW" && CABINET_TTY="$T/role-answers" "$F" role new growth) >/dev/null || fail "role new in a terminal"
+(cd "$RW" && CABINET_TTY="$T/role-answers" "$F" role add growth) >/dev/null || fail "role add in a terminal"
 grep -qx -- '- What it owns: not said yet' "$RW/roles/growth.md" && grep -qx -- '- What it must bring to the owner: Any spend' "$RW/roles/growth.md" || fail "terminal answers not kept"
-for bad in qa web Bad_Name brand-strategist; do (cd "$RW" && "$F" role new "$bad" --yes) >/dev/null 2>&1 && fail "role new accepted '$bad'"; done
+for bad in qa web Bad_Name brand-strategist; do (cd "$RW" && "$F" role add "$bad" --yes) >/dev/null 2>&1 && fail "role add accepted '$bad'"; done
 # Drafting: the agent tool runs as chief-of-staff on the drafting method; a run that leaves it TBD fails.
 cp "$RW/cabinet.env" "$T/optroles-env.bak"
 printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"
@@ -1021,23 +1022,70 @@ TW="$T/teamchange"; "$F" new "$TW" --yes >/dev/null || fail "new for team checks
 dr() { "$TW/bin/doctor.sh" 2>&1 || true; }
 # A whole role of the project's own with a kit role's name (as when a later kit adds one) wins, unmixed.
 printf -- '---\nname: qa\ndescription: Our own qa.\ntools: Read\n---\n\nOur qa checks only the docs.\n' > "$TW/roles/qa.md"
-"$TW/bin/roles.sh" >/dev/null || fail "roles with a clashing name"
+"$TW/bin/role.sh" build >/dev/null || fail "roles with a clashing name"
 grep -q 'Our qa checks only the docs.' "$TW/agents/qa.md" && ! grep -q 'Project notes\|You are the quality lead' "$TW/agents/qa.md" || fail "a project role was mixed into the kit's role of the same name"
 dr | grep -q 'note  roles/qa.md is a whole role and the kit also has a qa role: yours is used' || fail "the doctor did not name the clash"
-printf 'qa tests on the staging account.\n' > "$TW/roles/qa.md"; "$TW/bin/roles.sh" >/dev/null
+printf 'qa tests on the staging account.\n' > "$TW/roles/qa.md"; "$TW/bin/role.sh" build >/dev/null
 grep -q 'You are the quality lead' "$TW/agents/qa.md" && grep -q 'qa tests on the staging account.' "$TW/agents/qa.md" || fail "notes for a kit role no longer appended"
-rm "$TW/roles/qa.md"; "$TW/bin/roles.sh" >/dev/null
+rm "$TW/roles/qa.md"; "$TW/bin/role.sh" build >/dev/null
 # One owner per repo or area.
 dr | grep -q 'ok    each repo and area in the team table has one owner' || fail "a fresh team table has two owners"
 X='| `specs/` | Specs, again | architect |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
 dr | grep -q "FIX   more than one owner in the team table of AGENTS.md: \`specs/\` (.*architect.*)" || fail "two owners of specs/ not flagged: $(dr | grep -i owner)"
 git -C "$TW" checkout -q -- AGENTS.md
 # A handoff to a role that is turned off, or to no one on the team, is noted with its ID.
-id="$("$TW/bin/handoff.sh" --from qa --to finance --changed x --needed y "Price check" | cut -d' ' -f1)"
-"$TW/bin/handoff.sh" --from qa --to "owner (via chief-of-staff)" --changed x --needed y "For the owner" >/dev/null
+id="$("$TW/bin/handoff.sh" add --from qa --to finance --changed x --needed y "Price check" | cut -d' ' -f1)"
+"$TW/bin/handoff.sh" add --from qa --to "owner (via chief-of-staff)" --changed x --needed y "For the owner" >/dev/null
 dr | grep -q 'ok    every open handoff is addressed to a role, a repo or the owner' || fail "a handoff to a role on the team, or the owner, was flagged"
 (cd "$TW" && "$F" config --yes --roles "qa security") >/dev/null || fail "turning roles off"
 dr | grep -q "note  open handoffs addressed to no role or repo on the team: $id (finance)" || fail "a handoff to a role turned off was not noted: $(dr | grep -i addressed)"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "commands follow one set of conventions" "0 2"
+s42() {
+CW="$T/conv"; "$F" new "$CW" --yes >/dev/null || fail "new for conventions"
+mkdir -p "$T/plain"
+# A noun alone shows its verbs; a noun and a verb has its own --help.
+"$F" role | grep -q '^  role add <name>' && "$F" role >/dev/null || fail "a noun alone does not show its verbs"
+"$F" role add --help | grep -q '^Usage: cabinet role add <name>' && "$F" help role add | grep -q -- '--does' || fail "noun and verb --help"
+"$F" help role --json | jq -e '.commands | length == 5 and all(.[]; .name | startswith("role "))' >/dev/null || fail "help <noun> --json"
+# Wrong usage exits 2: an unknown command, verb or option, a missing value, a folder where -C belongs.
+for args in "nope" "role nope" "handoff nope" "next --bogus" "new $T/x --name" "-C" "-C $T/no-such-folder status"; do
+  st=0; (cd "$CW" && "$F" $args) >/dev/null 2>&1 || st=$?
+  ((st == 2)) || fail "'cabinet $args' exited $st, not 2"
+done
+st=0; "$F" status "$CW" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a folder argument was taken (exit $st), not refused for -C"
+st=0; "$CW/bin/handoff.sh" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a script without its verb exited $st, not 2"
+# -C runs a command as if started in that folder.
+(cd "$T/plain" && "$F" -C "$CW" status --json) | jq -e --arg w "$(cd "$CW" && pwd -P)" '.workspace == $w' >/dev/null || fail "-C"
+bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP_CWORD=4; _cabinet; echo "${COMPREPLY[*]}"' _ "$F" | grep -q 'add.*remove.*list' || fail "completion of verbs after -C"
+# Every command that reports prints JSON.
+"$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
+mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
+(cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | jq -e '.latest == null and .kit_version' >/dev/null || fail "outdated --json"
+(cd "$CW" && "$F" role list --json) | jq -e 'any(.[]; .name == "qa" and .kind == "kit" and .on) and any(.[]; .name == "dba" and .on == false)' >/dev/null || fail "role list --json"
+(cd "$CW" && "$F" job list --json) | jq -e '.[0].name == "brief" and .[0].role == "chief-of-staff" and .[0].timeout_minutes == 60' >/dev/null || fail "job list --json"
+(cd "$CW" && "$F" secret check --json) | jq -e 'length == 0' >/dev/null || fail "secret check --json"
+# role add and remove: a kit role on and off, with --dry-run writing nothing.
+cp "$CW/cabinet.env" "$T/conv.env"
+(cd "$CW" && "$F" role add dba --dry-run) | grep -q 'would turn on the kit role dba' && cmp -s "$CW/cabinet.env" "$T/conv.env" || fail "role add --dry-run"
+(cd "$CW" && "$F" role add dba) >/dev/null && grep -q '| dba |' "$CW/AGENTS.md" && [[ -f "$CW/agents/dba.md" ]] || fail "role add of a kit role"
+(cd "$CW" && "$F" role add dba) >/dev/null 2>&1 && fail "a role already on was added again"
+(cd "$CW" && "$F" role remove dba) >/dev/null && ! grep -q '| dba |' "$CW/AGENTS.md" && [[ ! -e "$CW/agents/dba.md" ]] || fail "role remove"
+(cd "$CW" && "$F" role remove chief-of-staff) >/dev/null 2>&1 && fail "chief-of-staff was turned off"
+# repo add, list and remove.
+mkrepo "$T/conv-api"
+(cd "$CW" && "$F" repo add "$T/conv-api" --dry-run) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" || fail "repo add --dry-run wrote"
+(cd "$CW" && "$F" repo add "$T/conv-api") >/dev/null && grep -q $'^conv-api\t' "$CW/repos.tsv" && grep -q '| `conv-api` |' "$CW/AGENTS.md" || fail "repo add"
+(cd "$CW" && "$F" repo list --json) | jq -e '.[] | select(.name == "conv-api") | .present == false and .owner == null' >/dev/null || fail "repo list --json"
+(cd "$CW" && "$F" repo remove conv-api) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" "$CW/AGENTS.md" || fail "repo remove"
+(cd "$CW" && "$F" repo remove conv-api) >/dev/null 2>&1 && fail "removing a repo that is not there succeeded"
+# The tests fail when a command breaks a convention: a plural noun, a verb not in the list.
+mkdir -p "$T/kitcopy"; (cd "$KIT" && tar --exclude .git --exclude node_modules -cf - .) | tar -C "$T/kitcopy" -xf -
+perl -i -pe 's/^(C\tTeam\trole list\t)/C\tTeam\troles show\t\tShow roles.\n$1/' "$T/kitcopy/bin/cabinet"
+out="$(python3 -I "$KIT/test/docs_check.py" "$T/kitcopy" 2>&1)" && fail "the docs check passed a plural noun"
+echo "$out" | grep -q "the noun 'roles' is plural" && echo "$out" | grep -q "'roles show' uses a verb that is not in AGENTS.md" || fail "the docs check did not name the broken conventions: $out"
   return 0   # a last "check && fail" line must not end the run
 }
 

@@ -110,6 +110,7 @@ has() { [[ " $1 " == *" $2 "* ]]; }   # has "<words>" <word>
 # The kit's builder roles. Each is built when it owns a repo in the team table of AGENTS.md,
 # so the table is the one record of who builds what; CABINET_ROLES holds the other roles.
 BUILDERS="backend web mobile infrastructure"
+ROLES_OPTIONAL="brand-designer dba code-reviewer auditor"   # kit roles a project turns on (ROLES_OPT in bin/cabinet)
 builders() {
   awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 && $2 ~ /`/ {o = $4; gsub(/^ +| +$/, "", o); print o}' "$WS/AGENTS.md" 2>/dev/null \
     | while IFS= read -r o; do has "$BUILDERS" "$o" && ! has "$CABINET_ROLES" "$o" && echo "$o"; done | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'

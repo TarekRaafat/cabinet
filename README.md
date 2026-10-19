@@ -35,7 +35,7 @@ cabinet bootstrap                 # guardrails for your agent tools, and the dai
 cabinet doctor                    # everything that needs attention; --fix runs the fixes it knows
 ```
 
-New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Then fill the `TBD` lines in `AGENTS.md`: what the product is, its rules, and how to test it. Every command works from any folder inside the workspace or its project; `cabinet help` lists them. Several projects? One workspace each; `cabinet list` shows them all, and `cabinet digest` gathers every sign-off queue into one morning read.
+New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Then fill the `TBD` lines in `AGENTS.md`: what the product is, its rules, and how to test it. Every command works from any folder inside the workspace or its project, and all of them follow one pattern: one word for the workspace as a whole (`cabinet doctor`), a noun then a verb for what it holds (`cabinet role add`, `cabinet repo list`); `cabinet help` lists them ([how commands are named](docs/commands.md#how-commands-are-named)). Several projects? One workspace each; `cabinet list` shows them all, and `cabinet digest` gathers every sign-off queue into one morning read.
 
 ## A day with cabinet
 
@@ -100,7 +100,7 @@ Every answer is also an option, and `--yes` skips the questions:
 
 ```sh
 cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
-  --brief "7 AM" --week-start sunday --backup-dir off --repo git@github.com:acme/api.git --yes
+  --brief-time "7 AM" --week-start sunday --backup-dir off --repo git@github.com:acme/api.git --yes
 ```
 
 All options: [commands](docs/commands.md#cabinet-new).

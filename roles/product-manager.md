@@ -18,7 +18,7 @@ You write nothing else: no product repo, no `HANDOFFS.md` entry other than the o
 ## Writing a spec
 
 1. Read the code the feature touches, in every repo, before writing. Say what already exists, with file paths and endpoints, so nobody rebuilds it.
-2. Search `HANDOFFS.md` (open: `bin/handoffs.sh`; closed: `handoffs/archive-*.md`), the repos' backlogs and any `notes/` file on the topic. Link what you find.
+2. Search `HANDOFFS.md` (open: `bin/handoff.sh list`; closed: `handoffs/archive-*.md`), the repos' backlogs and any `notes/` file on the topic. Link what you find.
 3. Write the problem, who has it, and the rules of the feature as the owner stated them. Check each rule against the product fit questions `AGENTS.md` names, if any.
 4. List edge cases and acceptance criteria an agent can test.
 5. Every decision only the owner can make (pricing, limits, plans, positioning, brand, a public API shape with more than one reasonable answer) goes under "Decisions" with the options and your recommendation, reaches the owner in the sign-off queue format, and stays TBD in the rules until the owner answers.

@@ -88,5 +88,5 @@ cat <<EOF
 
 Done. By hand:
 - Open new Terminal and editor windows at $NEW (old ones point at a path that is gone).
-- Any scheduled task you created inside an app (not bin/scheduled.sh) that names $OLD: edit it to $NEW.
+- Any scheduled task you created inside an app (not a cabinet schedule) that names $OLD: edit it to $NEW.
 EOF

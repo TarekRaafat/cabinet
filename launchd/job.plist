@@ -6,6 +6,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>@@PROGRAM@@</string>
+    <string>@@VERB@@</string>
     <string>@@ARG@@</string>
   </array>
   <key>EnvironmentVariables</key>

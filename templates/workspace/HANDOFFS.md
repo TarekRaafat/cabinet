@@ -1,8 +1,8 @@
 # HANDOFFS.md - @@PROJECT@@
 
-The one channel between agents. Rules are in `CABINET.md` ("Handoffs"). Newest entries at the bottom of "Open". Closed entries move to `handoffs/archive-YYYY-MM.md` (`bin/archive-handoffs.sh`).
+The one channel between agents. Rules are in `CABINET.md` ("Handoffs"). Newest entries at the bottom of "Open". Closed entries move to `handoffs/archive-YYYY-MM.md` (`bin/handoff.sh archive`).
 
-File an entry with `bin/handoff.sh` (it picks the next free ID and commits it), or by hand from the template below.
+File an entry with `bin/handoff.sh add` (it picks the next free ID and commits it), or by hand from the template below.
 
 Status values: `open`, `acknowledged`, `done`, `rejected`. The addressee edits only the status line. Everyone else adds follow-up entries instead of rewriting.
 

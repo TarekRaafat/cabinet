@@ -8,6 +8,6 @@ MINUTES="5 to 15"
 RESULT="BRIEF.md"
 # TIMEOUT: minutes before a run is stopped. Empty: CABINET_JOB_TIMEOUT in cabinet.env (60). 0: no limit.
 TIMEOUT=""
-PROMPT="Scheduled daily run. Write BRIEF.md as your definition says, sign-off queue first. Apply any answered queue items. Commit your HANDOFFS.md changes and any leftover finished handoff lines, then run bin/archive-handoffs.sh, as CABINET.md says."
+PROMPT="Scheduled daily run. Write BRIEF.md as your definition says, sign-off queue first. Apply any answered queue items. Commit your HANDOFFS.md changes and any leftover finished handoff lines, then run bin/handoff.sh archive, as CABINET.md says."
 # AFTER: an optional shell command run in the workspace after a successful run.
 AFTER=""

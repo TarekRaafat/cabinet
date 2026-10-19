@@ -35,7 +35,7 @@ while IFS=$'\t' read -r name url files link path; do
     for f in $files; do
       live="$repo/$f" snap="$WS/local/$name/$f"
       if [[ ! -f "$live" ]]; then bad repos.local-file "$name/$f missing"
-      elif [[ ! -f "$snap" ]]; then bad repos.snapshot "$name/$f not in snapshot (run bin/snapshot.sh)"
+      elif [[ ! -f "$snap" ]]; then bad repos.snapshot "$name/$f not in snapshot (run bin/repo.sh snapshot)"
       elif ! cmp -s "$live" "$snap"; then note repos.snapshot "$name/$f changed since last snapshot"
       fi
       git -C "$repo" ls-files --error-unmatch "$f" >/dev/null 2>&1 && bad repos.local-file-tracked "$name/$f is tracked in the product repo but listed as local-only"
@@ -64,7 +64,7 @@ done < "$K/manifest"
 ((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
-# A role the owner added (cabinet role new) works only once an agent has drafted it. A whole role
+# A role the owner added (cabinet role add) works only once an agent has drafted it. A whole role
 # of the project's own with a kit role's name is used instead of the kit's: say so.
 for f in "$WS"/roles/*.md; do
   [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' || continue
@@ -72,7 +72,7 @@ for f in "$WS"/roles/*.md; do
   grep -q '^description: TBD' "$f" && note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"
   [[ -f "$K/roles/$r.md" ]] && note roles.shadows "roles/$r.md is a whole role and the kit also has a $r role: yours is used, not the kit's (rename yours, or remove its frontmatter to add notes to the kit's role)"
 done
-out="$("$WS/bin/roles.sh" --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/roles.sh)"
+out="$("$WS/bin/role.sh" build --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/role.sh build)"
 
 section "Push guardrails"
 hooks="$(git config --global core.hooksPath || true)"
@@ -192,15 +192,15 @@ dups="$(awk '/^### H-/ {n++; id[n]=$2} /^- Note: duplicate ID/ {skip[n]=1}
 [[ -z "$dups" ]] && ok handoffs.unique-ids "every handoff ID is unique" || bad handoffs.unique-ids "these handoff IDs are used more than once: $dups(file the next free number)"
 
 section "Secrets"
-# Keys, tokens and passwords in the workspace's files (bin/secrets.sh names the file and line,
+# Keys, tokens and passwords in the workspace's files (bin/secret.sh names the file and line,
 # never the value), and the pre-commit hook that refuses new ones.
-if out="$("$WS/bin/secrets.sh" 2>&1)"; then ok secrets.none "no likely secret in the workspace's files"
+if out="$("$WS/bin/secret.sh" check 2>&1)"; then ok secrets.none "no likely secret in the workspace's files"
 else found="$(grep '^  ' <<<"$out" | sed 's/^  //')"
   bad secrets.none "possible secrets in the workspace's files (remove each and rotate any real key; a false alarm: add not-a-secret to its line): $found"; fi
 sh_hook="$(secrets_hook)"
 if [[ "$sh_hook" == none ]]; then ok secrets.hook "the workspace is committed with the project, whose own hooks run"
-elif [[ -x "$sh_hook" ]] && grep -q 'bin/secrets.sh' "$sh_hook"; then ok secrets.hook "commits are checked for secrets"
-else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secrets.sh (run bin/bootstrap.sh; a hook of your own can call bin/secrets.sh --staged)"; fi
+elif [[ -x "$sh_hook" ]] && grep -q 'bin/secret.sh' "$sh_hook"; then ok secrets.hook "commits are checked for secrets"
+else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secret.sh (run bin/bootstrap.sh; a hook of your own can call bin/secret.sh check --staged)"; fi
 
 section "Team"
 # Each repo or area has one owner in the team table, or two roles would act on it.
@@ -213,7 +213,7 @@ dup="$(awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
   || bad team.single-owner "more than one owner in the team table of AGENTS.md: $dup (give each one owner)"
 # Open handoffs reach someone: a role, a repo, or the owner. A removed role or repo strands them.
 known=" owner founder $(team_roles) $(repos 2>/dev/null | cut -f1 | tr '\n' ' ') "
-stranded="$("$WS/bin/handoffs.sh" --json 2>/dev/null | jq -r '.[] | [.id, .to] | @tsv' 2>/dev/null | while IFS=$'\t' read -r id to; do
+stranded="$("$WS/bin/handoff.sh" list --json 2>/dev/null | jq -r '.[] | [.id, .to] | @tsv' 2>/dev/null | while IFS=$'\t' read -r id to; do
     printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n' | while IFS= read -r n; do
       n="$(printf '%s' "$n" | sed 's/^ *//; s/ *$//' | tr '[:upper:]' '[:lower:]')"
       [[ -z "$n" ]] || has "$known" "$n" || printf '%s (%s)\n' "$id" "$n"
@@ -278,13 +278,13 @@ else
     when="$(human_stamp "$stamp")"
     ((age <= 36)) && ok backups.recent "newest backup ${age}h old ($when): $newest" || bad backups.recent "newest backup is ${age}h old ($when): $newest"
   fi
-  # A backup counts once a restore of it has been checked (cabinet backup --verify), once a quarter.
+  # A backup counts once a restore of it has been checked (cabinet backup verify), once a quarter.
   vf="$LOGDIR/backup-verified"
-  if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this Mac yet (cabinet backup --verify)"
+  if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this Mac yet (cabinet backup verify)"
   else
     vdays=$(( ($(date +%s) - $(stat -f %m "$vf")) / 86400 )) vwhen="$(human_mtime "$vf")"
     ((vdays <= 92)) && ok backups.verified "a restore was verified $vdays day(s) ago ($vwhen): $(cat "$vf")" \
-      || note backups.verified "the last verified restore was $vdays days ago ($vwhen): verify again (cabinet backup --verify)"
+      || note backups.verified "the last verified restore was $vdays days ago ($vwhen): verify again (cabinet backup verify)"
   fi
   security find-generic-password -a "$USER" -s "$KEYCHAIN_ITEM" >/dev/null 2>&1 && ok backups.passphrase "backup passphrase in keychain" || bad backups.passphrase "backup passphrase missing from keychain ($KEYCHAIN_ITEM, see bin/backup.sh)"
 fi
@@ -294,8 +294,8 @@ problems="$(grep -c $'^fix\t' "$REC" || true)"
 # The fixes the doctor can run itself, named in its own messages.
 actions=""
 grep -q $'^fix\t.*run bin/bootstrap.sh' "$REC" && actions+=" bootstrap"
-grep -q $'^fix\t.*run bin/roles.sh' "$REC" && actions+=" roles"
-grep -q $'^fix\t.*run bin/snapshot.sh' "$REC" && actions+=" snapshot"
+grep -q $'^fix\t.*run bin/role.sh build' "$REC" && actions+=" roles"
+grep -q $'^fix\t.*run bin/repo.sh snapshot' "$REC" && actions+=" snapshot"
 actions="${actions# }"
 
 if ((JSON)); then
@@ -305,11 +305,17 @@ if ((JSON)); then
   ((problems)) && exit 1; exit 0
 fi
 
+# The fixes by the commands people know (bash 3.2 cannot parse a case inside "$(...)").
+fix_names() {
+  local a out=""
+  for a in $actions; do case "$a" in roles) out+="role build, " ;; snapshot) out+="repo snapshot, " ;; *) out+="$a, " ;; esac; done
+  printf '%s' "${out%, }"
+}
 # Summary first: what needs you, and what --fix can do; then the full report.
 if ((problems)); then
   echo "$problems thing(s) need attention:"
   awk -F'\t' '$1 == "fix" {print "  - " $4}' "$REC"
-  [[ -n "$actions" ]] && echo "cabinet doctor --fix can run: $actions (it shows each and asks first)"
+  [[ -n "$actions" ]] && echo "cabinet doctor --fix can run: $(fix_names) (it shows each and asks first)"
 else
   n="$(grep -c $'^note\t' "$REC")"
   echo "All good.$( ((n)) && echo " $n note(s) below.")"
@@ -323,12 +329,15 @@ if ((FIX)); then
   if [[ -z "$actions" ]]; then echo "Nothing here that --fix can do: each item above needs you."
   else
     for act in $actions; do
+      # The action names are stable (can_fix in --json); each runs its command.
+      case "$act" in bootstrap) cmd="bin/bootstrap.sh" ;; roles) cmd="bin/role.sh build" ;; snapshot) cmd="bin/repo.sh snapshot" ;; esac
       if ((YES == 0)); then
         { exec 3</dev/tty; } 2>/dev/null || { echo "--fix asks before each step: run it in a terminal, or add --yes"; exit 1; }
-        read -r -u 3 -p "Run bin/$act.sh now? [Y/n]: " ans || true
-        [[ "${ans:-y}" == [Yy]* ]] || { echo "  skipped $act"; continue; }
+        read -r -u 3 -p "Run $cmd now? [Y/n]: " ans || true
+        [[ "${ans:-y}" == [Yy]* ]] || { echo "  skipped $cmd"; continue; }
       fi
-      echo "== bin/$act.sh"; "$WS/bin/$act.sh" || echo "  bin/$act.sh reported a problem: see above"
+      # shellcheck disable=SC2086
+      echo "== $cmd"; "$WS/"$cmd || echo "  $cmd reported a problem: see above"
     done
     echo; echo "== After the fixes"
     "$WS/bin/doctor.sh" | sed -n '1,/^$/p'

@@ -16,7 +16,7 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you.
 - `roles/chief-of-staff.md`, only to record duties the owner approved; never to widen your own authority on your own initiative.
 - `roles/<role>.md` of a role the owner added, only to draft it as `CABINET.md`, "Drafting a role", says, with its rows in the team tables.
 - Commit your own `HANDOFFS.md` lines, one commit per run, `handoffs: ...`.
-- Closed handoffs: run `bin/archive-handoffs.sh` once per run, after committing pending `HANDOFFS.md` lines. Never move entries by hand.
+- Closed handoffs: run `bin/handoff.sh archive` once per run, after committing pending `HANDOFFS.md` lines. Never move entries by hand.
 
 Never write to a product repo, never change a branch in one, never push.
 
@@ -41,7 +41,7 @@ Work for a repo with no owning agent goes to `owner`.
 
 Gather, then verify against the code. A handoff describes a change; git is the truth.
 
-1. `bin/handoffs.sh` for every open entry with its age.
+1. `bin/handoff.sh list` for every open entry with its age.
 2. The owner's priority list at the top of "Open" in `HANDOFFS.md`, if any: is each item done? Is the list still current?
 3. For each open entry that names a commit: does it exist, and is it pushed (`git merge-base --is-ancestor <sha> @{u}`)? An entry asking the owner to push something already pushed is stale.
 4. For each `done` entry from the last 14 days (in `handoffs/archive-*.md` once archived) that names a commit on a side branch: did it reach the repo's main branch? A fix that only lives on a side branch is not done.
