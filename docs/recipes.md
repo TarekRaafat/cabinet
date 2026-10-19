@@ -82,6 +82,8 @@ The draft starts from your brief, which wins, and learns the rest from the proje
 
 Know more later? Add it to "The owner's brief" in `roles/<role>.md` and run `cabinet role draft <role>` again. Until a role is drafted, the doctor reminds you, and the role does only what your brief asks.
 
+A role of yours is never mixed with a kit role: if a later kit adds a role with the same name, yours is still used, and the doctor says so (`roles.shadows`). Each repo or area has one owner in the team table (the doctor checks), and when you turn a role off, the doctor notes any open handoff still addressed to it.
+
 By hand instead: write `roles/<role>.md` with frontmatter (`name`, `description`, `tools`) like the kit's roles in `.cabinet/roles/`, then `cabinet config --roles "<the roles you keep> <role>"`.
 
 A new role is your decision (`CABINET.md`, "Seats").

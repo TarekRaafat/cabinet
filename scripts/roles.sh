@@ -22,13 +22,16 @@ build() {  # build <out-dir>
   mkdir -p "$out"
   for role in $(team_roles); do
     core="$K/roles/$role.md" own="$WS/roles/$role.md"
-    if [[ -f "$core" ]]; then
-      # The marker goes right after the frontmatter, which must stay first.
+    # The marker goes right after the frontmatter, which must stay first.
+    if [[ -f "$own" ]] && head -1 "$own" | grep -qx -- '---'; then
+      # A whole role of the project's own, used as it is, even when a kit role (perhaps one
+      # added by a later kit) has the same name: the project's role is never mixed into it.
+      awk -v m="${MARK//<role>/$role}" '{print} /^---$/ && ++n == 2 {print ""; print m}' "$own" > "$out/$role.md"
+    elif [[ -f "$core" ]]; then
       awk -v m="${MARK//<role>/$role}" '{print} /^---$/ && ++n == 2 {print ""; print m}' "$core" > "$out/$role.md"
       if [[ -f "$own" ]]; then printf '\n## Project notes\n\n' >> "$out/$role.md"; cat "$own" >> "$out/$role.md"; fi
     elif [[ -f "$own" ]]; then
-      head -1 "$own" | grep -qx -- '---' || { echo "roles/$role.md needs frontmatter (name, description), as a kit role has" >&2; exit 1; }
-      awk -v m="${MARK//<role>/$role}" '{print} /^---$/ && ++n == 2 {print ""; print m}' "$own" > "$out/$role.md"
+      echo "roles/$role.md needs frontmatter (name, description), as a kit role has" >&2; exit 1
     else
       echo "role '$role' is in CABINET_ROLES but neither the kit nor roles/ has it" >&2; exit 1
     fi

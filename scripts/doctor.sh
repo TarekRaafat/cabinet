@@ -64,10 +64,13 @@ done < "$K/manifest"
 ((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
-# A role the owner added (cabinet role new) works only once an agent has drafted it.
+# A role the owner added (cabinet role new) works only once an agent has drafted it. A whole role
+# of the project's own with a kit role's name is used instead of the kit's: say so.
 for f in "$WS"/roles/*.md; do
-  [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' && grep -q '^description: TBD' "$f" || continue
-  r="$(basename "$f" .md)"; note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"
+  [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' || continue
+  r="$(basename "$f" .md)"
+  grep -q '^description: TBD' "$f" && note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"
+  [[ -f "$K/roles/$r.md" ]] && note roles.shadows "roles/$r.md is a whole role and the kit also has a $r role: yours is used, not the kit's (rename yours, or remove its frontmatter to add notes to the kit's role)"
 done
 out="$("$WS/bin/roles.sh" --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/roles.sh)"
 
@@ -198,6 +201,26 @@ sh_hook="$(secrets_hook)"
 if [[ "$sh_hook" == none ]]; then ok secrets.hook "the workspace is committed with the project, whose own hooks run"
 elif [[ -x "$sh_hook" ]] && grep -q 'bin/secrets.sh' "$sh_hook"; then ok secrets.hook "commits are checked for secrets"
 else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secrets.sh (run bin/bootstrap.sh; a hook of your own can call bin/secrets.sh --staged)"; fi
+
+section "Team"
+# Each repo or area has one owner in the team table, or two roles would act on it.
+dup="$(awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
+    a = $2; o = $4; gsub(/^ +| +$/, "", a); gsub(/^ +| +$/, "", o)
+    if (a == "" || a == "TBD" || a == "Repo or area" || a ~ /^-+$/ || o == "" || o == "TBD") next
+    if ((a in own) && own[a] != o) print a " (" own[a] " and " o ")"; else own[a] = o
+  }' "$WS/AGENTS.md" 2>/dev/null | sort -u | paste -sd ';' - | sed 's/;/; /g')"
+[[ -z "$dup" ]] && ok team.single-owner "each repo and area in the team table has one owner" \
+  || bad team.single-owner "more than one owner in the team table of AGENTS.md: $dup (give each one owner)"
+# Open handoffs reach someone: a role, a repo, or the owner. A removed role or repo strands them.
+known=" owner founder $(team_roles) $(repos 2>/dev/null | cut -f1 | tr '\n' ' ') "
+stranded="$("$WS/bin/handoffs.sh" --json 2>/dev/null | jq -r '.[] | [.id, .to] | @tsv' 2>/dev/null | while IFS=$'\t' read -r id to; do
+    printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n' | while IFS= read -r n; do
+      n="$(printf '%s' "$n" | sed 's/^ *//; s/ *$//' | tr '[:upper:]' '[:lower:]')"
+      [[ -z "$n" ]] || has "$known" "$n" || printf '%s (%s)\n' "$id" "$n"
+    done
+  done | paste -sd ';' - | sed 's/;/; /g')"
+[[ -z "$stranded" ]] && ok handoffs.addressee "every open handoff is addressed to a role, a repo or the owner" \
+  || note handoffs.addressee "open handoffs addressed to no role or repo on the team: $stranded (readdress or close them)"
 
 section "Uncommitted work"
 git -C "$WS" rev-parse -q --verify HEAD >/dev/null 2>&1 || ! [[ -e "$WS/.git" ]] || note work.no-commits "the workspace has no commits yet: backups hold its files only (set the owner with cabinet config, then commit)"

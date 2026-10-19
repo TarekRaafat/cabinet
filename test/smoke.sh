@@ -1015,6 +1015,32 @@ cp "$T/optroles-env.bak" "$RW/cabinet.env"; rm -f "$RW/prompt.out"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "a changing team stays consistent: name clashes, two owners, stranded handoffs" "0"
+s41() {
+TW="$T/teamchange"; "$F" new "$TW" --yes >/dev/null || fail "new for team checks"
+dr() { "$TW/bin/doctor.sh" 2>&1 || true; }
+# A whole role of the project's own with a kit role's name (as when a later kit adds one) wins, unmixed.
+printf -- '---\nname: qa\ndescription: Our own qa.\ntools: Read\n---\n\nOur qa checks only the docs.\n' > "$TW/roles/qa.md"
+"$TW/bin/roles.sh" >/dev/null || fail "roles with a clashing name"
+grep -q 'Our qa checks only the docs.' "$TW/agents/qa.md" && ! grep -q 'Project notes\|You are the quality lead' "$TW/agents/qa.md" || fail "a project role was mixed into the kit's role of the same name"
+dr | grep -q 'note  roles/qa.md is a whole role and the kit also has a qa role: yours is used' || fail "the doctor did not name the clash"
+printf 'qa tests on the staging account.\n' > "$TW/roles/qa.md"; "$TW/bin/roles.sh" >/dev/null
+grep -q 'You are the quality lead' "$TW/agents/qa.md" && grep -q 'qa tests on the staging account.' "$TW/agents/qa.md" || fail "notes for a kit role no longer appended"
+rm "$TW/roles/qa.md"; "$TW/bin/roles.sh" >/dev/null
+# One owner per repo or area.
+dr | grep -q 'ok    each repo and area in the team table has one owner' || fail "a fresh team table has two owners"
+X='| `specs/` | Specs, again | architect |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+dr | grep -q "FIX   more than one owner in the team table of AGENTS.md: \`specs/\` (.*architect.*)" || fail "two owners of specs/ not flagged: $(dr | grep -i owner)"
+git -C "$TW" checkout -q -- AGENTS.md
+# A handoff to a role that is turned off, or to no one on the team, is noted with its ID.
+id="$("$TW/bin/handoff.sh" --from qa --to finance --changed x --needed y "Price check" | cut -d' ' -f1)"
+"$TW/bin/handoff.sh" --from qa --to "owner (via chief-of-staff)" --changed x --needed y "For the owner" >/dev/null
+dr | grep -q 'ok    every open handoff is addressed to a role, a repo or the owner' || fail "a handoff to a role on the team, or the owner, was flagged"
+(cd "$TW" && "$F" config --yes --roles "qa security") >/dev/null || fail "turning roles off"
+dr | grep -q "note  open handoffs addressed to no role or repo on the team: $id (finance)" || fail "a handoff to a role turned off was not noted: $(dr | grep -i addressed)"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()

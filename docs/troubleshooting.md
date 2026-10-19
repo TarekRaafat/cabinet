@@ -23,6 +23,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX workspace CLAUDE.md link missing (run bin/bootstrap.sh)` | `kit.claude-link` | The workspace's `CLAUDE.md` link to `AGENTS.md` is gone. | `bin/bootstrap.sh`. |
 | `FIX HANDOFFS.md missing` | `kit.handoffs-file` | The handoff log was deleted. | Restore it from git. |
 | `note the <...> role is not drafted yet (cabinet role draft <...>, or ask your agent to draft the <...> role)` | `roles.drafted` | `cabinet role new` made the role from your brief, and no agent has drafted it yet. Until then it does only what the brief asks. | `cabinet role draft <role>`, or ask your agent to draft it ([recipes](recipes.md#add-a-role)). |
+| `note roles/<...>.md is a whole role and the kit also has a <...> role: yours is used, not the kit's (rename yours, or remove its frontmatter to add notes to the kit's role)` | `roles.shadows` | A role file of yours with frontmatter has a kit role's name, for example one a later kit added. Yours is built as it is; the two are never mixed. | Keep it if that is what you want. To use the kit's role, rename yours (and its name in `CABINET_ROLES`), or turn yours into notes by removing its frontmatter. |
 | `FIX <...> (run bin/roles.sh)` | `kit.roles` | A built role is missing or out of date (for example after editing `roles/` or `CABINET_ROLES`). | `bin/roles.sh`. |
 
 ## Push guardrails
@@ -74,6 +75,13 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 |---|---|---|---|
 | `FIX possible secrets in the workspace's files (remove each and rotate any real key; a false alarm: add not-a-secret to its line): <...>` | `secrets.none` | A line looks like a key, token or password (file and line are named; the value never is). | Remove it, and rotate the key if it was real: it may already be in git history and backups. A false alarm: add `not-a-secret` to its line. |
 | `note commits are not checked for secrets: the workspace has no pre-commit hook running bin/secrets.sh (run bin/bootstrap.sh; a hook of your own can call bin/secrets.sh --staged)` | `secrets.hook` | Bootstrap has not run, or the workspace has its own `pre-commit` hook. | `bin/bootstrap.sh`, or call `bin/secrets.sh --staged` from your hook. |
+
+## Team
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `FIX more than one owner in the team table of AGENTS.md: <...> (give each one owner)` | `team.single-owner` | The same repo or area has rows with different owning agents, so two roles would act on it. Each is named with its owners. | Keep one row per repo or area. Work the other role does there goes to the owner as handoffs. |
+| `note open handoffs addressed to no role or repo on the team: <...> (readdress or close them)` | `handoffs.addressee` | An open entry's `To:` names something that is not a role on the team, a repo in `repos.tsv`, or the owner: a role turned off, a repo removed, or a typo. Each is named with its ID. | Readdress it to whoever owns the work now (a follow-up entry), or close it with a reason. |
 
 ## Uncommitted work
 
