@@ -80,7 +80,7 @@
   ],
   "scripts": {
     "test": "test/smoke.sh",
-    "test:linux": "docker build -q -t cabinet-test test/linux >/dev/null && docker run --rm -v \"$PWD\":/kit:ro cabinet-test /kit/test/smoke.sh",
+    "test:linux": "test/linux/run.sh",
     "docs": "python3 -I tools/build-llms-full.py"
   },
   "os": [
