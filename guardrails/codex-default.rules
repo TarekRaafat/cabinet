@@ -15,6 +15,7 @@ prefix_rule(pattern = ["git", "-c"], decision = "prompt", justification = "git -
 prefix_rule(pattern = ["gh", "auth", "status"], decision = "prompt", justification = "gh auth status can print the token.")
 prefix_rule(pattern = ["gh", "auth", "token"], decision = "forbidden", justification = "The GitHub token stays with the owner.")
 prefix_rule(pattern = ["security", ["find-generic-password", "dump-keychain"]], decision = "forbidden", justification = "Keychain secrets stay with the owner.")
+prefix_rule(pattern = ["secret-tool", ["lookup", "search"]], decision = "forbidden", justification = "Secret store secrets stay with the owner.")
 # Ask first: can change GitHub state or rewrite history.
 prefix_rule(pattern = ["gh", "api"], decision = "prompt", justification = "gh api can write to GitHub. Ask the owner.")
 prefix_rule(pattern = ["gh", "pr", "create"], decision = "prompt", justification = "Opening a PR is visible outside this machine.")

@@ -21,6 +21,8 @@
       "command(gh auth token)",
       "command(security find-generic-password)",
       "command(security dump-keychain)",
+      "command(secret-tool lookup)",
+      "command(secret-tool search)",
       "command(expect)",
       "command(unbuffer)"
     ],

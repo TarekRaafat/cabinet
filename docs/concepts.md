@@ -69,7 +69,24 @@ A seat is a role filled by an agent or a person. The chief-of-staff flags signs 
 
 ## Slugs and isolation
 
-Every workspace has a slug. Everything it puts on the Mac is named by it: schedules `ai.cabinet.<slug>.<job>`, logs `~/Library/Logs/cabinet/<slug>/`, the backup key `cabinet.<slug>.backup`, archives `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`. The log folder holds a `workspace` file naming its owner. Setup and `cabinet config` refuse a slug another workspace holds, bootstrap never replaces or removes a schedule that runs another workspace, and backup cleanup removes only the slug's own archives. Paths are compared with symlinks resolved, so a workspace reached through a link is still the same one.
+Every workspace has a slug. Everything it puts on the machine is named by it: schedules `ai.cabinet.<slug>.<job>`, its log folder `<slug>/` (below), the backup key `cabinet.<slug>.backup`, archives `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`. The log folder holds a `workspace` file naming its owner. Setup and `cabinet config` refuse a slug another workspace holds, bootstrap never replaces or removes a schedule that runs another workspace, and backup cleanup removes only the slug's own archives. Paths are compared with symlinks resolved, so a workspace reached through a link is still the same one.
+
+## macOS and Linux
+
+cabinet works the same on both. Only where it keeps things on the machine differs, and one file, `bin/platform.sh`, decides it:
+
+| | macOS | Linux |
+|---|---|---|
+| Schedules | launchd: `~/Library/LaunchAgents/ai.cabinet.<slug>.<job>.plist` | systemd user timers: `~/.config/systemd/user/ai.cabinet.<slug>.<job>.service` and `.timer`. On a machine that did not boot with systemd (many containers, older WSL): cron, as one block cabinet writes into your crontab from `~/.config/cabinet/cron/`, keeping every line of your own. |
+| Log folder | `~/Library/Logs/cabinet/<slug>/` | `~/.local/state/cabinet/<slug>/` (under `$XDG_STATE_HOME` when set) |
+| Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu) |
+| Notifications | Notification Center | `notify-send` |
+
+`CABINET_SCHEDULER` (`launchd`, `systemd`, `cron` or `none`) overrides the choice. On Linux:
+
+- systemd runs a user's timers only while that user is logged in, unless lingering is on: `loginctl enable-linger "$USER"` once, on a server or a machine you leave logged out. A timer missed while the machine was off runs when it starts again, as launchd does after sleep.
+- The secret store needs a desktop session. Without one, give scheduled backups the passphrase through systemd instead: `read -rs CABINET_BACKUP_PASSPHRASE; export CABINET_BACKUP_PASSPHRASE; systemctl --user import-environment CABINET_BACKUP_PASSPHRASE` (until the user's systemd stops; run it again after a restart). Cron jobs reach neither, so with cron a backup runs only by hand (`cabinet backup create` with the variable set).
+- Run `cabinet bootstrap` as yourself, not through `sudo`: schedules are per user.
 
 ## Agent tools and models
 

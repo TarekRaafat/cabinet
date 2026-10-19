@@ -59,7 +59,7 @@ edited=()
 while read -r h p; do
   [[ -z "${p:-}" ]] && continue
   if [[ ! -f "$WS/$p" ]]; then edited+=("$p (missing)")
-  elif [[ "$(shasum -a 256 "$WS/$p" | cut -d' ' -f1)" != "$h" ]]; then edited+=("$p"); fi
+  elif [[ "$(sha256 "$WS/$p")" != "$h" ]]; then edited+=("$p"); fi
 done < "$K/manifest"
 ((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
@@ -142,9 +142,9 @@ done
 c="$CABINET_RUNNER"; [[ "$c" == custom ]] && c="${CABINET_RUNNER_CMD%% *}"
 [[ "$c" == cursor ]] && c="$(basename "$(cursor_bin || echo cursor-agent)")"
 jp=""
-for pl in "$HOME/Library/LaunchAgents/$LABEL".*.plist; do
-  [[ -f "$pl" ]] && mine "$pl" && [[ "$pl" != *.backup.plist ]] || continue
-  jp="$(plutil -extract EnvironmentVariables.PATH raw "$pl" 2>/dev/null || true)"; [[ -n "$jp" ]] && break
+for pl in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do
+  [[ -f "$pl" ]] && mine "$pl" && [[ "$pl" != *".backup$SCHED_EXT" ]] || continue
+  jp="$(sched_get "$pl" path || true)"; [[ -n "$jp" ]] && break
 done
 [[ -n "$jp" ]] || jp="$(job_path)"
 rp="$(env -i HOME="$HOME" PATH="$jp" /bin/sh -c 'command -v "$0"' "$c" 2>/dev/null || true)"
@@ -164,7 +164,7 @@ ok skills.checked "skills and plugins checked"
 section "Operations manual"
 # The manual must name every script, job and role, or it has fallen behind.
 missing=()
-for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh) continue ;; esac; grep -qF "bin/$(basename "$f")" "$WS/OPERATIONS.md" || missing+=("bin/$(basename "$f")"); done
+for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh|platform.sh) continue ;; esac; grep -qF "bin/$(basename "$f")" "$WS/OPERATIONS.md" || missing+=("bin/$(basename "$f")"); done
 for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
 for r in $(team_roles); do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
 ((${#missing[@]})) && bad manual.complete "OPERATIONS.md does not mention: ${missing[*]}" || ok manual.complete "manual names every script, job and role"
@@ -233,28 +233,31 @@ done < <({ printf 'the workspace\t%s\n' "$WS"; while IFS=$'\t' read -r name url 
 ((pending)) || ok work.uncommitted "nothing uncommitted"
 
 section "Schedules"
-if [[ "$(uname)" == Darwin && "$CABINET_SCHEDULES" == off ]]; then
+if [[ "$SCHEDULER" != none && "$CABINET_SCHEDULES" == off ]]; then
   note schedules.off "jobs are not scheduled on this Mac (CABINET_SCHEDULES=off in cabinet.local.env): another Mac runs them; cabinet bootstrap --schedules turns them on"
 fi
-if [[ "$(uname)" == Darwin ]]; then
+if [[ "$SCHEDULER" == none ]]; then
+  grep -qs '^WHEN="\{0,1\}[^"]' "$WS"/jobs/*.job && bad schedules.scheduler "no scheduler on this machine (a running systemd user session, or cron), so no job runs on its own: install cron, then run bin/bootstrap.sh"
+else
   for jf in "$WS"/jobs/*.job; do
     [[ -f "$jf" && "$CABINET_SCHEDULES" != off ]] || continue
     j="$(basename "$jf" .job)"
     WHEN="$(WHEN=""; source "$jf"; echo "$WHEN")"
     [[ -z "$WHEN" ]] && continue
-    pl="$HOME/Library/LaunchAgents/$LABEL.$j.plist"
+    pl="$(sched_file "$LABEL.$j")"
     if ! when_norm "$WHEN" >/dev/null; then
       bad schedules.when "jobs/$j.job has a WHEN bootstrap cannot schedule ('$WHEN'): use a time like 7 AM for every day, or days and a time like fri 4 PM or sun,mon,tue,wed,thu 8 AM"
     elif [[ ! -f "$pl" ]]; then bad schedules.job "$LABEL.$j not scheduled (run bin/bootstrap.sh)"
     elif ! mine "$pl"; then bad schedules.job-owner "$LABEL.$j runs another workspace: give this one its own slug (cabinet config --slug)"
-    elif ! launchctl print "gui/$(id -u)/$LABEL.$j" >/dev/null 2>&1; then bad schedules.job-loaded "$LABEL.$j is written but not loaded by launchd (run bin/bootstrap.sh)"
+    elif ! sched_loaded "$LABEL.$j"; then bad schedules.job-loaded "$LABEL.$j is written but not loaded by $SCHEDULER (run bin/bootstrap.sh)"
     else ok schedules.job "$LABEL.$j scheduled ($(when_human "$WHEN"))"; fi
   done
   # A schedule that runs this workspace under another name is left over from an old slug.
-  for live in "$HOME/Library/LaunchAgents"/ai.cabinet.*.plist; do
+  for live in "$SCHED_DIR"/ai.cabinet.*"$SCHED_EXT"; do
     [[ -f "$live" ]] || continue
-    l="$(basename "$live" .plist)"; [[ "$l" == "$LABEL".* ]] && continue
-    mine "$live" && bad schedules.old-slug "$l still runs this workspace under an old name (launchctl bootout gui/\$(id -u)/$l, then delete $live)"
+    l="$(sched_label "$live")"; [[ "$l" == "$LABEL".* ]] && continue
+    mine "$live" || continue
+    h="$(sched_stop_cmd "$l")"; bad schedules.old-slug "$l still runs this workspace under an old name ($h)"
   done
 fi
 
@@ -271,10 +274,11 @@ else
   # Read the backup log, not the backup folder: listing a synced folder can trigger
   # a macOS access prompt that hangs a scheduled run.
   newest="$(grep -o "$CABINET_SLUG-[0-9]\{8\}-[0-9]\{6\}\.tar\.gz\.enc" "$LOGDIR/backup.log" 2>/dev/null | tail -1)"
-  if [[ -z "$newest" ]]; then bad backups.recent "no scheduled backup in $LOGDIR/backup.log yet (launchctl kickstart -k gui/\$(id -u)/$LABEL.backup)"
+  h="$(sched_start_cmd "$LABEL.backup" "cabinet backup create")"
+  if [[ -z "$newest" ]]; then bad backups.recent "no scheduled backup in $LOGDIR/backup.log yet ($h)"
   else
     stamp="${newest#"$CABINET_SLUG"-}"; stamp="${stamp%.tar.gz.enc}"
-    age=$(( ($(date +%s) - $(date -j -f %Y%m%d-%H%M%S "$stamp" +%s)) / 3600 ))
+    age=$(( ($(date +%s) - $(stamp_epoch "$stamp")) / 3600 ))
     when="$(human_stamp "$stamp")"
     ((age <= 36)) && ok backups.recent "newest backup ${age}h old ($when): $newest" || bad backups.recent "newest backup is ${age}h old ($when): $newest"
   fi
@@ -282,11 +286,13 @@ else
   vf="$LOGDIR/backup-verified"
   if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this Mac yet (cabinet backup verify)"
   else
-    vdays=$(( ($(date +%s) - $(stat -f %m "$vf")) / 86400 )) vwhen="$(human_mtime "$vf")"
+    vdays=$(( ($(date +%s) - $(mtime "$vf")) / 86400 )) vwhen="$(human_mtime "$vf")"
     ((vdays <= 92)) && ok backups.verified "a restore was verified $vdays day(s) ago ($vwhen): $(cat "$vf")" \
       || note backups.verified "the last verified restore was $vdays days ago ($vwhen): verify again (cabinet backup verify)"
   fi
-  security find-generic-password -a "$USER" -s "$KEYCHAIN_ITEM" >/dev/null 2>&1 && ok backups.passphrase "backup passphrase in keychain" || bad backups.passphrase "backup passphrase missing from keychain ($KEYCHAIN_ITEM, see bin/backup.sh)"
+  if pass_has "$KEYCHAIN_ITEM"; then ok backups.passphrase "backup passphrase in the $PASS_STORE"
+  elif [[ -n "${CABINET_BACKUP_PASSPHRASE:-}" ]]; then ok backups.passphrase "backup passphrase from CABINET_BACKUP_PASSPHRASE (scheduled backups need it set where they run, or in the $PASS_STORE)"
+  else h="$(pass_add_cmd "$KEYCHAIN_ITEM")"; bad backups.passphrase "backup passphrase missing from the $PASS_STORE ($KEYCHAIN_ITEM: $h)"; fi
 fi
 
 # Counted from the record, so a check run in a pipe or subshell still counts.

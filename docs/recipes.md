@@ -130,13 +130,13 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 ## Turn on backups
 
 1. `cabinet config --backup-dir ~/Backups/cabinet --apply`. The folder must be outside the workspace and its repos.
-2. Choose a passphrase, keep it in your password manager, and put it in the keychain: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w`.
+2. Choose a passphrase, keep it in your password manager, and put it in the keychain: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w`. On Linux, in the secret store: `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"`.
 3. `cabinet backup create` makes one now; the schedule makes one daily. Once a quarter, `cabinet backup verify`. See [backups](backups.md).
 
 ## Move to a new Mac
 
 1. Install cabinet and its needs ([Install](../README.md#install)).
-2. Put the backup passphrase in the keychain, as in step 2 of [Turn on backups](#turn-on-backups).
+2. Put the backup passphrase in the keychain or secret store, as in step 2 of [Turn on backups](#turn-on-backups).
 3. `cabinet backup restore <newest archive> ~/dev/acme`. It works before the workspace exists, and never loses a file ([backups](backups.md#restoring)).
 4. `cd ~/dev/acme`, then `cabinet bootstrap` and `cabinet doctor`.
 

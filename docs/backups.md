@@ -19,7 +19,7 @@ Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`, encrypted with AES-2
 
 1. Choose a folder **outside** the workspace and every repo it lists: a synced drive or an external disk. Setup, `cabinet config` and the backup itself refuse a folder inside them, because a backup there is lost with what it protects, copies itself into every later archive, and can be committed.
 2. Set it with `cabinet config --backup-dir <folder>` (and `--backup-time "<time>"`, default 1:00 PM), then `bin/bootstrap.sh` to schedule it.
-3. Put the passphrase in the keychain, and keep the same one in your password manager: without it no archive opens.
+3. Put the passphrase in the keychain (macOS) or the secret store (Linux), and keep the same one in your password manager: without it no archive opens. `bin/bootstrap.sh` prints the command for your system; on Linux without a desktop session see [macOS and Linux](concepts.md#macos-and-linux).
 
 ```sh
 security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w
@@ -35,7 +35,7 @@ bin/bootstrap.sh                      # then guardrails, links and schedules
 bin/doctor.sh
 ```
 
-On a new Mac, put the passphrase in the keychain first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file:
+On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file:
 
 - **A repo that already exists** gets the archive's branches under `refs/remotes/backup/*`, to compare and merge by hand. Its patches are copied to `recovered/`.
 - **A missing repo, or an empty folder,** is restored with its uncommitted work, on the branch it was on (or detached, as it was).
@@ -48,7 +48,7 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 
 ## Checking it
 
-`bin/doctor.sh` reports the newest scheduled backup's age (from `~/Library/Logs/cabinet/<slug>/backup.log`, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain, and a backup folder in the wrong place. Once a quarter, check that the newest archive really restores:
+`bin/doctor.sh` reports the newest scheduled backup's age (from `backup.log` in the log folder, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain or secret store (or in `CABINET_BACKUP_PASSPHRASE`), and a backup folder in the wrong place. Once a quarter, check that the newest archive really restores:
 
 ```sh
 cabinet backup verify      # or bin/backup.sh verify [folder]

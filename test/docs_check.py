@@ -37,7 +37,7 @@ sources["cmd_role"] = (fn_of("cmd_role"), [c for c in cmds if c.startswith("role
 sources["cmd_repo"] = (fn_of("cmd_repo"), [c for c in cmds if c.startswith("repo ")])
 for f in sorted(os.listdir(os.path.join(kit, "scripts"))):
     name = f[:-3]
-    if not f.endswith(".sh") or name in ("lib", "when"):
+    if not f.endswith(".sh") or name in ("lib", "when", "platform"):
         continue
     if name in nouns:
         sources[f] = (read("scripts/" + f), [c for c in cmds if c.startswith(name + " ")])
@@ -97,7 +97,7 @@ if "cabinet -C <dir>" not in commands:
 
 # Every workspace script is in docs/commands.md.
 for f in sorted(os.listdir(os.path.join(kit, "scripts"))):
-    if f.endswith(".sh") and f not in ("lib.sh", "when.sh") and f"bin/{f}" not in commands:
+    if f.endswith(".sh") and f not in ("lib.sh", "when.sh", "platform.sh") and f"bin/{f}" not in commands:
         problems.append(f"docs/commands.md does not mention bin/{f}")
 
 # Every doctor message, as its fixed pieces, is in docs/troubleshooting.md.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Move the workspace to a new folder and update everything that remembers its
 # path: Claude Code's per-folder memory and history, its trusted projects,
-# Codex's trusted projects, and the launchd schedules.
+# Codex's trusted projects, and the schedules.
 #
 #   bin/move.sh <new-path> [--dry-run]
 #
@@ -38,10 +38,9 @@ slug() { claude_slug "$1"; }
 os="$(slug "$OLD")" ns="$(slug "$NEW")"
 
 echo "== Schedules: stop"
-for live in "$HOME/Library/LaunchAgents/$LABEL".*.plist; do
+for live in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do
   [[ -f "$live" ]] && mine "$live" || continue
-  run launchctl bootout "gui/$(id -u)/$(basename "$live" .plist)" || true
-  run rm "$live"
+  run sched_unload "$(sched_label "$live")"
 done
 
 # The workspace and its folders, listed before the move (Claude memory follows them below).

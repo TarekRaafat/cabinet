@@ -44,7 +44,7 @@ To call one, start an agent session in `$WS` and name it ("use the qa agent to .
 - [ ] **Answer in one message** in a session in `$WS`, for example: "chief-of-staff: approve 1, 3. 2: no. 4: hold until Friday."
 - [ ] **Push what is ready** (section 3), if the brief lists anything with qa and security PASS.
 
-> **No brief this morning?** Read the log in `~/Library/Logs/cabinet/@@SLUG@@/brief.log`, or run it now: `$WS/bin/job.sh run brief`.
+> **No brief this morning?** Read `brief.log` in the log folder (`~/Library/Logs/cabinet/@@SLUG@@/` on macOS, `~/.local/state/cabinet/@@SLUG@@/` on Linux), or run it now: `$WS/bin/job.sh run brief`.
 
 ## 3. Releasing (pushing)
 
@@ -88,24 +88,27 @@ git -C <repo> push
 
 | Job | When | Log |
 |---|---|---|
-| `ai.cabinet.@@SLUG@@.brief`: chief-of-staff brief | `WHEN` in `jobs/brief.job` | `~/Library/Logs/cabinet/@@SLUG@@/brief.log` |
-| `ai.cabinet.@@SLUG@@.backup`: encrypted backup, when `CABINET_BACKUP_DIR` is set | `CABINET_BACKUP_TIME` in `cabinet.env` | `~/Library/Logs/cabinet/@@SLUG@@/backup.log` |
+| `ai.cabinet.@@SLUG@@.brief`: chief-of-staff brief | `WHEN` in `jobs/brief.job` | `brief.log` in the log folder |
+| `ai.cabinet.@@SLUG@@.backup`: encrypted backup, when `CABINET_BACKUP_DIR` is set | `CABINET_BACKUP_TIME` in `cabinet.env` | `backup.log` in the log folder |
+
+Schedules are launchd jobs on macOS and systemd user timers (or cron) on Linux; the log folder is `~/Library/Logs/cabinet/@@SLUG@@/` on macOS and `~/.local/state/cabinet/@@SLUG@@/` on Linux.
 
 ```sh
-launchctl list | grep ai.cabinet.@@SLUG@@
-launchctl kickstart -k gui/$(id -u)/ai.cabinet.@@SLUG@@.brief
+bin/job.sh list          # each job and its schedule
+bin/job.sh run brief     # run one now
+bin/doctor.sh            # is each one scheduled and loaded
 ```
 
 ### Secrets
 
-- Backup passphrase: the keychain item `cabinet.@@SLUG@@.backup` and your password manager.
+- Backup passphrase: the item `cabinet.@@SLUG@@.backup` in the keychain (macOS) or the secret store (Linux), and your password manager.
 - Production secrets: your password manager only. Never in a repo, a note or a handoff.
 
 ## 6. When something goes wrong
 
 | Situation | Do this |
 |---|---|
-| Lost or broken machine | Passphrase into the keychain, `bin/backup.sh restore` the newest archive, `bin/bootstrap.sh`, `bin/doctor.sh`. |
+| Lost or broken machine | Passphrase into the keychain or secret store, `bin/backup.sh restore` the newest archive, `bin/bootstrap.sh`, `bin/doctor.sh`. |
 | A secret leaked | Rotate it at the provider first, then tell security to find every place it appeared. Never push a commit containing it. |
 | An agent did something wrong | It is a local commit until you push: `git -C <repo> revert <commit>`. Then narrow its authority in `roles/<role>.md`. |
-| A schedule stopped | `bin/doctor.sh`, then the log in `~/Library/Logs/cabinet/@@SLUG@@/`. |
+| A schedule stopped | `bin/doctor.sh`, then the job's log in the log folder (section 5, Schedules). |

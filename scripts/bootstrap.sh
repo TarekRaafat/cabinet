@@ -256,7 +256,7 @@ if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
   merge_opencode "$G/claude-permissions.json" "$HOME/.config/opencode/opencode.json"
 fi
 
-echo "== Schedules (launchd)"
+echo "== Schedules ($SCHEDULER)"
 # Remember the choice for this Mac in cabinet.local.env (only the one line; other lines are kept).
 if [[ -n "$set_schedules" && "$set_schedules" != "$CABINET_SCHEDULES" ]]; then
   if ((DRY)); then echo "  would set CABINET_SCHEDULES=\"$set_schedules\" in $LOCAL_ENV"
@@ -267,36 +267,29 @@ if [[ -n "$set_schedules" && "$set_schedules" != "$CABINET_SCHEDULES" ]]; then
   fi
 fi
 [[ -n "$set_schedules" ]] && CABINET_SCHEDULES="$set_schedules"
-# Days and times: when_norm and when_calendar (bin/when.sh), shared with the doctor and the digest.
-AGENTS_DIR="$HOME/Library/LaunchAgents"
+# Days and times: when_norm and the scheduler's own form (bin/when.sh), shared with the doctor and the digest.
 JOB_PATH="$(job_path)"
 wanted=" "
 # Install, replace or keep one schedule, so an edited WHEN or backup time takes effect.
 schedule() {  # schedule <name> <program> <verb> <arg> <when>
-  local name=$1 label="$LABEL.$1" live="$AGENTS_DIR/$LABEL.$1.plist" cal new
+  local name=$1 label="$LABEL.$1" live new
+  live="$(sched_file "$label")"
   wanted+="$name "   # wanted even when its WHEN is wrong, so a typo never removes a working schedule
   local when=$5
-  if ! cal="$(when_calendar "$when")"; then
+  if ! new="$(sched_render "$label" "$when" "$LOGDIR/$name.log" "$JOB_PATH" "$2" "$3" "$4")"; then
     echo "  $label: bad schedule '$when' (use a time like 7 AM for every day, or days and a time like fri 4 PM or sun,mon,tue,wed,thu 8 AM); the current one, if any, is kept"; failures=1; return 0
   fi
   if [[ -f "$live" ]] && ! mine "$live"; then
     echo "  $label already runs another workspace, left as is: give this one its own slug (cabinet config --slug)"; failures=1; return 0
   fi
-  new="$(L="$label" P="$2" V="$3" A="$4" C="$cal" H="$HOME" D="$LOGDIR" N="$name" X="$JOB_PATH" perl -pe '
-    sub x { my $s = shift; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; $s }
-    s/\@\@LABEL\@\@/x($ENV{L})/ge; s/\@\@PROGRAM\@\@/x($ENV{P})/ge; s/\@\@VERB\@\@/x($ENV{V})/ge; s/\@\@ARG\@\@/x($ENV{A})/ge; s/\@\@CALENDAR\@\@/$ENV{C}/g;
-    s/\@\@PATH\@\@/x($ENV{X})/ge; s/\@\@HOME\@\@/x($ENV{H})/ge; s/\@\@LOGDIR\@\@/x($ENV{D})/ge; s/\@\@NAME\@\@/x($ENV{N})/ge' "$K/launchd/job.plist")"
-  [[ -f "$live" && "$(cat "$live")" == "$new" ]] && return 0
+  [[ -f "$live" && "$(cat "$live")" == "$new" ]] && sched_loaded "$label" && return 0
   local verb=install past=installed; [[ -f "$live" ]] && verb=update past=updated
   if ((DRY)); then echo "  would $verb $label ($when)"; return 0; fi
-  mkdir -p "$AGENTS_DIR"
-  [[ -f "$live" ]] && launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  printf '%s\n' "$new" > "$live"
-  if launchctl bootstrap "gui/$(id -u)" "$live"; then echo "  $past $label ($when)"
-  else rm -f "$live"; echo "  $label could not be loaded by launchd (see above); nothing installed"; failures=1; fi
+  if sched_load "$label" "$new"; then echo "  $past $label ($when)"
+  else echo "  $label could not be loaded by $SCHEDULER (see above); nothing installed"; failures=1; fi
 }
-if [[ "$(uname)" != Darwin ]]; then
-  echo "  not macOS: schedules are launchd jobs; run bin/job.sh run <job> from cron instead"
+if [[ "$SCHEDULER" == none ]]; then
+  echo "  no scheduler found (a running systemd user session, or cron): install cron, or run cabinet job run <job> by hand"
 else
   # The log folder records which workspace owns this slug.
   # Claimed only when it is free, already ours, or its workspace folder is gone.
@@ -325,14 +318,13 @@ else
   # Remove this workspace's schedules that are no longer wanted: a job with an
   # empty WHEN or no job file, every job when this Mac schedules none, or the
   # backup with CABINET_BACKUP_DIR empty.
-  # Only plists that run this workspace: another workspace's are never touched.
-  for live in "$AGENTS_DIR/$LABEL".*.plist; do
+  # Only schedules that run this workspace: another workspace's are never touched.
+  for live in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do
     [[ -f "$live" ]] && mine "$live" || continue
-    name="${live##*/}"; name="${name#"$LABEL."}"; name="${name%.plist}"
+    name="$(sched_label "$live")"; name="${name#"$LABEL."}"
     [[ "$wanted" == *" $name "* ]] && continue
     if ((DRY)); then echo "  would remove $LABEL.$name (no longer scheduled)"; continue; fi
-    launchctl bootout "gui/$(id -u)/$LABEL.$name" 2>/dev/null || true
-    rm -f "$live"
+    sched_unload "$LABEL.$name"
     echo "  removed $LABEL.$name (no longer scheduled)"
   done
 fi
@@ -341,8 +333,8 @@ cat <<EOF
 
 == Manual steps
 1. Sign in: gh auth login (and each agent tool you use).
-2. Backups (if CABINET_BACKUP_DIR is set): put the passphrase, kept in your password manager, in the keychain:
-   security add-generic-password -a "\$USER" -s $KEYCHAIN_ITEM -w
+2. Backups (if CABINET_BACKUP_DIR is set): put the passphrase, kept in your password manager, in the $PASS_STORE:
+   $(pass_add_cmd "$KEYCHAIN_ITEM")
 3. Restoring after a loss: cabinet backup restore <newest archive> before step 4.
 4. Run cabinet doctor and fix anything it reports (cabinet doctor --fix runs the fixes it knows).
 EOF

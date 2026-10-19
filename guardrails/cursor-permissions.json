@@ -49,7 +49,9 @@
       "Shell(pnpm:*publish*)",
       "Shell(yarn:*publish*)",
       "Shell(security:find-generic-password*)",
-      "Shell(security:dump-keychain*)"
+      "Shell(security:dump-keychain*)",
+      "Shell(secret-tool:lookup*)",
+      "Shell(secret-tool:search*)"
     ]
   }
 }

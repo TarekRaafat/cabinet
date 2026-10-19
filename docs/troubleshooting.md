@@ -98,8 +98,9 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX <...>.<...> not scheduled (run bin/bootstrap.sh)` | `schedules.job` | A job has a time but no schedule. | `bin/bootstrap.sh`. |
 | `note jobs are not scheduled on this Mac (CABINET_SCHEDULES=off in cabinet.local.env): another Mac runs them; cabinet bootstrap --schedules turns them on` | `schedules.off` | This Mac was set up with `cabinet bootstrap --no-schedules`, so the job checks are skipped here. | Nothing, when another Mac runs the jobs. To run them here: `cabinet bootstrap --schedules`. |
 | `FIX <...>.<...> runs another workspace: give this one its own slug (cabinet config --slug)` | `schedules.job-owner` | Two workspaces share a slug. | `cabinet config --slug <new>` in one of them. |
-| `FIX <...>.<...> is written but not loaded by launchd (run bin/bootstrap.sh)` | `schedules.job-loaded` | The schedule file exists, but launchd has not loaded it. | `bin/bootstrap.sh`. |
-| `FIX <...> still runs this workspace under an old name (launchctl bootout gui/\$(id -u)/<...>, then delete <...>)` | `schedules.old-slug` | A schedule left over from an earlier slug. | Run the `launchctl bootout` it names, then delete that file. |
+| `FIX <...>.<...> is written but not loaded by <...> (run bin/bootstrap.sh)` | `schedules.job-loaded` | The schedule file exists, but the scheduler (launchd, systemd or cron) has not loaded it. | `bin/bootstrap.sh`. |
+| `FIX <...> still runs this workspace under an old name (<...>)` | `schedules.old-slug` | A schedule left over from an earlier slug. | Run what it names: on macOS `launchctl bootout gui/$(id -u)/<label>`, with systemd `systemctl --user disable --now <label>.timer`; then delete the file it names. |
+| `FIX no scheduler on this machine (a running systemd user session, or cron), so no job runs on its own: install cron, then run bin/bootstrap.sh` | `schedules.scheduler` | Linux without a systemd user session or `crontab`, as in many containers. Jobs only run by hand. | Install cron (or run under systemd), then `bin/bootstrap.sh`. |
 
 ## Backups
 
@@ -109,11 +110,11 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `note backups are off (set CABINET_BACKUP_DIR in cabinet.env, then run bin/bootstrap.sh)` | `backups.enabled` | No backup folder set. | `cabinet config --backup-dir <folder>`, then `bin/bootstrap.sh`. See [backups](backups.md). |
 | `FIX CABINET_BACKUP_DIR must be an absolute path` | `backups.dir-absolute` | A relative backup folder. | `cabinet config --backup-dir <absolute folder>`. |
 | `FIX the backup folder is inside <...>: a backup there is lost with it and can be committed (choose a folder outside, then cabinet config)` | `backups.dir-outside` | The backup folder is inside the workspace or one of its repos. | Choose a folder outside them with `cabinet config --backup-dir`. |
-| `FIX no scheduled backup in <...>/backup.log yet (launchctl kickstart -k gui/\$(id -u)/<...>.backup)` | `backups.recent` | No scheduled backup has run yet. | Run the `launchctl kickstart` it names, or wait for the time set. |
+| `FIX no scheduled backup in <...>/backup.log yet (<...>)` | `backups.recent` | No scheduled backup has run yet. | Run what it names (`launchctl kickstart` on macOS, `systemctl --user start` with systemd, `cabinet backup create` with cron), or wait for the time set. |
 | `FIX newest backup is <...>h old (<...>): <...>` | `backups.recent` | No scheduled backup in the last 36 hours (the Mac was asleep or the job failed). | Read `~/Library/Logs/cabinet/<slug>/backup.log`. |
 | `note no restore of a backup has been verified on this Mac yet (cabinet backup verify)` | `backups.verified` | `cabinet backup verify` has not passed on this Mac. | `cabinet backup verify` ([backups](backups.md#checking-it)). |
 | `note the last verified restore was <...> days ago (<...>): verify again (cabinet backup verify)` | `backups.verified` | The last good verify is more than 92 days old. | `cabinet backup verify`. |
-| `FIX backup passphrase missing from keychain (<...>, see bin/backup.sh)` | `backups.passphrase` | No keychain item `cabinet.<slug>.backup`. | `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` (the same passphrase as in your password manager). |
+| `FIX backup passphrase missing from the <...> (<...>: <...>)` | `backups.passphrase` | No item `cabinet.<slug>.backup` in the keychain (macOS) or the secret store (Linux), and `CABINET_BACKUP_PASSPHRASE` is not set. | Run the command it names, with the same passphrase as in your password manager: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` on macOS, `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"` on Linux. |
 
 ## Other commands
 

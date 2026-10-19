@@ -8,6 +8,7 @@ WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # shellcheck disable=SC1091
 source "$WS/cabinet.env"
 source "$WS/bin/when.sh"   # when_norm, when_calendar, when_human: one parser for every schedule
+source "$WS/bin/platform.sh"   # this machine: logs, dates, the passphrase, schedules (launchd, systemd or cron)
 : "${CABINET_SLUG:?set CABINET_SLUG in cabinet.env}"
 CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
@@ -32,8 +33,8 @@ if local_has CABINET_BACKUP_DIR; then CABINET_BACKUP_DIR="$(local_get CABINET_BA
 if local_has CABINET_BACKUP_TIME; then CABINET_BACKUP_TIME="$(local_get CABINET_BACKUP_TIME)"; fi
 
 K="$WS/.cabinet"                                   # kit-managed files
-LABEL="ai.cabinet.$CABINET_SLUG"                   # launchd labels: $LABEL.<job>
-LOGDIR="$HOME/Library/Logs/cabinet/$CABINET_SLUG"
+LABEL="ai.cabinet.$CABINET_SLUG"                   # schedule labels: $LABEL.<job>
+LOGDIR="$LOGROOT/$CABINET_SLUG"
 KEYCHAIN_ITEM="cabinet.$CABINET_SLUG.backup"
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
 # scheduled jobs and role drafts.
@@ -126,10 +127,6 @@ builder_for() {
   else echo backend; fi
 }
 
-# Dates people read, in the house format (18 Oct 2026, 1:00 PM), English on every machine.
-human_stamp() { LC_ALL=C date -j -f %Y%m%d-%H%M%S "$1" "+%-d %b %Y, %-I:%M %p" 2>/dev/null || printf '%s' "$1"; }
-human_mtime() { LC_ALL=C date -r "$1" "+%-d %b %Y, %-I:%M %p" 2>/dev/null; }
-
 # The Cursor CLI: `cursor-agent`, or an `agent` that really is Cursor's (the name is generic).
 cursor_bin() {
   local b
@@ -138,8 +135,8 @@ cursor_bin() {
   [[ "$(readlink -f "$b" 2>/dev/null || echo "$b")" == *[Cc]ursor* ]] && echo "$b"
 }
 
-# mine <plist>: the schedule runs a script of this workspace (paths XML-escaped as written).
-mine() { grep -qF "$(W="$WS" perl -e '$_ = $ENV{W}; s/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g; print "<string>$_/bin/"')" "$1"; }
+# mine <schedule file>: the schedule runs a script of this workspace.
+mine() { [[ "$(sched_ws "$1")" == "$WS" ]]; }
 
 # PATH for scheduled jobs: the usual places plus wherever this machine keeps the
 # runner, node (for tools that are node scripts) and the kit's own tools.

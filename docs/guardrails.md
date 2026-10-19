@@ -40,7 +40,7 @@ The rule formats differ, so the coverage does too.
 
 - push, `git send-pack` (which pushes without hooks), merge, release, `gh api` writes, publishing (npm, npx, bun, pnpm, yarn, also with options before `publish`);
 - the ways around the gate: `-c core.hooksPath` in common spellings, `GIT_CONFIG_*` variables, `env -i` and `env -u`, a push behind a `HOME=` override (caught because `git push` is matched anywhere), `--no-verify` and its abbreviations, faking a terminal (`script`, `expect`, `unbuffer`, Python's `pty.spawn`);
-- printing the GitHub token, and reading the keychain.
+- printing the GitHub token, and reading the keychain or the Linux secret store (`secret-tool lookup` and `search`).
 
 Side effects: some harmless commands are refused too, such as an npm script named like `publish-docs`, or any command that mentions `git push` (for example in an `echo`).
 
@@ -62,7 +62,7 @@ Side effects: some harmless commands are refused too, such as an npm script name
 These are on the [roadmap](../ROADMAP.md):
 
 - archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
-- any process of your user can read the backup passphrase from the keychain without a prompt (the deny rules stop agents in the tools above);
+- any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result;
 - on opencode 2.x the doctor cannot read the resolved rules.
 

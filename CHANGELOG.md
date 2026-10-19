@@ -8,7 +8,7 @@ First version.
 
 ### Setup and settings
 
-- Installed per workspace as the dev dependency `@tarekraafat/cabinet`; the package names its repository, home page and issue tracker on GitHub, publishes as public, and installs on macOS only until Linux support ships.
+- Installed per workspace as the dev dependency `@tarekraafat/cabinet`; the package names its repository, home page and issue tracker on GitHub, publishes as public, and installs on macOS and Linux.
 - `cabinet new` asks its setup questions in a terminal (name, folder, owner, roles, agent tool, brief time, week start, backups, repos); each is also an option, and `--yes` skips them for scripts.
 - `cabinet init` adds cabinet to an existing project: inside it as `cabinet/`, private or shared, or beside it; or makes an existing folder of repos the workspace. Nothing existing is replaced. It fills the project name, description, test commands, repository URL and owner from the project's `package.json` and git, each marked with its source.
 - `cabinet config` changes settings after setup: the same questions with the current answers as defaults. It keeps the team tables, roles and schedules in step, and moves schedules on a slug change. `cabinet config --this-mac --backup-dir <folder>|off [--backup-time <time>]` sets backups for one Mac only, in `cabinet.local.env`, so each teammate in a shared workspace picks their own folder or none; `--clear` follows `cabinet.env` again.
@@ -39,13 +39,15 @@ First version.
 
 ### Schedules
 
-- Jobs as `jobs/<job>.job`, scheduled daily or weekly by launchd. A run is stopped, with everything it started, after its time limit: `TIMEOUT` minutes in the job file, else `CABINET_JOB_TIMEOUT` in `cabinet.env` (default 60; `0` for none), with the reason in the job's log. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
+- macOS and Linux: schedules are launchd jobs on macOS and systemd user timers on Linux, or one block of the crontab where the machine did not boot with systemd (every other crontab line is kept); logs go to `~/.local/state/cabinet/<slug>/` on Linux; the backup passphrase comes from the secret store (`secret-tool`) on Linux, and the doctor also accepts `CABINET_BACKUP_PASSPHRASE`; notifications use `notify-send`; `cabinet list` no longer needs `column`, and paths under the home folder show as `~/` with bash 5 too. `bin/platform.sh` holds every difference, and `CABINET_SCHEDULER` overrides the scheduler it finds. The doctor reports a Linux machine with no scheduler (`schedules.scheduler`). The test suite runs on both (`npm run test:linux` runs it in a Debian container), and a workspace on a systemd Linux ran its brief and backup on schedule with the doctor all green.
+- Jobs as `jobs/<job>.job`, scheduled daily or weekly. A run is stopped, with everything it started, after its time limit: `TIMEOUT` minutes in the job file, else `CABINET_JOB_TIMEOUT` in `cabinet.env` (default 60; `0` for none), with the reason in the job's log. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
 - One form for every schedule (the brief, any job, the backup time, the digest): 12-hour times (`7 AM`, `4:30 PM`), every day or on days, one or several (`fri 4 PM`, `sun,mon,tue,wed,thu 8 AM`), with days by short or full name in any case. Times are stored and shown as `4:00 PM`; 24-hour times are still read.
 - Scheduled runners: claude, codex, gemini, qwen, grok, opencode, cursor, and `custom` for any other tool (`CABINET_RUNNER_CMD`).
 - `cabinet bootstrap --no-schedules` (and `--schedules` to undo it): a Mac that should not run the workspace's jobs, such as a teammate's in a shared workspace, skips their schedules from then on; the choice is saved in `cabinet.local.env`, which git never tracks.
 
 ### Guardrails and safety
 
+- Agents are denied reading the backup passphrase from the Linux secret store (`secret-tool lookup` and `search`), as from the macOS keychain, in every tool's rules.
 - Guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI (Grok reads the Claude Code rules; the Cursor rule shapes were probed live on Cursor CLI 2026.10.16), checked by `bin/doctor.sh` (opencode on 1.x only), which also names installed tools it cannot guard; and the owner's pre-push gate for every tool.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
 - Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file. `cabinet backup verify` restores the newest archive into a temporary folder, checks the workspace and each repo against it (a damaged or incomplete archive fails), and deletes the copy; the doctor notes when no restore has been verified in 92 days (`backups.verified`).

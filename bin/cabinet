@@ -14,6 +14,7 @@ set -euo pipefail
 KIT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 VERSION="$(jq -r .version "$KIT/package.json")"
 source "$KIT/scripts/when.sh"   # when_norm, when_calendar, when_human: the same parser the workspace scripts use
+source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase, schedules
 
 # -C <dir>, before the command: run as if started in <dir>, as git does. Commands find the
 # workspace from the current folder upward, so this is how any of them names another workspace.
@@ -128,9 +129,9 @@ O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot), asking
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
 O	digest	--notify		Also show a macOS notification with the counts (with --write or --schedule).
 O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 10:00 AM), or at another time ("8 AM"), or on days and a time ("fri 10 AM", "sun,mon,tue,wed,thu 8 AM"); off stops it.
-O	digest	--file	<file>	With --schedule: where it is written (default: ~/Library/Logs/cabinet/digest.md).
+O	digest	--file	<file>	With --schedule: where it is written (default: digest.md in the log folder, ~/Library/Logs/cabinet/ on macOS, ~/.local/state/cabinet/ on Linux).
 O	remove	--force		Remove even with uncommitted changes or commits on no remote.
-O	remove	--delete-key		Also delete the backup passphrase from the keychain.
+O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
 O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,handoff list,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
@@ -178,7 +179,6 @@ cmd_help() {
   echo "Every command works from any folder inside a workspace or its project; cabinet -C <dir> <command> runs it as if started in <dir>."
   echo "cabinet <command> --help shows its options. Full reference: $KIT/docs/commands.md"
 }
-sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
 # Changelog sections newer than $1 (all when empty), up to this version.
 changelog() {
@@ -198,7 +198,6 @@ managed() {
   for f in "$KIT"/scripts/*; do echo "scripts/${f##*/} bin/${f##*/}"; done
   for f in "$KIT"/roles/*.md; do echo "roles/${f##*/} .cabinet/roles/${f##*/}"; done
   for f in "$KIT"/guardrails/*; do echo "guardrails/${f##*/} .cabinet/guardrails/${f##*/}"; done
-  for f in "$KIT"/launchd/*; do echo "launchd/${f##*/} .cabinet/launchd/${f##*/}"; done
 }
 
 # Copy kit files into <ws>. Returns 1 when an edited file blocked the update.
@@ -207,10 +206,10 @@ sync_kit() {
   mkdir -p "$ws/.cabinet"; next="$(mktemp)"
   touch "$man"
   while read -r src dst; do
-    live="$ws/$dst" want="$(sha "$KIT/$src")"
+    live="$ws/$dst" want="$(sha256 "$KIT/$src")"
     had="$(awk -v p="$dst" '$2 == p {print $1}' "$man")"
     if [[ -f "$live" ]]; then
-      cur="$(sha "$live")"
+      cur="$(sha256 "$live")"
       if [[ "$cur" == "$want" ]]; then echo "$want $dst" >> "$next"; continue; fi
       if [[ "$cur" != "$had" ]]; then
         # A file the kit never placed (it was there before) is recorded as "-",
@@ -234,7 +233,7 @@ sync_kit() {
     # A manifest path outside the workspace is never acted on (a shared workspace's manifest is not trusted).
     [[ "$p" == /* || "$p" == *..* ]] && continue
     awk -v p="$p" '$2 == p {f=1} END {exit !f}' "$next" && continue
-    if [[ -f "$ws/$p" && "$(sha "$ws/$p")" != "$h" ]]; then
+    if [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" != "$h" ]]; then
       echo "  left the kit but edited here, left as is: $p"
     else
       rm -f "$ws/$p"; echo "  removed $p (no longer in the kit)"
@@ -282,22 +281,22 @@ name_ok() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != . && "$1" != .. ]]; }
 slug_owner() {
   local slug=$1 ws f other=""
   ws="$(abspath "$2")"
-  for f in "$HOME/Library/LaunchAgents/ai.cabinet.$slug".*.plist; do
+  for f in "$SCHED_DIR/ai.cabinet.$slug".*"$SCHED_EXT"; do
     [[ -f "$f" ]] || continue
-    other="$(sed -n 's#.*<string>\(.*\)/bin/[a-z]*\.sh</string>.*#\1#p' "$f" | head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g')"
+    other="$(sched_ws "$f")"
     [[ -n "$other" && "$(abspath "$other")" != "$ws" ]] && { echo "$other"; return; }
   done
-  f="$HOME/Library/Logs/cabinet/$slug/workspace"
+  f="$LOGROOT/$slug/workspace"
   [[ -f "$f" && "$(abspath "$(cat "$f")")" != "$ws" ]] && cat "$f"
   return 0
 }
 # Why a slug cannot be used, and what to do about it.
 slug_taken() {  # slug_taken <slug> <other workspace>
   if [[ -d "$2" ]]; then echo "the slug '$1' is already used by the workspace at $2"
-  else echo "the slug '$1' is still held by a workspace at $2, which no longer exists. To free it: launchctl bootout gui/\$(id -u)/ai.cabinet.$1.<job> for each of its schedules, then delete ~/Library/LaunchAgents/ai.cabinet.$1.*.plist and ~/Library/Logs/cabinet/$1/workspace"; fi
+  else echo "the slug '$1' is still held by a workspace at $2, which no longer exists. To free it: for each of its schedules, $(sched_stop_cmd "ai.cabinet.$1.<job>"); then delete $LOGROOT_SHOWN/$1/workspace"; fi
 }
 # Record which workspace owns a slug, so another setup sees it even before bootstrap runs.
-claim_slug() { mkdir -p -m 700 "$HOME/Library/Logs/cabinet/$1" 2>/dev/null && printf '%s\n' "$(abspath "$2")" > "$HOME/Library/Logs/cabinet/$1/workspace"; return 0; }
+claim_slug() { mkdir -p -m 700 "$LOGROOT/$1" 2>/dev/null && printf '%s\n' "$(abspath "$2")" > "$LOGROOT/$1/workspace"; return 0; }
 
 # The checks every answer passes, for setup and config (they share these variables).
 check_answers() {
@@ -562,7 +561,7 @@ setup() {
     if [[ "$layout" == inside && "$visibility" == shared ]] || [[ "$layout" == around && -e "$ws/.git" ]]; then echo "  - commit nothing (review and commit yourself)"
     elif [[ "$owner" == TBD || "$email" == TBD ]]; then echo "  - git init, but no commit (no owner identity yet)"
     else echo "  - git init and one commit as $owner"; fi
-    echo "  - record the slug in ~/Library/Logs/cabinet/$slug/workspace"
+    echo "  - record the slug in $LOGROOT_SHOWN/$slug/workspace"
     echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, backups ${backup:-off}."
     echo "Nothing was written."
     return 0
@@ -1042,19 +1041,18 @@ cmd_config() {
   if [[ "$slug" != "$o_slug" ]]; then
     # Stop this workspace's schedules under the old name; bootstrap installs them under the new one.
     local live
-    for live in "$HOME/Library/LaunchAgents/ai.cabinet.$o_slug".*.plist; do
-      [[ -f "$live" ]] && grep -qF "$ws/bin/" "$live" || continue
-      launchctl bootout "gui/$(id -u)/$(basename "$live" .plist)" 2>/dev/null || true
-      rm -f "$live"; echo "  stopped $(basename "$live" .plist)"
+    for live in "$SCHED_DIR/ai.cabinet.$o_slug".*"$SCHED_EXT"; do
+      [[ -f "$live" && "$(sched_ws "$live")" == "$ws" ]] || continue
+      sched_unload "$(sched_label "$live")"; echo "  stopped $(sched_label "$live")"
     done
     setenv CABINET_SLUG "$slug"
     claim_slug "$slug" "$ws"
     # Release the old slug when this workspace held it, so another workspace can use it.
-    local oc="$HOME/Library/Logs/cabinet/$o_slug/workspace"
+    local oc="$LOGROOT/$o_slug/workspace"
     [[ -f "$oc" && "$(abspath "$(cat "$oc")")" == "$ws" ]] && rm -f "$oc"
     local sfiles=()
     for f in "$ws/OPERATIONS.md" "$ws/README.md" "$ws"/jobs/*.job; do [[ -f "$f" ]] && sfiles+=("$f"); done
-    ((${#sfiles[@]})) && O="$o_slug" N="$slug" perl -i -pe 's/ai\.cabinet\.\Q$ENV{O}\E\b/ai.cabinet.$ENV{N}/g; s#Logs/cabinet/\Q$ENV{O}\E/#Logs/cabinet/$ENV{N}/#g; s/cabinet\.\Q$ENV{O}\E\.backup/cabinet.$ENV{N}.backup/g; s/^(git clone <this repo> )\Q$ENV{O}\E( && cd )\Q$ENV{O}\E$/$1$ENV{N}$2$ENV{N}/' \
+    ((${#sfiles[@]})) && O="$o_slug" N="$slug" perl -i -pe 's/ai\.cabinet\.\Q$ENV{O}\E\b/ai.cabinet.$ENV{N}/g; s#(Logs|state)/cabinet/\Q$ENV{O}\E/#$1/cabinet/$ENV{N}/#g; s/cabinet\.\Q$ENV{O}\E\.backup/cabinet.$ENV{N}.backup/g; s/^(git clone <this repo> )\Q$ENV{O}\E( && cd )\Q$ENV{O}\E$/$1$ENV{N}$2$ENV{N}/' \
       "${sfiles[@]}"
   fi
   # Team tables follow the roles: a dropped role's row leaves, a returning one comes back from the kit's template.
@@ -1103,9 +1101,9 @@ cmd_config() {
     else echo "Next: cabinet bootstrap (schedules and repos follow the new settings)."; fi
   fi
   if [[ "$slug" != "$o_slug" && -n "$backup" ]]; then
-    echo "The backup passphrase is now read from the keychain item cabinet.$slug.backup. Add it once, with the same passphrase:"
-    echo "  security add-generic-password -a \"\$USER\" -s cabinet.$slug.backup -w"
-    echo "then remove the old one: security delete-generic-password -a \"\$USER\" -s cabinet.$o_slug.backup"
+    echo "The backup passphrase is now read from cabinet.$slug.backup in the $PASS_STORE. Add it once, with the same passphrase:"
+    echo "  $(pass_add_cmd "cabinet.$slug.backup")"
+    echo "then remove the old one, cabinet.$o_slug.backup."
   fi
   echo "Review with git -C \"$ws\" diff, then commit."
 }
@@ -1171,7 +1169,7 @@ cmd_next() {
     else
       echo "Not inside a cabinet workspace."
       echo "  1. Start one: cabinet new (a new folder), or cabinet init (an existing project or folder of repos)."
-      ls "$HOME"/Library/Logs/cabinet/*/workspace >/dev/null 2>&1 && echo "  Or cd into one of yours: cabinet list shows them."
+      ls "$LOGROOT"/*/workspace >/dev/null 2>&1 && echo "  Or cd into one of yours: cabinet list shows them."
     fi
     return 0
   }
@@ -1199,7 +1197,7 @@ cmd_next() {
   grep -qx 'CABINET_SCHEDULES="\{0,1\}off"\{0,1\}' "$ws/cabinet.local.env" 2>/dev/null || for jf in "$ws"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
     when="$(WHEN=""; source "$jf" >/dev/null 2>&1; printf '%s' "$WHEN")"
-    [[ -n "$when" && ! -f "$HOME/Library/LaunchAgents/$label.$(basename "$jf" .job).plist" ]] && missing=1
+    [[ -n "$when" && "$SCHEDULER" != none && ! -f "$(sched_file "$label.$(basename "$jf" .job)")" ]] && missing=1
   done
   ((missing)) && step bootstrap "Set up this Mac: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
   # Work waiting on the owner.
@@ -1238,13 +1236,11 @@ cmd_next() {
   return 0
 }
 
-human_mtime() { LC_ALL=C date -r "$1" "+%-d %b %Y, %-I:%M %p" 2>/dev/null; }
-
 # Every workspace this Mac knows: "<slug><TAB><folder>", from the slug claims in
-# ~/Library/Logs/cabinet/<slug>/workspace that setup and bootstrap write.
+# <logs>/<slug>/workspace that setup and bootstrap write (LOGROOT, bin/platform.sh).
 known_workspaces() {
   local claim
-  for claim in "$HOME"/Library/Logs/cabinet/*/workspace; do
+  for claim in "$LOGROOT"/*/workspace; do
     [[ -f "$claim" ]] && printf '%s\t%s\n' "$(basename "$(dirname "$claim")")" "$(head -1 "$claim")"
   done
   return 0
@@ -1254,7 +1250,7 @@ known_workspaces() {
 # every workspace on this Mac, by the headings chief-of-staff writes. Answers still go to
 # each workspace's own agent. Reads only, except --write (its file) and --schedule.
 DIGEST_LABEL="ai.cabinet-digest"   # outside ai.cabinet.<slug>.*: never a workspace's schedule
-DIGEST_FILE_DEFAULT="$HOME/Library/Logs/cabinet/digest.md"
+DIGEST_FILE_DEFAULT="$LOGROOT/digest.md"
 DIGEST_WHEN_DEFAULT="10:00 AM"   # --schedule with no time: every day
 cmd_digest() {
   local json=0 write="" notify=0 when="" file="" x
@@ -1281,7 +1277,7 @@ cmd_digest() {
     brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
     if [[ -f "$brief" ]]; then
       written="$(human_mtime "$brief")"; iso="$(date -u -r "$brief" +%Y-%m-%dT%H:%M:%SZ)"
-      (( $(date +%s) - $(stat -f %m "$brief") > 36 * 3600 )) && stale=1
+      (( $(date +%s) - $(mtime "$brief") > 36 * 3600 )) && stale=1
       grep -qx '## Sign-off queue' "$brief" && queue="$(section_of "$brief" "Sign-off queue")" || queue=$'\001'   # \001: no such heading
       actions="$(section_of "$brief" "Actions for the owner")"
     fi
@@ -1327,9 +1323,8 @@ cmd_digest() {
     digest_schedule_line
   fi
   if ((notify)); then
-    # The text reaches AppleScript as an argument, never as code.
-    osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "cabinet" subtitle (item 2 of argv)' -e 'end run' \
-      "$summary" "${write:+Open $write}" >/dev/null 2>&1 || echo "cabinet: the notification could not be shown (System Settings > Notifications)" >&2
+    notify "$summary" "${write:+Open $write}" >/dev/null 2>&1 \
+      || echo "cabinet: the notification could not be shown ($( [[ $OS == mac ]] && echo "System Settings > Notifications" || echo "is notify-send installed?"))" >&2
   fi
   return 0
 }
@@ -1339,9 +1334,9 @@ digest_text() {  # digest_text <count> <rows>
   ((n)) || { echo "No cabinet workspaces on this Mac yet. Start one: cabinet new, or cabinet init in an existing project."; return 0; }
   while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting; do
     [[ -n "$slug" ]] || continue
-    if [[ "$exists" != ok ]]; then echo "== $slug: folder gone (${ws/#$HOME/~}); cabinet list says how to free the slug"; echo; continue; fi
-    echo "== ${project:-$slug} (${ws/#$HOME/~})"
-    if [[ -z "$written" ]]; then echo "No brief yet. Write one: cd ${ws/#$HOME/~} && cabinet brief"
+    if [[ "$exists" != ok ]]; then echo "== $slug: folder gone (${ws/#$HOME/$TILDE}); cabinet list says how to free the slug"; echo; continue; fi
+    echo "== ${project:-$slug} (${ws/#$HOME/$TILDE})"
+    if [[ -z "$written" ]]; then echo "No brief yet. Write one: cd ${ws/#$HOME/$TILDE} && cabinet brief"
     else
       echo "Brief of $written$( [[ -n "$stale" ]] && echo ". Older than a day and a half: is the brief job running? cabinet doctor there")"
       echo
@@ -1351,73 +1346,53 @@ digest_text() {  # digest_text <count> <rows>
         if [[ -n "$actions" && "$actions" != None. ]]; then echo; echo "Actions for you:"; printf '%s\n' "${actions//$'\002'/$'\n'}" | sed '/./s/^/  /'; fi
       fi
     fi
-    ((${waiting:-0})) && { echo; echo "$waiting handoff(s) wait on you: cd ${ws/#$HOME/~} && cabinet handoff list owner"; }
+    ((${waiting:-0})) && { echo; echo "$waiting handoff(s) wait on you: cd ${ws/#$HOME/$TILDE} && cabinet handoff list owner"; }
     echo
   done <<<"$rows"
   echo "Answer each queue in its own workspace: cd there and give your agent the answers, for example \"1: approve; 2: no; 3: wait until Friday\"."
 }
 
-# The schedule, as launchd holds it: one place, nothing else to drift.
+# The schedule, as the scheduler holds it: one place, nothing else to drift.
 digest_schedule_line() {
-  local pl="$HOME/Library/LaunchAgents/$DIGEST_LABEL.plist" args
+  local pl args w; pl="$(sched_file "$DIGEST_LABEL")"
   if [[ ! -f "$pl" ]]; then echo "Not scheduled. To have it written for you: cabinet digest --schedule [--notify] (every day at 10:00 AM), or --schedule <when>"; return 0; fi
-  args="$(plutil -extract ProgramArguments json -o - "$pl" 2>/dev/null | jq -r '.[2:] | join(" ")' 2>/dev/null)"
-  local w; w="$(plutil -extract CabinetWhen raw "$pl" 2>/dev/null)" && w="$(when_human "$w")" || w="see $pl"
+  args="$(sched_get "$pl" command | jq -r '.[2:] | join(" ")' 2>/dev/null)"
+  w="$(sched_get "$pl" when)" && [[ -n "$w" ]] && w="$(when_human "$w")" || w="see $pl"
   echo "Scheduled, $w: cabinet digest ${args:-?}. Change: cabinet digest --schedule <when>; stop: cabinet digest --schedule off"
 }
 
-# digest_schedule <when>|off <file> <notify>: install, replace or remove the Mac's digest schedule.
+# digest_schedule <when>|off <file> <notify>: install, replace or remove this machine's digest schedule.
 # <when>: a schedule time (bin/when.sh): "8 AM" every day, or "mon 8 AM", "sun,mon,tue,wed,thu 8 AM".
 digest_schedule() {
-  local when=$1 file=$2 notify=$3 la="$HOME/Library/LaunchAgents" pl uid
-  pl="$la/$DIGEST_LABEL.plist"; uid="$(id -u)"
+  local when=$1 file=$2 notify=$3 pl; pl="$(sched_file "$DIGEST_LABEL")"
   if [[ "$(printf %s "$when" | tr '[:upper:]' '[:lower:]')" == off ]]; then
     [[ -f "$pl" ]] || { echo "The digest is not scheduled."; return 0; }
-    launchctl bootout "gui/$uid/$DIGEST_LABEL" 2>/dev/null || true; rm -f "$pl"
+    sched_unload "$DIGEST_LABEL"
     echo "Stopped the scheduled digest. Its last file stays where it is."; return 0
   fi
-  local cal
-  cal="$(when_calendar "$when")" \
+  [[ "$SCHEDULER" != none ]] || die "no scheduler on this machine (a running systemd user session, or cron): install cron, or run cabinet digest --write <file> by hand"
+  when_norm "$when" >/dev/null \
     || die "the digest time must be a time like \"8 AM\" for every day, or days and a time like \"fri 10 AM\" or \"sun,mon,tue,wed,thu 8 AM\" (day names in full work too)"
   when="$(when_norm "$when")"
   file="$(abspath "$file")"
   [[ "$file" != *[[:cntrl:]]* ]] || die "the digest file name cannot contain control characters"
-  case "$file" in "$HOME"/Documents/*|"$HOME"/Desktop/*|"$HOME"/Downloads/*|"$HOME/Library/Mobile Documents"/*)
-    echo "Note: macOS may block a scheduled job from writing to $file until you allow it (System Settings > Privacy & Security > Files and Folders). ~/Library/Logs/cabinet/ needs no permission." ;; esac
+  [[ $OS == mac ]] && case "$file" in "$HOME"/Documents/*|"$HOME"/Desktop/*|"$HOME"/Downloads/*|"$HOME/Library/Mobile Documents"/*)
+    echo "Note: macOS may block a scheduled job from writing to $file until you allow it (System Settings > Privacy & Security > Files and Folders). $LOGROOT_SHOWN/ needs no permission." ;; esac
   local me; me="$(cd "$KIT" && pwd -P)/bin/cabinet"
   [[ "$me" == */_npx/* ]] && echo "Note: this cabinet runs from npx's cache, which npm can clear. For a schedule that lasts: npm i -g @tarekraafat/cabinet, then schedule again."
-  # launchd gives jobs a bare PATH: keep where jq, git and node are now.
-  local path="/usr/bin:/bin:/usr/sbin:/sbin" t
+  # Scheduled jobs get a bare PATH: keep where jq, git and node are now.
+  local path="/usr/bin:/bin:/usr/sbin:/sbin" t text
   for t in jq git node; do t="$(command -v "$t" 2>/dev/null)" && [[ ":$path:" != *":${t%/*}:"* ]] && path="${t%/*}:$path"; done
-  x() { local s=$1; s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"; printf '%s' "$s"; }
-  local notify_arg=""; ((notify)) && notify_arg="<string>--notify</string>"
-  mkdir -p "$la" "$HOME/Library/Logs/cabinet"
-  cat > "$pl.new" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$DIGEST_LABEL</string>
-  <key>CabinetWhen</key><string>$(x "$when")</string>
-  <key>ProgramArguments</key>
-  <array><string>$(x "$me")</string><string>digest</string><string>--write</string><string>$(x "$file")</string>$notify_arg</array>
-  <key>StartCalendarInterval</key><array>$cal</array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(x "$path")</string><key>HOME</key><string>$(x "$HOME")</string></dict>
-  <key>StandardOutPath</key><string>$(x "$HOME/Library/Logs/cabinet/digest.log")</string>
-  <key>StandardErrorPath</key><string>$(x "$HOME/Library/Logs/cabinet/digest.log")</string>
-</dict>
-</plist>
-EOF
-  plutil -lint -s "$pl.new" || { rm -f "$pl.new"; die "the schedule did not come out as a valid plist; nothing changed"; }
-  [[ -f "$pl" ]] && launchctl bootout "gui/$uid/$DIGEST_LABEL" 2>/dev/null || true
-  mv "$pl.new" "$pl"
-  if launchctl bootstrap "gui/$uid" "$pl"; then
+  mkdir -p "$LOGROOT"
+  if ((notify)); then text="$(sched_render "$DIGEST_LABEL" "$when" "$LOGROOT/digest.log" "$path" "$me" digest --write "$file" --notify)"
+  else text="$(sched_render "$DIGEST_LABEL" "$when" "$LOGROOT/digest.log" "$path" "$me" digest --write "$file")"; fi
+  if sched_load "$DIGEST_LABEL" "$text"; then
     echo "Scheduled the digest, $(when_human "$when"): it writes $file$( ((notify)) && echo " and sends a notification")."
     echo "Run it now to check: cabinet digest --write \"$file\"$( ((notify)) && echo " --notify")"
-  else rm -f "$pl"; die "launchd could not load the schedule (see above); nothing installed"; fi
+  else die "$SCHEDULER could not load the schedule (see above); nothing installed"; fi
 }
 
-# Every workspace on this Mac, from the slug claims in ~/Library/Logs/cabinet/<slug>/workspace
+# Every workspace on this Mac, from the slug claims in <logs>/<slug>/workspace
 # (written by setup and bootstrap): its version, what waits on the owner, the doctor's count
 # and the newest brief. The doctors run side by side, each with its workspace's own scripts.
 cmd_list() {
@@ -1466,19 +1441,21 @@ cmd_list() {
     printf 'SLUG\tPROJECT\tKIT\tWAITING ON YOU\tDOCTOR\tLATEST BRIEF\tFOLDER\n'
     while IFS=$'\037' read -r slug project ws exists version waiting problems brief brief_iso; do
       if [[ "$exists" != true ]]; then
-        printf '%s\t-\t-\t-\tfolder gone\t-\t%s\n' "$slug" "${ws/#$HOME/~}"; gone+=" $slug"; continue
+        printf '%s\t-\t-\t-\tfolder gone\t-\t%s\n' "$slug" "${ws/#$HOME/$TILDE}"; gone+=" $slug"; continue
       fi
       v="$version"; [[ "$version" != "$VERSION" ]] && { v="$version*"; newer=1; }
       w="${waiting:-?}"; [[ "$w" == 0 ]] && w="nothing" || w="$w handoff(s)"
       case "$problems" in 0) p="all good" ;; "") p="?" ;; *) p="$problems to fix" ;; esac
       b="${brief:-none yet}"
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slug" "${project:--}" "$v" "$w" "$p" "$b" "${ws/#$HOME/~}"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slug" "${project:--}" "$v" "$w" "$p" "$b" "${ws/#$HOME/$TILDE}"
     done < "$tmp/all"
   } > "$tmp/table"
-  column -t -s $'\t' "$tmp/table" | sed 's/^/  /'
+  # Aligned columns (column(1) is not on every Linux).
+  awk -F'\t' '{ for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n[NR] = NF }
+    END { for (r = 1; r <= NR; r++) { l = "  "; for (i = 1; i < n[r]; i++) l = l sprintf("%-" w[i] "s  ", c[r, i]); print l c[r, n[r]] } }' "$tmp/table"
   ((newer)) && echo "* not the installed kit ($VERSION): cabinet update in that workspace (after npm update there)."
   for slug in $gone; do
-    echo "Folder gone for $slug: if it moved, run cabinet bootstrap in its new place; if it is deleted, free the slug with: rm -r ~/Library/Logs/cabinet/$slug"
+    echo "Folder gone for $slug: if it moved, run cabinet bootstrap in its new place; if it is deleted, free the slug with: rm -r $LOGROOT_SHOWN/$slug"
   done
   echo "Details: cabinet next (or cabinet doctor) inside a workspace."
   return 0
@@ -1495,11 +1472,10 @@ cmd_remove() {
   local ws; ws="$(need_ws)" || exit 1
   [[ -f "$ws/.cabinet/version" && -f "$ws/cabinet.env" ]] || die "$ws is not a cabinet workspace"
   envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
-  local slug layout vis host="" la="$HOME/Library/LaunchAgents" logs
+  local slug layout vis host="" logs
   slug="$(envget CABINET_SLUG)"; layout="$(envget CABINET_LAYOUT)"; vis="$(envget CABINET_VISIBILITY)"
   [[ "$layout" == inside ]] && host="$(cd "$ws/.." && pwd -P)"
-  logs="$HOME/Library/Logs/cabinet/$slug"
-  local marker; marker="$(W="$ws" perl -e '$_ = $ENV{W}; s/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g; print "<string>$_/bin/"')"
+  logs="$LOGROOT/$slug"
 
   # Work that exists only here is never deleted silently.
   local git_ws="$ws" risk=""
@@ -1512,11 +1488,11 @@ cmd_remove() {
   fi
 
   echo "Removing the workspace $slug ($ws):"
-  local plists=() f
-  for f in "$la/ai.cabinet.$slug".*.plist; do [[ -f "$f" ]] && grep -qF "$marker" "$f" && plists+=("$f"); done
-  ((${#plists[@]})) && printf '  - stop and delete the schedule %s\n' "${plists[@]##*/}" || echo "  - no schedules to stop"
+  local scheds=() f
+  for f in "$SCHED_DIR/ai.cabinet.$slug".*"$SCHED_EXT"; do [[ -f "$f" && "$(sched_ws "$f")" == "$ws" ]] && scheds+=("$(sched_label "$f")"); done
+  ((${#scheds[@]})) && printf '  - stop and delete the schedule %s\n' "${scheds[@]}" || echo "  - no schedules to stop"
   [[ -f "$logs/workspace" && "$(cat "$logs/workspace")" == "$ws" ]] && echo "  - delete the log folder $logs (frees the slug)"
-  if ((delkey)); then echo "  - delete the backup passphrase from the keychain (cabinet.$slug.backup); archives stay"
+  if ((delkey)); then echo "  - delete the backup passphrase from the $PASS_STORE (cabinet.$slug.backup); archives stay"
   else echo "  - keep the backup passphrase (cabinet.$slug.backup) and any archives (--delete-key removes the key)"; fi
   if [[ -n "$host" && "$vis" == private ]]; then
     echo "  - in the project $host: remove the Agent team pointers setup added, the role files it built in .claude/agents/, and its .git/info/exclude lines"
@@ -1536,11 +1512,11 @@ cmd_remove() {
     [[ "$typed" == "$slug" ]] || die "nothing removed"
   fi
 
-  for f in ${plists[@]+"${plists[@]}"}; do
-    launchctl bootout "gui/$(id -u)/$(basename "$f" .plist)" 2>/dev/null || true; rm -f "$f"; echo "  stopped $(basename "$f" .plist)"
+  for f in ${scheds[@]+"${scheds[@]}"}; do
+    sched_unload "$f"; echo "  stopped $f"
   done
   if [[ -f "$logs/workspace" && "$(cat "$logs/workspace")" == "$ws" ]]; then rm -rf "$logs"; echo "  deleted $logs"; fi
-  if ((delkey)); then security delete-generic-password -a "$USER" -s "cabinet.$slug.backup" >/dev/null 2>&1 && echo "  deleted the keychain item cabinet.$slug.backup" || echo "  no keychain item cabinet.$slug.backup"; fi
+  if ((delkey)); then pass_del "cabinet.$slug.backup" && echo "  deleted cabinet.$slug.backup from the $PASS_STORE" || echo "  no cabinet.$slug.backup in the $PASS_STORE"; fi
   if [[ -n "$host" ]]; then
     # Only what setup wrote: the section that names cabinet/CABINET.md, and generated role files.
     drop_section() {  # drop_section <file>: remove the "## Agent team" section that points at cabinet/
@@ -1705,7 +1681,7 @@ cmd_status() {
   local edited=()
   while read -r h p; do
     [[ -z "${p:-}" ]] && continue
-    [[ -f "$ws/$p" && "$(sha "$ws/$p")" == "$h" ]] || edited+=("$p")
+    [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" == "$h" ]] || edited+=("$p")
   done < "$ws/.cabinet/manifest"
   if ((json)); then
     printf '%s\n' ${edited[@]+"${edited[@]}"} | jq -Rn --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" \

@@ -70,3 +70,19 @@ when_human() {
   for d in ${WHEN_DAYS//,/ }; do out+="${out:+, }$(printf %s "${d:0:1}" | tr '[:lower:]' '[:upper:]')${d:1}"; done
   printf '%s at %s' "$out" "$(when_clock "$WHEN_H" "$WHEN_M")"
 }
+
+# when_oncalendar <when>: a systemd OnCalendar value, "Fri,Sat *-*-* 16:00:00".
+when_oncalendar() {
+  local d out=""
+  when_parse "$1" || return 1
+  for d in ${WHEN_DAYS//,/ }; do out+="${out:+,}$(printf %s "${d:0:1}" | tr '[:lower:]' '[:upper:]')${d:1}"; done
+  printf '%s*-*-* %02d:%02d:00' "${out:+$out }" "$WHEN_H" "$WHEN_M"
+}
+
+# when_cron <when>: the five time fields of a crontab line, "0 16 * * 5,6".
+when_cron() {
+  local d i=0 out=""
+  when_parse "$1" || return 1
+  for d in sun mon tue wed thu fri sat; do [[ ",$WHEN_DAYS," == *",$d,"* ]] && out+="${out:+,}$i"; i=$((i + 1)); done
+  printf '%s %s * * %s' "$WHEN_M" "$WHEN_H" "${out:-*}"
+}

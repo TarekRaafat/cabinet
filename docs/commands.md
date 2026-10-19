@@ -125,12 +125,12 @@ One morning read for every workspace on this Mac: from each one's latest `BRIEF.
 | Option | Notes |
 |---|---|
 | `--write <file>` | Write the digest to that file (replaced each time) instead of the screen. |
-| `--notify` | Also show a macOS notification with the counts line. |
+| `--notify` | Also show a desktop notification with the counts line (`notify-send` on Linux). |
 | `--schedule [<when>]` | Write it on a schedule. With no time: every day at 10:00 AM. Or any [schedule time](#schedule-times): `"8 AM"`, `"fri 10 AM"`, `"sun,mon,tue,wed,thu 8 AM"`. Run again to change it. `--schedule off` stops it and keeps the last file. |
-| `--file <file>` | With `--schedule`: where it is written. Default `~/Library/Logs/cabinet/digest.md`, which a scheduled job can always write. macOS may block a scheduled job from writing to Documents, Desktop, Downloads or iCloud Drive until you allow it (System Settings > Privacy & Security > Files and Folders); cabinet says so when you choose one. |
+| `--file <file>` | With `--schedule`: where it is written. Default `digest.md` in the log folder (`~/Library/Logs/cabinet/` on macOS, `~/.local/state/cabinet/` on Linux), which a scheduled job can always write. macOS may block a scheduled job from writing to Documents, Desktop, Downloads or iCloud Drive until you allow it (System Settings > Privacy & Security > Files and Folders); cabinet says so when you choose one. |
 | `--json` | The digest as JSON (below). |
 
-The schedule is one launchd job for the whole Mac, `ai.cabinet-digest`, apart from every workspace's `ai.cabinet.<slug>.*` jobs; it runs this `cabinet` (so install it globally, not only through npx, whose cache can be cleared) and logs to `~/Library/Logs/cabinet/digest.log`. The first notification may need you to allow notifications for Script Editor, which macOS uses to show them. Exit 0, or 1 for a bad time or a schedule launchd would not load.
+The schedule is one job for the whole machine, `ai.cabinet-digest` ([launchd, systemd or cron](concepts.md#macos-and-linux)), apart from every workspace's `ai.cabinet.<slug>.*` jobs; it runs this `cabinet` (so install it globally, not only through npx, whose cache can be cleared) and logs to `digest.log` in the log folder. On macOS the first notification may need you to allow notifications for Script Editor, which macOS uses to show them. Exit 0, or 1 for a bad time, no scheduler, or a schedule the scheduler would not load.
 
 ## cabinet list
 
@@ -212,7 +212,7 @@ cabinet job run <job>
 cabinet job list [--json]
 ```
 
-**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `~/Library/Logs/cabinet/<slug>/<job>.log`, and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; launchd runs the same on the job's schedule. **`list`** shows each job's role, schedule and time limit.
+**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `<job>.log` in the workspace's log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; the scheduler runs the same on the job's schedule. **`list`** shows each job's role, schedule and time limit.
 
 Exit 0; 1 when the run failed; 124 when it was stopped by its time limit; 2 for an unknown or incomplete job.
 
@@ -288,8 +288,8 @@ cabinet remove [--dry-run] [--yes] [--force] [--delete-key]
 
 Removes the workspace you are in from this Mac (another one: `cabinet -C <dir> remove`). It first prints the plan:
 
-- stop and delete the workspace's own schedules (a plist is its own when it runs this workspace's `bin/`; another workspace's are never touched);
-- delete its log folder `~/Library/Logs/cabinet/<slug>/`, which frees the slug;
+- stop and delete the workspace's own schedules (a schedule is its own when it runs this workspace's `bin/`; another workspace's are never touched);
+- delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which frees the slug;
 - the backup passphrase and archives stay, unless `--delete-key` (archives always stay);
 - inside a project, private: remove the pointers in `CLAUDE.local.md`, `QWEN.local.md` and an untracked `AGENTS.md` (a file left empty is deleted), the role files setup built in `.claude/agents/`, and their `.git/info/exclude` lines, so the project is as it was before `init`;
 - inside a project, shared: remove the "Agent team" section from `AGENTS.md` and `CLAUDE.md` and the `@tarekraafat/cabinet` devDependency; you commit that change;
@@ -300,7 +300,7 @@ Removes the workspace you are in from this Mac (another one: `cabinet -C <dir> r
 | `--dry-run` | Print the plan only. |
 | `--yes`, `-y` | Do not ask. Without it you type the slug to confirm. |
 | `--force` | Go ahead even when the workspace has uncommitted changes or commits on no remote. Without it, those stop the removal (`Not safe to delete`). |
-| `--delete-key` | Also delete the keychain item `cabinet.<slug>.backup`. |
+| `--delete-key` | Also delete the backup passphrase `cabinet.<slug>.backup` from the keychain or secret store. |
 
 The guardrails in your agent tools stay, since other workspaces use them. Exit codes: 0, or 1 when refused or not confirmed.
 
@@ -453,7 +453,8 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `CABINET_BACKUP_PASSPHRASE` | backup, restore | The archive passphrase, instead of the keychain item `cabinet.<slug>.backup`. Never put it in `cabinet.env`, which git tracks. |
+| `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain or secret store. Never put it in `cabinet.env`, which git tracks. |
+| `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
 | `CABINET_PROMPT`, `CABINET_AGENT` | the `custom` runner | The prompt and role, for `CABINET_RUNNER_CMD`. |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
@@ -462,9 +463,9 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 
 `cabinet remove` does all of this (see [cabinet remove](#cabinet-remove)). By hand:
 
-1. Stop its schedules: `launchctl bootout gui/$(id -u)/ai.cabinet.<slug>.<job>` for each, then delete `~/Library/LaunchAgents/ai.cabinet.<slug>.*.plist`.
-2. Delete its log folder `~/Library/Logs/cabinet/<slug>/`, which also frees the slug.
-3. If it had backups: `security delete-generic-password -a "$USER" -s cabinet.<slug>.backup`, and delete its archives if you no longer want them.
+1. Stop its schedules. On macOS: `launchctl bootout gui/$(id -u)/ai.cabinet.<slug>.<job>` for each, then delete `~/Library/LaunchAgents/ai.cabinet.<slug>.*.plist`. With systemd: `systemctl --user disable --now ai.cabinet.<slug>.<job>.timer` for each, then delete `~/.config/systemd/user/ai.cabinet.<slug>.*.service` and `.timer`. With cron: delete `~/.config/cabinet/cron/ai.cabinet.<slug>.*.cron`, then run `cabinet bootstrap` in any other workspace, which rewrites cabinet's block of the crontab (or delete its lines from `crontab -e` by hand).
+2. Delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which also frees the slug.
+3. If it had backups: `security delete-generic-password -a "$USER" -s cabinet.<slug>.backup` (on Linux: `secret-tool clear service cabinet.<slug>.backup account "$USER"`), and delete its archives if you no longer want them.
 4. Delete the workspace folder.
 5. Inside a project: for private, remove the `/cabinet/`, `/CLAUDE.local.md`, `/QWEN.local.md`, `/AGENTS.md` (if setup created it) and `/.claude/agents/<role>.md` lines from the project's `.git/info/exclude`, and the files they name if setup made them; for shared, remove the "Agent team" section and the `@tarekraafat/cabinet` devDependency from the project.
 

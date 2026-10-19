@@ -10,8 +10,8 @@
 #   bin/backup.sh restore <archive> [dir]      rebuild a workspace and its repos from an archive
 #                                              (below; it runs before any workspace exists)
 #
-# Passphrase: $CABINET_BACKUP_PASSPHRASE, else the login keychain item
-# cabinet.<slug>.backup (bin/bootstrap.sh prints how to create it). Keep the
+# Passphrase: $CABINET_BACKUP_PASSPHRASE, else the item cabinet.<slug>.backup in the login
+# keychain (macOS) or the secret store (Linux; bin/bootstrap.sh prints how to create it). Keep the
 # same passphrase in your password manager: without it no archive opens.
 # Keeps the newest CABINET_BACKUP_KEEP archives (at least 1) of this workspace
 # only. The folder must be outside the workspace and every repo it lists: a
@@ -38,11 +38,12 @@ usage="usage: bin/backup.sh create [dest-dir] | verify [dest-dir] [--json] | res
 # Passphrase as in backup.sh. Then run bin/bootstrap.sh and bin/doctor.sh.
 # Needs no cabinet.env: it may run before the workspace exists.
 b_restore() {
+source "$(dirname "$0")/platform.sh"   # pass_get, human_stamp
 archive="${1:-}"; [[ -n "$archive" ]] || { echo "usage: bin/backup.sh restore <archive> [workspace-dir]" >&2; exit 2; }
 target="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
 slug="$(basename "$archive")"; slug="${slug%.tar.gz.enc}"; slug="${slug%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*}"
-pass="${CABINET_BACKUP_PASSPHRASE:-$(security find-generic-password -a "$USER" -s "cabinet.$slug.backup" -w 2>/dev/null || true)}"
-[[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or create the keychain item cabinet.$slug.backup" >&2; exit 1; }
+pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "cabinet.$slug.backup" || true)}"
+[[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or add cabinet.$slug.backup to the $PASS_STORE: $(pass_add_cmd "cabinet.$slug.backup")" >&2; exit 1; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass fd:3 3<<<"$pass" < "$archive" | tar -C "$tmp" -xzf -
@@ -50,7 +51,7 @@ src="$(echo "$tmp"/"$slug"-*)"
 mkdir -p "$target"; target="$(cd "$target" && pwd -P)"
 kept="$target/recovered/$(basename "$src")"
 stamp="${src##*/}"; stamp="${stamp#"$slug"-}"
-echo "Restoring $slug from the backup of $(LC_ALL=C date -j -f %Y%m%d-%H%M%S "$stamp" "+%-d %b %Y, %-I:%M %p" 2>/dev/null || echo "$stamp") into $target"
+echo "Restoring $slug from the backup of $(human_stamp "$stamp") into $target"
 
 # The branch the repo was on when the backup ran; else the one HEAD pointed at; empty when detached.
 branch_of() {
@@ -186,8 +187,8 @@ while IFS= read -r d; do
   within "$dest" "$d" && { echo "the backup folder $dest is inside $d: choose a folder outside the workspace and its repos (a synced drive or an external disk)" >&2; exit 2; }
 done < <(data_dirs)
 [[ "$CABINET_BACKUP_KEEP" =~ ^[1-9][0-9]*$ ]] || { echo "CABINET_BACKUP_KEEP must be 1 or more, not '$CABINET_BACKUP_KEEP'" >&2; exit 2; }
-pass="${CABINET_BACKUP_PASSPHRASE:-$(security find-generic-password -a "$USER" -s "$KEYCHAIN_ITEM" -w 2>/dev/null || true)}"
-[[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or create the keychain item $KEYCHAIN_ITEM" >&2; exit 1; }
+pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "$KEYCHAIN_ITEM" || true)}"
+[[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or add $KEYCHAIN_ITEM to the $PASS_STORE: $(pass_add_cmd "$KEYCHAIN_ITEM")" >&2; exit 1; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # This workspace's archives only: <slug>-YYYYMMDD-HHMMSS.tar.gz.enc exactly, so app never takes app-web's.

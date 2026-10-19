@@ -4,21 +4,9 @@ What cabinet does next, in order. Each item says what is missing today, what it 
 
 **One rule for every item:** cabinet is shaped by the people who use it, not built around one kind of project. It has to fit any product (a web app, a mobile app, a library, a service, client work, a business with little code), any team (one person to a small company, people and agents in any mix) and any experience (new to everything, or expert in some areas). So every item below is optional, turned on and tuned per project in its own settings, and has a sensible default for a project that does not care; nothing assumes a number of repos, a stack, a market, an outside service or a way of working. Where an item needs project-specific detail (what is critical, which contracts exist, what a release is), the project declares it, and the kit supplies the mechanism, not the content.
 
-## 1. Full Linux support
+## 1. Windows support, through WSL
 
-Today cabinet is built and tested on macOS. On Linux the team files, setup and guardrails should work but have never run there, and four parts are macOS only.
-
-- **Schedules:** setup installs, updates and removes systemd user timers (cron where systemd is absent), the same way it handles launchd on macOS. Today setup installs nothing on Linux and says to use cron by hand.
-- **Backup passphrase:** read from the Linux secret store (`secret-tool`) or `CABINET_BACKUP_PASSPHRASE`. The health check accepts either; today it always reports the passphrase missing on Linux.
-- **Dates and paths:** the health check computes the backup's age with GNU `date` too (today it uses a macOS-only option), and logs go to `~/.local/state/cabinet/<slug>/` on Linux.
-- **Tests:** the suite runs on Linux (today it uses the macOS form of `sed -i`), and passes in a Linux container.
-- **Install:** `package.json` adds `linux` to `os` (today npm refuses to install on Linux), and the README's platform line says so.
-
-Done when: the full test suite passes on macOS and in a Linux container, and a workspace on Linux runs its brief and backup on schedule with `bin/doctor.sh` all green.
-
-## 2. Windows support, through WSL
-
-Windows runs cabinet through WSL (Windows Subsystem for Linux), which gives the Linux support above. Native Windows (PowerShell, or Git Bash, which lacks `jq` and other tools the scripts use) is not a goal.
+Windows runs cabinet through WSL (Windows Subsystem for Linux), which gives it cabinet's Linux support (systemd timers when WSL runs systemd, else cron). Native Windows (PowerShell, or Git Bash, which lacks `jq` and other tools the scripts use) is not a goal.
 
 - A README section: installing WSL, where the workspace should live (the WSL file system, not a mounted Windows drive, for git speed and file permissions), and running the agent tools inside WSL.
 - The guardrails for agent tools installed inside WSL; a note on tools installed on the Windows side, which those guardrails do not cover.
@@ -98,6 +86,8 @@ These send data out of the machine or depend on outside services, so each starts
 ## Later, when a project needs it
 
 - **Hardening found in review:** archives use AES-256-CBC without a MAC (tampering shows only as a tar or gzip error); the keychain item can be read without a prompt by any process of the user (deny rules stop agents in the guarded tools; creating the item to always ask would need a decision for scheduled backups); opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules (`bin/doctor.sh` checks only the global result); folder names without Latin letters or digits need `--slug`; on opencode 2.x, `bin/doctor.sh` cannot read the resolved permission rules (its debug commands need opencode's background service), so its guardrails are unverified there.
+
+- **Linux, the rest:** messages and docs still say "this Mac" on Linux; on a Linux machine scheduled by cron, a scheduled backup cannot reach the secret store or systemd's environment, so it needs the passphrase another way (a file only the user can read, for example); and the kit is tested on Debian only. Done when: no message names a Mac on Linux, and a cron-scheduled backup runs unattended.
 
 - **More than one owner:** today the kit assumes one person signs off. Two founders, or a lead per area, each sign off their own decisions: owners named in `AGENTS.md` with what each decides, every sign-off item addressed to one of them, the brief's queue grouped by owner, and the digest showing each person only their own. The push gate and guardrails stay per person. Wait until a team needs it: it is the largest change here. Done when: an item addressed to one owner reaches only that owner, and an owner's answer applies only to their items.
 - **One Mac runs the jobs, without asking teammates:** in a shared workspace, a teammate must remember `cabinet bootstrap --no-schedules`, or their Mac schedules the brief too and the team gets two. A choice to study: record in the shared `cabinet.env` which Mac runs the jobs (filled at setup with the owner's Mac), so bootstrap on any other Mac skips schedules on its own and names the Mac that runs them, while `--schedules` still lets a Mac take over. Open questions: how to tell Macs apart (the computer name changes when a Mac is renamed, which would stop its schedules until re-recorded), what the doctor reports on each side, and how a handover works when the owner's Mac is gone. Done when: a teammate who clones a shared workspace and runs a plain `cabinet bootstrap` schedules nothing, and the owner's Mac keeps its schedules.

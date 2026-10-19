@@ -7,11 +7,10 @@ Read this before changing anything in this repository. It is for agents (and peo
 | Path | What it is | Ends up in a workspace as |
 |---|---|---|
 | `bin/cabinet` | The `cabinet` command: setup, settings, removal, updates, and every workspace script as a command run from anywhere inside the workspace | (runs from the installed package) |
-| `scripts/*.sh` | The workspace scripts; `lib.sh` is shared and sourced by the rest, and `when.sh` is the one parser for schedule times, sourced by `lib.sh` and by `bin/cabinet` | `bin/*.sh` |
+| `scripts/*.sh` | The workspace scripts; `lib.sh` is shared and sourced by the rest, `when.sh` is the one parser for schedule times, and `platform.sh` is the one place that knows macOS from Linux (log folder, dates, the passphrase store, launchd, systemd or cron); both are sourced by `lib.sh` and by `bin/cabinet` | `bin/*.sh` |
 | `core/CABINET.md` | How a workspace runs: handoffs, tiers, sign-off, seats, git rules | `CABINET.md` |
 | `roles/*.md` | The kit's roles | `.cabinet/roles/`, built into `agents/` and `.claude/agents/` |
 | `guardrails/` | Deny rules for each agent tool, the push gate, the hook pass-through stub | `.cabinet/guardrails/`, installed machine-wide by bootstrap |
-| `launchd/job.plist` | The schedule template | `.cabinet/launchd/` |
 | `templates/workspace/` | Project files placed once by `new` and `init` | the workspace's own files |
 | `docs/`, `README.md`, `llms.txt`, `llms-full.txt` | Documentation, shipped in the npm package. `llms-full.txt` is built from the pages `llms.txt` lists | (not copied) |
 | `tools/build-llms-full.py` | Builds `llms-full.txt` (`npm run docs`; not shipped) | |
@@ -21,7 +20,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 
 ## Rules
 
-1. **Never touch the real machine while testing.** Every test and experiment runs in a `mktemp -d` folder with `HOME` pointed inside it (git then reads that folder's `.gitconfig` as its global config), and a fake `launchctl` first on `PATH` from the very start, never added only by a later step. Never read or write the real `~/.claude`, `~/.qwen`, `~/.cursor`, `~/.config`, `~/Library/LaunchAgents`, the keychain or the global git config. `test/smoke.sh` does this in its header for every section; follow its pattern. After an experiment, check that `launchctl list` shows no `ai.cabinet.` job you did not mean to load.
+1. **Never touch the real machine while testing.** Every test and experiment runs in a `mktemp -d` folder with `HOME` pointed inside it (git then reads that folder's `.gitconfig` as its global config), and fakes of `launchctl`, `systemctl`, `crontab`, `security`, `secret-tool` and the agent tools first on `PATH` from the very start, never added only by a later step. Never read or write the real `~/.claude`, `~/.qwen`, `~/.cursor`, `~/.config`, `~/Library/LaunchAgents`, `~/.local/state`, the crontab, the keychain, the secret store or the global git config. `test/smoke.sh` does this in its header for every section; follow its pattern. After an experiment, check that `launchctl list` shows no `ai.cabinet.` job you did not mean to load.
 2. **Never weaken a guardrail, and never test one by trying a real push, merge or publish.** Test a rule with the tool's own matcher, or with a harmless command of the same shape (for example `git log` for `git push`). A new rule format is untested until shown to work, and the docs say so.
 3. **bash 3.2.** macOS ships it, so the kit runs on it: no `mapfile`, no associative arrays, no `${var,,}`; guard empty arrays (`${a[@]+"${a[@]}"}`); declare an array on its own `local` line; no apostrophe inside `${x:+...}` in double quotes.
 4. **Untrusted values never reach a shell.** Anything from a cloned project (`package.json`, folder names, git remotes) is checked (`safe`, `url_ok`, `name_ok` in `bin/cabinet`) before it is written into `cabinet.env`, `repos.tsv` or a schedule. `cabinet.env` and job files are sourced as shell.
@@ -75,6 +74,7 @@ Known exceptions, each on the roadmap: `update` has no `--dry-run` yet (`cabinet
 ```sh
 npm test                                      # every section, about a minute; must end with PASS
 npm test -- init config                       # only the sections whose name has a word, and what they need
+npm run test:linux                            # the same suite on Linux, in a Debian container (needs Docker or Colima)
 CABINET_PRIVATE_WORDS="word1 word2" npm test  # also fails on any private word in the kit
 npm run docs                                  # rebuild llms-full.txt after changing a doc
 npm pack --dry-run                            # what the package ships

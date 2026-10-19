@@ -2,7 +2,8 @@
 # End-to-end check of the kit in a throwaway folder: every command and layout,
 # roles, handoffs, schedules, guardrail merges, backups and restores, and the
 # fixes from reviews. Touches nothing outside the temp folder: HOME and git's
-# global config point inside it, and launchctl is a fake that only logs.
+# global config point inside it, and the schedulers (launchctl, systemctl, crontab), the
+# passphrase stores and notifications are fakes that only log.
 #
 #   test/smoke.sh
 # No pipefail: "cmd | grep -q" checks would fail at random when grep exits early.
@@ -13,14 +14,43 @@ F="$KIT/bin/cabinet"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com
 # The real home folder, git config and agent tool settings are never read or written.
-export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM=1 XDG_CONFIG_HOME="$T/user/.config"
+export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM=1
+unset XDG_CONFIG_HOME XDG_STATE_HOME   # their defaults follow HOME into the temp folder
 mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
-# The real launchd is never reached: a fake launchctl that only logs is first on PATH for the
-# whole run, before any section, so even one section run alone cannot load a real schedule.
+# The real launchd, systemd, crontab, keychain and secret store are never reached: fakes that
+# only log are first on PATH for the whole run, before any section, so even one section run
+# alone cannot load a real schedule, read a real secret or start a real agent (claude is a
+# fake too). The fake crontab keeps its table in $T.
 mkdir -p "$T/shim"
-printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/launchctl.log" > "$T/shim/launchctl"; chmod +x "$T/shim/launchctl"
+for t in launchctl systemctl security secret-tool osascript notify-send claude; do
+  printf '#!/bin/sh\necho "%s $*" >> "%s"\ncase "$1" in find-generic-password|lookup) exit 44 ;; esac\n' "$t" "$T/fake.log" > "$T/shim/$t"; chmod +x "$T/shim/$t"
+done
+printf '#!/bin/sh\ncase "$1" in -l) cat "%s" 2>/dev/null ;; -) cat > "%s" ;; *) exit 1 ;; esac\n' "$T/crontab" "$T/crontab" > "$T/shim/crontab"; chmod +x "$T/shim/crontab"
 export PATH="$T/shim:$PATH"
-[[ "$(command -v launchctl)" == "$T/shim/launchctl" ]] || fail "the fake launchctl is not first on PATH"
+for t in launchctl systemctl crontab security secret-tool; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
+sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
+perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
+# Where this machine keeps logs and schedules, under a HOME (bin/platform.sh): $H/$LOGS, $H/$SD/<label>$SX.
+pf() { bash -c 'source "$0/scripts/when.sh"; source "$0/scripts/platform.sh"; "$@"' "$KIT" "$@"; }
+SCH="$(pf eval 'echo $SCHEDULER')"
+if [[ "$(uname)" == Darwin ]]; then LOGS="Library/Logs/cabinet"; else LOGS=".local/state/cabinet"; fi
+case "$SCH" in launchd) SD="Library/LaunchAgents" SX=.plist ;; systemd) SD=".config/systemd/user" SX=.service ;; *) SD=".config/cabinet/cron" SX=.cron ;; esac
+# A schedule's days and times as "<weekday or *>:<hour>:<minute> ...", its stored time and its command (JSON).
+cal() {
+  case "$SCH" in
+    launchd) plutil -extract StartCalendarInterval json -o - "$1" | jq -r '[.[] | "\(.Weekday // "*"):\(.Hour):\(.Minute)"] | join(" ")' ;;
+    systemd) sed -n 's/^OnCalendar=//p' "${1%.service}.timer" | awk '{ n = split($1, d, ","); split($3, t, ":"); if (NF == 2) { n = 1; d[1] = "*"; split($2, t, ":") }
+      for (i = 1; i <= n; i++) { w = index("SunMonTueWedThuFriSat", d[i]); printf "%s%s:%d:%d", (i > 1 ? " " : ""), (d[i] == "*" ? "*" : (w - 1) / 3), t[1], t[2] } }' ;;
+    *) grep -v '^#' "$1" | awk '{ n = split($5, d, ","); for (i = 1; i <= n; i++) printf "%s%s:%d:%d", (i > 1 ? " " : ""), d[i], $2, $1 }' ;;
+  esac
+}
+when_of() { pf sched_get "$1" when; }
+cmd_of() { pf sched_get "$1" command; }
+# fake_sched <file> <program>: a schedule another workspace (or this one, under an old name) left.
+fake_sched() {
+  mkdir -p "$(dirname "$1")"
+  if [[ "$SCH" == launchd ]]; then printf '<plist><string>%s</string></plist>\n' "$2" > "$1"; else printf '# cabinet-command: ["%s"]\n' "$2" > "$1"; fi
+}
 
 
 # Sections build on each other's workspaces. `test/smoke.sh <word>...` (npm test -- <word>) runs
@@ -199,14 +229,14 @@ for r in chief-of-staff product-manager architect qa security design-lead financ
 done
 printf 'Run the api with `bun test`.\n' > "$W/roles/qa.md"
 printf -- '---\nname: growth\ndescription: Growth.\n---\n\nYou are growth.\n' > "$W/roles/growth.md"
-sed -i '' 's/^CABINET_ROLES="\(.*\)"/CABINET_ROLES="\1 growth"/' "$W/cabinet.env"
-sed -i '' 's/finance |/finance, growth |/' "$W/OPERATIONS.md"
+sedi 's/^CABINET_ROLES="\(.*\)"/CABINET_ROLES="\1 growth"/' "$W/cabinet.env"
+sedi 's/finance |/finance, growth |/' "$W/OPERATIONS.md"
 "$W/bin/role.sh" build --check >/dev/null 2>&1 && fail "check missed stale roles"
 "$W/bin/role.sh" build >/dev/null
 grep -q '## Project notes' "$W/agents/qa.md" && grep -q 'bun test' "$W/agents/qa.md" || fail "project note not appended"
 [[ -f "$W/.claude/agents/growth.md" ]] || fail "project-only role not built"
 "$W/bin/role.sh" build --check || fail "check fails on fresh roles"
-sed -i '' 's/ growth"/"/' "$W/cabinet.env"; "$W/bin/role.sh" build >/dev/null
+sedi 's/ growth"/"/' "$W/cabinet.env"; "$W/bin/role.sh" build >/dev/null
 [[ ! -f "$W/agents/growth.md" ]] || fail "dropped role not removed"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -305,27 +335,26 @@ echo "$out" | grep -q "node_modules/@tarekraafat/cabinet: $(jq -r .version "$KIT
 
 section "schedules follow jobs/ and cabinet.env" "0"
 s14() {
-# A scratch HOME and a fake launchctl: nothing reaches the real machine.
-H="$T/home"; mkdir -p "$H/Library/LaunchAgents" "$T/shim"
-printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/launchctl.log" > "$T/shim/launchctl"; chmod +x "$T/shim/launchctl"
+# A scratch HOME and the fake schedulers: nothing reaches the real machine.
+H="$T/home"; mkdir -p "$H/$SD"
 boot() { HOME="$H" PATH="$T/shim:$PATH" "$W/bin/bootstrap.sh" "$@" 2>&1; }
-LA="$H/Library/LaunchAgents"; P="$LA/ai.cabinet.demo-co"
-touch "$LA/ai.cabinet.other.brief.plist"
+LA="$H/$SD"; P="$LA/ai.cabinet.demo-co"
+touch "$LA/ai.cabinet.other.brief$SX"
 boot >/dev/null
-grep -q '<key>Hour</key><integer>7</integer>' "$P.brief.plist" || fail "brief not scheduled at 07:00"
+[[ "$(cal "$P.brief$SX")" == "*:7:0" ]] || fail "brief not scheduled at 07:00"
 [[ -z "$(boot | grep -E 'installed|updated|removed')" ]] || fail "a rerun with no change touched a schedule"
-sed -i '' 's/^WHEN=.*/WHEN="08:15"/' "$W/jobs/brief.job"
+sedi 's/^WHEN=.*/WHEN="08:15"/' "$W/jobs/brief.job"
 boot | grep -q 'updated ai.cabinet.demo-co.brief' || fail "changed time not reported"
-grep -q '<integer>8</integer><key>Minute</key><integer>15</integer>' "$P.brief.plist" || fail "changed time not applied"
-sed -i '' "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$T/bk\"|" "$W/cabinet.env"
-boot >/dev/null; [[ -f "$P.backup.plist" ]] || fail "backup not scheduled"
-sed -i '' 's|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=""|' "$W/cabinet.env"
-sed -i '' 's/^WHEN=.*/WHEN=""/' "$W/jobs/brief.job"
-boot --dry-run | grep -q 'would remove ai.cabinet.demo-co.brief' && [[ -f "$P.brief.plist" ]] || fail "dry run removed or did not report"
+[[ "$(cal "$P.brief$SX")" == "*:8:15" ]] || fail "changed time not applied"
+sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$T/bk\"|" "$W/cabinet.env"
+boot >/dev/null; [[ -f "$P.backup$SX" ]] || fail "backup not scheduled"
+sedi 's|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=""|' "$W/cabinet.env"
+sedi 's/^WHEN=.*/WHEN=""/' "$W/jobs/brief.job"
+boot --dry-run | grep -q 'would remove ai.cabinet.demo-co.brief' && [[ -f "$P.brief$SX" ]] || fail "dry run removed or did not report"
 boot | grep -q 'removed ai.cabinet.demo-co.backup' || fail "backup off not removed"
-[[ ! -e "$P.brief.plist" && ! -e "$P.backup.plist" ]] || fail "turned-off schedules left behind"
-[[ -f "$LA/ai.cabinet.other.brief.plist" ]] || fail "another workspace's schedule was touched"
-grep -q 'bootout gui/[0-9]*/ai.cabinet.demo-co.brief' "$T/launchctl.log" || fail "removed schedule not unloaded"
+[[ ! -e "$P.brief$SX" && ! -e "$P.backup$SX" ]] || fail "turned-off schedules left behind"
+[[ -f "$LA/ai.cabinet.other.brief$SX" ]] || fail "another workspace's schedule was touched"
+grep -Eq '(launchctl bootout gui/[0-9]*/|systemctl --user disable --now )ai.cabinet.demo-co.brief' "$T/fake.log" || [[ "$SCH" == cron ]] || fail "removed schedule not unloaded"
 git -C "$W" checkout -q -- jobs/brief.job cabinet.env
   return 0   # a last "check && fail" line must not end the run
 }
@@ -354,7 +383,7 @@ out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, l
 # Permissions and symlinks of a config survive the merge.
 printf '{"k": 1}\n' > "$T/real-settings.json"; chmod 600 "$T/real-settings.json"; rm "$H/.qwen/settings.json"; ln -s "$T/real-settings.json" "$H/.qwen/settings.json"
 boot >/dev/null
-[[ -L "$H/.qwen/settings.json" && "$(stat -f %Lp "$T/real-settings.json")" == 600 ]] && jq -e '.k == 1 and (.permissions.deny | length > 0)' "$T/real-settings.json" >/dev/null || fail "merge lost a symlink or loosened permissions"
+[[ -L "$H/.qwen/settings.json" && "$(perm "$T/real-settings.json")" == 600 ]] && jq -e '.k == 1 and (.permissions.deny | length > 0)' "$T/real-settings.json" >/dev/null || fail "merge lost a symlink or loosened permissions"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -371,15 +400,15 @@ rm -f "$W/runner.out"
 # A run past its time limit is stopped with everything it started, and the log says why
 # (CABINET_TEST_MINUTE makes a minute one second). A limit that is not a number never runs.
 echo "CABINET_RUNNER_CMD='sleep 323; :'" >> "$W/cabinet.env"
-cp "$W/jobs/brief.job" "$T/brief.bak"; sed -i '' 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
+cp "$W/jobs/brief.job" "$T/brief.bak"; sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
 s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 1 && SECONDS - s < 10)) || fail "a run past its limit was not stopped (exit $st after $((SECONDS - s))s)"
 ! pgrep -f 'sleep 323' >/dev/null || fail "a stopped run left what it started running"
-grep -q "stopped after 2 min: the job's time limit" "$H/Library/Logs/cabinet/demo-co/brief.log" || fail "the log does not say why the run stopped"
+grep -q "stopped after 2 min: the job's time limit" "$H/$LOGS/demo-co/brief.log" || fail "the log does not say why the run stopped"
 # Stopping the job (launchd's stop, or Ctrl-C by hand) stops the agent too, though it runs in its own group.
 HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM "$p"; wait "$p" || true
 ! pgrep -f 'sleep 323' >/dev/null || fail "stopping the job left the agent running"
-sed -i '' 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
+sedi 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
 st=0; HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 2)) && ! pgrep -f 'sleep 323' >/dev/null || fail "a TIMEOUT that is not whole minutes was not refused"
 cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
@@ -394,7 +423,7 @@ s17() {
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
-[[ -f "$LA/ai.cabinet.cfg.brief.plist" ]] || fail "config test setup: no schedule"
+[[ -f "$LA/ai.cabinet.cfg.brief$SX" ]] || fail "config test setup: no schedule"
 out="$(cfg --yes --name "Acme Labs" --slug acme-labs --owner Ann --email ann@example.com --roles "qa security" \
   --brief-time 06:30 --week-start Monday --repo git@example.invalid:acme/api.git --apply)" || { echo "$out"; fail "config with options"; }
 echo "$out" | grep -q 'api: clone failed (see above); everything else continues' || fail "a failed clone stopped the setup"
@@ -404,7 +433,7 @@ grep -q 'Authored as Ann <ann@example.com>\.' "$C/AGENTS.md" && grep -q 'Week st
 grep -q '| finance |' "$C/AGENTS.md" "$C/OPERATIONS.md" && fail "a dropped role is still in a team table"
 [[ "$(ls "$C/agents" | tr '\n' ' ')" == "chief-of-staff.md qa.md security.md " ]] || fail "roles not rebuilt"
 grep -qx 'WHEN="6:30 AM"' "$C/jobs/brief.job" && grep -q $'^api\tgit@example.invalid:acme/api.git' "$C/repos.tsv" && grep -qF '| `api` |' "$C/AGENTS.md" || fail "brief or repo not written"
-[[ ! -e "$LA/ai.cabinet.cfg.brief.plist" ]] && grep -q '<integer>6</integer><key>Minute</key><integer>30</integer>' "$LA/ai.cabinet.acme-labs.brief.plist" || fail "schedule not moved to the new slug"
+[[ ! -e "$LA/ai.cabinet.cfg.brief$SX" ]] && [[ "$(cal "$LA/ai.cabinet.acme-labs.brief$SX")" == "*:6:30" ]] || fail "schedule not moved to the new slug"
 grep -q 'ai.cabinet.acme-labs.brief' "$C/OPERATIONS.md" && ! grep -q 'ai\.cabinet\.cfg\.' "$C/OPERATIONS.md" || fail "manual still names the old slug"
 cfg --yes --roles "qa security finance" >/dev/null
 [[ "$(grep -c '| finance |' "$C/AGENTS.md")" == 1 && "$(grep -c '| finance |' "$C/OPERATIONS.md")" == 1 && -f "$C/agents/finance.md" ]] || fail "a returning role did not come back"
@@ -415,7 +444,7 @@ cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
 printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" off "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
-printf '<plist><string>%s/bin/job.sh</string></plist>\n' "$(cd "$C" && pwd -P)" > "$LA/ai.cabinet.old-name.brief.plist"
+fake_sched "$LA/ai.cabinet.old-name.brief$SX" "$(cd "$C" && pwd -P)/bin/job.sh"
 HOME="$H" "$C/bin/doctor.sh" 2>&1 | grep -q 'ai.cabinet.old-name.brief still runs this workspace under an old name' || fail "doctor missed a leftover schedule"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -432,15 +461,14 @@ grep -qx 'CABINET_PROJECT="evil"' "$T/evil-hq/cabinet.env" || fail "unsafe name 
 "$F" new "$T/bad2" --name 'R$D Labs' --yes >/dev/null 2>&1 && fail "a name with \$ was accepted"
 [[ ! -e "$T/bad2" ]] || fail "a refused setup left its folder behind"
 # A slug another workspace uses is refused; --slug picks another.
-mkdir -p "$H/Library/LaunchAgents"
-printf '<plist><string>/elsewhere/taken/bin/job.sh</string></plist>\n' > "$H/Library/LaunchAgents/ai.cabinet.taken.brief.plist"
+fake_sched "$H/$SD/ai.cabinet.taken.brief$SX" /elsewhere/taken/bin/job.sh
 HOME="$H" "$F" new "$T/taken" --yes >/dev/null 2>&1 && fail "a slug used by another workspace was accepted"
 HOME="$H" "$F" new "$T/taken" --slug taken-2 --yes >/dev/null && grep -qx 'CABINET_SLUG="taken-2"' "$T/taken/cabinet.env" || fail "--slug"
 # Bootstrap never takes over or removes another workspace's schedule.
-cp "$H/Library/LaunchAgents/ai.cabinet.taken.brief.plist" "$T/taken.plist"
-sed -i '' 's/^CABINET_SLUG=.*/CABINET_SLUG="taken"/' "$T/taken/cabinet.env"
+cp "$H/$SD/ai.cabinet.taken.brief$SX" "$T/taken.plist"
+sedi 's/^CABINET_SLUG=.*/CABINET_SLUG="taken"/' "$T/taken/cabinet.env"
 out="$(HOME="$H" PATH="$T/shim:$PATH" "$T/taken/bin/bootstrap.sh" 2>&1 || true)"
-echo "$out" | grep -q 'ai.cabinet.taken.brief already runs another workspace' && cmp -s "$T/taken.plist" "$H/Library/LaunchAgents/ai.cabinet.taken.brief.plist" || fail "bootstrap touched another workspace's schedule"
+echo "$out" | grep -q 'ai.cabinet.taken.brief already runs another workspace' && cmp -s "$T/taken.plist" "$H/$SD/ai.cabinet.taken.brief$SX" || fail "bootstrap touched another workspace's schedule"
 # The backup folder must be outside the workspace and its repos: setup, config and backup.sh all refuse.
 "$F" new "$T/bk1" --backup-dir "$T/bk1/backups" --yes >/dev/null 2>&1 && fail "setup accepted a backup folder inside the workspace"
 (cd "$I" && "$F" config --yes --backup-dir "$I/backups") >/dev/null 2>&1 && fail "config accepted a backup folder inside the project"
@@ -450,12 +478,12 @@ CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" create "$I/backups" >/dev
 # Cleanup keeps only this workspace's archives, never another's with a longer slug; keep 0 is refused.
 "$F" new "$T/app" --yes >/dev/null; BD="$T/shared-bk"; mkdir -p "$BD"
 touch "$BD/app-web-20260101-000000.tar.gz.enc" "$BD/app-web-20260102-000000.tar.gz.enc"
-sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=1/' "$T/app/cabinet.env"
+sedi 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=1/' "$T/app/cabinet.env"
 for i in 1 2; do CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" create "$BD" >/dev/null; sleep 1; done
 [[ "$(ls "$BD" | grep -c '^app-web-')" == 2 && "$(ls "$BD" | grep -cE '^app-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$')" == 1 ]] || { ls "$BD"; fail "cleanup removed another workspace's archives, or kept too many"; }
-sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=0/' "$T/app/cabinet.env"
+sedi 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=0/' "$T/app/cabinet.env"
 CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" create "$BD" >/dev/null 2>&1 && fail "keep 0 was accepted"
-sed -i '' 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=14/' "$T/app/cabinet.env"
+sedi 's/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=14/' "$T/app/cabinet.env"
 # Restore never replaces a file without keeping a copy.
 mkdir -p "$T/rr"; echo MINE > "$T/rr/AGENTS.md"
 CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" restore "$BD/$(ls "$BD" | grep -E '^app-[0-9]')" "$T/rr" >/dev/null || fail "restore into a folder with files"
@@ -463,12 +491,12 @@ CABINET_BACKUP_PASSPHRASE=t "$T/app/bin/backup.sh" restore "$BD/$(ls "$BD" | gre
 # A mistyped WHEN keeps the working schedule; an & in the path still gives a valid schedule.
 A2="$T/R&D"; "$F" new "$A2" --slug rnd --yes >/dev/null
 HOME="$H" PATH="$T/shim:$PATH" "$A2/bin/bootstrap.sh" >/dev/null 2>&1 || true
-plutil -lint "$H/Library/LaunchAgents/ai.cabinet.rnd.brief.plist" >/dev/null || fail "a path with & gave an invalid schedule"
-sed -i '' 's/^WHEN=.*/WHEN="7 oclock"/' "$A2/jobs/brief.job"
+[[ "$(pf sched_ws "$H/$SD/ai.cabinet.rnd.brief$SX")" == "$(cd "$A2" && pwd -P)" ]] && { [[ "$SCH" != launchd ]] || plutil -lint "$H/$SD/ai.cabinet.rnd.brief$SX" >/dev/null; } || fail "a path with & gave an invalid schedule"
+sedi 's/^WHEN=.*/WHEN="7 oclock"/' "$A2/jobs/brief.job"
 out="$(HOME="$H" PATH="$T/shim:$PATH" "$A2/bin/bootstrap.sh" 2>&1 || true)"
-echo "$out" | grep -q "bad schedule '7 oclock'" && [[ -f "$H/Library/LaunchAgents/ai.cabinet.rnd.brief.plist" ]] || fail "a mistyped WHEN removed the working schedule"
+echo "$out" | grep -q "bad schedule '7 oclock'" && [[ -f "$H/$SD/ai.cabinet.rnd.brief$SX" ]] || fail "a mistyped WHEN removed the working schedule"
 # Scheduled jobs get a PATH with node's folder.
-grep -qF "$(dirname "$(command -v node)")" "$H/Library/LaunchAgents/ai.cabinet.rnd.brief.plist" || fail "node's folder not on the scheduled PATH"
+grep -qF "$(dirname "$(command -v node)")" "$H/$SD/ai.cabinet.rnd.brief$SX" || fail "node's folder not on the scheduled PATH"
 # The pass-through stub runs a repo's own pre-commit hook under the global hooks path.
 HK="$T/hooks"; mkdir -p "$HK"; cp "$KIT/guardrails/hook-passthrough" "$HK/pre-commit"
 mkrepo "$T/hooked"; printf '#!/bin/sh\ntouch "%s/own-hook-ran"\n' "$T" > "$T/hooked/.git/hooks/pre-commit"; chmod +x "$T/hooked/.git/hooks/pre-commit"
@@ -493,7 +521,7 @@ git -C "$I" config core.hooksPath .husky
 "$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app sets its own core.hooksPath (.husky)" || fail "doctor missed the project's own hooks path"
 git -C "$I" config --unset core.hooksPath
 # The guardrails close the known ways around the push gate and to credentials.
-for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)'; do
+for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)' 'Bash(secret-tool lookup*)'; do
   jq -e --arg r "$r" '.permissions.deny | index($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
 done
   return 0   # a last "check && fail" line must not end the run
@@ -561,7 +589,7 @@ mkdir -p "$T/real3"; ln -s "$T/real3" "$T/link3"
 "$F" new "$T/link3/pk" --yes >/dev/null
 boot2 "$H2" "$T/link3/pk" >/dev/null
 (cd "$T/link3/pk" && HOME="$H2" PATH="$T/shim:$PATH" "$F" config --yes --slug pk2 --apply) >/dev/null 2>&1 || true
-[[ ! -e "$H2/Library/LaunchAgents/ai.cabinet.pk.brief.plist" && -f "$H2/Library/LaunchAgents/ai.cabinet.pk2.brief.plist" ]] || fail "a slug change through a symlinked path left the old schedule"
+[[ ! -e "$H2/$SD/ai.cabinet.pk.brief$SX" && -f "$H2/$SD/ai.cabinet.pk2.brief$SX" ]] || fail "a slug change through a symlinked path left the old schedule"
 HOME="$H2" "$F" new "$T/elsewhere3/pk" --yes >/dev/null 2>&1 || fail "the old slug was not released after a slug change"
 # Relative repo URLs work in new and config, as in repos.tsv.
 (cd "$T" && "$F" new "$T/relnew" --repo ../srcrepo --yes >/dev/null) || fail "a relative --repo was refused"
@@ -619,9 +647,9 @@ python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the co
 python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
 repo="$(jq -r .repository.url "$KIT/package.json" | sed 's/^git+//')"
 grep -qF "git clone $repo " "$KIT/README.md" || fail "the README's clone command does not match the repository in package.json"
-# The package installs only where the README says the kit runs: macOS, until Linux ships.
+# The package installs only where the README says the kit runs: macOS and Linux.
 jq -e '.publishConfig.access == "public"' "$KIT/package.json" >/dev/null || fail "the scoped package would publish as private"
-jq -e '.os == ["darwin"]' "$KIT/package.json" >/dev/null && grep -q '^- \*\*Platform:\*\* macOS\.' "$KIT/README.md" || fail "package.json os and the README's platform disagree"
+jq -e '.os == ["darwin", "linux"]' "$KIT/package.json" >/dev/null && grep -q '^- \*\*Platform:\*\* macOS and Linux ' "$KIT/README.md" || fail "package.json os and the README's platform disagree"
 for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" || fail ".gitignore does not ignore $p"; done
   return 0   # a last "check && fail" line must not end the run
 }
@@ -679,15 +707,15 @@ echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$
 section "remove" "2"
 s28() {
 "$F" new "$T/gone" --yes >/dev/null; G="$(cd "$T/gone" && pwd -P)"
-mkdir -p "$HOME/Library/LaunchAgents"; echo "<string>$G/bin/job.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.brief.plist"
-echo "<string>/elsewhere/bin/job.sh</string>" > "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist"
-"$F" -C "$G" remove --dry-run | grep -q 'ai.cabinet.gone.brief.plist' && [[ -d "$G" ]] || fail "remove --dry-run"
+fake_sched "$HOME/$SD/ai.cabinet.gone.brief$SX" "$G/bin/job.sh"
+fake_sched "$HOME/$SD/ai.cabinet.gone.other$SX" /elsewhere/bin/job.sh
+"$F" -C "$G" remove --dry-run | grep -q 'schedule ai.cabinet.gone.brief$' && [[ -d "$G" ]] || fail "remove --dry-run"
 "$F" -C "$G" remove --yes >/dev/null 2>&1 && fail "remove deleted commits that exist on no remote"
 [[ -d "$G" ]] || fail "a refused remove deleted the workspace"
 printf 'nope\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null 2>&1 && fail "remove went ahead with the wrong slug typed"
 printf 'gone\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null || fail "remove"
-[[ ! -e "$G" && ! -e "$HOME/Library/LaunchAgents/ai.cabinet.gone.brief.plist" && -e "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist" ]] || fail "remove: folder, own schedule, or another's schedule"
-rm "$HOME/Library/LaunchAgents/ai.cabinet.gone.other.plist"
+[[ ! -e "$G" && ! -e "$HOME/$SD/ai.cabinet.gone.brief$SX" && -e "$HOME/$SD/ai.cabinet.gone.other$SX" ]] || fail "remove: folder, own schedule, or another's schedule"
+rm "$HOME/$SD/ai.cabinet.gone.other$SX"
 # Inside a project, private: the project is left exactly as it was before init.
 P="$T/rm-app"; mkrepo "$P"; echo '# rules' > "$P/AGENTS.md"; git -C "$P" add -A; git -C "$P" commit -qm rules
 (cd "$P" && "$F" init --yes --inside) >/dev/null
@@ -744,7 +772,7 @@ section "a teammate's Mac: no schedules, its own backups" "2"
 s32() {
 P="$T/team-app"; mkrepo "$P"; echo '{"name":"team-app"}' > "$P/package.json"; git -C "$P" add -A; git -C "$P" commit -qm pkg
 (cd "$P" && "$F" init --yes --inside --shared) >/dev/null; git -C "$P" add -A; git -C "$P" commit -qm cabinet
-LA="$HOME/Library/LaunchAgents/ai.cabinet.team-app.brief.plist"; mkdir -p "$P/src"
+LA="$HOME/$SD/ai.cabinet.team-app.brief$SX"; mkdir -p "$P/src"
 (cd "$P/src" && "$F" bootstrap) >/dev/null 2>&1; [[ -f "$LA" ]] || fail "bootstrap did not schedule the brief"
 git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first bootstrap gives the project its builder
 (cd "$P/src" && "$F" bootstrap --no-schedules) >/dev/null 2>&1 || true
@@ -757,7 +785,7 @@ git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first
 [[ -f "$LA" && ! -e "$P/cabinet/cabinet.local.env" ]] || fail "--schedules"
 rc=0; (cd "$P" && "$F" bootstrap --nope) >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "bootstrap with an unknown option exits $rc, not 2"
 # Backups for this Mac only: cabinet.local.env, never cabinet.env, never in git.
-BL="$HOME/Library/LaunchAgents/ai.cabinet.team-app.backup.plist"
+BL="$HOME/$SD/ai.cabinet.team-app.backup$SX"
 (cd "$P/src" && "$F" config --this-mac --backup-dir "$T/team-bk" --apply) >/dev/null 2>&1 || true
 grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && grep -qx 'CABINET_BACKUP_DIR=""' "$P/cabinet/cabinet.env" || fail "--this-mac --backup-dir"
 [[ -f "$BL" ]] && grep -q 'team-bk' "$BL" || fail "--this-mac --apply did not schedule this Mac's backup"
@@ -800,12 +828,12 @@ s34() {
 mkdir -p "$T/away"; out="$(cd "$T/away" && "$F" list)"
 echo "$out" | grep -Eq '^  demo-co +Demo Co +[0-9.]+ ' || { echo "$out"; fail "list: the workspace row"; }
 echo "$out" | grep -Eq '^  listed-old +listed-old +0\.0\.1\* ' && echo "$out" | grep -q '^\* not the installed kit' || { echo "$out"; fail "list: an older kit"; }
-echo "$out" | grep -Eq '^  listed-gone +- .*folder gone' && echo "$out" | grep -q 'Folder gone for listed-gone: .*rm -r ~/Library/Logs/cabinet/listed-gone' || { echo "$out"; fail "list: a deleted workspace"; }
+echo "$out" | grep -Eq '^  listed-gone +- .*folder gone' && echo "$out" | grep -q "Folder gone for listed-gone: .*rm -r ~/$LOGS/listed-gone" || { echo "$out"; fail "list: a deleted workspace"; }
 j="$(cd "$T/away" && "$F" list --json)"
 jq -e 'map(select(.slug == "demo-co"))[0] | .project == "Demo Co" and .exists and (.doctor_problems | type == "number") and (.waiting_on_owner | type == "number")' <<<"$j" >/dev/null || fail "list --json: a workspace"
 jq -e '(map(select(.slug == "listed-gone"))[0] | .exists == false and .doctor_problems == null) and (map(select(.slug == "listed-old"))[0].update_available)' <<<"$j" >/dev/null || fail "list --json: gone and older"
 (cd "$T/away" && "$F" next) | grep -q 'cabinet list shows them' || fail "next outside a workspace does not point at list"
-rm -rf "$HOME/Library/Logs/cabinet/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
+rm -rf "$HOME/$LOGS/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
 "$F" list --json | jq -e 'map(.slug) | (index("listed-old") or index("listed-gone")) | not' >/dev/null || fail "a removed workspace is still listed"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -825,22 +853,22 @@ j="$("$F" digest --json)"
 jq -e 'map(select(.slug == "dg-a"))[0] | .project == "Digest A" and (.sign_off_queue | startswith("1. **Publish") and contains("2. **Spend")) and .actions_for_owner == "- Push api main (abc1234)." and .brief_stale == false' <<<"$j" >/dev/null || fail "digest --json: a full brief"
 jq -e '(map(select(.slug == "dg-b"))[0] | .brief_stale and .queue_heading_found == false) and (map(select(.slug == "dg-c"))[0] | .brief_written == null and .queue_heading_found == null)' <<<"$j" >/dev/null || fail "digest --json: stale and missing"
 grep -q '^Write `BRIEF.md` in this order, short, each part under a `## ` heading' "$KIT/roles/chief-of-staff.md" || fail "the brief headings rule left the chief-of-staff role"
-# Written to a file, with a notification (a fake osascript that only logs), and on a schedule.
-printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/osascript.log" > "$T/shim/osascript"; chmod +x "$T/shim/osascript"
+# Written to a file, with a notification (a fake osascript or notify-send that only logs), and on a schedule.
 "$F" digest --write "$T/dg/out.md" --notify >/dev/null || fail "digest --write"
 head -1 "$T/dg/out.md" | grep -Eq '^# cabinet digest, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, ' && grep -q '^  1\. \*\*Publish the page?\*\*' "$T/dg/out.md" || fail "the written digest"
 grep -Eq '[0-9]+ decision\(s\), [0-9]+ action\(s\) and [0-9]+ handoff\(s\) wait on you in [0-9]+ of [0-9]+ project\(s\)\. [0-9]+ brief\(s\) late' "$T/dg/out.md" || { head -3 "$T/dg/out.md"; fail "the digest's counts line"; }
-grep -q 'wait on you in' "$T/osascript.log" && grep -q "Open .*/dg/out.md" "$T/osascript.log" || { cat "$T/osascript.log"; fail "the notification"; }
-PL="$HOME/Library/LaunchAgents/ai.cabinet-digest.plist"
+grep -E '^(osascript|notify-send) ' "$T/fake.log" > "$T/notify.log" || true
+grep -q 'wait on you in' "$T/notify.log" && grep -q "Open .*/dg/out.md" "$T/notify.log" || { cat "$T/notify.log"; fail "the notification"; }
+PL="$HOME/$SD/ai.cabinet-digest$SX"
 "$F" digest --schedule "Sun,mon 8:30 AM" --notify >/dev/null || fail "digest --schedule on days"
-plutil -lint -s "$PL" && [[ "$(plutil -extract StartCalendarInterval json -o - "$PL" | jq -c '[.[] | [.Weekday, .Hour, .Minute]]')" == '[[0,8,30],[1,8,30]]' ]] || fail "the digest schedule's days and time"
-plutil -extract ProgramArguments json -o - "$PL" | jq -e '.[1:3] == ["digest", "--write"] and (.[3] | endswith("/Library/Logs/cabinet/digest.md")) and .[4] == "--notify"' >/dev/null || fail "the digest schedule's command"
+{ [[ "$SCH" != launchd ]] || plutil -lint -s "$PL"; } && [[ "$(cal "$PL")" == "0:8:30 1:8:30" ]] || fail "the digest schedule's days and time"
+cmd_of "$PL" | jq -e --arg l "/$LOGS/digest.md" '.[1:3] == ["digest", "--write"] and (.[3] | endswith($l)) and .[4] == "--notify"' >/dev/null || fail "the digest schedule's command"
 "$F" digest --schedule "7:15 am" --file "$T/dg/sched.md" >/dev/null || fail "digest --schedule daily"
-[[ "$(plutil -extract StartCalendarInterval json -o - "$PL" | jq -c '.')" == '[{"Hour":7,"Minute":15}]' ]] && plutil -extract ProgramArguments json -o - "$PL" | jq -e '.[-1] | endswith("/dg/sched.md")' >/dev/null || fail "changing the digest schedule"
+[[ "$(cal "$PL")" == "*:7:15" ]] && cmd_of "$PL" | jq -e '.[-1] | endswith("/dg/sched.md")' >/dev/null || fail "changing the digest schedule"
 "$F" digest | grep -q '^Scheduled, every day at 7:15 AM: cabinet digest --write .*sched.md' || fail "digest does not say it is scheduled"
 "$F" digest --schedule --notify >/dev/null || fail "digest --schedule with no time"
-[[ "$(plutil -extract StartCalendarInterval json -o - "$PL" | jq -c '.')" == '[{"Hour":10,"Minute":0}]' ]] && plutil -extract ProgramArguments json -o - "$PL" | jq -e '.[-1] == "--notify"' >/dev/null || fail "the default digest schedule is not every day at 10:00 AM"
-"$F" digest --schedule >/dev/null && [[ "$(plutil -extract CabinetWhen raw "$PL")" == "10:00 AM" ]] || fail "digest --schedule as the last argument"
+[[ "$(cal "$PL")" == "*:10:0" ]] && cmd_of "$PL" | jq -e '.[-1] == "--notify"' >/dev/null || fail "the default digest schedule is not every day at 10:00 AM"
+"$F" digest --schedule >/dev/null && [[ "$(when_of "$PL")" == "10:00 AM" ]] || fail "digest --schedule as the last argument"
 for bad in 25:00 "fun 08:00" "mon"; do "$F" digest --schedule "$bad" >/dev/null 2>&1 && fail "digest accepted the schedule '$bad'"; done
 "$F" digest --file x.md >/dev/null 2>&1 && fail "--file without --schedule was accepted"
 "$F" digest --schedule off | grep -q 'Stopped the scheduled digest' && [[ ! -f "$PL" ]] || fail "digest --schedule off"
@@ -863,19 +891,19 @@ r="$(/bin/bash -c 'source "$1"; for w in "7 AM" "7:05pm" "daily 7 a.m." "Friday 
 (cd "$W" && "$F" config --yes --brief-time "Friday,saturday 9 am") >/dev/null || fail "config --brief-time with day names"
 grep -qx 'WHEN="fri,sat 9:00 AM"' "$W/jobs/brief.job" || { grep WHEN "$W/jobs/brief.job"; fail "the brief time is not stored in its short form"; }
 "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
-PB="$HOME/Library/LaunchAgents/ai.cabinet.demo-co.brief.plist"
-[[ "$(plutil -extract StartCalendarInterval json -o - "$PB" | jq -c '[.[] | [.Weekday, .Hour, .Minute]]')" == '[[5,9,0],[6,9,0]]' ]] || fail "the brief schedule on Friday and Saturday"
+PB="$HOME/$SD/ai.cabinet.demo-co.brief$SX"
+[[ "$(cal "$PB")" == "5:9:0 6:9:0" ]] || fail "the brief schedule on Friday and Saturday"
 (cd "$W" && "$F" doctor --json || true) | jq -e '.results[] | select(.id == "schedules.job" and (.message | contains("brief"))) | .level == "ok" and (.message | contains("Fri, Sat at 9:00 AM"))' >/dev/null || fail "doctor on a two-day brief"
 (cd "$W" && "$F" config --yes --brief-time "funday 9:00") >/dev/null 2>&1 && fail "config accepted an unknown day"
 # A job written by hand, with a full day name and a one-digit hour.
 printf 'AGENT=qa\nWHEN="Saturday 7:30 PM"\nPROMPT="x"\n' > "$W/jobs/sat.job"
 "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
-[[ "$(plutil -extract StartCalendarInterval json -o - "$HOME/Library/LaunchAgents/ai.cabinet.demo-co.sat.plist" | jq -c '.')" == '[{"Weekday":6,"Hour":19,"Minute":30}]' ]] || fail "a hand-written job with a full day name"
+[[ "$(cal "$HOME/$SD/ai.cabinet.demo-co.sat$SX")" == "6:19:30" ]] || fail "a hand-written job with a full day name"
 rm "$W/jobs/sat.job"; (cd "$W" && "$F" config --yes --brief-time "7 AM") >/dev/null; "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
-[[ "$(plutil -extract StartCalendarInterval json -o - "$PB" | jq -c '.')" == '[{"Hour":7,"Minute":0}]' && ! -e "$HOME/Library/LaunchAgents/ai.cabinet.demo-co.sat.plist" ]] || fail "back to every day"
+[[ "$(cal "$PB")" == "*:7:0" && ! -e "$HOME/$SD/ai.cabinet.demo-co.sat$SX" ]] || fail "back to every day"
 # The digest takes the same forms.
 "$F" digest --schedule "Saturday 10 AM" | grep -q 'Scheduled the digest, Sat at 10:00 AM' || fail "digest --schedule with a full day name"
-[[ "$(plutil -extract StartCalendarInterval json -o - "$HOME/Library/LaunchAgents/ai.cabinet-digest.plist" | jq -c '.')" == '[{"Weekday":6,"Hour":10,"Minute":0}]' ]] || fail "the digest on Saturdays"
+[[ "$(cal "$HOME/$SD/ai.cabinet-digest$SX")" == "6:10:0" ]] || fail "the digest on Saturdays"
 "$F" digest --schedule off >/dev/null
   return 0   # a last "check && fail" line must not end the run
 }
@@ -895,7 +923,7 @@ echo "$out" | grep -q "FIX   possible secrets in the workspace's files.*guides/k
 (cd "$W/specs" && "$F" secret check >/dev/null 2>&1) && fail "cabinet secret check missed the key"
 printf 'DB_PASSWORD=%s\n' "hunter2""hunter2" >> "$W/guides/keys.md"; git -C "$W" add guides/keys.md
 git -C "$W" commit -qm "keys" >/dev/null 2>&1 && fail "a commit setting a password was refused only for the key"
-sed -i '' 's/$/ not-a-secret/' "$W/guides/keys.md"; git -C "$W" add guides/keys.md
+sedi 's/$/ not-a-secret/' "$W/guides/keys.md"; git -C "$W" add guides/keys.md
 git -C "$W" commit -qm "a marked false alarm" >/dev/null 2>&1 || fail "a marked false alarm was refused"
 "$W/bin/secret.sh" check >/dev/null 2>&1 || fail "a marked false alarm is still reported"
 git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "cleanup"
@@ -912,7 +940,7 @@ bk() { HOME="$VH" CABINET_BACKUP_PASSPHRASE="${PW:-t}" "$C/bin/backup.sh" "${@:-
 bk >/dev/null || fail "backup for verify"
 out="$(bk verify)" || fail "a good archive failed to verify: $out"
 echo "$out" | grep -q '^  workspace: restores exactly as it is now' && echo "$out" | grep -q '^  acme-app: restores exactly as it is now' || fail "verify did not check each repo: $out"
-[[ "$(ls "$VB" | wc -l | tr -d ' ')" == 1 ]] && [[ -f "$VH/Library/Logs/cabinet/acme-app/backup-verified" ]] || fail "verify changed the backup folder, or did not record the good result"
+[[ "$(ls "$VB" | wc -l | tr -d ' ')" == 1 ]] && [[ -f "$VH/$LOGS/acme-app/backup-verified" ]] || fail "verify changed the backup folder, or did not record the good result"
 bk verify --json | jq -e '.ok and .problems == 0 and (.results | map(.repo) | index("acme-app")) and (.backed_up | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))' >/dev/null || fail "backup verify --json"
 # Work done since the backup is reported, not a problem.
 echo change >> "$I/f"; git -C "$I" commit -qam "after the backup"; echo draft > "$C/specs/draft.md"
@@ -933,11 +961,11 @@ out="$(bk verify)" && fail "an incomplete archive verified"
 echo "$out" | grep -q 'PROBLEM later: not in the archive' || fail "the missing repo was not named: $out"
 cp "$T/repos.bak" "$C/repos.tsv"
 # The doctor notes a verify that is missing or old.
-cp "$C/cabinet.env" "$T/env.bak"; sed -i '' "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$VB\"|" "$C/cabinet.env"
+cp "$C/cabinet.env" "$T/env.bak"; sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$VB\"|" "$C/cabinet.env"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'ok    a restore was verified 0 day(s) ago' || fail "the doctor missed a fresh verify"
-touch -t 202601010000 "$VH/Library/Logs/cabinet/acme-app/backup-verified"
+touch -t 202601010000 "$VH/$LOGS/acme-app/backup-verified"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  the last verified restore was [0-9]* days ago' || fail "the doctor missed an old verify"
-rm "$VH/Library/Logs/cabinet/acme-app/backup-verified"
+rm "$VH/$LOGS/acme-app/backup-verified"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this Mac yet' || fail "the doctor missed a missing verify"
 cp "$T/env.bak" "$C/cabinet.env"
   return 0   # a last "check && fail" line must not end the run
@@ -967,11 +995,11 @@ echo "$out" | grep -q 'ok    manual names every script, job and role' && echo "$
 # A row that is not TBD is never changed; the team table decides which builders are built.
 git -C "$B" add -A && git -C "$B" commit -qm builders
 HOME="$BH" "$B/bin/bootstrap.sh" 2>&1 | grep -q 'owned by the' && fail "bootstrap reassigned a repo that has an owner"
-sed -i '' 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGENTS.md"
+sedi 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGENTS.md"
 "$B/bin/role.sh" build >/dev/null && [[ ! -e "$B/agents/backend.md" ]] || fail "a builder that owns no repo is still built"
 (cd "$B" && "$F" config --yes --roles "qa") >/dev/null 2>&1 || fail "config --roles with builders"
 [[ -f "$B/agents/web.md" && -f "$B/agents/qa.md" && ! -e "$B/agents/finance.md" ]] || fail "config --roles dropped a builder that owns a repo"
-sed -i '' 's/^| `kind-api` | TBD | owner |$/| `kind-api` | TBD | TBD |/' "$B/AGENTS.md"; cp "$B/AGENTS.md" "$T/agents.bak"
+sedi 's/^| `kind-api` | TBD | owner |$/| `kind-api` | TBD | TBD |/' "$B/AGENTS.md"; cp "$B/AGENTS.md" "$T/agents.bak"
 HOME="$BH" "$B/bin/bootstrap.sh" --dry-run 2>&1 | grep -q 'would make backend the owner of kind-api' && cmp -s "$B/AGENTS.md" "$T/agents.bak" || fail "dry run: builder not shown, or AGENTS.md changed"
 # The guess reads only the files at the repo's top.
 ( WS="$B"; source "$B/bin/lib.sh"
@@ -1089,6 +1117,45 @@ echo "$out" | grep -q "the noun 'roles' is plural" && echo "$out" | grep -q "'ro
   return 0   # a last "check && fail" line must not end the run
 }
 
+
+section "Linux: systemd timers, cron, dates and no scheduler" "0"
+s43() {
+# Each scheduler is written and read the same way on any machine: CABINET_SCHEDULER picks one.
+[[ "$(pf when_oncalendar "fri,sat 4 PM")" == "Fri,Sat *-*-* 16:00:00" && "$(pf when_oncalendar "7:05 am")" == "*-*-* 07:05:00" ]] || fail "systemd times"
+[[ "$(pf when_cron "fri,sat 4 PM")" == "0 16 * * 5,6" && "$(pf when_cron "7:05 am")" == "5 7 * * *" ]] || fail "cron times"
+# Dates read the same with BSD and GNU tools.
+touch -t 202601010000 "$T/old"
+[[ "$(pf human_stamp 20261018-130500)" == "18 Oct 2026, 1:05 PM" && "$(pf mtime "$T/old")" == "$(pf stamp_epoch 20260101-000000)" ]] || fail "dates"
+# A path with a space and a %, which systemd and cron both treat specially.
+OW="$T/sd 50% off"; "$F" new "$OW" --slug sd --yes >/dev/null; OP="$(cd "$OW" && pwd -P)"
+SH="$T/sd-home"; mkdir -p "$SH"
+HOME="$SH" CABINET_SCHEDULER=systemd "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+U="$SH/.config/systemd/user/ai.cabinet.sd.brief"
+grep -qxF "ExecStart=\"${OP//%/%%}/bin/job.sh\" \"run\" \"brief\"" "$U.service" && grep -qxF "StandardOutput=append:$SH/$LOGS/sd/brief.log" "$U.service" \
+  && grep -qx 'OnCalendar=\*-\*-\* 07:00:00' "$U.timer" || { cat "$U.service" "$U.timer"; fail "systemd units"; }
+[[ "$(CABINET_SCHEDULER=systemd pf sched_ws "$U.service")" == "$OP" ]] && grep -q 'systemctl --user --quiet enable --now ai.cabinet.sd.brief.timer' "$T/fake.log" || fail "systemd: whose schedule, or not started"
+(cd "$OW" && HOME="$SH" CABINET_SCHEDULER=systemd "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.job") | .level == "ok"' >/dev/null || fail "doctor with systemd"
+# cron: one block of cabinet's lines; the owner's own lines stay, whatever happens to the block.
+CH="$T/cron-home"; mkdir -p "$CH"; printf '%s\n' "MAILTO=me" "0 1 * * * /bin/true # mine" > "$T/crontab"
+HOME="$CH" CABINET_SCHEDULER=cron "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+grep -qx 'MAILTO=me' "$T/crontab" && grep -qxF '0 1 * * * /bin/true # mine' "$T/crontab" && grep -qx '# cabinet schedule: ai.cabinet.sd.brief' "$T/crontab" || { cat "$T/crontab"; fail "cron block"; }
+# The line runs as written (cron turns \% back into %): the job starts the (fake) agent and logs.
+line="$(grep '^0 7 \* \* \* ' "$T/crontab")" || fail "the brief at 7:00 AM in the crontab"
+: > "$T/fake.log"; HOME="$CH" sh -c "$(printf '%s' "${line#0 7 \* \* \* }" | sed 's/\\%/%/g')" || true
+grep -q '^claude -p --agent chief-of-staff' "$T/fake.log" && [[ -s "$CH/$LOGS/sd/brief.log" ]] || fail "the cron line does not run the job"
+(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.job") | .level == "ok"' >/dev/null || fail "doctor with cron"
+sedi 's/^WHEN=.*/WHEN=""/' "$OW/jobs/brief.job"
+HOME="$CH" CABINET_SCHEDULER=cron "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+[[ "$(cat "$T/crontab")" == "$(printf '%s\n' "MAILTO=me" "0 1 * * * /bin/true # mine")" ]] || { cat "$T/crontab"; fail "cron: the block not removed cleanly"; }
+printf '%s\n' "# BEGIN cabinet" "my own line" > "$T/crontab"; HOME="$CH" CABINET_SCHEDULER=cron pf cron_sync
+grep -qx 'my own line' "$T/crontab" || fail "cron: a block with no end lost the lines after it"
+# No scheduler at all (a container without cron): said plainly by bootstrap and the doctor.
+git -C "$OW" checkout -q -- jobs/brief.job
+HOME="$CH" CABINET_SCHEDULER=none "$OW/bin/bootstrap.sh" 2>&1 | grep -q 'no scheduler found' || fail "bootstrap with no scheduler"
+(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=none "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.scheduler") | .level == "fix"' >/dev/null || fail "doctor with no scheduler"
+rm -f "$T/crontab"
+  return 0   # a last "check && fail" line must not end the run
+}
 
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()

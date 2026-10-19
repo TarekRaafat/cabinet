@@ -51,7 +51,9 @@
       "Bash(yarn * publish*)",
       "Bash(bun * publish*)",
       "Bash(security find-generic-password*)",
-      "Bash(security dump-keychain*)"
+      "Bash(security dump-keychain*)",
+      "Bash(secret-tool lookup*)",
+      "Bash(secret-tool search*)"
     ],
     "ask": [
       "Bash(git reset --hard*)",
