@@ -67,6 +67,13 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX OPERATIONS.md does not mention: <...>` | `manual.complete` | The manual has fallen behind a script, job or role. | Add it to `OPERATIONS.md` (`cabinet config --roles` adds role rows for you). |
 | `FIX these handoff IDs are used more than once: <...>(file the next free number)` | `handoffs.unique-ids` | Two entries share an ID. | Give the later one the next free number, or mark it with a `- Note: duplicate ID` line. |
 
+## Secrets
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `FIX possible secrets in the workspace's files (remove each and rotate any real key; a false alarm: add not-a-secret to its line): <...>` | `secrets.none` | A line looks like a key, token or password (file and line are named; the value never is). | Remove it, and rotate the key if it was real: it may already be in git history and backups. A false alarm: add `not-a-secret` to its line. |
+| `note commits are not checked for secrets: the workspace has no pre-commit hook running bin/secrets.sh (run bin/bootstrap.sh; a hook of your own can call bin/secrets.sh --staged)` | `secrets.hook` | Bootstrap has not run, or the workspace has its own `pre-commit` hook. | `bin/bootstrap.sh`, or call `bin/secrets.sh --staged` from your hook. |
+
 ## Uncommitted work
 
 | Message | ID | Cause | Fix |

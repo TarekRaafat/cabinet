@@ -57,6 +57,7 @@ C	Run	run	<job>	Run a job from jobs/ now.
 C	Run	handoffs	[name]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full.
 C	Run	handoff	--from <name> --to <name> --changed "..." --needed "..." "title"	File a handoff with the next free ID and today's date, and commit it.
 C	Run	archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
+C	Run	secrets		Look for keys, tokens and passwords in the workspace's files (file and line, never the value).
 C	Run	roles		Build the role definitions from .cabinet/roles/ and roles/.
 C	Run	backup	[folder]	One encrypted backup now (default folder: CABINET_BACKUP_DIR).
 C	Run	restore	<archive> [dir]	Rebuild a workspace and its repos from a backup, never losing a file. Works before any workspace exists.
@@ -103,6 +104,7 @@ O	handoff	--to	<repo, role or owner>	Who it is for.
 O	handoff	--changed	"..."	Exactly what changed: endpoint, field, limit, status code, default, version, file.
 O	handoff	--needed	"..."	What the addressee has to do.
 O	handoff	--depends-on	"..."	The commit or branch it depends on (default: none).
+O	secrets	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	roles	--check		Only report what is missing or out of date.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
 O	digest	--notify		Also show a macOS notification with the counts (with --write or --schedule).
@@ -1556,6 +1558,7 @@ case "${1:-}" in
   handoffs) shift; ws_script handoffs.sh "$@" ;;
   handoff) shift; ws_script handoff.sh "$@" ;;
   archive) shift; ws_script archive-handoffs.sh "$@" ;;
+  secrets) shift; ws_script secrets.sh "$@" ;;
   roles) shift; ws_script roles.sh "$@" ;;
   backup) shift; ws_script backup.sh "$@" ;;
   snapshot) shift; ws_script snapshot.sh "$@" ;;

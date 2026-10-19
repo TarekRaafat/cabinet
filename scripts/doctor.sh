@@ -183,6 +183,17 @@ dups="$(awk '/^### H-/ {n++; id[n]=$2} /^- Note: duplicate ID/ {skip[n]=1}
   END {for (i=1;i<=n;i++) if (!skip[i]) c[id[i]]++; for (k in c) if (c[k]>1) print k}' "${hfiles[@]}" | sed 's/:$//' | sort | tr '\n' ' ')"
 [[ -z "$dups" ]] && ok handoffs.unique-ids "every handoff ID is unique" || bad handoffs.unique-ids "these handoff IDs are used more than once: $dups(file the next free number)"
 
+section "Secrets"
+# Keys, tokens and passwords in the workspace's files (bin/secrets.sh names the file and line,
+# never the value), and the pre-commit hook that refuses new ones.
+if out="$("$WS/bin/secrets.sh" 2>&1)"; then ok secrets.none "no likely secret in the workspace's files"
+else found="$(grep '^  ' <<<"$out" | sed 's/^  //')"
+  bad secrets.none "possible secrets in the workspace's files (remove each and rotate any real key; a false alarm: add not-a-secret to its line): $found"; fi
+sh_hook="$(secrets_hook)"
+if [[ "$sh_hook" == none ]]; then ok secrets.hook "the workspace is committed with the project, whose own hooks run"
+elif [[ -x "$sh_hook" ]] && grep -q 'bin/secrets.sh' "$sh_hook"; then ok secrets.hook "commits are checked for secrets"
+else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secrets.sh (run bin/bootstrap.sh; a hook of your own can call bin/secrets.sh --staged)"; fi
+
 section "Uncommitted work"
 git -C "$WS" rev-parse -q --verify HEAD >/dev/null 2>&1 || ! [[ -e "$WS/.git" ]] || note work.no-commits "the workspace has no commits yet: backups hold its files only (set the owner with cabinet config, then commit)"
 pending=0

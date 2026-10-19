@@ -123,7 +123,7 @@ Agents also run on a local schedule (`bin/scheduled.sh`, one `jobs/<job>.job` ea
 - **Local commits are the only git write.** No push, merge, rebase, amend, reset or other history rewrite. A commit that fails review is reverted, or fixed in a follow-up commit; never amended.
 - **Commit finished work at once.** Every agent commits its own finished, tested changes locally, each one separately with a clear message in the repo's style, authored and signed as `AGENTS.md` says. Uncommitted changes mean work in progress, and only that; an agent ending a session with uncommitted work says so and why. Commit only your own changes, by pathspec (`git commit -- <paths>`), never someone else's uncommitted work.
 - **No fabrication.** Never invent names, limits, prices, dates, library choices or other specifics the owner has not stated or the code does not show. Write TBD, describe the capability, or read the canonical source. When corrected on a fabrication, audit recent work for the same mistake.
-- **No secrets in files.** Keys, tokens, passwords and `.env` values never go into a repo, a note, a handoff or a log.
+- **No secrets in files.** Keys, tokens, passwords and `.env` values never go into a repo, a note, a handoff or a log. The workspace's pre-commit hook (`bin/secrets.sh`) refuses a commit that adds one; never mark a real secret `not-a-secret` to get past it.
 
 ## Working in a tool other than Claude Code
 

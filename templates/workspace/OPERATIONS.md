@@ -67,6 +67,7 @@ git -C <repo> push
 | `bin/roles.sh [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
 | `bin/scheduled.sh <job>` | Runs a job from `jobs/` now (for example `brief`). |
 | `bin/bootstrap.sh [--dry-run]` | Sets up a machine: clones repos, restores local-only files, installs guardrails and schedules. Safe to rerun. |
+| `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's files; the pre-commit hook refuses a commit that adds one. A false alarm: add `not-a-secret` to its line. |
 | `bin/snapshot.sh` | Copies each repo's local-only files into `local/`. The backup runs it for you. |
 | `bin/backup.sh [dir]` | One encrypted backup now. |
 | `bin/restore.sh <archive> [dir]` | Rebuilds everything from a backup. Never loses a file: anything it would replace with different content is copied to `recovered/` first. |

@@ -55,6 +55,13 @@ repos() {
     if ($1 !~ /^[A-Za-z0-9._-]+$/ || $1 == "." || $1 == "..") { print "repos.tsv: skipped the row named \"" $1 "\" (not a plain folder name)" > "/dev/stderr"; next }
     if ($3 == "") $3 = "-"; if ($4 == "") $4 = "no"; if ($5 == "") $5 = $1; print $1, $2, $3, $4, $5 }' "$WS/repos.tsv"
 }
+# Where the workspace's pre-commit hook goes, or "none" when the workspace has no git of its
+# own (a shared cabinet/ inside a project). The common dir, so it is right in a worktree too.
+secrets_hook() {
+  local top; top="$(cd "$(git -C "$WS" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P || true)"
+  [[ "$top" == "$WS" ]] || { echo none; return 0; }
+  echo "$(git -C "$WS" rev-parse --path-format=absolute --git-common-dir)/hooks/pre-commit"
+}
 repo_dir() { case "$1" in /*) echo "$1" ;; "~/"*) echo "$HOME/${1#"~/"}" ;; *) echo "$WS/$1" ;; esac; }
 
 # The absolute, symlink-free form of a path that may not exist yet.

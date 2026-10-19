@@ -64,7 +64,6 @@ Not ranked yet; each is picked and ordered when its implementation starts.
 
 ### Safety
 
-- **A secrets check.** Today nothing stops a key, token or password pasted into a note, guide or handoff from being committed and copied into every backup. `cabinet doctor` and a pre-commit hook in the workspace look for them (common key formats, private key blocks, lines that set a password or token) and refuse the commit, with a way to mark a false alarm. Done when: a test key in a guide is caught before it is committed, and a marked false alarm passes.
 - **Backups that test themselves.** Today the docs ask for a restore by hand once a quarter. `cabinet backup --verify` restores the newest archive into a temporary folder, compares it with the workspace and its repos, reports any difference, and deletes the copy; the doctor says when the last verified restore is too old. Done when: a damaged or incomplete archive is reported by `--verify`, and a good one passes.
 
 ### The daily loop

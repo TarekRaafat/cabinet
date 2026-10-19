@@ -29,6 +29,7 @@ sources = {fn: cabinet[cabinet.index(fn + "() {"):] for fn in parsers}
 sources["doctor.sh"], parsers["doctor.sh"] = read("scripts/doctor.sh"), ["doctor"]
 sources["handoffs.sh"], parsers["handoffs.sh"] = read("scripts/handoffs.sh"), ["handoffs"]
 sources["handoff.sh"], parsers["handoff.sh"] = read("scripts/handoff.sh"), ["handoff"]
+sources["secrets.sh"], parsers["secrets.sh"] = read("scripts/secrets.sh"), ["secrets"]
 sources["bootstrap.sh"], parsers["bootstrap.sh"] = read("scripts/bootstrap.sh"), ["bootstrap"]
 for fn, src in sources.items():
     body = src[:src.index("done")]

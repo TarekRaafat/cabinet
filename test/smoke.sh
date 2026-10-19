@@ -879,6 +879,31 @@ rm "$W/jobs/sat.job"; (cd "$W" && "$F" config --yes --brief "7 AM") >/dev/null; 
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "secrets: caught before a commit, a marked false alarm passes" "0 5 14"
+s37() {
+# Fake values are built from pieces, so no key-shaped text is ever in the kit itself.
+"$W/bin/secrets.sh" >/dev/null 2>&1 || fail "a fresh workspace has a false alarm: $("$W/bin/secrets.sh" 2>&1)"
+grep -q 'bin/secrets.sh --staged' "$W/.git/hooks/pre-commit" && [[ -x "$W/.git/hooks/pre-commit" ]] || fail "bootstrap did not place the secrets hook"
+key="AKIA""QWERTYUIOPASDFGH"
+printf '# Keys\n\nThe deploy key: %s\n' "$key" > "$W/guides/keys.md"
+git -C "$W" add guides/keys.md
+out="$(git -C "$W" commit -qm "keys" 2>&1)" && fail "a commit with a key in a guide was not refused"
+echo "$out" | grep -q 'guides/keys.md:3: an AWS access key' && ! echo "$out" | grep -q "$key" || fail "the refusal does not name the file and line, or shows the key: $out"
+out="$("$W/bin/doctor.sh" 2>&1 || true)"   # cabinet secrets and the doctor see it before it is staged, too
+echo "$out" | grep -q "FIX   possible secrets in the workspace's files.*guides/keys.md:3: an AWS access key" && ! echo "$out" | grep -q "$key" || fail "the doctor missed the key, or showed it"
+(cd "$W/specs" && "$F" secrets >/dev/null 2>&1) && fail "cabinet secrets missed the key"
+printf 'DB_PASSWORD=%s\n' "hunter2""hunter2" >> "$W/guides/keys.md"; git -C "$W" add guides/keys.md
+git -C "$W" commit -qm "keys" >/dev/null 2>&1 && fail "a commit setting a password was refused only for the key"
+sed -i '' 's/$/ not-a-secret/' "$W/guides/keys.md"; git -C "$W" add guides/keys.md
+git -C "$W" commit -qm "a marked false alarm" >/dev/null 2>&1 || fail "a marked false alarm was refused"
+"$W/bin/secrets.sh" >/dev/null 2>&1 || fail "a marked false alarm is still reported"
+git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "cleanup"
+# A shared cabinet/ is committed with the project: no hook of its own, its files still scanned.
+"$S/cabinet/bin/doctor.sh" 2>&1 | grep -q 'ok    the workspace is committed with the project, whose own hooks run' || fail "shared layout: secrets hook check"
+[[ ! -e "$S/.git/hooks/pre-commit" ]] || fail "a hook was placed in the project's own git"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()

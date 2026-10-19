@@ -46,6 +46,7 @@ First version.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
 - Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file.
 - Config files keep their permissions and symlinks, and a file that is not plain JSON is left alone; every git hook passes through to the repo's own under the global hooks path.
+- A secrets check: `cabinet secrets` (`bin/secrets.sh`) looks for keys, tokens and passwords in the workspace's files and names each file and line, never the value; the doctor runs it (`secrets.none`), bootstrap places a pre-commit hook in the workspace that refuses a commit adding one (`secrets.hook`), and `not-a-secret` on a line marks a false alarm.
 
 ### Docs
 

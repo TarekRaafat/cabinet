@@ -136,6 +136,18 @@ elif [[ "$current" != "$hooks" ]]; then
   echo "  core.hooksPath is $current, not $hooks. Left as is: check the gate there (bin/doctor.sh)."
 fi
 
+echo "== Secrets check"
+# The workspace's own pre-commit hook refuses a commit that adds a likely secret. Only in a
+# workspace with its own git: a shared cabinet/ is committed with the project, whose hooks
+# are the project's. An existing hook is left as is (place never overwrites).
+if [[ "$(secrets_hook)" == none ]]; then
+  echo "  the workspace is committed with the project, whose own hooks run; bin/doctor.sh still checks"
+else
+  sh_hook="$(secrets_hook)"
+  place "$G/pre-commit-secrets" "$sh_hook"
+  [[ -f "$sh_hook" && ! -x "$sh_hook" ]] && cmp -s "$G/pre-commit-secrets" "$sh_hook" && run chmod +x "$sh_hook"
+fi
+
 echo "== Claude Code"
 merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
 
