@@ -41,7 +41,7 @@ New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 
 1. **Morning.** At the time you chose, the chief-of-staff agent writes `BRIEF.md`. It starts with the sign-off queue: every decision only you can make, each as a plain question with lettered options, the experts' recommendations and whether it can be undone.
 2. **You answer in one message**, for example "approve 1 and 3; 2: no; 4: wait until Friday". The agents write your answers into the right specs and handoffs.
-3. **The agents work.** Each owns its repos and passes work to the others through `HANDOFFS.md`. The agent that built something never verifies it: qa and security do, and either can block it.
+3. **The agents work.** Each owns its repos and passes work to the others through `HANDOFFS.md`. The agent that built something never verifies it: qa and security do, and either can block it. Screenshots and recordings of the work are links in the brief, one click to open.
 4. **You push** what has passed review, from your own terminal. No agent can push, merge, release or publish.
 
 ## Words you will see

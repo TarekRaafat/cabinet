@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
+#       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
+#       from the workspace root, so it opens from HANDOFFS.md and BRIEF.md; a URL is linked as it is.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
 #   bin/handoff.sh list [name] [--json]
@@ -19,10 +21,19 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] \"<title>\""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--evidence <file or URL>]... \"<title>\""
 from="" to="" changed="" needed="" depends="none" title=""
+local -a ev
+ev=()
 while (($#)); do
   case "$1" in
+    --evidence)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      # Read now: a file's path is from the caller's folder, and the script moves to the workspace.
+      if [[ "$2" =~ ^https?://[^[:space:]\<\>]+$ ]]; then ev+=("$2")
+      elif [[ -f "$2" ]]; then ev+=("$(cd "$(dirname "$2")" && pwd)/$(basename "$2")")
+      else echo "--evidence $2: no such file, and not an http(s) link. $usage" >&2; exit 2; fi
+      shift 2 ;;
     --from|--to|--changed|--needed|--depends-on)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       case "$1" in
@@ -58,13 +69,28 @@ last="$(grep -ho "^### H-$day-[0-9]*" "${files[@]}" | sed 's/.*-0*//' | sort -n 
 id="$(printf 'H-%s-%02d' "$day" $((${last:-0} + 1)))"
 dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
 
+# Evidence: files copied under this ID with names safe in a Markdown link, then one line of links.
+evline="" n=0
+for e in ${ev[@]+"${ev[@]}"}; do
+  if [[ "$e" == http* ]]; then link="<$e>"
+  else
+    n=$((n + 1)) dir="specs/evidence/$id"
+    name="$(basename "$e")"; name="$(printf %s "$name" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^[.-]*//')"
+    [[ ! -e "$dir/$name" ]] || name="$n-$name"
+    mkdir -p "$dir" && cp "$e" "$dir/$name" || { echo "could not copy $e to $dir" >&2; exit 1; }
+    link="[$name]($dir/$name)"
+  fi
+  evline="${evline:+$evline, }$link"
+done
+
 # Newest at the bottom of "## Open": before the next "## " heading, or at the end.
 entry="### $id: $title
 - From: $from -> To: $to
 - Status: open ($(date +%F))
 - Changed: $changed
 - Needed: $needed
-- Depends on: $depends"
+- Depends on: $depends${evline:+
+- Evidence: $evline}"
 ENTRY="$entry" awk '
   function put() { if (!done) { sub(/\n+$/, "", buf); printf "%s\n\n%s\n", buf, ENVIRON["ENTRY"]; buf = ""; done = 1 } }
   /^## / && open && !done { put(); print ""; open = 0 }
@@ -75,11 +101,13 @@ ENTRY="$entry" awk '
 ' HANDOFFS.md > "$K/handoffs.new"
 mv "$K/handoffs.new" HANDOFFS.md
 
+paths=(HANDOFFS.md); ((n)) && paths+=("specs/evidence/$id")
 if [[ -n "$dirty" ]]; then
-  echo "$id filed for $to, not committed: HANDOFFS.md had other uncommitted lines. Commit only yours (git add -p HANDOFFS.md)."
+  echo "$id filed for $to, not committed: HANDOFFS.md had other uncommitted lines. Commit only yours (git add -p HANDOFFS.md$( ((n)) && echo ", and specs/evidence/$id"))."
   exit 0
 fi
-git commit -q -m "handoffs: $id $title" -- HANDOFFS.md || { echo "$id filed for $to, but the commit failed (see above): commit HANDOFFS.md yourself" >&2; exit 1; }
+((n)) && git add -- "specs/evidence/$id"
+git commit -q -m "handoffs: $id $title" -- "${paths[@]}" || { echo "$id filed for $to, but the commit failed (see above): commit HANDOFFS.md yourself" >&2; exit 1; }
 echo "$id filed for $to and committed"
 }
 
@@ -188,8 +216,8 @@ for month, es in sorted(moved.items()):
     with open(p, "a", encoding="utf-8") as f:
         if new:
             f.write(f"# Closed handoffs, IDs from {month}\n\nMoved from HANDOFFS.md by bin/handoff.sh archive. Read only.\n")
-        for e in es:
-            f.write("\n" + e + "\n")
+        for e in es:  # links from the workspace root, now read from handoffs/
+            f.write("\n" + e.replace("](specs/", "](../specs/") + "\n")
 if moved:  # untouched otherwise, or the next run refuses on its own rewrite
     out = head + sep + preamble.rstrip("\n") + "\n\n" + "\n\n".join(keep) + "\n"
     open(path, "w", encoding="utf-8").write(out)

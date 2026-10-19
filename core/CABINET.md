@@ -47,7 +47,7 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
 4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
 5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
-6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, and what to look at. It never verifies its own work. A BLOCK comes back to it as a fix.
+6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, see "Handoffs"). It never verifies its own work. A BLOCK comes back to it as a fix.
 7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.
 
 ## Handoffs
@@ -55,6 +55,7 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 `HANDOFFS.md` is the one channel between agents. It is durable, so work is never lost when a session ends, and it gives the owner one place to see everything in flight.
 
 - **When your change affects another repo,** file an entry with `bin/handoff.sh add --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it (or append one by hand from the template at the top of `HANDOFFS.md`): who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
+- **Evidence is a link the owner can click.** Add `--evidence <file or URL>`, once for each, for what shows the work: a screenshot of each screen and state, a short recording, a link to try it, or a saved command output for work with no screen. A file is copied to `specs/evidence/<ID>/` and committed with the entry; its `Evidence:` line links it from the workspace root, so it opens from `HANDOFFS.md` and `BRIEF.md`. Evidence that comes later (a fix, a verdict) goes on a follow-up entry, or in the verdict note as links.
 - **When an entry is addressed to you,** verify it against the code before acting: a handoff describes a change, the code is the truth. Set it to `acknowledged` when you start and `done` when your side lands, with the date and your commit. If it is wrong or not needed, set it to `rejected` with the reason.
 - **Commit every edit to `HANDOFFS.md` at once,** as its own commit (`handoffs: ...`). If the file holds someone else's uncommitted lines, stage only yours and name the leftovers in your summary; chief-of-staff commits leftovers in its daily run.
 - **Only edit entries addressed to you, and only their status lines.** Add a follow-up entry instead of rewriting another. One exception: chief-of-staff may set any entry to `done` when the code shows it landed, and applies the owner's sign-off answers to the entries they name.
@@ -85,9 +86,10 @@ A lead may move a tier 2 question up to the owner when unsure. Nobody moves a ti
 - lettered options, each with its consequence in one line;
 - the recommendation of each relevant expert role, each with a one-line reason;
 - one overall recommendation;
-- whether the decision can be undone.
+- whether the decision can be undone;
+- for work to approve, its evidence links, copied from the handoff as they are.
 
-Keep each item short.
+Keep each item short. In a session, give each evidence link as its full path instead, which a terminal opens on a click.
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
@@ -106,7 +108,7 @@ Everything an agent writes for the owner (the brief, sign-off items, answers in 
 3. **Three points at most** per part or answer; then "N more: ask". Never cut a sign-off item, or a warning about anything irreversible, money, security or data loss.
 4. **A sign-off item in three lines:** the question; the options on one line (`A: ... B: ...`, a few words each); `**Recommended: B**`, a reason in a few words, and `Undo: yes` or `Undo: no`. Name the experts only where one disagrees.
 5. **No background** (history, reasoning, what was checked) unless the owner asks. End with one "Ask for details" line, not one per item.
-6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name.
+6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name. Evidence links stay, with a plain name as the link text ("the login page").
 7. **Time to act**, when known: "2 min".
 
 The brief, short: its first line says what waits today ("Today: 2 decisions, 1 action, about 5 min."), then the same `## ` headings (the digest reads them), each part at most three lines except the sign-off queue, which is always complete.

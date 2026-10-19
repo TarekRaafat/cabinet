@@ -178,18 +178,20 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 ## cabinet handoff
 
 ```sh
-cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"
+cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
 cabinet handoff list [name] [--json]
 cabinet handoff archive
 ```
 
 **`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs.
 
+`--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in.
+
 **`list`**, without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full; this is the start-of-session read.
 
 **`archive`** moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move; chief-of-staff runs it daily. It refuses while `HANDOFFS.md` has uncommitted lines.
 
-Exit 0; 1 when `add` could not commit (the entry is written) or `archive` meets uncommitted lines; 2 for a missing value or an unknown option.
+Exit 0; 1 when `add` could not commit (the entry is written) or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet repo
 

@@ -18,6 +18,6 @@ The rows of the team table in `AGENTS.md` whose owning agent is `web`. You write
 - **The repo's components first.** Reuse its components, styles and patterns; a new one is a design-lead question.
 - **Everyone can use it.** Labels on every control, the keyboard reaches everything, text has enough contrast, nothing relies on color alone.
 - **Contracts.** Call the API as its contract says; a change it needs goes to the API's owner as a handoff.
-- **For qa and design-lead.** Say how to start it, the pages and states to look at (empty, loading, error, long text), and attach a screenshot of each.
+- **For qa and design-lead.** Say how to start it, the pages and states to look at (empty, loading, error, long text), and attach a screenshot of each (`--evidence`, once for each file).
 
 End every reply with the commits made, the handoff filed (its ID) and anything that needs the owner.

@@ -58,7 +58,7 @@ New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 
 1. **Morning.** At the time you chose, the chief-of-staff agent writes `BRIEF.md`. It starts with the sign-off queue: every decision only you can make, each as a plain question with lettered options, the experts' recommendations and whether it can be undone.
 2. **You answer in one message**, for example "approve 1 and 3; 2: no; 4: wait until Friday". The agents write your answers into the right specs and handoffs.
-3. **The agents work.** Each owns its repos and passes work to the others through `HANDOFFS.md`. The agent that built something never verifies it: qa and security do, and either can block it.
+3. **The agents work.** Each owns its repos and passes work to the others through `HANDOFFS.md`. The agent that built something never verifies it: qa and security do, and either can block it. Screenshots and recordings of the work are links in the brief, one click to open.
 4. **You push** what has passed review, from your own terminal. No agent can push, merge, release or publish.
 
 ## Words you will see
@@ -729,18 +729,20 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 ## cabinet handoff
 
 ```sh
-cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"
+cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
 cabinet handoff list [name] [--json]
 cabinet handoff archive
 ```
 
 **`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs.
 
+`--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in.
+
 **`list`**, without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full; this is the start-of-session read.
 
 **`archive`** moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move; chief-of-staff runs it daily. It refuses while `HANDOFFS.md` has uncommitted lines.
 
-Exit 0; 1 when `add` could not commit (the entry is written) or `archive` meets uncommitted lines; 2 for a missing value or an unknown option.
+Exit 0; 1 when `add` could not commit (the entry is written) or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet repo
 
@@ -1150,7 +1152,7 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agen
 
 ## Handoffs
 
-`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh add` files an entry with the next free ID and commits it; `bin/handoff.sh list <name>` shows an agent its open entries.
+`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, what it depends on, and its evidence: links to screenshots, recordings or output that show the work, which the brief carries to you. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh add` files an entry with the next free ID and commits it; `bin/handoff.sh list <name>` shows an agent its open entries.
 
 ## Decision tiers
 
@@ -1602,7 +1604,7 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
 4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
 5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
-6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, and what to look at. It never verifies its own work. A BLOCK comes back to it as a fix.
+6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, see "Handoffs"). It never verifies its own work. A BLOCK comes back to it as a fix.
 7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.
 
 ## Handoffs
@@ -1610,6 +1612,7 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 `HANDOFFS.md` is the one channel between agents. It is durable, so work is never lost when a session ends, and it gives the owner one place to see everything in flight.
 
 - **When your change affects another repo,** file an entry with `bin/handoff.sh add --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it (or append one by hand from the template at the top of `HANDOFFS.md`): who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
+- **Evidence is a link the owner can click.** Add `--evidence <file or URL>`, once for each, for what shows the work: a screenshot of each screen and state, a short recording, a link to try it, or a saved command output for work with no screen. A file is copied to `specs/evidence/<ID>/` and committed with the entry; its `Evidence:` line links it from the workspace root, so it opens from `HANDOFFS.md` and `BRIEF.md`. Evidence that comes later (a fix, a verdict) goes on a follow-up entry, or in the verdict note as links.
 - **When an entry is addressed to you,** verify it against the code before acting: a handoff describes a change, the code is the truth. Set it to `acknowledged` when you start and `done` when your side lands, with the date and your commit. If it is wrong or not needed, set it to `rejected` with the reason.
 - **Commit every edit to `HANDOFFS.md` at once,** as its own commit (`handoffs: ...`). If the file holds someone else's uncommitted lines, stage only yours and name the leftovers in your summary; chief-of-staff commits leftovers in its daily run.
 - **Only edit entries addressed to you, and only their status lines.** Add a follow-up entry instead of rewriting another. One exception: chief-of-staff may set any entry to `done` when the code shows it landed, and applies the owner's sign-off answers to the entries they name.
@@ -1640,9 +1643,10 @@ A lead may move a tier 2 question up to the owner when unsure. Nobody moves a ti
 - lettered options, each with its consequence in one line;
 - the recommendation of each relevant expert role, each with a one-line reason;
 - one overall recommendation;
-- whether the decision can be undone.
+- whether the decision can be undone;
+- for work to approve, its evidence links, copied from the handoff as they are.
 
-Keep each item short.
+Keep each item short. In a session, give each evidence link as its full path instead, which a terminal opens on a click.
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
@@ -1661,7 +1665,7 @@ Everything an agent writes for the owner (the brief, sign-off items, answers in 
 3. **Three points at most** per part or answer; then "N more: ask". Never cut a sign-off item, or a warning about anything irreversible, money, security or data loss.
 4. **A sign-off item in three lines:** the question; the options on one line (`A: ... B: ...`, a few words each); `**Recommended: B**`, a reason in a few words, and `Undo: yes` or `Undo: no`. Name the experts only where one disagrees.
 5. **No background** (history, reasoning, what was checked) unless the owner asks. End with one "Ask for details" line, not one per item.
-6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name.
+6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name. Evidence links stay, with a plain name as the link text ("the login page").
 7. **Time to act**, when known: "2 min".
 
 The brief, short: its first line says what waits today ("Today: 2 decisions, 1 action, about 5 min."), then the same `## ` headings (the digest reads them), each part at most three lines except the sign-off queue, which is always complete.
@@ -1757,7 +1761,7 @@ The goal: cabinet is equally useful to a founder with no technical or business b
 
 - **The founder's profile.** Ties the items below together. At setup (and with `cabinet config`), the founder says what they know well and what they do not, area by area: engineering, design, product, marketing, finance, legal and admin. Every role reads it: where the founder is expert, agents bring fewer and more technical decisions and skip the explanations; where the founder is new, they explain more, bring the choices pre-made with a recommendation, and say when a professional is needed. Done when: the same decision reaches an expert founder as a short technical choice and a new founder as a plain question with the trade-offs explained, from one profile setting.
 - **From an idea to a plan** (pick first). Today the kit starts once a product exists, with `TBD` lines in `AGENTS.md` to fill. A kickoff, run once at setup or any time after, in one of two modes. For a new idea, the product-manager interviews the founder (the problem, who has it, what is in and out of the first version, how success is measured). For an established project, the team first learns what exists (the code, the docs, the git history, the open issues, how it is built, tested and deployed) and asks the founder only what none of that tells. Either way it writes `AGENTS.md`, the specs and a roadmap (for an established project, the current state and what is next), each marked for the founder to confirm. Done when: a founder with only an idea, or with a running product, ends the kickoff with no `TBD` in "What the project is" and "Product rules", and a ranked roadmap that starts from where the project really is.
-- **See the result, not only the verdict** (pick first). Today qa records PASS or BLOCK, and a founder who cannot read code approves on trust. Each finished handoff carries evidence the founder can check without code: screenshots, a short recording, a link to try it, or the command output for work with no screen. qa refuses a PASS without it. Done when: every handoff that reaches the founder for sign-off shows what was built.
+- **See the result, not only the verdict** (pick first). Today a handoff can carry evidence the founder can check without code (`cabinet handoff add --evidence`: screenshots, a short recording, a link to try it, or the command output for work with no screen), and the brief links it, but nothing requires it. Still missing: qa refuses a PASS without it. Done when: every handoff that reaches the founder for sign-off shows what was built.
 - **Guard the founder's time and money** (pick first). Today cabinet counts what its own runs cost when the runner is `claude`, with a weekly budget the doctor warns about from 80% (`cabinet config --budget`). Every built-in runner is counted (token-only runners at a price the owner sets). Still missing: a successful live run with `qwen`, and one with cache reads on `antigravity`, to confirm their success output, the cost of sessions people run in an agent tool, and a daily cap on the sign-off queue (for example five decisions, ranked; the rest wait, and the brief says how many), since for a solo founder the queue is the bottleneck, and every role a project adds sends it more. Done when: the week's spend counts sessions too, and no brief asks more decisions than the cap.
 - **Setup without terminal skills.** Today `cabinet new`, `init`, `bootstrap` and `doctor --fix` check the tools cabinet needs and offer to install the missing ones, but Node.js and npm must be there first (npm installs cabinet), and setup still uses quoted options and terms like launchd. One install command, run before Node.js exists, that installs it and cabinet; messages in plain language, with the technical detail one step away; and `cabinet next` steps that say why each matters. Done when: a founder who has never used a terminal reaches a working workspace by following the screen.
 - **Decisions that do not assume expertise.** Today a founder can be asked to pick a database, a host or a payments provider without knowing the trade-offs. Starter stacks, for new projects only: one recommended, well-supported stack for each kind of product, so the first technical choices are made and can be changed later (an established project keeps its stack). And in every technical decision, new or established, what each option costs and what changing it later would take. Done when: a new project's first technical choices arrive made, an established project's stack is never replaced by a starter, and each technical decision shows cost and the cost of changing course.
@@ -1875,7 +1879,7 @@ First version.
 ### Commands
 
 - One command for everything, named by one set of conventions (`AGENTS.md`, "Command conventions"): one word for the workspace as a whole (`cabinet doctor`, `bootstrap`, `brief`, `move`, ...), and a noun then a verb for what it holds: `cabinet role add|remove|list|draft|build`, `handoff add|list|archive`, `repo add|remove|list|snapshot`, `job run|list`, `secret check`, `backup create|verify|restore`. Every command works from any folder inside the workspace or its project, and `cabinet -C <dir>` runs one as if started there. `--json` on every command that reports, `--dry-run` on every command that changes the setup, `--yes` on every command that asks; usage errors exit 2. The workspace scripts use the same words (`bin/<noun>.sh <verb>`), and the tests fail when a command breaks a convention. `cabinet next` says what to do next.
-- `cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." "<title>"` (`bin/handoff.sh add`, which `CABINET.md` tells agents to use) files a handoff with the next free ID for today, today's date and the template's lines, and commits it on its own; with someone else's uncommitted lines in `HANDOFFS.md`, it writes the entry but does not commit, so their lines never go into its commit.
+- `cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." "<title>"` (`bin/handoff.sh add`, which `CABINET.md` tells agents to use) files a handoff with the next free ID for today, today's date and the template's lines, and commits it on its own; with someone else's uncommitted lines in `HANDOFFS.md`, it writes the entry but does not commit, so their lines never go into its commit. `--evidence <file or URL>`, once for each, copies a screenshot, recording or output to `specs/evidence/<ID>/` and links it on the entry's `Evidence:` line, from the workspace root; the brief carries the links to the owner, `archive` rewrites them to open from `handoffs/`, and `cabinet digest` (and `--json`) to full paths.
 - `cabinet digest`: one morning read with the sign-off queue and the owner's actions from the latest brief of every workspace on this machine. `--write <file>` writes it to a file, `--notify` sends a desktop notification with the counts, and `--schedule [<when>]` (default every day at 10:00 AM; or another time, or chosen days and a time; `off` to stop) runs it as one launchd job for the whole machine. The chief-of-staff role writes the brief's parts under fixed `## ` headings so the digest can find them.
 - `cabinet list`: every workspace on this machine in one table (kit version, what waits on the owner, the doctor's count, the latest brief).
 - `bin/doctor.sh` leads with a summary of what needs attention, and `--fix` runs the fixes it knows (asking first).

@@ -296,6 +296,17 @@ git -C "$W" checkout -q -- HANDOFFS.md
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused handoff changed a file"
 "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
 [[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
+# Evidence: files copied under the entry's ID and linked from the workspace root, links kept, both committed.
+printf 'png' > "$T/login page.png"; printf 'log' > "$T/run.txt"
+out="$(cd "$W/specs" && "$F" handoff add --from web --to qa --changed x --needed y --evidence "../../login page.png" --evidence "$T/run.txt" --evidence https://example.com/try "Shown")" || fail "handoff with evidence: $out"
+id="${out%% *}"
+grep -qxF -- "- Evidence: [login-page.png](specs/evidence/$id/login-page.png), [run.txt](specs/evidence/$id/run.txt), <https://example.com/try>" "$W/HANDOFFS.md" || fail "the evidence line"
+[[ "$(cat "$W/specs/evidence/$id/login-page.png")" == png && -z "$(git -C "$W" status --porcelain)" ]] || fail "evidence not copied and committed with its entry"
+"$W/bin/handoff.sh" add --from web --to qa --changed x --needed y --evidence "$T/none.png" "Missing" >/dev/null 2>&1 && rc=0 || rc=$?; [[ $rc == 2 ]] || fail "a missing evidence file was accepted"
+"$W/bin/handoff.sh" add --from web --to qa --changed x --needed y --evidence "ftp://x" "Bad link" >/dev/null 2>&1 && fail "a link that is not http(s) was accepted"
+[[ -z "$(git -C "$W" status --porcelain)" ]] || fail "refused evidence changed a file"
+sed -i.bak "/^### $id:/,/^- Status:/s/^- Status: open/- Status: done/" "$W/HANDOFFS.md" && rm "$W/HANDOFFS.md.bak" && git -C "$W" commit -qam "done" && "$W/bin/handoff.sh" archive >/dev/null
+grep -qF "[run.txt](../specs/evidence/$id/run.txt)" "$W/handoffs/archive-${id:2:4}-${id:6:2}.md" || fail "archived evidence links do not open from handoffs/"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -851,13 +862,14 @@ rm -rf "$HOME/$LOGS/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >
 section "digest gathers every sign-off queue" "0"
 s35() {
 "$F" new "$T/dg-a" --name "Digest A" --yes >/dev/null; "$F" new "$T/dg-b" --yes >/dev/null; "$F" new "$T/dg-c" --yes >/dev/null
-printf '# Brief\n\n## Sign-off queue\n\n1. **Publish the page?** A. now. B. later.\n\n2. **Spend $20?**\n\n## Verification\n\nNone.\n\n## Actions for the owner\n\n- Push api main (abc1234).\n\n## Per agent queue\n\nqa: 1\n' > "$T/dg-a/BRIEF.md"
+printf '# Brief\n\n## Sign-off queue\n\n1. **Publish the page?** A. now. B. later. [page.png](specs/evidence/H-1/page.png)\n\n2. **Spend $20?**\n\n## Verification\n\nNone.\n\n## Actions for the owner\n\n- Push api main (abc1234).\n\n## Per agent queue\n\nqa: 1\n' > "$T/dg-a/BRIEF.md"
 printf '# Brief\n\nNo headings here.\n' > "$T/dg-b/BRIEF.md"; touch -t 202001010700 "$T/dg-b/BRIEF.md"
 out="$(cd "$T" && "$F" digest)"
 echo "$out" | grep -q '^== Digest A' && echo "$out" | grep -q '^  1\. \*\*Publish the page?\*\*' && echo "$out" | grep -q '^  2\. \*\*Spend \$20?\*\*' || { echo "$out"; fail "digest: the queue"; }
 echo "$out" | grep -q '^  - Push api main' && ! echo "$out" | grep -q 'qa: 1' && ! echo "$out" | grep -q '^  None\.' || { echo "$out"; fail "digest: only the queue and the actions"; }
 echo "$out" | grep -q 'Older than a day and a half' && echo "$out" | grep -q 'no "## Sign-off queue" heading' && echo "$out" | grep -q 'No brief yet. Write one: cd .*dg-c && cabinet brief' || { echo "$out"; fail "digest: stale, headless or missing briefs"; }
 ! echo "$out" | grep -q ' $' || fail "digest prints trailing spaces"
+echo "$out" | grep -q '](/.*/dg-a/specs/evidence/H-1/page.png)$' || { echo "$out"; fail "digest: evidence links do not open from outside the workspace"; }
 j="$("$F" digest --json)"
 jq -e 'map(select(.slug == "dg-a"))[0] | .project == "Digest A" and (.sign_off_queue | startswith("1. **Publish") and contains("2. **Spend")) and .actions_for_owner == "- Push api main (abc1234)." and .brief_stale == false' <<<"$j" >/dev/null || fail "digest --json: a full brief"
 jq -e '(map(select(.slug == "dg-b"))[0] | .brief_stale and .queue_heading_found == false) and (map(select(.slug == "dg-c"))[0] | .brief_written == null and .queue_heading_found == null)' <<<"$j" >/dev/null || fail "digest --json: stale and missing"

@@ -18,6 +18,6 @@ The rows of the team table in `AGENTS.md` whose owning agent is `mobile`. You wr
 - **Platform rules.** Follow each platform's guidelines and the app stores' review rules; a feature that may break them is an owner decision before it is built.
 - **Releases stay with the owner.** Never submit, upload or publish a build, and never change signing, bundle identifiers or store settings. Change version and build numbers only as the repo's release process says.
 - **Old versions in use.** People keep old app versions: an API change the app needs goes to the API's owner as a handoff, and the app keeps working with the API as it is today until it ships.
-- **For qa and design-lead.** Say how to build and run it, the screens and states to look at (empty, loading, error, offline, large text), and attach a screenshot of each.
+- **For qa and design-lead.** Say how to build and run it, the screens and states to look at (empty, loading, error, offline, large text), and attach a screenshot of each (`--evidence`, once for each file).
 
 End every reply with the commits made, the handoff filed (its ID) and anything that needs the owner.
