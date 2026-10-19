@@ -346,7 +346,22 @@ CABINET_RUNNER_CMD='printf "%s|%s" "$CABINET_AGENT" "$CABINET_PROMPT" > runner.o
 EOF
 HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || fail "custom runner failed"
 grep -q '^chief-of-staff|Act as the chief-of-staff role: read agents/chief-of-staff.md' "$W/runner.out" || fail "custom runner did not get the role and prompt"
-rm -f "$W/runner.out"; cp "$T/env.bak" "$W/cabinet.env"
+rm -f "$W/runner.out"
+# A run past its time limit is stopped with everything it started, and the log says why
+# (CABINET_TEST_MINUTE makes a minute one second). A limit that is not a number never runs.
+echo "CABINET_RUNNER_CMD='sleep 323; :'" >> "$W/cabinet.env"
+cp "$W/jobs/brief.job" "$T/brief.bak"; sed -i '' 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
+s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || st=$?
+((st == 1 && SECONDS - s < 10)) || fail "a run past its limit was not stopped (exit $st after $((SECONDS - s))s)"
+! pgrep -f 'sleep 323' >/dev/null || fail "a stopped run left what it started running"
+grep -q "stopped after 2 min: the job's time limit" "$H/Library/Logs/cabinet/demo-co/brief.log" || fail "the log does not say why the run stopped"
+# Stopping the job (launchd's stop, or Ctrl-C by hand) stops the agent too, though it runs in its own group.
+HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM "$p"; wait "$p" || true
+! pgrep -f 'sleep 323' >/dev/null || fail "stopping the job left the agent running"
+sed -i '' 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
+st=0; HOME="$H" "$W/bin/scheduled.sh" brief >/dev/null 2>&1 || st=$?
+((st == 2)) && ! pgrep -f 'sleep 323' >/dev/null || fail "a TIMEOUT that is not whole minutes was not refused"
+cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 "$F" new "$T/c1" --yes --runner custom >/dev/null 2>&1 && fail "custom runner without a command accepted"
 "$F" new "$T/c2" --yes --runner custom --runner-cmd 'mytool --run "$CABINET_PROMPT"' >/dev/null || fail "custom runner option"
 grep -qx "CABINET_RUNNER_CMD='mytool --run \"\$CABINET_PROMPT\"'" "$T/c2/cabinet.env" || fail "runner command not written"

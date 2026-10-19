@@ -289,11 +289,12 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_BACKUP_DIR` | Absolute folder for archives, outside the workspace and its repos; empty turns backups off. |
 | `CABINET_BACKUP_TIME` | Time of the daily backup, like `1:00 PM` (default). |
 | `CABINET_BACKUP_KEEP` | How many of this workspace's archives to keep (default 14, at least 1). |
+| `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job
 
-One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `AFTER` (an optional shell command run in the workspace after a successful run). After a change, run `bin/bootstrap.sh`.
+One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run). After a change, run `bin/bootstrap.sh`.
 
 ### cabinet.local.env
 

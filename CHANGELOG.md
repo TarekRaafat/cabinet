@@ -34,7 +34,7 @@ First version.
 
 ### Schedules
 
-- Jobs as `jobs/<job>.job`, scheduled daily or weekly by launchd. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
+- Jobs as `jobs/<job>.job`, scheduled daily or weekly by launchd. A run is stopped, with everything it started, after its time limit: `TIMEOUT` minutes in the job file, else `CABINET_JOB_TIMEOUT` in `cabinet.env` (default 60; `0` for none), with the reason in the job's log. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
 - One form for every schedule (the brief, any job, the backup time, the digest): 12-hour times (`7 AM`, `4:30 PM`), every day or on days, one or several (`fri 4 PM`, `sun,mon,tue,wed,thu 8 AM`), with days by short or full name in any case. Times are stored and shown as `4:00 PM`; 24-hour times are still read.
 - Scheduled runners: claude, codex, gemini, qwen, grok, opencode, cursor, and `custom` for any other tool (`CABINET_RUNNER_CMD`).
 - `cabinet bootstrap --no-schedules` (and `--schedules` to undo it): a Mac that should not run the workspace's jobs, such as a teammate's in a shared workspace, skips their schedules from then on; the choice is saved in `cabinet.local.env`, which git never tracks.

@@ -60,11 +60,10 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 
 ## Ideas to pick from
 
-Not ranked yet; each is picked and ordered when its implementation starts. Suggested first, since each is small and prevents real trouble: a time limit for jobs, and the handoff command.
+Not ranked yet; each is picked and ordered when its implementation starts. Suggested first, since it is small and prevents real trouble: the handoff command.
 
 ### Safety
 
-- **A time limit for jobs.** Today a job's `MINUTES` is only shown to people: nothing stops a scheduled run that hangs or loops, which costs money and can pile up runs. A hard limit per job (`TIMEOUT=` in the job file) and a default for the workspace stop the run and log why, and the next brief or `cabinet runs` says so. Done when: a job past its limit is stopped every time, in every supported tool, with the reason in its log.
 - **A secrets check.** Today nothing stops a key, token or password pasted into a note, guide or handoff from being committed and copied into every backup. `cabinet doctor` and a pre-commit hook in the workspace look for them (common key formats, private key blocks, lines that set a password or token) and refuse the commit, with a way to mark a false alarm. Done when: a test key in a guide is caught before it is committed, and a marked false alarm passes.
 - **Backups that test themselves.** Today the docs ask for a restore by hand once a quarter. `cabinet backup --verify` restores the newest archive into a temporary folder, compares it with the workspace and its repos, reports any difference, and deletes the copy; the doctor says when the last verified restore is too old. Done when: a damaged or incomplete archive is reported by `--verify`, and a good one passes.
 
@@ -74,7 +73,7 @@ Not ranked yet; each is picked and ordered when its implementation starts. Sugge
 - **A decisions log.** Today the owner's answers are applied into specs and handoffs, so "what did I decide about X, and when" means searching several files. Each answer is recorded with its date, the question and the outcome in one file per workspace, and `cabinet decisions [word]` searches it. Done when: every applied answer has its entry, and a search by word finds it.
 - **A handoff command.** Today agents and people write handoff entries by hand, from the template, and the doctor catches a duplicate ID only afterwards. `cabinet handoff --to <repo or role> "<title>"` (with `--changed`, `--needed`, `--depends-on`) writes the entry with the next free ID, today's date and the template's lines, and commits it; the agent roles use it. Done when: entries written through it never share an ID, and each passes the format the handoff tools read.
 - **A weekly review job.** Today the daily brief looks at today. An optional job, on the day the week starts, sums up the week: what shipped, which handoffs closed, which decisions were made, what is stuck and for how long, and how that compares with the week before. Done when: a workspace can turn it on in setup or config, and it runs on the week's first day.
-- **Run history and failure alerts.** Today a failed scheduled run shows only as a late brief the next day. `cabinet runs` lists each job's recent runs (when, how long, success or failure, from the job logs), and a failed scheduled run can send a notification. Done when: a failing job is reported the same morning, and `cabinet runs` shows its last runs.
+- **Run history and failure alerts.** Today a failed scheduled run shows only as a late brief the next day. `cabinet runs` lists each job's recent runs (when, how long, success or failure, from the job logs), and a failed scheduled run, or one stopped by its time limit, can send a notification and is named in the next brief. Done when: a failing job is reported the same morning, and `cabinet runs` shows its last runs.
 
 ### Control
 

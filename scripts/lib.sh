@@ -16,6 +16,7 @@ RUNNERS="claude codex gemini qwen grok opencode cursor"   # built in; "custom" r
 CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
+CABINET_JOB_TIMEOUT="${CABINET_JOB_TIMEOUT:-60}"
 # Settings for this Mac only, in cabinet.local.env: never committed (the workspace's
 # .gitignore tracks only its own files), so each teammate's Mac keeps its own. Read, never
 # sourced. CABINET_SCHEDULES="off": another Mac runs the jobs (cabinet bootstrap --no-schedules).

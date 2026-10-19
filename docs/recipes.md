@@ -88,6 +88,7 @@ Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontm
    AGENT=growth
    WHEN="sun 9:00 AM"        # a time every day ("9 AM"), days and a time ("fri,sat 10 AM"), or "" for by hand only
    MINUTES="5"
+   TIMEOUT="30"              # stop it after 30 minutes; "" uses CABINET_JOB_TIMEOUT (60), "0" for no limit
    RESULT="specs/weekly.md"
    PROMPT="Write this week's numbers."
    AFTER=""
