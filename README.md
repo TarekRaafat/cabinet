@@ -2,7 +2,7 @@
 
 Run a product with a team of AI agents and one owner who signs off.
 
-cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, and builders that write the code in each repo the way it is already built), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
 
 - **Platform:** macOS. Linux and Windows (through WSL) are on the [roadmap](ROADMAP.md).
 - **Status:** version 0.1.0, not yet published to npm. Until it is, install from a clone (see [Install](#install)).

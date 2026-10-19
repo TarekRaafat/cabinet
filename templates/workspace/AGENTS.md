@@ -20,7 +20,7 @@ Each agent owns its repos end to end, documentation included. No agent writes to
 | `specs/design/` | UX and visual consistency inside the brand guide | design-lead |
 | `finance/` | Pricing and unit economics; decides no price | finance |
 
-Add one row per product repo (and list it in `repos.tsv`). Remove the rows of roles this project does not enable in `cabinet.env`.
+Add one row per product repo (and list it in `repos.tsv`). A repo whose owning agent is `TBD` gets a builder (`backend`, `web`, `mobile` or `infrastructure`, by what the repo holds) from `bin/bootstrap.sh` when it first arrives; change it to another builder, a project role, or `owner` for a repo only you change. Remove the rows of roles this project does not enable in `cabinet.env`.
 
 ## Contracts that cross repo lines
 

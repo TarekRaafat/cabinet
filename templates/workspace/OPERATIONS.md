@@ -30,6 +30,8 @@ You sign off; the team runs the rest. Every decision belongs to one of three tie
 | security | Security and privacy review before a push; can block it |
 | finance | Pricing and unit economics; proposes prices, decides none |
 
+**Builders.** Each product repo is built by a builder role: backend (servers and APIs), web (what runs in a browser), mobile (iOS and Android apps) or infrastructure (CI, deploys, infrastructure as code; it plans, and applying is yours). `bin/bootstrap.sh` picks one for each repo whose owner is `TBD` in the team table of `AGENTS.md`, from what the repo holds; change the row to choose another, then `bin/roles.sh`. Builders follow the way each repo is already built, commit locally, and hand finished work to qa; they never verify their own work and never push.
+
 To call one, start an agent session in `$WS` and name it ("use the qa agent to ..."), or `claude --agent qa`. In another tool: "act as the qa role in agents/qa.md".
 
 ## 2. Daily (5 to 10 minutes)

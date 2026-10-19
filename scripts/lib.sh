@@ -84,6 +84,24 @@ data_dirs() {
 
 has() { [[ " $1 " == *" $2 "* ]]; }   # has "<words>" <word>
 
+# The kit's builder roles. Each is built when it owns a repo in the team table of AGENTS.md,
+# so the table is the one record of who builds what; CABINET_ROLES holds the other roles.
+BUILDERS="backend web mobile infrastructure"
+builders() {
+  awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 && $2 ~ /`/ {o = $4; gsub(/^ +| +$/, "", o); print o}' "$WS/AGENTS.md" 2>/dev/null \
+    | while IFS= read -r o; do has "$BUILDERS" "$o" && ! has "$CABINET_ROLES" "$o" && echo "$o"; done | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'
+}
+team_roles() { echo $CABINET_ROLES $(builders); }
+# The builder a repo most looks like, from the files at its top (package.json is read as data only).
+builder_for() {
+  local d=$1 deps=""
+  [[ -f "$d/package.json" ]] && deps="$(jq -r '((.dependencies // {}) + (.devDependencies // {})) | keys[]' "$d/package.json" 2>/dev/null | tr '\n' ' ')"
+  if [[ -d "$d/ios" || -d "$d/android" || -f "$d/pubspec.yaml" ]] || ls -d "$d"/*.xcodeproj >/dev/null 2>&1 || has "$deps" react-native || has "$deps" expo; then echo mobile
+  elif ls "$d"/*.tf >/dev/null 2>&1 || [[ -d "$d/terraform" || -f "$d/Pulumi.yaml" || -f "$d/Chart.yaml" || -f "$d/cdk.json" ]]; then echo infrastructure
+  elif has "$deps" react || has "$deps" next || has "$deps" vue || has "$deps" svelte || has "$deps" @angular/core || has "$deps" astro || has "$deps" nuxt || [[ -f "$d/index.html" ]]; then echo web
+  else echo backend; fi
+}
+
 # Dates people read, in the house format (18 Oct 2026, 1:00 PM), English on every machine.
 human_stamp() { LC_ALL=C date -j -f %Y%m%d-%H%M%S "$1" "+%-d %b %Y, %-I:%M %p" 2>/dev/null || printf '%s' "$1"; }
 human_mtime() { LC_ALL=C date -r "$1" "+%-d %b %Y, %-I:%M %p" 2>/dev/null; }

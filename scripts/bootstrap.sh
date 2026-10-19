@@ -112,6 +112,23 @@ while IFS=$'\t' read -r name url files link path; do
   fi
 done < <(repos)
 
+echo "== Builders"
+# A repo whose owning agent is TBD in the team table gets the builder it most looks like.
+# The owner may change the row to another builder, a project role or owner; a row that is
+# not TBD is never touched.
+assigned=0
+while IFS=$'\t' read -r name url files link path; do
+  repo="$(repo_dir "$path")"
+  [[ -e "$repo/.git" ]] || continue
+  N="$name" perl -ne 'exit 1 if /^\| `\Q$ENV{N}\E` \|[^|]*\|\s*TBD\s*\|\s*$/' "$WS/AGENTS.md" 2>/dev/null && continue
+  b="$(builder_for "$repo")"
+  if ((DRY)); then echo "  would make $b the owner of $name"; continue; fi
+  N="$name" B="$b" perl -i -pe 's/^(\| `\Q$ENV{N}\E` \|[^|]*\|)\s*TBD\s*\|\s*$/$1 $ENV{B} |\n/' "$WS/AGENTS.md"
+  echo "  $name: owned by the $b builder, from what the repo holds (change its row in AGENTS.md to choose another)"
+  assigned=1
+done < <(repos)
+((assigned)) && echo "  review and commit AGENTS.md and the built roles (agents/, .claude/agents/)"
+
 echo "== Shared instructions and roles"
 [[ -e "$WS/CLAUDE.md" ]] || { run ln -s AGENTS.md "$WS/CLAUDE.md"; echo "  linked CLAUDE.md"; }
 run "$WS/bin/roles.sh"

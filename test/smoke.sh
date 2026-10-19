@@ -746,6 +746,7 @@ P="$T/team-app"; mkrepo "$P"; echo '{"name":"team-app"}' > "$P/package.json"; gi
 (cd "$P" && "$F" init --yes --inside --shared) >/dev/null; git -C "$P" add -A; git -C "$P" commit -qm cabinet
 LA="$HOME/Library/LaunchAgents/ai.cabinet.team-app.brief.plist"; mkdir -p "$P/src"
 (cd "$P/src" && "$F" bootstrap) >/dev/null 2>&1; [[ -f "$LA" ]] || fail "bootstrap did not schedule the brief"
+git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first bootstrap gives the project its builder
 (cd "$P/src" && "$F" bootstrap --no-schedules) >/dev/null 2>&1 || true
 [[ ! -f "$LA" ]] && grep -qx 'CABINET_SCHEDULES="off"' "$P/cabinet/cabinet.local.env" || fail "--no-schedules"
 [[ -z "$(git -C "$P" status --porcelain --untracked-files=all)" ]] || { git -C "$P" status --porcelain; fail "cabinet.local.env shows in the project's git"; }
@@ -938,6 +939,44 @@ HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  the last verified restore wa
 rm "$VH/Library/Logs/cabinet/acme-app/backup-verified"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this Mac yet' || fail "the doctor missed a missing verify"
 cp "$T/env.bak" "$C/cabinet.env"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "builders: each repo gets the builder it looks like, and the team table decides" "2"
+s39() {
+# One repo of each kind, the way an existing project would look.
+mkrepo "$T/kind-web"; echo '{"dependencies":{"react":"^19.0.0"}}' > "$T/kind-web/package.json"
+mkrepo "$T/kind-app"; mkdir -p "$T/kind-app/ios"; touch "$T/kind-app/ios/App.swift"
+mkrepo "$T/kind-infra"; echo 'resource "x" "y" {}' > "$T/kind-infra/main.tf"
+mkrepo "$T/kind-api"
+for r in kind-web kind-app kind-infra; do git -C "$T/$r" add -A && git -C "$T/$r" commit -qm kind; done
+B="$T/kinds"; BH="$T/bhome"; mkdir -p "$BH"
+"$F" new "$B" --yes --backup-dir off --repo "$T/kind-web" --repo "$T/kind-app" --repo "$T/kind-infra" --repo "$T/kind-api" >/dev/null || fail "new with four repos"
+[[ ! -e "$B/agents/backend.md" ]] || fail "a builder was built before it owned a repo"
+out="$(HOME="$BH" "$B/bin/bootstrap.sh" 2>&1)" || true
+for kv in kind-web:web kind-app:mobile kind-infra:infrastructure kind-api:backend; do
+  echo "$out" | grep -q "${kv%%:*}: owned by the ${kv#*:} builder" && grep -q "^| \`${kv%%:*}\` | TBD | ${kv#*:} |$" "$B/AGENTS.md" || fail "${kv%%:*} was not given the ${kv#*:} builder: $out"
+done
+for r in backend web mobile infrastructure; do
+  grep -q "^name: $r$" "$B/agents/$r.md" && [[ -f "$B/.claude/agents/$r.md" ]] || fail "the $r builder was not built"
+done
+grep -q '"Builders" section' "$B/agents/web.md" && grep -q '^## Builders$' "$B/CABINET.md" || fail "builders do not point at the shared rules"
+out="$(HOME="$BH" "$B/bin/doctor.sh" 2>&1 || true)"
+echo "$out" | grep -q 'ok    manual names every script, job and role' && echo "$out" | grep -q 'ok    roles built: .*backend' || fail "doctor after builders: $(echo "$out" | grep -E 'manual|roles')"
+# A row that is not TBD is never changed; the team table decides which builders are built.
+git -C "$B" add -A && git -C "$B" commit -qm builders
+HOME="$BH" "$B/bin/bootstrap.sh" 2>&1 | grep -q 'owned by the' && fail "bootstrap reassigned a repo that has an owner"
+sed -i '' 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGENTS.md"
+"$B/bin/roles.sh" >/dev/null && [[ ! -e "$B/agents/backend.md" ]] || fail "a builder that owns no repo is still built"
+(cd "$B" && "$F" config --yes --roles "qa") >/dev/null 2>&1 || fail "config --roles with builders"
+[[ -f "$B/agents/web.md" && -f "$B/agents/qa.md" && ! -e "$B/agents/finance.md" ]] || fail "config --roles dropped a builder that owns a repo"
+sed -i '' 's/^| `kind-api` | TBD | owner |$/| `kind-api` | TBD | TBD |/' "$B/AGENTS.md"; cp "$B/AGENTS.md" "$T/agents.bak"
+HOME="$BH" "$B/bin/bootstrap.sh" --dry-run 2>&1 | grep -q 'would make backend the owner of kind-api' && cmp -s "$B/AGENTS.md" "$T/agents.bak" || fail "dry run: builder not shown, or AGENTS.md changed"
+# The guess reads only the files at the repo's top.
+( WS="$B"; source "$B/bin/lib.sh"
+  mkdir -p "$T/k1/android" "$T/k2/terraform" "$T/k3"; echo '<html></html>' > "$T/k3/index.html"
+  echo '{"dependencies":{"react":"1","react-native":"1"}}' > "$T/k4.json"; mkdir -p "$T/k4"; cp "$T/k4.json" "$T/k4/package.json"
+  [[ "$(builder_for "$T/k1") $(builder_for "$T/k2") $(builder_for "$T/k3") $(builder_for "$T/k4") $(builder_for "$T/kind-api")" == "mobile infrastructure web mobile backend" ]] ) || fail "builder_for guessed wrong"
   return 0   # a last "check && fail" line must not end the run
 }
 

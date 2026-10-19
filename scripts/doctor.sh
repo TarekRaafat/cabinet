@@ -64,7 +64,7 @@ done < "$K/manifest"
 ((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
-out="$("$WS/bin/roles.sh" --check 2>&1)" && ok kit.roles "roles built: $CABINET_ROLES" || bad kit.roles "$out (run bin/roles.sh)"
+out="$("$WS/bin/roles.sh" --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/roles.sh)"
 
 section "Push guardrails"
 hooks="$(git config --global core.hooksPath || true)"
@@ -158,7 +158,7 @@ section "Operations manual"
 missing=()
 for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh) continue ;; esac; grep -qF "bin/$(basename "$f")" "$WS/OPERATIONS.md" || missing+=("bin/$(basename "$f")"); done
 for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
-for r in $CABINET_ROLES; do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
+for r in $(team_roles); do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
 ((${#missing[@]})) && bad manual.complete "OPERATIONS.md does not mention: ${missing[*]}" || ok manual.complete "manual names every script, job and role"
 
 section "Guides"

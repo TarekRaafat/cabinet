@@ -15,8 +15,11 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 | security | security and privacy review of unpushed work | PASS or BLOCK | legal and disclosure questions |
 | design-lead | UX and visual consistency inside the brand guide | layout and interaction choices | any brand change |
 | finance | cost and pricing models | how to model | every price, plan and spend |
+| backend, web, mobile, infrastructure | the product repos the team table assigns each (the builders) | how to build inside a repo, following its own conventions | changes to a repo's stack or tools; applying infrastructure |
 
 Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`), adds notes to one in `roles/<role>.md`, or defines its own role there.
+
+**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/roles.sh`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
 ## Rules, guides and notes
 

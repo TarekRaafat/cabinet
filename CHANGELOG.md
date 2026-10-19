@@ -20,6 +20,7 @@ First version.
 
 - Core rules (`CABINET.md`): workspace layout, handoffs, three decision tiers, the sign-off queue, silence, the builder never verifies, seats and onboarding, git and release rules.
 - Roles: chief-of-staff, product-manager, architect, qa, security, design-lead, finance. Project notes and project-only roles through `roles/`.
+- Builders: `backend`, `web`, `mobile` and `infrastructure` write the product's code. Each is built when it owns a repo in the team table of `AGENTS.md`; `bin/bootstrap.sh` gives a repo whose owner is `TBD` the builder it most looks like when the repo first arrives. A builder learns how its repo is already built and follows it, tests every change, commits locally and hands finished work to qa (`CABINET.md`, "Builders").
 - `guides/` for the project's standing documents (brand, style, policies, business documents), listed in a "Guides" table in `AGENTS.md` that every agent reads; `CABINET.md` ranks guides with `AGENTS.md`, and `bin/doctor.sh` reports a guide with no row and a row with no file. A recipe and a concepts section say where each kind of rule goes and which wins.
 
 ### Commands
