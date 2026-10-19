@@ -62,10 +62,24 @@ More in [concepts](docs/concepts.md).
 
 ## Install
 
-You need macOS or Linux with git, jq, perl, python3, openssl and Node.js:
+You need macOS or Linux, and:
 
-- macOS: `brew install jq node` (the rest come with macOS and its command line tools).
-- Debian or Ubuntu: `sudo apt install git jq perl python3 openssl nodejs npm libsecret-tools` (`libsecret-tools` keeps the backup passphrase in the secret store). Schedules use systemd user timers, or cron where the machine did not boot with systemd.
+| Required | For |
+|---|---|
+| git, jq, perl, python3 | Every command, handoffs and the guardrails |
+| Node.js and npm | Installing cabinet and pinning its version in each workspace |
+| At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Gemini CLI, Qwen Code, Grok, opencode, the Cursor CLI, or your own command |
+| A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
+
+| Optional | For | Without it |
+|---|---|---|
+| openssl | Encrypted backups (built into macOS) | No backups; everything else works |
+| `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Set `CABINET_BACKUP_PASSPHRASE` instead ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
+| `notify-send` (Linux) | `cabinet digest --notify` | The digest is still written, with no notification |
+| lsof | `cabinet move` checking that no agent session still has the folder open | The move skips that check |
+
+- macOS: `brew install jq node` (git, perl, python3 and openssl come with macOS and its command line tools).
+- Debian or Ubuntu: `sudo apt install git jq perl python3 nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
 
 ```sh
 npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere
