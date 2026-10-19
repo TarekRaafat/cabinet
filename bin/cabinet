@@ -122,7 +122,7 @@ O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
-O	config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
+O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts, counted with the claude runner; the doctor warns from 80% (default: off).
 O	new,init,config	--repo	<git url>	A product repo to clone; repeat for more.
 O	init	--inside		In a project repo: the workspace is cabinet/ inside it (the default there).
 O	init	--private		With --inside (the default): cabinet/ has its own git; no tracked project file changes.
@@ -320,6 +320,13 @@ slug_taken() {  # slug_taken <slug> <other workspace>
 # Record which workspace owns a slug, so another setup sees it even before bootstrap runs.
 claim_slug() { mkdir -p -m 700 "$LOGROOT/$1" 2>/dev/null && printf '%s\n' "$(abspath "$2")" > "$LOGROOT/$1/workspace"; return 0; }
 
+# The budget question, for setup and config: only the claude runner reports what a run costs.
+ask_budget() {
+  [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == claude ]] || return 0
+  echo "  A weekly budget for the agent runs cabinet starts, in US dollars: the doctor and the brief warn from 80%."
+  budget="$(ask "Weekly budget, like 20, or off" "${budget:-off}")"
+}
+
 # The checks every answer passes, for setup and config (they share these variables).
 check_answers() {
   local r v
@@ -336,6 +343,8 @@ check_answers() {
   has "$DAYS" "$week" || die "week start must be a day name, like sunday"
   writing="$(printf %s "$writing" | tr '[:upper:]' '[:lower:]')"
   [[ "$writing" == short || "$writing" == standard ]] || die "--writing must be short or standard"
+  [[ "$(printf %s "$budget" | tr '[:upper:]' '[:lower:]')" == off ]] && budget=""
+  [[ -z "$budget" || "$budget" =~ ^[0-9]+(\.[0-9]{1,2})?$ && ! "$budget" =~ ^0+(\.0*)?$ ]] || die "the budget must be dollars a week, like 20 or 12.50, or off"
   for v in "$name" "$owner" "$email" "$backup"; do safe "$v" || die "'$v' cannot be used: no \$, backtick, backslash, double quote or line break"; done
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
@@ -361,7 +370,7 @@ cmd_init() { setup init "$@"; }
 # Nothing that already exists is overwritten.
 setup() {
   local how=$1; shift
-  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" backup="" yes=0 repos=() r
+  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" backup="" yes=0 repos=() r
   local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0
   while (($#)); do
     case "$1" in
@@ -375,6 +384,7 @@ setup() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
+      --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --inside) place=inside; shift ;;
@@ -479,6 +489,7 @@ setup() {
       echo "  Custom tool: the command to run, with the prompt as \"\$CABINET_PROMPT\" (and the role as \$CABINET_AGENT)."
       runner_cmd="$(ask "Command" "$runner_cmd")"
     fi
+    ask_budget
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
@@ -589,7 +600,7 @@ setup() {
     elif [[ "$owner" == TBD || "$email" == TBD ]]; then echo "  - git init, but no commit (no owner identity yet)"
     else echo "  - git init and one commit as $owner"; fi
     echo "  - record the slug in $LOGROOT_SHOWN/$slug/workspace"
-    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, writing $writing, backups ${backup:-off}."
+    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, writing $writing, budget $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off), backups ${backup:-off}."
     echo "Nothing was written."
     return 0
   fi
@@ -608,6 +619,7 @@ setup() {
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
     echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week, writing $writing"
+    [[ -n "$budget" ]] && echo "  Budget    \$$budget a week"
     echo "  Backups   ${backup:-off}"
     local listed="none yet"; ((${#rows[@]})) && listed="$(printf '%s\n' "${rows[@]}" | cut -f1 | tr '\n' ' ')"
     echo "  Repos     $listed"
@@ -652,10 +664,10 @@ setup() {
 
   # The answers, written into the files this setup placed (a kept file is the project's own).
   if is_placed cabinet.env; then
-    R="$roles" N="$runner" C="$runner_cmd" B="$backup" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" perl -i -pe '
+    R="$roles" N="$runner" C="$runner_cmd" B="$backup" U="$budget" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" perl -i -pe '
       s/^CABINET_ROLES=.*/CABINET_ROLES="$ENV{R}"/; s/^CABINET_RUNNER=.*/CABINET_RUNNER="$ENV{N}"/;
       s/^CABINET_RUNNER_CMD=.*/CABINET_RUNNER_CMD=\x27$ENV{C}\x27/;
-      s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
+      s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_BUDGET=.*/CABINET_BUDGET="$ENV{U}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
   fi
   is_placed jobs/brief.job && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
   is_placed AGENTS.md && D="$Week" G="$writing" perl -i -pe 's/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./; s/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
@@ -957,6 +969,7 @@ cmd_config() {
     roles="$picked"
     runner="$(ask "Agent tool for scheduled jobs (${RUNNERS// /, }, or custom)" "$runner")"
     [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] && runner_cmd="$(ask "Command, with the prompt as \"\$CABINET_PROMPT\"" "$runner_cmd")"
+    ask_budget
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
@@ -976,8 +989,6 @@ cmd_config() {
   check_answers
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
   backup_time="$(when_time_only "$backup_time")" || die "the backup time must be a time like \"1 PM\" or \"1:30 PM\", with no day: backups run every day"
-  [[ "$(printf %s "$budget" | tr '[:upper:]' '[:lower:]')" == off ]] && budget=""
-  [[ -z "$budget" || "$budget" =~ ^[0-9]+(\.[0-9]{1,2})?$ && ! "$budget" =~ ^0+(\.0*)?$ ]] || die "the budget must be dollars a week, like 20 or 12.50, or off"
   if [[ "$slug" != "$o_slug" ]]; then
     local other; other="$(slug_owner "$slug" "$ws")"
     [[ -z "$other" ]] || die "$(slug_taken "$slug" "$other"): choose another"
