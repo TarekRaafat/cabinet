@@ -238,6 +238,27 @@ EOF
 git -C "$W" add -A && git -C "$W" commit -qm handoffs
 "$W/bin/archive-handoffs.sh" | grep -q 'archived 1' || fail "archive did not move the done entry"
 grep -q 'H-20260101-02' "$W/handoffs/archive-2026-01.md" || fail "archive file missing the entry"
+# cabinet handoff: the next free ID for today across HANDOFFS.md and the archives, the template's
+# lines, and a commit of only that entry; never someone else's uncommitted lines.
+d="$(date +%Y%m%d)"
+printf '\n### H-%s-07: archived today\n- From: qa -> To: api\n- Status: done (%s)\n' "$d" "$(date +%F)" >> "$W/handoffs/archive-2026-01.md"
+git -C "$W" add -A && git -C "$W" commit -qm "archived today"
+out="$(cd "$W/specs" && "$F" handoff --from architect --to "api, qa" --changed "GET /items: limit 50 -> 100" --needed "page by 100
+in the client" "Raise the list limit")" || fail "handoff failed: $out"
+[[ "$out" == "H-$d-08 filed for api, qa and committed" ]] || fail "handoff did not take the next free ID across the archives: $out"
+git -C "$W" show --stat HEAD | grep -q "handoffs: H-$d-08 Raise the list limit" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "handoff not committed alone"
+"$W/bin/handoffs.sh" qa --json | jq -e --arg id "H-$d-08" '[.[] | select(.id == $id)][0] | .from == "architect" and .status == "open"
+  and (.text | contains("- Needed: page by 100 in the client\n- Depends on: none"))' >/dev/null || fail "the filed handoff is not in the format the handoff tools read"
+"$W/bin/handoffs.sh" | grep -q "H-$d-01" && fail "an ID was reused"
+echo "- leftover line" >> "$W/HANDOFFS.md"
+out="$("$W/bin/handoff.sh" --from qa --to architect --changed x --needed y "Second")"
+[[ "$out" == "H-$d-09 filed for architect, not committed"* ]] && git -C "$W" log -1 --format=%s | grep -q "H-$d-08" || fail "handoff committed someone else's uncommitted lines"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'ok    every handoff ID is unique' || fail "handoff made a duplicate ID"
+git -C "$W" checkout -q -- HANDOFFS.md
+"$W/bin/handoff.sh" --from qa --to api "No details" >/dev/null 2>&1 && fail "a handoff without --changed and --needed was filed"
+[[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused handoff changed a file"
+"$W/bin/handoff.sh" --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
+[[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
   return 0   # a last "check && fail" line must not end the run
 }
 

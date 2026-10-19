@@ -529,7 +529,7 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 - [cabinet remove](#cabinet-remove)
 - [cabinet update](#cabinet-update), [cabinet status](#cabinet-status), [cabinet outdated](#cabinet-outdated), [cabinet changelog](#cabinet-changelog), [cabinet completion](#cabinet-completion), [cabinet version](#cabinet-version)
 - [Which copy of cabinet runs](#which-copy-of-cabinet-runs)
-- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, archive-handoffs, roles, scheduled, backup, restore, snapshot, move
+- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, handoff, archive-handoffs, roles, scheduled, backup, restore, snapshot, move
 - [Output for agents and scripts](#output-for-agents-and-scripts): `--json`
 - [Files you can edit](#files-you-can-edit): `cabinet.env`, `jobs/<job>.job`, `cabinet.local.env`, `repos.tsv`
 - [Environment variables](#environment-variables)
@@ -749,6 +749,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `cabinet brief` | `bin/scheduled.sh brief` |
 | `cabinet run <job>` | `bin/scheduled.sh <job>` |
 | `cabinet handoffs` | `bin/handoffs.sh` |
+| `cabinet handoff` | `bin/handoff.sh` |
 | `cabinet archive` | `bin/archive-handoffs.sh` |
 | `cabinet roles` | `bin/roles.sh` |
 | `cabinet backup` | `bin/backup.sh` |
@@ -761,6 +762,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `bin/bootstrap.sh [--dry-run] [--no-schedules \| --schedules]` | Sets up this Mac for the workspace: clones missing repos, restores local-only files, links `CLAUDE.md`, builds the roles, installs the guardrails ([guardrails](guardrails.md)), and adds, updates or removes the schedules to match `jobs/` and the backup setting. `--dry-run` only prints. `--no-schedules` stops and from then on skips the jobs' schedules on this Mac, for a workspace whose jobs another Mac runs (a teammate's, in a shared workspace); `--schedules` undoes it. Both are saved in `cabinet.local.env`. The backup schedule is not affected. Safe to rerun. | 0, or 1 when any step did not complete (each one says why) |
 | `bin/doctor.sh [--fix [--yes]] [--json]` | Checks everything: repos, kit files, roles, guardrails for every installed tool, the manual, handoff IDs, uncommitted work, schedules, backups. It starts with a summary (`N thing(s) need attention:` and the list, or `All good.`), then the full report. Changes nothing in the workspace or your settings (it runs `opencode debug` and `grok inspect`, which may write their own caches). `--fix` then runs the fixes it knows (`bin/bootstrap.sh`, `bin/roles.sh`, `bin/snapshot.sh`), asking before each unless `--yes`, and checks again. `--json` prints the results for scripts (see [Output for agents and scripts](#output-for-agents-and-scripts)). Every message is explained in [troubleshooting](troubleshooting.md). | 0, or 1 when anything says FIX |
 | `bin/handoffs.sh [name] [--json]` | Without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full. | 0 |
+| `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"` | Files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs. | 0, 1 when the commit failed (the entry is written) or `HANDOFFS.md` has no "## Open" heading, 2 for a missing value or unknown option |
 | `bin/archive-handoffs.sh` | Moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move. | 0, or 1 when `HANDOFFS.md` has uncommitted lines |
 | `bin/roles.sh [--check]` | Builds `agents/<role>.md` and `.claude/agents/<role>.md` (and, inside a project, the project's `.claude/agents/` and pointer files). `--check` only reports. | 0, or 1 when a role is missing or out of date |
 | `bin/scheduled.sh <job>` | Runs `jobs/<job>.job` now with the configured runner, logging to `~/Library/Logs/cabinet/<slug>/<job>.log`. | 0, 1 when the run failed, 2 for an unknown or incomplete job |
@@ -967,7 +969,7 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agen
 
 ## Handoffs
 
-`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoffs.sh <name>` shows an agent its open entries.
+`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh` files an entry with the next free ID and commits it; `bin/handoffs.sh <name>` shows an agent its open entries.
 
 ## Decision tiers
 
@@ -1316,7 +1318,7 @@ Each agent owns its repos end to end, documentation included, as the team table 
 
 `HANDOFFS.md` is the one channel between agents. It is durable, so work is never lost when a session ends, and it gives the owner one place to see everything in flight.
 
-- **When your change affects another repo,** append an entry using the template at the top of `HANDOFFS.md`: who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
+- **When your change affects another repo,** file an entry with `bin/handoff.sh --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it (or append one by hand from the template at the top of `HANDOFFS.md`): who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
 - **When an entry is addressed to you,** verify it against the code before acting: a handoff describes a change, the code is the truth. Set it to `acknowledged` when you start and `done` when your side lands, with the date and your commit. If it is wrong or not needed, set it to `rejected` with the reason.
 - **Commit every edit to `HANDOFFS.md` at once,** as its own commit (`handoffs: ...`). If the file holds someone else's uncommitted lines, stage only yours and name the leftovers in your summary; chief-of-staff commits leftovers in its daily run.
 - **Only edit entries addressed to you, and only their status lines.** Add a follow-up entry instead of rewriting another. One exception: chief-of-staff may set any entry to `done` when the code shows it landed, and applies the owner's sign-off answers to the entries they name.
@@ -1472,7 +1474,7 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 
 ## Ideas to pick from
 
-Not ranked yet; each is picked and ordered when its implementation starts. Suggested first, since it is small and prevents real trouble: the handoff command.
+Not ranked yet; each is picked and ordered when its implementation starts.
 
 ### Safety
 
@@ -1483,7 +1485,6 @@ Not ranked yet; each is picked and ordered when its implementation starts. Sugge
 
 - **Answer from the digest.** Today `cabinet digest` gathers every sign-off queue, but each answer still means going into that workspace. `cabinet answer <workspace> "1: approve; 2: no"` delivers the answers to that workspace, where its chief-of-staff applies them on its next run, as if given there. Done when: answers given from anywhere reach the right workspace once, are applied there, and the next digest no longer lists them.
 - **A decisions log.** Today the owner's answers are applied into specs and handoffs, so "what did I decide about X, and when" means searching several files. Each answer is recorded with its date, the question and the outcome in one file per workspace, and `cabinet decisions [word]` searches it. Done when: every applied answer has its entry, and a search by word finds it.
-- **A handoff command.** Today agents and people write handoff entries by hand, from the template, and the doctor catches a duplicate ID only afterwards. `cabinet handoff --to <repo or role> "<title>"` (with `--changed`, `--needed`, `--depends-on`) writes the entry with the next free ID, today's date and the template's lines, and commits it; the agent roles use it. Done when: entries written through it never share an ID, and each passes the format the handoff tools read.
 - **A weekly review job.** Today the daily brief looks at today. An optional job, on the day the week starts, sums up the week: what shipped, which handoffs closed, which decisions were made, what is stuck and for how long, and how that compares with the week before. Done when: a workspace can turn it on in setup or config, and it runs on the week's first day.
 - **Run history and failure alerts.** Today a failed scheduled run shows only as a late brief the next day. `cabinet runs` lists each job's recent runs (when, how long, success or failure, from the job logs), and a failed scheduled run, or one stopped by its time limit, can send a notification and is named in the next brief. Done when: a failing job is reported the same morning, and `cabinet runs` shows its last runs.
 
@@ -1552,7 +1553,8 @@ First version.
 
 ### Commands
 
-- One command for everything: `cabinet doctor`, `bootstrap`, `brief`, `run <job>`, `handoffs`, `archive`, `roles`, `backup`, `restore`, `snapshot` and `move` run the workspace's scripts (handoffs, archive-handoffs, roles, scheduled, bootstrap, doctor, snapshot, backup, restore, move) from any folder inside the workspace or its project. `cabinet next` says what to do next.
+- One command for everything: `cabinet doctor`, `bootstrap`, `brief`, `run <job>`, `handoffs`, `handoff`, `archive`, `roles`, `backup`, `restore`, `snapshot` and `move` run the workspace's scripts (handoffs, handoff, archive-handoffs, roles, scheduled, bootstrap, doctor, snapshot, backup, restore, move) from any folder inside the workspace or its project. `cabinet next` says what to do next.
+- `cabinet handoff --from <name> --to <name> --changed "..." --needed "..." "<title>"` (`bin/handoff.sh`, which `CABINET.md` tells agents to use) files a handoff with the next free ID for today, today's date and the template's lines, and commits it on its own; with someone else's uncommitted lines in `HANDOFFS.md`, it writes the entry but does not commit, so their lines never go into its commit.
 - `cabinet digest`: one morning read with the sign-off queue and the owner's actions from the latest brief of every workspace on this Mac. `--write <file>` writes it to a file, `--notify` sends a macOS notification with the counts, and `--schedule [<when>]` (default every day at 10:00 AM; or another time, or chosen days and a time; `off` to stop) runs it as one launchd job for the whole Mac. The chief-of-staff role writes the brief's parts under fixed `## ` headings so the digest can find them.
 - `cabinet list`: every workspace on this Mac in one table (kit version, what waits on the owner, the doctor's count, the latest brief).
 - `bin/doctor.sh` leads with a summary of what needs attention, and `--fix` runs the fixes it knows (asking first).

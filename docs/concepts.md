@@ -36,7 +36,7 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agen
 
 ## Handoffs
 
-`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoffs.sh <name>` shows an agent its open entries.
+`HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, and what it depends on. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh` files an entry with the next free ID and commits it; `bin/handoffs.sh <name>` shows an agent its open entries.
 
 ## Decision tiers
 

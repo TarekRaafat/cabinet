@@ -62,6 +62,7 @@ git -C <repo> push
 |---|---|
 | `bin/doctor.sh` | Checks everything: repos, roles, kit files, guardrails, the manual, schedules, backups. Start here when something feels off. |
 | `bin/handoffs.sh [name]` | Every open handoff with its age; with a repo or role name, every entry addressed to it, in full. |
+| `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
 | `bin/archive-handoffs.sh` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
 | `bin/roles.sh [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
 | `bin/scheduled.sh <job>` | Runs a job from `jobs/` now (for example `brief`). |

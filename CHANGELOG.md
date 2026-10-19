@@ -24,7 +24,8 @@ First version.
 
 ### Commands
 
-- One command for everything: `cabinet doctor`, `bootstrap`, `brief`, `run <job>`, `handoffs`, `archive`, `roles`, `backup`, `restore`, `snapshot` and `move` run the workspace's scripts (handoffs, archive-handoffs, roles, scheduled, bootstrap, doctor, snapshot, backup, restore, move) from any folder inside the workspace or its project. `cabinet next` says what to do next.
+- One command for everything: `cabinet doctor`, `bootstrap`, `brief`, `run <job>`, `handoffs`, `handoff`, `archive`, `roles`, `backup`, `restore`, `snapshot` and `move` run the workspace's scripts (handoffs, handoff, archive-handoffs, roles, scheduled, bootstrap, doctor, snapshot, backup, restore, move) from any folder inside the workspace or its project. `cabinet next` says what to do next.
+- `cabinet handoff --from <name> --to <name> --changed "..." --needed "..." "<title>"` (`bin/handoff.sh`, which `CABINET.md` tells agents to use) files a handoff with the next free ID for today, today's date and the template's lines, and commits it on its own; with someone else's uncommitted lines in `HANDOFFS.md`, it writes the entry but does not commit, so their lines never go into its commit.
 - `cabinet digest`: one morning read with the sign-off queue and the owner's actions from the latest brief of every workspace on this Mac. `--write <file>` writes it to a file, `--notify` sends a macOS notification with the counts, and `--schedule [<when>]` (default every day at 10:00 AM; or another time, or chosen days and a time; `off` to stop) runs it as one launchd job for the whole Mac. The chief-of-staff role writes the brief's parts under fixed `## ` headings so the digest can find them.
 - `cabinet list`: every workspace on this Mac in one table (kit version, what waits on the owner, the doctor's count, the latest brief).
 - `bin/doctor.sh` leads with a summary of what needs attention, and `--fix` runs the fixes it knows (asking first).

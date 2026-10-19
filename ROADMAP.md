@@ -60,7 +60,7 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 
 ## Ideas to pick from
 
-Not ranked yet; each is picked and ordered when its implementation starts. Suggested first, since it is small and prevents real trouble: the handoff command.
+Not ranked yet; each is picked and ordered when its implementation starts.
 
 ### Safety
 
@@ -71,7 +71,6 @@ Not ranked yet; each is picked and ordered when its implementation starts. Sugge
 
 - **Answer from the digest.** Today `cabinet digest` gathers every sign-off queue, but each answer still means going into that workspace. `cabinet answer <workspace> "1: approve; 2: no"` delivers the answers to that workspace, where its chief-of-staff applies them on its next run, as if given there. Done when: answers given from anywhere reach the right workspace once, are applied there, and the next digest no longer lists them.
 - **A decisions log.** Today the owner's answers are applied into specs and handoffs, so "what did I decide about X, and when" means searching several files. Each answer is recorded with its date, the question and the outcome in one file per workspace, and `cabinet decisions [word]` searches it. Done when: every applied answer has its entry, and a search by word finds it.
-- **A handoff command.** Today agents and people write handoff entries by hand, from the template, and the doctor catches a duplicate ID only afterwards. `cabinet handoff --to <repo or role> "<title>"` (with `--changed`, `--needed`, `--depends-on`) writes the entry with the next free ID, today's date and the template's lines, and commits it; the agent roles use it. Done when: entries written through it never share an ID, and each passes the format the handoff tools read.
 - **A weekly review job.** Today the daily brief looks at today. An optional job, on the day the week starts, sums up the week: what shipped, which handoffs closed, which decisions were made, what is stuck and for how long, and how that compares with the week before. Done when: a workspace can turn it on in setup or config, and it runs on the week's first day.
 - **Run history and failure alerts.** Today a failed scheduled run shows only as a late brief the next day. `cabinet runs` lists each job's recent runs (when, how long, success or failure, from the job logs), and a failed scheduled run, or one stopped by its time limit, can send a notification and is named in the next brief. Done when: a failing job is reported the same morning, and `cabinet runs` shows its last runs.
 
