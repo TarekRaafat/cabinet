@@ -102,6 +102,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX the backup folder is inside <...>: a backup there is lost with it and can be committed (choose a folder outside, then cabinet config)` | `backups.dir-outside` | The backup folder is inside the workspace or one of its repos. | Choose a folder outside them with `cabinet config --backup-dir`. |
 | `FIX no scheduled backup in <...>/backup.log yet (launchctl kickstart -k gui/\$(id -u)/<...>.backup)` | `backups.recent` | No scheduled backup has run yet. | Run the `launchctl kickstart` it names, or wait for the time set. |
 | `FIX newest backup is <...>h old (<...>): <...>` | `backups.recent` | No scheduled backup in the last 36 hours (the Mac was asleep or the job failed). | Read `~/Library/Logs/cabinet/<slug>/backup.log`. |
+| `note no restore of a backup has been verified on this Mac yet (cabinet backup --verify)` | `backups.verified` | `cabinet backup --verify` has not passed on this Mac. | `cabinet backup --verify` ([backups](backups.md#checking-it)). |
+| `note the last verified restore was <...> days ago (<...>): verify again (cabinet backup --verify)` | `backups.verified` | The last good verify is more than 92 days old. | `cabinet backup --verify`. |
 | `FIX backup passphrase missing from keychain (<...>, see bin/backup.sh)` | `backups.passphrase` | No keychain item `cabinet.<slug>.backup`. | `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` (the same passphrase as in your password manager). |
 
 ## Other commands

@@ -59,7 +59,7 @@ C	Run	handoff	--from <name> --to <name> --changed "..." --needed "..." "title"	F
 C	Run	archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
 C	Run	secrets		Look for keys, tokens and passwords in the workspace's files (file and line, never the value).
 C	Run	roles		Build the role definitions from .cabinet/roles/ and roles/.
-C	Run	backup	[folder]	One encrypted backup now (default folder: CABINET_BACKUP_DIR).
+C	Run	backup	[folder]	One encrypted backup now (default folder: CABINET_BACKUP_DIR); --verify checks that the newest one restores.
 C	Run	restore	<archive> [dir]	Rebuild a workspace and its repos from a backup, never losing a file. Works before any workspace exists.
 C	Run	snapshot		Copy each repo's local-only files into local/.
 C	Run	move	<new-path>	Move the workspace folder and update what remembers its path.
@@ -104,6 +104,7 @@ O	handoff	--to	<repo, role or owner>	Who it is for.
 O	handoff	--changed	"..."	Exactly what changed: endpoint, field, limit, status code, default, version, file.
 O	handoff	--needed	"..."	What the addressee has to do.
 O	handoff	--depends-on	"..."	The commit or branch it depends on (default: none).
+O	backup	--verify		Restore the newest archive into a temporary folder, compare it with the workspace and its repos, then delete it.
 O	secrets	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	roles	--check		Only report what is missing or out of date.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.

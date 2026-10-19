@@ -250,6 +250,14 @@ else
     when="$(human_stamp "$stamp")"
     ((age <= 36)) && ok backups.recent "newest backup ${age}h old ($when): $newest" || bad backups.recent "newest backup is ${age}h old ($when): $newest"
   fi
+  # A backup counts once a restore of it has been checked (cabinet backup --verify), once a quarter.
+  vf="$LOGDIR/backup-verified"
+  if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this Mac yet (cabinet backup --verify)"
+  else
+    vdays=$(( ($(date +%s) - $(stat -f %m "$vf")) / 86400 )) vwhen="$(human_mtime "$vf")"
+    ((vdays <= 92)) && ok backups.verified "a restore was verified $vdays day(s) ago ($vwhen): $(cat "$vf")" \
+      || note backups.verified "the last verified restore was $vdays days ago ($vwhen): verify again (cabinet backup --verify)"
+  fi
   security find-generic-password -a "$USER" -s "$KEYCHAIN_ITEM" >/dev/null 2>&1 && ok backups.passphrase "backup passphrase in keychain" || bad backups.passphrase "backup passphrase missing from keychain ($KEYCHAIN_ITEM, see bin/backup.sh)"
 fi
 

@@ -69,7 +69,7 @@ git -C <repo> push
 | `bin/bootstrap.sh [--dry-run]` | Sets up a machine: clones repos, restores local-only files, installs guardrails and schedules. Safe to rerun. |
 | `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's files; the pre-commit hook refuses a commit that adds one. A false alarm: add `not-a-secret` to its line. |
 | `bin/snapshot.sh` | Copies each repo's local-only files into `local/`. The backup runs it for you. |
-| `bin/backup.sh [dir]` | One encrypted backup now. |
+| `bin/backup.sh [--verify] [dir]` | One encrypted backup now; `--verify` checks that the newest one restores (once a quarter). |
 | `bin/restore.sh <archive> [dir]` | Rebuilds everything from a backup. Never loses a file: anything it would replace with different content is copied to `recovered/` first. |
 | `bin/move.sh <new-path> [--dry-run]` | Moves the workspace and updates everything that remembers its path. |
 | `cabinet config` | Changes settings after setup: the same questions, current answers as defaults; then updates schedules and repos. |

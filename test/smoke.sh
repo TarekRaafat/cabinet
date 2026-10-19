@@ -904,6 +904,43 @@ git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "backup --verify: a good archive passes, a damaged or incomplete one fails" "3"
+s38() {
+VH="$T/vhome" VB="$T/vbk" C="$I/cabinet"; mkdir -p "$VH"
+bk() { HOME="$VH" CABINET_BACKUP_PASSPHRASE="${PW:-t}" "$C/bin/backup.sh" "$@" "$VB" 2>&1; }
+bk >/dev/null || fail "backup for verify"
+out="$(bk --verify)" || fail "a good archive failed to verify: $out"
+echo "$out" | grep -q '^  workspace: restores exactly as it is now' && echo "$out" | grep -q '^  acme-app: restores exactly as it is now' || fail "verify did not check each repo: $out"
+[[ "$(ls "$VB" | wc -l | tr -d ' ')" == 1 ]] && [[ -f "$VH/Library/Logs/cabinet/acme-app/backup-verified" ]] || fail "verify changed the backup folder, or did not record the good result"
+# Work done since the backup is reported, not a problem.
+echo change >> "$I/f"; git -C "$I" commit -qam "after the backup"; echo draft > "$C/specs/draft.md"
+out="$(bk --verify)" && echo "$out" | grep -q 'acme-app: restores ([0-9]* commits); 1 commit(s) since the backup' \
+  && echo "$out" | grep -q 'workspace: restores ([0-9]* commits); 1 file(s) changed since the backup' || fail "work since the backup: $out"
+rm "$C/specs/draft.md"
+out="$(PW=wrong bk --verify)" && fail "a wrong passphrase verified"
+echo "$out" | grep -q 'PROBLEM the archive does not open' || fail "a wrong passphrase was not named: $out"
+# A damaged archive: some bytes in the middle overwritten.
+a="$VB/$(ls "$VB")"; cp -p "$a" "$T/good.enc"
+printf 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | dd of="$a" bs=1 seek=$(( $(wc -c < "$a") / 2 )) conv=notrunc 2>/dev/null
+out="$(bk --verify)" && fail "a damaged archive verified"
+echo "$out" | grep -q "^  PROBLEM " || fail "the damage was not named: $out"
+cp -p "$T/good.enc" "$a"
+# An incomplete archive: a repo the workspace lists now that the archive does not hold.
+mkrepo "$T/later"; cp "$C/repos.tsv" "$T/repos.bak"; printf 'later\t-\t-\tno\t%s\n' "$T/later" >> "$C/repos.tsv"
+out="$(bk --verify)" && fail "an incomplete archive verified"
+echo "$out" | grep -q 'PROBLEM later: not in the archive' || fail "the missing repo was not named: $out"
+cp "$T/repos.bak" "$C/repos.tsv"
+# The doctor notes a verify that is missing or old.
+cp "$C/cabinet.env" "$T/env.bak"; sed -i '' "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$VB\"|" "$C/cabinet.env"
+HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'ok    a restore was verified 0 day(s) ago' || fail "the doctor missed a fresh verify"
+touch -t 202601010000 "$VH/Library/Logs/cabinet/acme-app/backup-verified"
+HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  the last verified restore was [0-9]* days ago' || fail "the doctor missed an old verify"
+rm "$VH/Library/Logs/cabinet/acme-app/backup-verified"
+HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this Mac yet' || fail "the doctor missed a missing verify"
+cp "$T/env.bak" "$C/cabinet.env"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()

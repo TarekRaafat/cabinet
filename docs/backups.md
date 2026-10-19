@@ -48,4 +48,10 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 
 ## Checking it
 
-`bin/doctor.sh` reports the newest scheduled backup's age (from `~/Library/Logs/cabinet/<slug>/backup.log`, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain, and a backup folder in the wrong place. Once a quarter, restore the newest archive into an empty folder, compare it, then delete that copy: it holds your secrets.
+`bin/doctor.sh` reports the newest scheduled backup's age (from `~/Library/Logs/cabinet/<slug>/backup.log`, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain, and a backup folder in the wrong place. Once a quarter, check that the newest archive really restores:
+
+```sh
+cabinet backup --verify      # or bin/backup.sh --verify [folder]
+```
+
+It restores the newest archive of this workspace into a temporary folder, as `restore.sh` would, and deletes that copy when it is done (it holds your secrets). For the workspace and each repo it prints one line: restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.

@@ -44,7 +44,7 @@ First version.
 
 - Guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI (Grok reads the Claude Code rules; the Cursor rule shapes were probed live on Cursor CLI 2026.10.16), checked by `bin/doctor.sh` (opencode on 1.x only), which also names installed tools it cannot guard; and the owner's pre-push gate for every tool.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
-- Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file.
+- Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file. `cabinet backup --verify` restores the newest archive into a temporary folder, checks the workspace and each repo against it (a damaged or incomplete archive fails), and deletes the copy; the doctor notes when no restore has been verified in 92 days (`backups.verified`).
 - Config files keep their permissions and symlinks, and a file that is not plain JSON is left alone; every git hook passes through to the repo's own under the global hooks path.
 - A secrets check: `cabinet secrets` (`bin/secrets.sh`) looks for keys, tokens and passwords in the workspace's files and names each file and line, never the value; the doctor runs it (`secrets.none`), bootstrap places a pre-commit hook in the workspace that refuses a commit adding one (`secrets.hook`), and `not-a-secret` on a line marks a false alarm.
 

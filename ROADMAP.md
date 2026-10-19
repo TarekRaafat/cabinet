@@ -62,10 +62,6 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 
 Not ranked yet; each is picked and ordered when its implementation starts.
 
-### Safety
-
-- **Backups that test themselves.** Today the docs ask for a restore by hand once a quarter. `cabinet backup --verify` restores the newest archive into a temporary folder, compares it with the workspace and its repos, reports any difference, and deletes the copy; the doctor says when the last verified restore is too old. Done when: a damaged or incomplete archive is reported by `--verify`, and a good one passes.
-
 ### The daily loop
 
 - **Answer from the digest.** Today `cabinet digest` gathers every sign-off queue, but each answer still means going into that workspace. `cabinet answer <workspace> "1: approve; 2: no"` delivers the answers to that workspace, where its chief-of-staff applies them on its next run, as if given there. Done when: answers given from anywhere reach the right workspace once, are applied there, and the next digest no longer lists them.

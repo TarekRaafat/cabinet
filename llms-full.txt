@@ -768,7 +768,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's own files (tracked, and new files git does not ignore; not the product repos, which have their own git): private key blocks; AWS, GitHub, Slack, Stripe live, Anthropic, OpenAI, Google API and npm keys; and lines that set a password, secret, token or API key to a value that is not a placeholder (`<...>`) or a variable (`$X`). It prints each file and line with the kind of secret, never the value. A false alarm: add `not-a-secret` anywhere on its line. `--staged` checks only the lines staged for the next commit; the workspace's pre-commit hook runs it ([guardrails](guardrails.md#what-bootstrap-installs)). | 0, or 1 when something is found (with `--staged`, the commit is refused) |
 | `bin/roles.sh [--check]` | Builds `agents/<role>.md` and `.claude/agents/<role>.md` (and, inside a project, the project's `.claude/agents/` and pointer files). `--check` only reports. | 0, or 1 when a role is missing or out of date |
 | `bin/scheduled.sh <job>` | Runs `jobs/<job>.job` now with the configured runner, logging to `~/Library/Logs/cabinet/<slug>/<job>.log`. | 0, 1 when the run failed, 2 for an unknown or incomplete job |
-| `bin/backup.sh [folder]` | One encrypted backup now ([backups](backups.md)). Default folder: `CABINET_BACKUP_DIR`. | 0, 1 with no passphrase, 2 for a missing, relative or inside folder, or a keep count under 1 |
+| `bin/backup.sh [--verify] [folder]` | One encrypted backup now ([backups](backups.md)). Default folder: `CABINET_BACKUP_DIR`. `--verify` writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). | 0, 1 with no passphrase (or, with `--verify`, no archive or a problem found), 2 for a missing, relative or inside folder, or a keep count under 1 |
 | `bin/restore.sh <archive> [folder]` | Rebuilds the workspace and its repos from an archive, never losing a file ([backups](backups.md)). It starts by naming the backup's date. | 0, or 1 with no passphrase |
 | `bin/snapshot.sh` | Copies each repo's local-only files and `.git/info/exclude` entries into `local/<repo>/`. The backup runs it first. | 0 |
 | `bin/move.sh <new-path> [--dry-run]` | Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules. Refused for the inside and beside layouts. | 0, or 1 when refused |
@@ -1153,7 +1153,13 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 
 ## Checking it
 
-`bin/doctor.sh` reports the newest scheduled backup's age (from `~/Library/Logs/cabinet/<slug>/backup.log`, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain, and a backup folder in the wrong place. Once a quarter, restore the newest archive into an empty folder, compare it, then delete that copy: it holds your secrets.
+`bin/doctor.sh` reports the newest scheduled backup's age (from `~/Library/Logs/cabinet/<slug>/backup.log`, never by listing the backup folder, which can trigger a macOS access prompt), whether the passphrase is in the keychain, and a backup folder in the wrong place. Once a quarter, check that the newest archive really restores:
+
+```sh
+cabinet backup --verify      # or bin/backup.sh --verify [folder]
+```
+
+It restores the newest archive of this workspace into a temporary folder, as `restore.sh` would, and deletes that copy when it is done (it holds your secrets). For the workspace and each repo it prints one line: restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
 
 
 ========================================================================
@@ -1264,6 +1270,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX the backup folder is inside <...>: a backup there is lost with it and can be committed (choose a folder outside, then cabinet config)` | `backups.dir-outside` | The backup folder is inside the workspace or one of its repos. | Choose a folder outside them with `cabinet config --backup-dir`. |
 | `FIX no scheduled backup in <...>/backup.log yet (launchctl kickstart -k gui/\$(id -u)/<...>.backup)` | `backups.recent` | No scheduled backup has run yet. | Run the `launchctl kickstart` it names, or wait for the time set. |
 | `FIX newest backup is <...>h old (<...>): <...>` | `backups.recent` | No scheduled backup in the last 36 hours (the Mac was asleep or the job failed). | Read `~/Library/Logs/cabinet/<slug>/backup.log`. |
+| `note no restore of a backup has been verified on this Mac yet (cabinet backup --verify)` | `backups.verified` | `cabinet backup --verify` has not passed on this Mac. | `cabinet backup --verify` ([backups](backups.md#checking-it)). |
+| `note the last verified restore was <...> days ago (<...>): verify again (cabinet backup --verify)` | `backups.verified` | The last good verify is more than 92 days old. | `cabinet backup --verify`. |
 | `FIX backup passphrase missing from keychain (<...>, see bin/backup.sh)` | `backups.passphrase` | No keychain item `cabinet.<slug>.backup`. | `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` (the same passphrase as in your password manager). |
 
 ## Other commands
@@ -1486,10 +1494,6 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 
 Not ranked yet; each is picked and ordered when its implementation starts.
 
-### Safety
-
-- **Backups that test themselves.** Today the docs ask for a restore by hand once a quarter. `cabinet backup --verify` restores the newest archive into a temporary folder, compares it with the workspace and its repos, reports any difference, and deletes the copy; the doctor says when the last verified restore is too old. Done when: a damaged or incomplete archive is reported by `--verify`, and a good one passes.
-
 ### The daily loop
 
 - **Answer from the digest.** Today `cabinet digest` gathers every sign-off queue, but each answer still means going into that workspace. `cabinet answer <workspace> "1: approve; 2: no"` delivers the answers to that workspace, where its chief-of-staff applies them on its next run, as if given there. Done when: answers given from anywhere reach the right workspace once, are applied there, and the next digest no longer lists them.
@@ -1582,7 +1586,7 @@ First version.
 
 - Guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI (Grok reads the Claude Code rules; the Cursor rule shapes were probed live on Cursor CLI 2026.10.16), checked by `bin/doctor.sh` (opencode on 1.x only), which also names installed tools it cannot guard; and the owner's pre-push gate for every tool.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
-- Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file.
+- Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file. `cabinet backup --verify` restores the newest archive into a temporary folder, checks the workspace and each repo against it (a damaged or incomplete archive fails), and deletes the copy; the doctor notes when no restore has been verified in 92 days (`backups.verified`).
 - Config files keep their permissions and symlinks, and a file that is not plain JSON is left alone; every git hook passes through to the repo's own under the global hooks path.
 - A secrets check: `cabinet secrets` (`bin/secrets.sh`) looks for keys, tokens and passwords in the workspace's files and names each file and line, never the value; the doctor runs it (`secrets.none`), bootstrap places a pre-commit hook in the workspace that refuses a commit adding one (`secrets.hook`), and `not-a-secret` on a line marks a false alarm.
 
