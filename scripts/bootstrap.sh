@@ -334,7 +334,7 @@ cat <<EOF
 == Manual steps
 1. Sign in: gh auth login (and each agent tool you use).
 2. Backups (if CABINET_BACKUP_DIR is set): put the passphrase, kept in your password manager, in the $PASS_STORE:
-   $(pass_add_cmd "$KEYCHAIN_ITEM")
+   $(pass_add_cmd "$KEYCHAIN_ITEM")$( [[ -n "$CABINET_BACKUP_DIR" && -n "$(deps_backups)" ]] && printf '\n   Backups need %s first: %s' "$(deps_backups)" "$(deps_hint "$(deps_backups)")")
 3. Restoring after a loss: cabinet backup restore <newest archive> before step 4.
 4. Run cabinet doctor and fix anything it reports (cabinet doctor --fix runs the fixes it knows).
 EOF

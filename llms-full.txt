@@ -1,6 +1,8 @@
 # cabinet
 
-> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, launchd schedules and encrypted backups. macOS only. npm package `@tarekraafat/cabinet`, command `cabinet`.
+> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
+
+Requirements: git, jq, perl, python3, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
 Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Agents changing the kit itself follow `AGENTS.md` at the root of this repository.
 
@@ -92,6 +94,8 @@ You need macOS or Linux, and:
 | `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Set `CABINET_BACKUP_PASSPHRASE` instead ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
 | `notify-send` (Linux) | `cabinet digest --notify` | The digest is still written, with no notification |
 | lsof | `cabinet move` checking that no agent session still has the folder open | The move skips that check |
+
+`cabinet new`, `init` and `bootstrap` check for the required tools first and, in a terminal, offer to install the missing ones with your package manager; `cabinet doctor --fix` does the same later, and asks first for openssl or `secret-tool` when backups are on. Node.js and npm come first by hand, since npm installs cabinet:
 
 - macOS: `brew install jq node` (git, perl, python3 and openssl come with macOS and its command line tools).
 - Debian or Ubuntu: `sudo apt install git jq perl python3 nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
@@ -535,6 +539,8 @@ cabinet doctor --json            # every check, each with a stable id
 cabinet handoff list owner --json    # what waits on the owner, in full
 ```
 
+A missing tool shows as the doctor check `deps.required` (or `deps.backups`) and the `next` step `deps`, each with the install command for that machine. An agent passes it to the owner; installing is the owner's (`cabinet doctor --fix` asks first).
+
 The fields are in [commands](commands.md#output-for-agents-and-scripts). For the whole manual in one file, read `llms-full.txt` in the kit.
 
 
@@ -582,6 +588,8 @@ cabinet new [dir] [options]
 ```
 
 Creates a workspace in an empty or missing folder. In a terminal it asks a question for each setting; options set the defaults, and `--yes` skips the questions.
+
+**Tools first.** `new`, `init` and `bootstrap` first check for the tools cabinet needs (git, jq, perl, python3, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
 
 | Option | Default | Notes |
 |---|---|---|
@@ -646,7 +654,7 @@ In every case, existing files are kept and reported, never replaced. Around a fo
 cabinet next [--json]
 ```
 
-Says what to do next in the workspace you are in, as a numbered list, and changes nothing: the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a Mac without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
+Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a Mac without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
 
 ## cabinet brief
 
@@ -690,7 +698,7 @@ Every workspace on this Mac, from anywhere: its slug, project name, kit version 
 cabinet doctor [--fix [--yes]] [--json]
 ```
 
-Checks everything: repos, kit files, roles, guardrails for every installed tool, the manual, handoff IDs, secrets in the workspace's files, uncommitted work, schedules, backups. It starts with a summary (`N thing(s) need attention:` and the list, or `All good.`), then the full report. Changes nothing in the workspace or your settings (it runs `opencode debug` and `grok inspect`, which may write their own caches). `--fix` then runs the fixes it knows (`bin/bootstrap.sh`, `bin/role.sh build`, `bin/repo.sh snapshot`), asking before each unless `--yes`, and checks again. `--json` prints the results for scripts (see [Output for agents and scripts](#output-for-agents-and-scripts)). Every message is explained in [troubleshooting](troubleshooting.md). Exit 0, or 1 when anything says FIX.
+Checks everything: repos, kit files, roles, guardrails for every installed tool, the manual, handoff IDs, secrets in the workspace's files, uncommitted work, schedules, backups. It starts with a summary (`N thing(s) need attention:` and the list, or `All good.`), then the full report. Changes nothing in the workspace or your settings (it runs `opencode debug` and `grok inspect`, which may write their own caches). `--fix` then runs the fixes it knows (`bin/bootstrap.sh`, `bin/role.sh build`, `bin/repo.sh snapshot`, and installing missing tools), asking before each unless `--yes`, and checks again. Installing tools always asks in a terminal, even with `--yes`: it changes the machine and can need your password. `--json` prints the results for scripts (see [Output for agents and scripts](#output-for-agents-and-scripts)). Every message is explained in [troubleshooting](troubleshooting.md). Exit 0, or 1 when anything says FIX.
 
 ## cabinet role
 
@@ -1348,6 +1356,14 @@ File: docs/troubleshooting.md
 
 Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` lines make the doctor exit 1; `note` lines are information. `<...>` stands for a name, path or number the doctor fills in. Run the doctor again after a fix. The ID names the check: `cabinet doctor --json` gives it with each result, and it stays the same when a message is reworded, so scripts and agents match on the ID, never on the text.
 
+## Tools
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, perl, python3, node and npm are all found. | Nothing. |
+| `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
+| `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
+
 ## Product repos
 
 | Message | ID | Cause | Fix |
@@ -1630,6 +1646,7 @@ Agents also run on a local schedule (`bin/job.sh run`, one `jobs/<job>.job` each
 - **Local commits are the only git write.** No push, merge, rebase, amend, reset or other history rewrite. A commit that fails review is reverted, or fixed in a follow-up commit; never amended.
 - **Commit finished work at once.** Every agent commits its own finished, tested changes locally, each one separately with a clear message in the repo's style, authored and signed as `AGENTS.md` says. Uncommitted changes mean work in progress, and only that; an agent ending a session with uncommitted work says so and why. Commit only your own changes, by pathspec (`git commit -- <paths>`), never someone else's uncommitted work.
 - **No fabrication.** Never invent names, limits, prices, dates, library choices or other specifics the owner has not stated or the code does not show. Write TBD, describe the capability, or read the canonical source. When corrected on a fabrication, audit recent work for the same mistake.
+- **Missing tools are the owner's to install.** When `bin/doctor.sh` reports a tool cabinet needs (`deps.required`) or one a feature needs (`deps.backups`), or `cabinet next --json` has the step `deps`, tell the owner in plain words what is missing, what stops working without it, and the exact install command it gives (`cabinet doctor --fix` runs it, asking first). Never install system packages yourself: they change the owner's machine and can need the owner's password.
 - **No secrets in files.** Keys, tokens, passwords and `.env` values never go into a repo, a note, a handoff or a log. The workspace's pre-commit hook (`bin/secret.sh check`) refuses a commit that adds one; never mark a real secret `not-a-secret` to get past it.
 
 ## Working in a tool other than Claude Code
@@ -1667,7 +1684,7 @@ The goal: cabinet is equally useful to a founder with no technical or business b
 - **From an idea to a plan** (pick first). Today the kit starts once a product exists, with `TBD` lines in `AGENTS.md` to fill. A kickoff, run once at setup or any time after, in one of two modes. For a new idea, the product-manager interviews the founder (the problem, who has it, what is in and out of the first version, how success is measured). For an established project, the team first learns what exists (the code, the docs, the git history, the open issues, how it is built, tested and deployed) and asks the founder only what none of that tells. Either way it writes `AGENTS.md`, the specs and a roadmap (for an established project, the current state and what is next), each marked for the founder to confirm. Done when: a founder with only an idea, or with a running product, ends the kickoff with no `TBD` in "What the project is" and "Product rules", and a ranked roadmap that starts from where the project really is.
 - **See the result, not only the verdict** (pick first). Today qa records PASS or BLOCK, and a founder who cannot read code approves on trust. Each finished handoff carries evidence the founder can check without code: screenshots, a short recording, a link to try it, or the command output for work with no screen. qa refuses a PASS without it. Done when: every handoff that reaches the founder for sign-off shows what was built.
 - **Guard the founder's time and money** (pick first). Today nothing tracks what the agents cost, and the sign-off queue has no limit. AI spend per workspace (what the scheduled runs and sessions cost this week, from what each tool reports), with a budget and a warning before it is passed; and a daily cap on the sign-off queue (for example five decisions, ranked; the rest wait, and the brief says how many), since for a solo founder the queue is the bottleneck, and every role a project adds sends it more. Done when: the founder sees the week's spend and is warned before a budget is passed, and no brief asks more decisions than the cap.
-- **Setup without terminal skills.** Today setup needs git, jq and Node.js, quoted options and terms like launchd. One install command that checks every prerequisite and installs what is missing, asking first; messages in plain language, with the technical detail one step away; and `cabinet next` steps that say why each matters. Done when: a founder who has never used a terminal reaches a working workspace by following the screen.
+- **Setup without terminal skills.** Today `cabinet new`, `init`, `bootstrap` and `doctor --fix` check the tools cabinet needs and offer to install the missing ones, but Node.js and npm must be there first (npm installs cabinet), and setup still uses quoted options and terms like launchd. One install command, run before Node.js exists, that installs it and cabinet; messages in plain language, with the technical detail one step away; and `cabinet next` steps that say why each matters. Done when: a founder who has never used a terminal reaches a working workspace by following the screen.
 - **Decisions that do not assume expertise.** Today a founder can be asked to pick a database, a host or a payments provider without knowing the trade-offs. Starter stacks, for new projects only: one recommended, well-supported stack for each kind of product, so the first technical choices are made and can be changed later (an established project keeps its stack). And in every technical decision, new or established, what each option costs and what changing it later would take. Done when: a new project's first technical choices arrive made, an established project's stack is never replaced by a starter, and each technical decision shows cost and the cost of changing course.
 - **After launch: running, customers and growth.** Today no role covers production or customers. Roles turned on when the product goes live, or at setup for one already live, using what it already has (its hosting, monitoring, support inbox and analytics) before suggesting anything new: reliability (deploys, monitoring, an incident checklist, rollback, a status note for users), support (feedback and support replies, turned into specs) and growth (a landing page, launch posts, finding the first users, and regular posts about the work for founders who build in public, drafted for the owner to approve). Done when: a live product has an owner for incidents, for customers and for growth, each with its checklist.
 - **Business basics.** Today nothing tracks the business side a founder without advisors misses: forming a company, a privacy policy and terms, taxes and invoicing, app store rules. A checklist role that tracks these, reminds at the right moment and says when to get a professional; its definition forbids legal or tax advice of its own. Done when: a workspace shows which basics are done, open or need a professional, and the role never gives a legal or tax answer itself.
@@ -1760,6 +1777,7 @@ First version.
 - `cabinet config` changes settings after setup: the same questions with the current answers as defaults. It keeps the team tables, roles and schedules in step, and moves schedules on a slug change. `cabinet config --this-mac --backup-dir <folder>|off [--backup-time <time>]` sets backups for one Mac only, in `cabinet.local.env`, so each teammate in a shared workspace picks their own folder or none; `--clear` follows `cabinet.env` again.
 - `cabinet update` applies the installed kit and shows the changelog since the workspace's version; `cabinet changelog`, `status`, `version` and `outdated`.
 - `cabinet remove` removes a workspace (its schedules, logs and folder, and inside a project what setup added), refusing work that exists nowhere else unless `--force`.
+- Tools first: `cabinet new`, `init` and `bootstrap` check for git, jq, perl, python3, node and npm, name what is missing with the command that installs it here (`brew`, `apt-get`, `dnf` or `pacman`), and in a terminal offer to run it; with `--yes` or `--dry-run` they never install. The doctor reports a missing tool (`deps.required`) and a tool enabled backups need (`deps.backups`: openssl, and `secret-tool` on Linux), `cabinet doctor --fix` installs them after asking (always in a terminal, even with `--yes`), and `cabinet next` shows the step `deps`. Agents are told to pass the command to the owner, never to install system packages themselves.
 - `--dry-run` for `new`, `init` and `config`. `repos.tsv` takes an optional path column for a repo that lives outside the workspace.
 
 ### The team

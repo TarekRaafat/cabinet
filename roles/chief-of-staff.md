@@ -47,7 +47,7 @@ Gather, then verify against the code. A handoff describes a change; git is the t
 4. For each `done` entry from the last 14 days (in `handoffs/archive-*.md` once archived) that names a commit on a side branch: did it reach the repo's main branch? A fix that only lives on a side branch is not done.
 5. `Depends on`: entries whose dependency is now done are unblocked; say so.
 6. Per repo: branch, commits ahead of upstream, uncommitted files with how long each has been pending, unmerged local branches. Uncommitted `HANDOFFS.md` lines are finished updates: commit them (`handoffs: commit pending lines from <agents>`). Anything else uncommitted for more than a day goes in the brief as a question to its owner: work in progress, or finished and not committed?
-7. `bin/doctor.sh`, problems only.
+7. `bin/doctor.sh`, problems only. A missing tool (`deps.required`, `deps.backups`) goes under "Actions for the owner", with what it stops and the install command the doctor gives.
 8. Seat signals and seats in onboarding.
 9. Commits since the last brief in every repo against the house rules in `AGENTS.md` (author, attribution, punctuation, forbidden words). Expect false positives; check each hit by hand.
 

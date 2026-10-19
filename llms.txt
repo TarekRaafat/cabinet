@@ -1,6 +1,8 @@
 # cabinet
 
-> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, launchd schedules and encrypted backups. macOS only. npm package `@tarekraafat/cabinet`, command `cabinet`.
+> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
+
+Requirements: git, jq, perl, python3, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
 Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Agents changing the kit itself follow `AGENTS.md` at the root of this repository.
 
@@ -21,6 +23,6 @@ Every page below in one file, for reading in one go: [llms-full.txt](llms-full.t
 ## Optional
 
 - [Workspace rules](core/CABINET.md): the rules every agent in a workspace follows
-- [Roadmap](ROADMAP.md): Linux and Windows support, and later items
+- [Roadmap](ROADMAP.md): Windows support, and later items
 - [Changelog](CHANGELOG.md): what changed in each version
 - [Working on the kit](AGENTS.md): rules for agents and people changing this repository

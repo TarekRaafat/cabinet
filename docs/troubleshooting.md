@@ -2,6 +2,14 @@
 
 Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` lines make the doctor exit 1; `note` lines are information. `<...>` stands for a name, path or number the doctor fills in. Run the doctor again after a fix. The ID names the check: `cabinet doctor --json` gives it with each result, and it stays the same when a message is reworded, so scripts and agents match on the ID, never on the text.
 
+## Tools
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, perl, python3, node and npm are all found. | Nothing. |
+| `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
+| `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
+
 ## Product repos
 
 | Message | ID | Cause | Fix |

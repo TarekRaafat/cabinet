@@ -19,15 +19,15 @@ unset XDG_CONFIG_HOME XDG_STATE_HOME   # their defaults follow HOME into the tem
 mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 # The real launchd, systemd, crontab, keychain and secret store are never reached: fakes that
 # only log are first on PATH for the whole run, before any section, so even one section run
-# alone cannot load a real schedule, read a real secret or start a real agent (claude is a
+# alone cannot load a real schedule, read a real secret, install a package or start a real agent (claude is a
 # fake too). The fake crontab keeps its table in $T.
 mkdir -p "$T/shim"
-for t in launchctl systemctl security secret-tool osascript notify-send claude; do
+for t in launchctl systemctl security secret-tool osascript notify-send claude brew apt-get dnf pacman sudo; do
   printf '#!/bin/sh\necho "%s $*" >> "%s"\ncase "$1" in find-generic-password|lookup) exit 44 ;; esac\n' "$t" "$T/fake.log" > "$T/shim/$t"; chmod +x "$T/shim/$t"
 done
 printf '#!/bin/sh\ncase "$1" in -l) cat "%s" 2>/dev/null ;; -) cat > "%s" ;; *) exit 1 ;; esac\n' "$T/crontab" "$T/crontab" > "$T/shim/crontab"; chmod +x "$T/shim/crontab"
 export PATH="$T/shim:$PATH"
-for t in launchctl systemctl crontab security secret-tool; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
+for t in launchctl systemctl crontab security secret-tool brew apt-get sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
 sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
 perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
 # Where this machine keeps logs and schedules, under a HOME (bin/platform.sh): $H/$LOGS, $H/$SD/<label>$SX.
@@ -1154,6 +1154,38 @@ git -C "$OW" checkout -q -- jobs/brief.job
 HOME="$CH" CABINET_SCHEDULER=none "$OW/bin/bootstrap.sh" 2>&1 | grep -q 'no scheduler found' || fail "bootstrap with no scheduler"
 (cd "$OW" && HOME="$CH" CABINET_SCHEDULER=none "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.scheduler") | .level == "fix"' >/dev/null || fail "doctor with no scheduler"
 rm -f "$T/crontab"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "tools: checked first, installed only when the owner says yes" "0"
+s44() {
+# The command for this machine (the fake brew on macOS, the fake apt-get on Linux), and package names per manager.
+c="$(pf deps_cmd "jq python3")"
+case "$c" in "brew install jq python"|"sudo apt-get install -y jq python3") ;; *) fail "the install command: $c" ;; esac
+[[ "$(pf pkg_for apt-get node) $(pf pkg_for brew npm) $(pf pkg_for pacman python3) $(pf pkg_for dnf secret-tool) $(pf pkg_for apt-get notify-send)" == "nodejs node python libsecret libnotify-bin" ]] || fail "package names"
+installs() { grep -cE '^(brew install|sudo (apt-get|dnf|pacman) )' "$T/fake.log" || true; }
+# With --yes (scripts, agents): no install, a stop with the command, and nothing made.
+: > "$T/fake.log"
+out="$(CABINET_TEST_MISSING="jq python3" "$F" new "$T/nodeps" --yes 2>&1)" && fail "setup went ahead without its tools"
+echo "$out" | grep -q 'cabinet needs jq, python3, not found' && echo "$out" | grep -qF "run this again: $c" && [[ ! -e "$T/nodeps" && "$(installs)" == 0 ]] || { echo "$out"; fail "--yes with missing tools"; }
+CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" --dry-run >/dev/null 2>&1 && fail "a dry run went ahead without its tools"
+[[ "$(installs)" == 0 ]] || fail "a dry run installed something"
+"$F" new --help >/dev/null || fail "--help needs the tools"
+# In a terminal: no installs nothing; yes runs the command (the fakes only log it, so jq stays missing and setup still stops).
+printf 'n\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead after no"
+[[ "$(installs)" == 0 ]] || fail "no still installed"
+printf 'y\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead with jq still missing"
+grep -qxE '(brew install jq|sudo apt-get install -y jq)' "$T/fake.log" && [[ ! -e "$T/nodeps" ]] || fail "yes did not run the install"
+# The doctor and next tell the owner, and any agent reading the JSON, what is missing and the command.
+"$F" new "$T/deps-ws" --yes --backup-dir "$T/deps-bk" >/dev/null; D="$T/deps-ws"
+(cd "$D" && CABINET_TEST_MISSING=jq "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd jq)" '([.results[] | select(.id == "deps.required")][0] | .level == "fix" and (.message | contains($c))) and (.can_fix | index("deps"))' >/dev/null || fail "doctor: a missing tool"
+(cd "$D" && CABINET_TEST_MISSING=openssl "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd openssl)" '[.results[] | select(.id == "deps.backups")][0] | .level == "fix" and (.message | contains($c))' >/dev/null || fail "doctor: a tool backups need"
+(cd "$D" && "$F" doctor --json) | jq -e '([.results[] | select(.id == "deps.required")][0].level == "ok") and ([.results[] | select(.id == "deps.backups")] | length == 0)' >/dev/null || fail "doctor with every tool"
+(cd "$D" && CABINET_TEST_MISSING=jq "$F" next --json) | jq -e --arg c "$(pf deps_cmd jq)" '.steps[0].id == "deps" and .steps[0].command == $c' >/dev/null || fail "next: the deps step first"
+# --fix --yes never installs: it says so and gives the command.
+: > "$T/fake.log"
+out="$(cd "$D" && CABINET_TEST_MISSING=jq "$D/bin/doctor.sh" --fix --yes 2>&1 || true)"
+echo "$out" | grep -q 'installing tools always asks' && [[ "$(installs)" == 0 ]] || { echo "$out"; fail "doctor --fix --yes installed a tool"; }
   return 0   # a last "check && fail" line must not end the run
 }
 

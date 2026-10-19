@@ -9,7 +9,8 @@ set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 #
 #   bin/doctor.sh                  a summary of what needs you, then the full report
-#   bin/doctor.sh --fix [--yes]    also run the fixes it knows (bootstrap, roles, snapshot), asking first
+#   bin/doctor.sh --fix [--yes]    also run the fixes it knows (bootstrap, roles, snapshot, deps), asking first;
+#                                  installing tools (deps) always asks, even with --yes
 #   bin/doctor.sh --json           the results as JSON, for agents and scripts
 JSON=0 FIX=0 YES=0
 for a in "$@"; do
@@ -25,6 +26,11 @@ rec()  { local m="$3"; m="${m//$'\t'/ }"; printf '%s\t%s\t%s\t%s\n' "$1" "$cur" 
 ok()   { local id="$1"; shift; rec ok "$id" "$*"; }
 bad()  { local id="$1"; shift; rec fix "$id" "$*"; problems=$((problems + 1)); }
 note() { local id="$1"; shift; rec note "$id" "$*"; }
+
+section "Tools"
+miss="$(deps_missing)"
+if [[ -z "$miss" ]]; then ok deps.required "the tools cabinet needs are here (${DEPS_REQUIRED// /, })"
+else h="$(deps_hint "$miss")"; bad deps.required "cabinet needs ${miss// /, }, not found ($h; cabinet doctor --fix runs it, asking first)"; fi
 
 section "Product repos"
 before=$problems
@@ -293,6 +299,8 @@ else
   if pass_has "$KEYCHAIN_ITEM"; then ok backups.passphrase "backup passphrase in the $PASS_STORE"
   elif [[ -n "${CABINET_BACKUP_PASSPHRASE:-}" ]]; then ok backups.passphrase "backup passphrase from CABINET_BACKUP_PASSPHRASE (scheduled backups need it set where they run, or in the $PASS_STORE)"
   else h="$(pass_add_cmd "$KEYCHAIN_ITEM")"; bad backups.passphrase "backup passphrase missing from the $PASS_STORE ($KEYCHAIN_ITEM: $h)"; fi
+  miss="$(deps_backups)"
+  if [[ -n "$miss" ]]; then h="$(deps_hint "$miss")"; bad deps.backups "backups need ${miss// /, }, not found ($h; cabinet doctor --fix runs it, asking first)"; fi
 fi
 
 # Counted from the record, so a check run in a pipe or subshell still counts.
@@ -302,6 +310,7 @@ actions=""
 grep -q $'^fix\t.*run bin/bootstrap.sh' "$REC" && actions+=" bootstrap"
 grep -q $'^fix\t.*run bin/role.sh build' "$REC" && actions+=" roles"
 grep -q $'^fix\t.*run bin/repo.sh snapshot' "$REC" && actions+=" snapshot"
+grep -qE $'^fix\t[^\t]*\tdeps\.' "$REC" && actions+=" deps"
 actions="${actions# }"
 
 if ((JSON)); then
@@ -314,7 +323,7 @@ fi
 # The fixes by the commands people know (bash 3.2 cannot parse a case inside "$(...)").
 fix_names() {
   local a out=""
-  for a in $actions; do case "$a" in roles) out+="role build, " ;; snapshot) out+="repo snapshot, " ;; *) out+="$a, " ;; esac; done
+  for a in $actions; do case "$a" in roles) out+="role build, " ;; snapshot) out+="repo snapshot, " ;; deps) out+="install tools, " ;; *) out+="$a, " ;; esac; done
   printf '%s' "${out%, }"
 }
 # Summary first: what needs you, and what --fix can do; then the full report.
@@ -335,6 +344,15 @@ if ((FIX)); then
   if [[ -z "$actions" ]]; then echo "Nothing here that --fix can do: each item above needs you."
   else
     for act in $actions; do
+      # Installing changes the machine and may need sudo: it always asks, in a terminal, even with --yes.
+      if [[ "$act" == deps ]]; then
+        miss="$(deps_missing) $([[ -n "$CABINET_BACKUP_DIR" ]] && deps_backups)"; miss="$(echo $miss)"
+        if ! cmd="$(deps_cmd "$miss")"; then echo "  $(deps_hint "$miss")"; continue; fi
+        if ((YES)) || ! { exec 3</dev/tty; } 2>/dev/null; then echo "  installing tools always asks: run cabinet doctor --fix in a terminal (without --yes), or yourself: $cmd"; continue; fi
+        read -r -u 3 -p "Install now with: $cmd? [Y/n]: " ans || true
+        [[ "${ans:-y}" == [Yy]* ]] && { deps_install "$miss" || echo "  the install reported a problem: see above"; } || echo "  skipped: $cmd"
+        continue
+      fi
       # The action names are stable (can_fix in --json); each runs its command.
       case "$act" in bootstrap) cmd="bin/bootstrap.sh" ;; roles) cmd="bin/role.sh build" ;; snapshot) cmd="bin/repo.sh snapshot" ;; esac
       if ((YES == 0)); then

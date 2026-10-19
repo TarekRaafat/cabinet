@@ -183,4 +183,6 @@ cabinet doctor --json            # every check, each with a stable id
 cabinet handoff list owner --json    # what waits on the owner, in full
 ```
 
+A missing tool shows as the doctor check `deps.required` (or `deps.backups`) and the `next` step `deps`, each with the install command for that machine. An agent passes it to the owner; installing is the owner's (`cabinet doctor --fix` asks first).
+
 The fields are in [commands](commands.md#output-for-agents-and-scripts). For the whole manual in one file, read `llms-full.txt` in the kit.

@@ -78,6 +78,8 @@ You need macOS or Linux, and:
 | `notify-send` (Linux) | `cabinet digest --notify` | The digest is still written, with no notification |
 | lsof | `cabinet move` checking that no agent session still has the folder open | The move skips that check |
 
+`cabinet new`, `init` and `bootstrap` check for the required tools first and, in a terminal, offer to install the missing ones with your package manager; `cabinet doctor --fix` does the same later, and asks first for openssl or `secret-tool` when backups are on. Node.js and npm come first by hand, since npm installs cabinet:
+
 - macOS: `brew install jq node` (git, perl, python3 and openssl come with macOS and its command line tools).
 - Debian or Ubuntu: `sudo apt install git jq perl python3 nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
 

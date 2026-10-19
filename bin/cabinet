@@ -12,7 +12,7 @@
 set -euo pipefail
 
 KIT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
-VERSION="$(jq -r .version "$KIT/package.json")"
+VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$KIT/package.json")"   # not jq: a missing jq is reported below
 source "$KIT/scripts/when.sh"   # when_norm, when_calendar, when_human: the same parser the workspace scripts use
 source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase, schedules
 
@@ -46,6 +46,26 @@ case "${1:-}" in update|status|config)
 esac
 
 die() { echo "cabinet: $*" >&2; exit 1; }
+# need_deps <yes>: stop unless the tools cabinet needs are here. In a terminal, offers to install
+# the missing ones and shows the command first; with --yes (scripts, agents) it never installs.
+need_deps() {
+  local miss a="" c; miss="$(deps_missing)"; [[ -z "$miss" ]] && return 0
+  echo "cabinet needs ${miss// /, }, not found on this machine." >&2
+  if c="$(deps_cmd "$miss")"; then
+    if (($1 == 0)) && { exec 4<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null; then
+      read -r -u 4 -p "  Install now with: $c? [Y/n]: " a || true; exec 4<&-
+      if [[ "${a:-y}" == [Yy]* ]] && deps_install "$miss" && [[ -z "$(deps_missing)" ]]; then return 0; fi
+    fi
+    die "install them, then run this again: $c"
+  fi
+  die "$(deps_hint "$miss"), then run this again"
+}
+# deps_gate <command's arguments>: need_deps, never installing with --yes or --dry-run, skipped for --help.
+deps_gate() {
+  local x quiet=0
+  for x in "$@"; do case "$x" in --help|-h) return 0 ;; --yes|-y|--dry-run) quiet=1 ;; esac; done
+  need_deps "$quiet"
+}
 bad_usage() { echo "cabinet: $*" >&2; exit 2; }   # wrong usage: an unknown command or option, a missing value
 need() { [[ $# -ge 3 && -n "$3" ]] || bad_usage "$1"; }   # need "<message>" "$@": the option's value is there
 
@@ -125,7 +145,7 @@ O	handoff add	--changed	"..."	Exactly what changed: endpoint, field, limit, stat
 O	handoff add	--needed	"..."	What the addressee has to do.
 O	handoff add	--depends-on	"..."	The commit or branch it depends on (default: none).
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
-O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot), asking before each.
+O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
 O	digest	--notify		Also show a macOS notification with the counts (with --write or --schedule).
 O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 10:00 AM), or at another time ("8 AM"), or on days and a time ("fri 10 AM", "sun,mon,tue,wed,thu 8 AM"); off stops it.
@@ -1174,8 +1194,11 @@ cmd_next() {
     return 0
   }
   # Each step: an ID that never changes, the text, and the command that does it (or "").
-  local steps="" env="$ws/cabinet.env" heads
+  local steps="" env="$ws/cabinet.env" heads miss
   step() { steps+="$1"$'\t'"$2"$'\t'"${3:-}"$'\n'; }
+  # The tools cabinet needs come before anything else.
+  miss="$(deps_missing)"
+  [[ -z "$miss" ]] || step deps "Install the tools cabinet needs: ${miss// /, } (sudo asks for your password on Linux)." "$(deps_cmd "$miss" || echo "")"
   envget() { ( set +u; source "$env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
   # What the project says about itself.
   heads="$(awk '/^## / {h = substr($0, 4)} /TBD/ && h != "" && !(h in seen) {seen[h] = 1; printf "%s%s", (n++ ? ", " : ""), h}' "$ws/AGENTS.md" 2>/dev/null)"
@@ -1324,7 +1347,7 @@ cmd_digest() {
   fi
   if ((notify)); then
     notify "$summary" "${write:+Open $write}" >/dev/null 2>&1 \
-      || echo "cabinet: the notification could not be shown ($( [[ $OS == mac ]] && echo "System Settings > Notifications" || echo "is notify-send installed?"))" >&2
+      || echo "cabinet: the notification could not be shown ($( if [[ $OS == mac ]]; then echo "System Settings > Notifications"; elif [[ -n "$(deps_missing notify-send)" ]]; then deps_hint notify-send; else echo "notify-send failed"; fi))" >&2
   fi
   return 0
 }
@@ -1703,8 +1726,8 @@ if [[ -n "${1:-}" && "$1" != help ]]; then
 fi
 
 case "${1:-}" in
-  new) shift; cmd_new "$@" ;;
-  init) shift; cmd_init "$@" ;;
+  new) shift; deps_gate "$@"; cmd_new "$@" ;;
+  init) shift; deps_gate "$@"; cmd_init "$@" ;;
   next) shift; cmd_next "$@" ;;
   brief) shift; ws_script job.sh run brief "$@" ;;
   digest) shift; cmd_digest "$@" ;;
@@ -1716,7 +1739,7 @@ case "${1:-}" in
   job) shift; noun_script job "$@" ;;
   secret) shift; noun_script secret "$@" ;;
   backup) shift; cmd_backup "$@" ;;
-  bootstrap) shift; ws_script bootstrap.sh "$@" ;;
+  bootstrap) shift; deps_gate "$@"; ws_script bootstrap.sh "$@" ;;
   config) shift; cmd_config "$@" ;;
   move) shift; ws_script move.sh "$@" ;;
   remove) shift; cmd_remove "$@" ;;

@@ -211,3 +211,58 @@ cron_sync() {
     [[ -z "$block" ]] || printf '%s\n%s%s\n' "# BEGIN cabinet: written by cabinet bootstrap from $SCHED_DIR; edits here are replaced" "$block" "# END cabinet"
   } | crontab -
 }
+
+# Tools cabinet needs, and how this machine installs them (brew, apt, dnf or pacman).
+# Optional tools are checked where their feature is turned on: openssl and secret-tool for
+# backups, notify-send for digest notifications.
+DEPS_REQUIRED="git jq perl python3 node npm"
+# deps_missing [<tools>]: the ones not found (CABINET_TEST_MISSING makes the tests miss some).
+deps_missing() {
+  local t out=""
+  for t in ${1:-$DEPS_REQUIRED}; do
+    if ! command -v "$t" >/dev/null || [[ " ${CABINET_TEST_MISSING:-} " == *" $t "* ]]; then out+="${out:+ }$t"; fi
+  done
+  printf '%s' "$out"
+}
+# The backup tools this machine lacks: openssl, and on Linux secret-tool unless the passphrase comes from the environment.
+deps_backups() {
+  local t="openssl"; [[ $OS == linux && -z "${CABINET_BACKUP_PASSPHRASE:-}" ]] && t+=" secret-tool"
+  deps_missing "$t"
+}
+pkg_manager() {
+  local m order="apt-get dnf pacman brew"; [[ $OS == mac ]] && order="brew"
+  for m in $order; do command -v "$m" >/dev/null && { echo "$m"; return 0; }; done
+  return 1
+}
+pkg_for() {  # pkg_for <manager> <tool>: the package that brings the tool
+  case "$1:$2" in
+    brew:python3) echo python ;; brew:node|brew:npm) echo node ;; brew:secret-tool) echo libsecret ;; brew:notify-send) echo libnotify ;;
+    pacman:python3) echo python ;; *:node) echo nodejs ;;
+    apt-get:secret-tool) echo libsecret-tools ;; *:secret-tool) echo libsecret ;;
+    apt-get:notify-send) echo libnotify-bin ;; *:notify-send) echo libnotify ;;
+    *) echo "$2" ;;
+  esac
+}
+# deps_cmd <tools>: the command that installs them here, as a person types it; 1 with no package manager.
+deps_cmd() {
+  local m t p pk="" su="sudo "; m="$(pkg_manager)" || return 1
+  [[ "$(id -u)" == 0 ]] && su=""   # root (a container) needs no sudo, and often has none
+  for t in $1; do p="$(pkg_for "$m" "$t")"; [[ " $pk " == *" $p "* ]] || pk+="${pk:+ }$p"; done
+  case "$m" in
+    brew) echo "brew install $pk" ;; apt-get) echo "${su}apt-get install -y $pk" ;;
+    dnf) echo "${su}dnf install -y $pk" ;; pacman) echo "${su}pacman -S --needed $pk" ;;
+  esac
+}
+deps_hint() {  # deps_hint <tools>: "install: <command>", or where to get a package manager
+  local c; c="$(deps_cmd "$1")" && { printf 'install: %s' "$c"; return 0; }
+  if [[ $OS == mac ]]; then printf 'install Homebrew (https://brew.sh), then: brew install %s' "$1"
+  else printf "install %s with this system's package manager" "$1"; fi
+}
+# deps_install <tools>: run that command; sudo asks for the password in this terminal.
+# The words come from DEPS_REQUIRED and pkg_for, never from a user, so they are split as written.
+deps_install() {
+  local c; c="$(deps_cmd "$1")" || return 1
+  echo "== $c"
+  # shellcheck disable=SC2086
+  $c
+}
