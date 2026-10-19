@@ -1297,11 +1297,11 @@ cmd_digest() {
   if [[ -n "$when" ]]; then digest_schedule "$when" "${file:-$DIGEST_FILE_DEFAULT}" "$notify"; return; fi
   [[ -z "$file" ]] || die "--file goes with --schedule; to write the digest now: cabinet digest --write <file>"
 
-  local slug ws project brief written iso stale queue actions waiting n=0 rows=""
+  local slug ws project brief written iso stale queue actions waiting spent budget n=0 rows=""
   section_of() { awk -v h="## $2" '/^## / {on = ($0 == h); next} on' "$1" | sed -e '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'; }
   while IFS=$'\t' read -r slug ws; do
     n=$((n + 1))
-    [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$ws"$'\037'"gone"$'\037\037\037\037\037\n'; continue; }
+    [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$ws"$'\037'"gone"$'\037\037\037\037\037\037\037\n'; continue; }
     project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) )"
     waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
     brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
@@ -1311,8 +1311,9 @@ cmd_digest() {
       grep -qx '## Sign-off queue' "$brief" && queue="$(section_of "$brief" "Sign-off queue")" || queue=$'\001'   # \001: no such heading
       actions="$(section_of "$brief" "Actions for the owner")"
     fi
+    IFS='|' read -r spent budget <<<"$(ws_spend "$ws")" || true
     # One record per workspace; \002 stands for a line break inside a field.
-    rows+="$slug"$'\037'"$project"$'\037'"$ws"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\n'
+    rows+="$slug"$'\037'"$project"$'\037'"$ws"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\n'
   done < <(known_workspaces)
 
   if ((json)); then
@@ -1320,26 +1321,33 @@ cmd_digest() {
       brief_written: (.[5] | if . == "" then null else . end), brief_stale: (.[6] == "1"),
       sign_off_queue: (.[7] | if . == "" or . == "\u0001" then null else . end),
       queue_heading_found: (if .[5] == "" then null else .[7] != "\u0001" end),
-      actions_for_owner: (.[8] | if . == "" then null else . end), waiting_on_owner: (.[9] | tonumber? // null)}]'
+      actions_for_owner: (.[8] | if . == "" then null else . end), waiting_on_owner: (.[9] | tonumber? // null),
+      spend_this_week_usd: (.[10] | tonumber? // null), budget_usd: (.[11] | tonumber? // null)}]'
     return 0
   fi
 
   # The counts a notification gives: numbered queue items, action lines, waiting handoffs, late briefs.
-  local decisions=0 acts=0 handoffs=0 late=0 needy=0 exists q a c
-  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting; do
+  local decisions=0 acts=0 handoffs=0 late=0 needy=0 tight=0 total=0.00 reported=0 exists q a c
+  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget; do
     [[ -n "$slug" && "$exists" == ok ]] || continue
     q="$(printf '%s\n' "${queue//$'\002'/$'\n'}" | grep -cE '^[0-9]+\. ' || true)"
     a="$(printf '%s\n' "${actions//$'\002'/$'\n'}" | grep -cE '^[-*] ' || true)"
     c=$((q + a + ${waiting:-0})); decisions=$((decisions + q)); acts=$((acts + a)); handoffs=$((handoffs + ${waiting:-0}))
     [[ -z "$written" || -n "$stale" || "$queue" == $'\001' ]] && { late=$((late + 1)); c=$((c + 1)); }
+    if [[ -n "$spent" ]]; then
+      reported=1; total="$(awk -v a="$total" -v b="$spent" 'BEGIN { printf "%.2f", a + b }')"
+      [[ -n "$budget" ]] && (( $(budget_pct "$spent" "$budget") >= 80 )) && { tight=$((tight + 1)); c=$((c + 1)); }
+    fi
     ((c)) && needy=$((needy + 1))
   done <<<"$rows"
   local summary
-  if ((decisions + acts + handoffs + late == 0)); then summary="Nothing waits on you in $n project(s)."
+  if ((decisions + acts + handoffs + late + tight == 0)); then summary="Nothing waits on you in $n project(s)."
   else
     summary="$decisions decision(s), $acts action(s) and $handoffs handoff(s) wait on you in $needy of $n project(s)."
     ((late)) && summary+=" $late brief(s) late, missing or unreadable."
+    ((tight)) && summary+=" $tight project(s) at 80% of their budget or more."
   fi
+  ((reported)) && summary+=" Agent runs cost \$$total this week in all."
 
   if [[ -n "$write" ]]; then
     write="$(abspath "$write")"
@@ -1359,10 +1367,18 @@ cmd_digest() {
   return 0
 }
 
+# ws_spend <workspace>: "<dollars this week>|<budget>", from the workspace's own scripts. Dollars are
+# empty when its runner does not report cost, or its kit predates spend tracking.
+ws_spend() {
+  bash -c 'source "$1/bin/lib.sh" && declare -F spend_since >/dev/null || exit 0
+    has "$SPEND_RUNNERS" "$CABINET_RUNNER" && printf %s "$(spend_since "$(week_start)")"; printf "|%s" "$CABINET_BUDGET"' _ "$1" 2>/dev/null || true
+}
+budget_pct() { awk -v w="$1" -v b="$2" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }'; }   # budget_pct <spent> <budget>
+
 digest_text() {  # digest_text <count> <rows>
-  local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting
+  local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting spent budget pct
   ((n)) || { echo "No cabinet workspaces on this machine yet. Start one: cabinet new, or cabinet init in an existing project."; return 0; }
-  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting; do
+  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget; do
     [[ -n "$slug" ]] || continue
     if [[ "$exists" != ok ]]; then echo "== $slug: folder gone (${ws/#$HOME/$TILDE}); cabinet list says how to free the slug"; echo; continue; fi
     echo "== ${project:-$slug} (${ws/#$HOME/$TILDE})"
@@ -1377,6 +1393,14 @@ digest_text() {  # digest_text <count> <rows>
       fi
     fi
     ((${waiting:-0})) && { echo; echo "$waiting handoff(s) wait on you: cd ${ws/#$HOME/$TILDE} && cabinet handoff list owner"; }
+    if [[ -n "$spent" ]]; then
+      echo
+      if [[ -z "$budget" ]]; then echo "Agent runs this week: \$$spent, no budget set."
+      else
+        pct="$(budget_pct "$spent" "$budget")"
+        echo "Agent runs this week: \$$spent of the \$$budget budget ($pct%).$( ((pct >= 80)) && echo " What each job cost: cd ${ws/#$HOME/$TILDE} && cabinet job list")"
+      fi
+    fi
     echo
   done <<<"$rows"
   echo "Answer each queue in its own workspace: cd there and give your agent the answers, for example \"1: approve; 2: no; 3: wait until Friday\"."

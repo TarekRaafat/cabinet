@@ -66,6 +66,7 @@ Every agent run costs money, as API spend or against a subscription's limits. Ca
 
 - Each job's log ends a run with its cost and the week's.
 - `cabinet job list` shows what each job cost this week, and the week's total.
+- `cabinet digest` shows each project's week against its budget, and the total across every project on this machine.
 - `cabinet config --budget 20` sets a weekly budget in US dollars. From 80% of it, the doctor reports `spend.budget`, so the brief lists it under "Actions for the owner"; past it, the doctor says so. Nothing is stopped: you decide whether to raise the budget, run jobs less often, or let the week end. The week starts on the day `AGENTS.md` names (Sunday by default).
 
 Two settings keep the cost down: a brief that skips its agent on [quiet days](commands.md#jobsltjobgtjob), and fewer scheduled jobs.

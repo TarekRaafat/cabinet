@@ -853,6 +853,14 @@ j="$("$F" digest --json)"
 jq -e 'map(select(.slug == "dg-a"))[0] | .project == "Digest A" and (.sign_off_queue | startswith("1. **Publish") and contains("2. **Spend")) and .actions_for_owner == "- Push api main (abc1234)." and .brief_stale == false' <<<"$j" >/dev/null || fail "digest --json: a full brief"
 jq -e '(map(select(.slug == "dg-b"))[0] | .brief_stale and .queue_heading_found == false) and (map(select(.slug == "dg-c"))[0] | .brief_written == null and .queue_heading_found == null)' <<<"$j" >/dev/null || fail "digest --json: stale and missing"
 grep -q '^Write `BRIEF.md` in this order, short, each part under a `## ` heading' "$KIT/roles/chief-of-staff.md" || fail "the brief headings rule left the chief-of-staff role"
+# What each project's agent runs cost this week, against its budget, and the total.
+(cd "$T/dg-a" && "$F" config --yes --budget 4) >/dev/null && (cd "$T/dg-b" && "$F" config --yes --runner codex) >/dev/null || fail "digest test setup: budget or runner"
+mkdir -p "$HOME/$LOGS/dg-a"; printf '%s\tbrief\tclaude\t3.5\n' "$(date +%s)" > "$HOME/$LOGS/dg-a/spend.tsv"
+out="$(cd "$T" && "$F" digest)"
+echo "$out" | grep -q '^Agent runs this week: \$3.50 of the \$4 budget (87%). What each job cost: cd .*dg-a && cabinet job list$' \
+  && echo "$out" | grep -q '^Agent runs this week: \$0.00, no budget set.$' && ! echo "$out" | awk '/^== / { b = ($2 == "dg-b") } b' | grep -q '^Agent runs' || { echo "$out"; fail "digest: each project's spend"; }
+echo "$out" | head -1 | grep -q ' 1 project(s) at 80% of their budget or more. Agent runs cost \$3.50 this week in all.$' || { echo "$out" | head -1; fail "digest: the spend in the summary"; }
+jq -e '(map(select(.slug == "dg-a"))[0] | .spend_this_week_usd == 3.5 and .budget_usd == 4) and (map(select(.slug == "dg-b"))[0] | .spend_this_week_usd == null and .budget_usd == null)' <<<"$("$F" digest --json)" >/dev/null || fail "digest --json: spend and budget"
 # Written to a file, with a notification (a fake osascript or notify-send that only logs), and on a schedule.
 "$F" digest --write "$T/dg/out.md" --notify >/dev/null || fail "digest --write"
 head -1 "$T/dg/out.md" | grep -Eq '^# cabinet digest, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, ' && grep -q '^  1\. \*\*Publish the page?\*\*' "$T/dg/out.md" || fail "the written digest"
