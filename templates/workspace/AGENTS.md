@@ -36,12 +36,13 @@ A change on one side is not done until every side agrees. The side that changes 
 
 ## House rules
 
-The owner's defaults for every repo. Change them here. The kit changes this file only when you run `cabinet config` (the owner line, the week start and the titles).
+The owner's defaults for every repo. Change them here. The kit changes this file only when you run `cabinet config` (the owner line, the week start, writing to the owner and the titles).
 
 - **Commits.** Authored as @@OWNER_NAME@@ <@@OWNER_EMAIL@@>. No AI or tool attribution of any kind (no `Co-Authored-By`, no "Generated with" line). Follow each repo's message style.
 - **ASCII punctuation only.** No em or en dashes, no curly quotes, anywhere (code, docs, copy, commits).
 - **Dates and times people read:** `10 Oct 2026`, `2:30 PM`, `10 Oct 2026, 2:30 PM`, ranges `10 to 14 Oct 2026`. Machine formats stay ISO 8601 (API fields, file names, database values, logs, code).
 - **Week starts on:** Sunday. Weekly jobs and resets use it.
+- **Writing to the owner:** standard. `short` gives the shortest briefs, questions and answers (`cabinet config --writing short`; `CABINET.md`, "Writing to the owner").
 - **No internal references in public artifacts:** no roadmap items, planning notes, workspace paths or local file names in anything published.
 - **Brand guide:** TBD (for example `guides/brand.md`, with a row under "Guides"). Canonical for voice and visual identity; changes go to the owner.
 

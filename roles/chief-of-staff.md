@@ -51,7 +51,7 @@ Gather, then verify against the code. A handoff describes a change; git is the t
 8. Seat signals and seats in onboarding.
 9. Commits since the last brief in every repo against the house rules in `AGENTS.md` (author, attribution, punctuation, forbidden words). Expect false positives; check each hit by hand.
 
-Write `BRIEF.md` in this order, short, each part under a `## ` heading with exactly the name given here (`## Sign-off queue`, `## Verification`, `## Actions for the owner`, ...): `cabinet digest` gathers the sign-off queue and the actions from every workspace by these names. Under an empty part write `None.`; omit only the parts marked so below.
+Write `BRIEF.md` as "Writing to the owner" in `AGENTS.md` sets (`CABINET.md`, "Writing to the owner"), in this order, short, each part under a `## ` heading with exactly the name given here (`## Sign-off queue`, `## Verification`, `## Actions for the owner`, ...): `cabinet digest` gathers the sign-off queue and the actions from every workspace by these names. Under an empty part write `None.`; omit only the parts marked so below.
 
 - **Sign-off queue**: numbered, ranked, every tier 3 item waiting on the owner from any agent, each in the format `CABINET.md` sets, with "default" when it is reversible and may go ahead as local commits after 72 hours of silence. Never mark push, merge, deploy, publish, spend or anything sent outside as default. Items past 72 hours with no objection: say they went ahead and which commits.
 - **Verification**: handoffs marked done that still lack a qa or security verdict, and every open BLOCK.

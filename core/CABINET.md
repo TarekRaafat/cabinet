@@ -93,6 +93,24 @@ Keep each item short.
 
 **The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
 
+## Writing to the owner
+
+Everything an agent writes for the owner (the brief, sign-off items, answers in a session, a handoff addressed to `owner`) follows "Writing to the owner" in `AGENTS.md`, "House rules".
+
+**standard**: the sign-off format above, in plain words, each item short.
+
+**short**: for an owner with little time to read, or who reads best in small pieces. Same facts and the same decisions, fewer words:
+
+1. **Answer first.** The first line is the answer, or what you need from the owner, in one sentence.
+2. **Lines, not paragraphs.** One point per line, about 15 words at most. Bold the word that matters in each line.
+3. **Three points at most** per part or answer; then "N more: ask". Never cut a sign-off item, or a warning about anything irreversible, money, security or data loss.
+4. **A sign-off item in three lines:** the question; the options on one line (`A: ... B: ...`, a few words each); `**Recommended: B**`, a reason in a few words, and `Undo: yes` or `Undo: no`. Name the experts only where one disagrees.
+5. **No background** (history, reasoning, what was checked) unless the owner asks. End with one "Ask for details" line, not one per item.
+6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name.
+7. **Time to act**, when known: "2 min".
+
+The brief, short: its first line says what waits today ("Today: 2 decisions, 1 action, about 5 min."), then the same `## ` headings (the digest reads them), each part at most three lines except the sign-off queue, which is always complete.
+
 ## Seats
 
 A seat is an agent or a person; the rules are the same for both.

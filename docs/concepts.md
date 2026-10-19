@@ -60,6 +60,18 @@ An agent unsure of the tier treats it as the higher one. A reversible tier 3 ite
 The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifies handoffs against git, checks the repos and the doctor, and puts every decision waiting on you at the top. Each decision has a plain question, lettered options with their consequences, each expert's recommendation, one overall recommendation, and whether it can be undone. You answer in one message; the agents apply your answers. Its parts sit under fixed headings (`## Sign-off queue`, `## Actions for the owner`, ...), so with several projects `cabinet digest` gathers every queue into one read. On a day when nothing changed (no commit, no new doctor problem, no answer, no work left uncommitted, no reversible item waiting for its 72 hours), the scheduled brief starts no agent and the last brief stands, for up to six days in a row ([quiet days](commands.md#jobsltjobgtjob)).
 
 
+
+## Writing to the owner
+
+How agents write to you is a house rule in `AGENTS.md`, set with `--writing` on `cabinet new`, `init` or `config`. `standard` is the sign-off format in plain words. `short` is for an owner with little time to read, or who reads best in small pieces (for example with ADHD): the same facts and decisions in fewer words.
+
+- The answer, or what is needed from you, comes first, in one sentence.
+- One point per line, with the word that matters in bold; three points at most, then "N more: ask".
+- A decision in three lines: the question, the options on one line, the recommendation with whether it can be undone.
+- No background unless you ask; plain words; how long an action takes, when known.
+- The brief opens with what waits today ("Today: 2 decisions, 1 action, about 5 min."). The sign-off queue stays complete, and no warning about anything irreversible, money, security or data loss is ever cut.
+
+The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. Ask any agent for details on a point and it gives them.
 ## What agent runs cost
 
 Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), as the agent tool reports it, in `spend.tsv` in the workspace's log folder, on this machine only. Of the runners, `claude` reports it (the cost Claude Code gives for each headless run, which on a subscription is what the run would cost through the API); the others do not yet, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.

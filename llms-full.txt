@@ -136,7 +136,7 @@ Every answer is also an option, and `--yes` skips the questions:
 
 ```sh
 cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
-  --brief-time "7 AM" --week-start sunday --backup-dir off --repo git@github.com:acme/api.git --yes
+  --brief-time "7 AM" --week-start sunday --writing standard --backup-dir off --repo git@github.com:acme/api.git --yes
 ```
 
 All options: [commands](docs/commands.md#cabinet-new).
@@ -169,7 +169,7 @@ Details: [layouts](docs/layouts.md).
 cabinet config        # in the workspace, or the project's top folder when cabinet/ is inside it
 ```
 
-It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`; `cabinet config --budget 20` sets a weekly budget for the agent runs cabinet starts ([what they cost](docs/concepts.md#what-agent-runs-cost)). Details: [commands](docs/commands.md#cabinet-config).
+It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`; `cabinet config --budget 20` sets a weekly budget for the agent runs cabinet starts ([what they cost](docs/concepts.md#what-agent-runs-cost)). `cabinet config --writing short` makes every brief, question and answer as short as it can be, for when you have little time to read ([writing to the owner](docs/concepts.md#writing-to-the-owner)). Details: [commands](docs/commands.md#cabinet-config).
 
 ## Update the kit
 
@@ -603,6 +603,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief-time <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
 | `--week-start <day>` | `sunday` | Written into `AGENTS.md` house rules. |
+| `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
 | `--dry-run` | | Prints everything setup would write and change, then stops: `Nothing was written.` |
@@ -805,7 +806,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`; not asked in a terminal, so give it as an option), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`; not asked in a terminal, so give it as an option), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -820,6 +821,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Runner | `CABINET_RUNNER`, `CABINET_RUNNER_CMD` |
 | Brief | `WHEN` in `jobs/brief.job` |
 | Week start | the house rule in `AGENTS.md` |
+| Writing | the "Writing to the owner" house rule in `AGENTS.md` (added after the week start when an older `AGENTS.md` lacks it) |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
 | Budget | `CABINET_BUDGET` |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
@@ -1162,6 +1164,18 @@ An agent unsure of the tier treats it as the higher one. A reversible tier 3 ite
 The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifies handoffs against git, checks the repos and the doctor, and puts every decision waiting on you at the top. Each decision has a plain question, lettered options with their consequences, each expert's recommendation, one overall recommendation, and whether it can be undone. You answer in one message; the agents apply your answers. Its parts sit under fixed headings (`## Sign-off queue`, `## Actions for the owner`, ...), so with several projects `cabinet digest` gathers every queue into one read. On a day when nothing changed (no commit, no new doctor problem, no answer, no work left uncommitted, no reversible item waiting for its 72 hours), the scheduled brief starts no agent and the last brief stands, for up to six days in a row ([quiet days](commands.md#jobsltjobgtjob)).
 
 
+
+## Writing to the owner
+
+How agents write to you is a house rule in `AGENTS.md`, set with `--writing` on `cabinet new`, `init` or `config`. `standard` is the sign-off format in plain words. `short` is for an owner with little time to read, or who reads best in small pieces (for example with ADHD): the same facts and decisions in fewer words.
+
+- The answer, or what is needed from you, comes first, in one sentence.
+- One point per line, with the word that matters in bold; three points at most, then "N more: ask".
+- A decision in three lines: the question, the options on one line, the recommendation with whether it can be undone.
+- No background unless you ask; plain words; how long an action takes, when known.
+- The brief opens with what waits today ("Today: 2 decisions, 1 action, about 5 min."). The sign-off queue stays complete, and no warning about anything irreversible, money, security or data loss is ever cut.
+
+The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. Ask any agent for details on a point and it gives them.
 ## What agent runs cost
 
 Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), as the agent tool reports it, in `spend.tsv` in the workspace's log folder, on this machine only. Of the runners, `claude` reports it (the cost Claude Code gives for each headless run, which on a subscription is what the run would cost through the API); the others do not yet, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.
@@ -1617,6 +1631,24 @@ Keep each item short.
 
 **The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
 
+## Writing to the owner
+
+Everything an agent writes for the owner (the brief, sign-off items, answers in a session, a handoff addressed to `owner`) follows "Writing to the owner" in `AGENTS.md`, "House rules".
+
+**standard**: the sign-off format above, in plain words, each item short.
+
+**short**: for an owner with little time to read, or who reads best in small pieces. Same facts and the same decisions, fewer words:
+
+1. **Answer first.** The first line is the answer, or what you need from the owner, in one sentence.
+2. **Lines, not paragraphs.** One point per line, about 15 words at most. Bold the word that matters in each line.
+3. **Three points at most** per part or answer; then "N more: ask". Never cut a sign-off item, or a warning about anything irreversible, money, security or data loss.
+4. **A sign-off item in three lines:** the question; the options on one line (`A: ... B: ...`, a few words each); `**Recommended: B**`, a reason in a few words, and `Undo: yes` or `Undo: no`. Name the experts only where one disagrees.
+5. **No background** (history, reasoning, what was checked) unless the owner asks. End with one "Ask for details" line, not one per item.
+6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name.
+7. **Time to act**, when known: "2 min".
+
+The brief, short: its first line says what waits today ("Today: 2 decisions, 1 action, about 5 min."), then the same `## ` headings (the digest reads them), each part at most three lines except the sign-off queue, which is always complete.
+
 ## Seats
 
 A seat is an agent or a person; the rules are the same for both.
@@ -1810,6 +1842,7 @@ First version.
 - `cabinet update` applies the installed kit and shows the changelog since the workspace's version; `cabinet changelog`, `status`, `version` and `outdated`.
 - `cabinet remove` removes a workspace (its schedules, logs and folder, and inside a project what setup added), refusing work that exists nowhere else unless `--force`.
 - Tools first: `cabinet new`, `init` and `bootstrap` check for git, jq, perl, python3, node and npm, name what is missing with the command that installs it here (`brew`, `apt-get`, `dnf` or `pacman`), and in a terminal offer to run it; with `--yes` or `--dry-run` they never install. The doctor reports a missing tool (`deps.required`) and a tool enabled backups need (`deps.backups`: openssl, and `secret-tool` on Linux), `cabinet doctor --fix` installs them after asking (always in a terminal, even with `--yes`), and `cabinet next` shows the step `deps`. Agents are told to pass the command to the owner, never to install system packages themselves.
+- Writing to the owner: `--writing short|standard` on `new`, `init` and `config` sets a house rule in `AGENTS.md` that every agent follows for the brief, sign-off items and answers (`CABINET.md`, "Writing to the owner"). `short`, for an owner with little time to read or who reads best in small pieces: answer first, one point per line, three points at most, a decision in three lines, no background unless asked; the sign-off queue stays complete and no warning is cut. `config` adds the line to an `AGENTS.md` written before it.
 - `--dry-run` for `new`, `init` and `config`. `repos.tsv` takes an optional path column for a repo that lives outside the workspace.
 
 ### The team

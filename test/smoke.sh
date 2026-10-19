@@ -852,7 +852,7 @@ echo "$out" | grep -q 'Older than a day and a half' && echo "$out" | grep -q 'no
 j="$("$F" digest --json)"
 jq -e 'map(select(.slug == "dg-a"))[0] | .project == "Digest A" and (.sign_off_queue | startswith("1. **Publish") and contains("2. **Spend")) and .actions_for_owner == "- Push api main (abc1234)." and .brief_stale == false' <<<"$j" >/dev/null || fail "digest --json: a full brief"
 jq -e '(map(select(.slug == "dg-b"))[0] | .brief_stale and .queue_heading_found == false) and (map(select(.slug == "dg-c"))[0] | .brief_written == null and .queue_heading_found == null)' <<<"$j" >/dev/null || fail "digest --json: stale and missing"
-grep -q '^Write `BRIEF.md` in this order, short, each part under a `## ` heading' "$KIT/roles/chief-of-staff.md" || fail "the brief headings rule left the chief-of-staff role"
+grep -q '^Write `BRIEF.md` as .* in this order, short, each part under a `## ` heading' "$KIT/roles/chief-of-staff.md" || fail "the brief headings rule left the chief-of-staff role"
 # What each project's agent runs cost this week, against its budget, and the total.
 (cd "$T/dg-a" && "$F" config --yes --budget 4) >/dev/null && (cd "$T/dg-b" && "$F" config --yes --runner codex) >/dev/null || fail "digest test setup: budget or runner"
 mkdir -p "$HOME/$LOGS/dg-a"; printf '%s\tbrief\tclaude\t3.5\n' "$(date +%s)" > "$HOME/$LOGS/dg-a/spend.tsv"
@@ -1292,6 +1292,27 @@ grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" ||
 (cd "$S" && "$F" config --yes --runner codex --budget 20) >/dev/null
 "$S/bin/job.sh" list | grep -q 'codex does not report what a run costs' && "$S/bin/job.sh" list | grep -E '^brief .* min  -$' >/dev/null || fail "job list with codex"
 "$S/bin/doctor.sh" --json | jq -e '.results[] | select(.id == "spend.unreported")' >/dev/null || fail "an untracked budget not noted"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "writing to the owner: short or standard" ""
+s47() {
+wl() { grep '^- \*\*Writing to the owner:\*\*' "$1/AGENTS.md"; }
+"$F" new "$T/wr-s" --yes --writing Short >/dev/null && wl "$T/wr-s" | grep -q '^- \*\*Writing to the owner:\*\* short\. ' || fail "new --writing short"
+"$F" new "$T/wr-d" --yes >/dev/null && wl "$T/wr-d" | grep -q '^- \*\*Writing to the owner:\*\* standard\. ' || fail "writing is not standard by default"
+"$F" new "$T/wr-x" --yes --writing terse >/dev/null 2>&1 && fail "--writing terse accepted"
+"$F" new "$T/wr-n" --yes --writing short --dry-run | grep -q 'writing short' || fail "new --dry-run does not show writing"
+(cd "$T/wr-s" && "$F" config --yes --writing standard --dry-run) | grep -q 'writing to the owner: short -> standard' && wl "$T/wr-s" | grep -q 'short\.' || fail "config --dry-run"
+(cd "$T/wr-s" && "$F" config --yes --writing standard) >/dev/null && wl "$T/wr-s" | grep -q 'standard\.' || fail "config --writing standard"
+(cd "$T/wr-s" && "$F" config --yes --writing standard) | grep -q 'Nothing to change' || fail "the same writing again is a change"
+# An AGENTS.md from before the setting gets the line, once, after the week start.
+sedi '/^- \*\*Writing to the owner:\*\*/d' "$T/wr-d/AGENTS.md"
+(cd "$T/wr-d" && "$F" config --yes --writing short) >/dev/null || fail "config --writing on an older AGENTS.md"
+[[ "$(wl "$T/wr-d" | wc -l | tr -d ' ')" == 1 ]] && grep -A1 '^- \*\*Week starts on:\*\*' "$T/wr-d/AGENTS.md" | grep -q '^- \*\*Writing to the owner:\*\* short\.' || fail "the line not added once after the week start"
+(cd "$T/wr-d" && "$F" config --yes --this-machine --writing short) >/dev/null 2>&1 && fail "--this-machine accepted --writing"
+# What short means is in the rules every agent reads, and the brief follows it.
+grep -q '^## Writing to the owner$' "$KIT/core/CABINET.md" && grep -q '^\*\*short\*\*: ' "$KIT/core/CABINET.md" || fail "CABINET.md has no short writing rules"
+grep -q 'Write `BRIEF.md` as "Writing to the owner" in `AGENTS.md` sets' "$KIT/roles/chief-of-staff.md" || fail "the brief does not follow the setting"
   return 0   # a last "check && fail" line must not end the run
 }
 

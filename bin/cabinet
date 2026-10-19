@@ -119,6 +119,7 @@ O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, 
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
+O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
 O	config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
@@ -333,6 +334,8 @@ check_answers() {
     brief="$(when_norm "$brief")" || die "the brief time must be a time like \"7 AM\" or \"7:30 PM\" for every day, days and a time like \"fri 4 PM\" or \"sun,mon,tue,wed,thu 8 AM\" (day names in full work too), or off"
   fi
   has "$DAYS" "$week" || die "week start must be a day name, like sunday"
+  writing="$(printf %s "$writing" | tr '[:upper:]' '[:lower:]')"
+  [[ "$writing" == short || "$writing" == standard ]] || die "--writing must be short or standard"
   for v in "$name" "$owner" "$email" "$backup"; do safe "$v" || die "'$v' cannot be used: no \$, backtick, backslash, double quote or line break"; done
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
@@ -358,7 +361,7 @@ cmd_init() { setup init "$@"; }
 # Nothing that already exists is overwritten.
 setup() {
   local how=$1; shift
-  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" backup="" yes=0 repos=() r
+  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" backup="" yes=0 repos=() r
   local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0
   while (($#)); do
     case "$1" in
@@ -371,6 +374,7 @@ setup() {
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
+      --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --inside) place=inside; shift ;;
@@ -583,7 +587,7 @@ setup() {
     elif [[ "$owner" == TBD || "$email" == TBD ]]; then echo "  - git init, but no commit (no owner identity yet)"
     else echo "  - git init and one commit as $owner"; fi
     echo "  - record the slug in $LOGROOT_SHOWN/$slug/workspace"
-    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, backups ${backup:-off}."
+    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, writing $writing, backups ${backup:-off}."
     echo "Nothing was written."
     return 0
   fi
@@ -601,7 +605,7 @@ setup() {
     [[ -n "$pkg_desc" ]] && echo "  About     $pkg_desc (from package.json)"
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
-    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week"
+    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week, writing $writing"
     echo "  Backups   ${backup:-off}"
     local listed="none yet"; ((${#rows[@]})) && listed="$(printf '%s\n' "${rows[@]}" | cut -f1 | tr '\n' ' ')"
     echo "  Repos     $listed"
@@ -652,7 +656,7 @@ setup() {
       s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
   fi
   is_placed jobs/brief.job && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
-  is_placed AGENTS.md && D="$Week" perl -i -pe 's/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./' "$ws/AGENTS.md"
+  is_placed AGENTS.md && D="$Week" G="$writing" perl -i -pe 's/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./; s/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
   # What the project already says, in place of the TBDs it answers. The rest stays TBD.
   if is_placed AGENTS.md && [[ -n "$host" ]]; then
     local hp=".."; [[ "$layout" == beside ]] && hp="$(printf '%s\n' "${rows[0]}" | cut -f5)"
@@ -866,8 +870,8 @@ ROLE
 
 cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
-  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" repos=()
-  local set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
+  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" writing="" repos=()
+  local set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; set_name=1; shift 2 ;;
@@ -879,6 +883,7 @@ cmd_config() {
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; set_cmd=1; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
+      --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; set_backup=1; shift 2 ;;
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
       --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; set_budget=1; shift 2 ;;
@@ -894,7 +899,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_budget || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_budget || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
     (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
@@ -907,7 +912,7 @@ cmd_config() {
 
   # Current answers, read from the files setup wrote.
   envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
-  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget
+  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget o_writing
   o_name="$(envget CABINET_PROJECT)"; o_slug="$(envget CABINET_SLUG)"
   o_roles="$(envget CABINET_ROLES)"; o_runner="$(envget CABINET_RUNNER)"; o_runner="${o_runner:-claude}"; o_cmd="$(envget CABINET_RUNNER_CMD)"
   o_budget="$(envget CABINET_BUDGET)"
@@ -915,11 +920,13 @@ cmd_config() {
   o_owner="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
   o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
   o_week="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
+  o_writing="$(sed -n 's/^- \*\*Writing to the owner:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
   o_brief="$( [[ -f "$ws/jobs/brief.job" ]] && (WHEN=""; source "$ws/jobs/brief.job" >/dev/null 2>&1; printf '%s' "$WHEN") )"
   [[ -z "$o_brief" ]] || o_brief="$(when_norm "$o_brief" || printf '%s' "$o_brief")"   # "daily 07:00" is "7:00 AM": no change
   ((set_name)) || name="$o_name"; ((set_slug)) || slug="$o_slug"; ((set_owner)) || owner="$o_owner"; ((set_email)) || email="$o_email"
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
+  ((set_writing)) || writing="${o_writing:-standard}"
   ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
@@ -960,6 +967,7 @@ cmd_config() {
   [[ "$backup" == off || -z "$backup" ]] && backup="" || backup="$(abspath "$backup")"
   [[ "$(printf %s "$brief" | tr '[:upper:]' '[:lower:]')" == off ]] && brief=""
   week="$(printf %s "$week" | tr '[:upper:]' '[:lower:]')"
+  writing="$(printf %s "$writing" | tr '[:upper:]' '[:lower:]')"
   [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] || runner_cmd=""
   check_answers
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
@@ -1020,6 +1028,7 @@ cmd_config() {
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
+  [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
   [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
   [[ "$budget" != "$o_budget" ]] && changes+=("budget: $( [[ -n "$o_budget" ]] && echo "\$$o_budget a week" || echo off) -> $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off)")
@@ -1046,6 +1055,11 @@ cmd_config() {
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ -f "$ws/jobs/brief.job" ]] && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
+  # An AGENTS.md from before the setting gets its line after the week start.
+  if [[ "$writing" != "${o_writing:-standard}" ]]; then
+    if [[ -n "$o_writing" ]]; then G="$writing" perl -i -pe 's/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
+    else G="$writing" perl -i -pe '$_ .= "- **Writing to the owner:** $ENV{G}. `short` gives the shortest briefs, questions and answers (`cabinet config --writing short`; `CABINET.md`, \"Writing to the owner\").\n" if /^- \*\*Week starts on:\*\*/' "$ws/AGENTS.md"; fi
+  fi
   D="$Week" O="$owner" E="$email" perl -i -pe '
     s/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./;
     s/^(- \*\*Commits\.\*\* Authored as ).*? <[^>]*>\./$1$ENV{O} <$ENV{E}>./' "$ws/AGENTS.md"
