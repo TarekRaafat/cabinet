@@ -63,16 +63,16 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 
 section "new, answered at the prompts" ""
 s2() {
-# Name, folder, owner, email, 6 roles (product-manager no, finance no), runner, brief,
+# Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, brief,
 # week, backup, one repo then done, create, no npm install, no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n gemini "8:30 am" sunday off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" gemini "8:30 am" sunday off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
 grep -qx 'CABINET_ROLES="chief-of-staff architect qa security design-lead"' "$A/cabinet.env" || fail "prompted roles"
 grep -qx 'CABINET_RUNNER="gemini"' "$A/cabinet.env" && grep -qx 'WHEN="8:30 AM"' "$A/jobs/brief.job" || fail "prompted runner or brief"
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
-printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
+printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
 [[ ! -e "$T/nope" ]] || fail "declined setup created files"
 
@@ -411,8 +411,8 @@ cfg --yes --roles "qa security finance" >/dev/null
 cfg --yes | grep -qx 'Nothing to change.' || fail "no-op config changed something"
 cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail "a bad slug was accepted"
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
-# Name, slug, owner, email, 6 roles (all yes), runner, brief, week, backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" off "" off "" y n > "$T/answers"
+# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner, brief, week, backup, no repos, apply, no bootstrap.
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" off "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
 printf '<plist><string>%s/bin/scheduled.sh</string></plist>\n' "$(cd "$C" && pwd -P)" > "$LA/ai.cabinet.old-name.brief.plist"
@@ -977,6 +977,41 @@ HOME="$BH" "$B/bin/bootstrap.sh" --dry-run 2>&1 | grep -q 'would make backend th
   mkdir -p "$T/k1/android" "$T/k2/terraform" "$T/k3"; echo '<html></html>' > "$T/k3/index.html"
   echo '{"dependencies":{"react":"1","react-native":"1"}}' > "$T/k4.json"; mkdir -p "$T/k4"; cp "$T/k4.json" "$T/k4/package.json"
   [[ "$(builder_for "$T/k1") $(builder_for "$T/k2") $(builder_for "$T/k3") $(builder_for "$T/k4") $(builder_for "$T/kind-api")" == "mobile infrastructure web mobile backend" ]] ) || fail "builder_for guessed wrong"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "roles a project needs: optional kit roles, and its own from a brief" "0"
+s40() {
+# Optional kit roles are off by default and turned on like any role.
+! grep -q '| brand-designer |\|| code-reviewer |' "$W/AGENTS.md" "$W/OPERATIONS.md" || fail "an optional role is on by default"
+"$F" new "$T/optroles" --yes --roles "qa dba code-reviewer" >/dev/null || fail "new with optional roles"
+for r in dba code-reviewer; do
+  [[ -f "$T/optroles/agents/$r.md" ]] && grep -q "| $r |" "$T/optroles/AGENTS.md" && grep -q "| $r |" "$T/optroles/OPERATIONS.md" || fail "optional role $r not built or not in the team tables"
+done
+! grep -q '| auditor |' "$T/optroles/AGENTS.md" && "$T/optroles/bin/doctor.sh" 2>&1 | grep -q 'ok    manual names every script, job and role' || fail "an optional role left on, or the manual check"
+# A role of the project's own from one line; the rest is left to the draft.
+RW="$T/optroles"
+(cd "$RW/specs" && "$F" role new brand-strategist --does "Positioning and naming for a reading app, for parents") >/dev/null || fail "role new"
+f="$RW/roles/brand-strategist.md"
+grep -qx -- '- What it should do: Positioning and naming for a reading app, for parents' "$f" && grep -qx -- '- What it owns: not said yet' "$f" || fail "the brief was not kept word for word"
+grep -q '^CABINET_ROLES=".* brand-strategist"' "$RW/cabinet.env" && grep -q '^name: brand-strategist$' "$RW/agents/brand-strategist.md" \
+  && grep -q '| TBD | TBD | brand-strategist |' "$RW/AGENTS.md" && grep -q '| brand-strategist |' "$RW/OPERATIONS.md" || fail "the new role was not registered and built"
+"$RW/bin/doctor.sh" 2>&1 | grep -q 'note  the brand-strategist role is not drafted yet' || fail "the doctor did not note the undrafted role"
+# In a terminal: four questions, Enter skips, then whether to draft now.
+printf 'Weekly growth experiments\n\nWhich experiment runs next\nAny spend\nn\n' > "$T/role-answers"
+(cd "$RW" && CABINET_TTY="$T/role-answers" "$F" role new growth) >/dev/null || fail "role new in a terminal"
+grep -qx -- '- What it owns: not said yet' "$RW/roles/growth.md" && grep -qx -- '- What it must bring to the owner: Any spend' "$RW/roles/growth.md" || fail "terminal answers not kept"
+for bad in qa web Bad_Name brand-strategist; do (cd "$RW" && "$F" role new "$bad" --yes) >/dev/null 2>&1 && fail "role new accepted '$bad'"; done
+# Drafting: the agent tool runs as chief-of-staff on the drafting method; a run that leaves it TBD fails.
+cp "$RW/cabinet.env" "$T/optroles-env.bak"
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"
+(cd "$RW" && "$F" role draft brand-strategist) >/dev/null 2>&1 && fail "a draft that left the role TBD passed"
+grep -q 'Act as the chief-of-staff role' "$RW/prompt.out" && grep -q 'as CABINET.md, "Drafting a role", says' "$RW/prompt.out" && grep -q 'roles/brand-strategist.md' "$RW/prompt.out" || fail "the draft prompt: $(cat "$RW/prompt.out")"
+printf '%s\n' "CABINET_RUNNER_CMD='perl -i -pe \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md'" >> "$RW/cabinet.env"
+(cd "$RW" && "$F" role draft brand-strategist) | grep -q 'Drafted roles/brand-strategist.md' || fail "a finished draft was not reported"
+grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist role is not drafted' || fail "the drafted role was not rebuilt, or still noted"
+(cd "$RW" && "$F" role draft qa) >/dev/null 2>&1 && fail "role draft took a kit role"
+cp "$T/optroles-env.bak" "$RW/cabinet.env"; rm -f "$RW/prompt.out"
   return 0   # a last "check && fail" line must not end the run
 }
 

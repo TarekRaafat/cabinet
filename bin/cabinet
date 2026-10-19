@@ -64,6 +64,7 @@ C	Run	restore	<archive> [dir]	Rebuild a workspace and its repos from a backup, n
 C	Run	snapshot		Copy each repo's local-only files into local/.
 C	Run	move	<new-path>	Move the workspace folder and update what remembers its path.
 C	Change	config	[dir] [options]	Change settings: the setup questions again, with the current answers as defaults.
+C	Change	role	new|draft <name> [options]	Add a role of the project's own from as little as its name, then have an agent draft it for this project.
 C	Change	remove	[dir]	Remove a workspace from this Mac after showing the plan: schedules, logs, folder, and what setup added to a project.
 C	Kit	update	[dir]	Apply the installed kit to a workspace and print the changelog since its version.
 C	Kit	status	[dir]	The workspace's kit version, the installed kit's, and every kit file edited here.
@@ -95,7 +96,12 @@ O	config	--clear		With --this-mac: this Mac follows the backup settings in cabin
 O	bootstrap	--no-schedules		From now on, schedule no jobs on this Mac: another Mac runs them (saved in cabinet.local.env, not committed).
 O	bootstrap	--schedules		Schedule this Mac's jobs again (undoes --no-schedules).
 O	new init config bootstrap move remove	--dry-run		Print what it would do, and change nothing.
-O	new init config remove	--yes		No questions (or -y).
+O	role	--does	"..."	What it should do, in your words (asked in a terminal when no option is given).
+O	role	--owns	"..."	The repos, folders or areas it owns.
+O	role	--decides	"..."	What it may decide on its own.
+O	role	--escalates	"..."	What it must bring to you.
+O	role	--draft		Draft it now with the configured agent tool (it may cost money).
+O	new init config remove role	--yes		No questions (or -y).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot), asking before each.
 O	doctor	--yes		With --fix: do not ask (or -y).
 O	doctor next handoffs status help list digest	--json		The result as JSON, for agents and scripts.
@@ -214,6 +220,7 @@ sync_kit() {
 
 RUNNERS="claude codex gemini qwen grok opencode cursor"   # built in; "custom" runs a command
 ROLES_ALL="chief-of-staff product-manager architect qa security design-lead finance"
+ROLES_OPT="brand-designer dba code-reviewer auditor"   # kit roles a project turns on; off by default
 DAYS="sunday monday tuesday wednesday thursday friday saturday"
 
 # Prompts read the terminal itself on fd 3, so they work under npx and npm exec
@@ -272,7 +279,7 @@ check_answers() {
   roles="$(printf %s "$roles" | tr '[:upper:]' '[:lower:]')"; runner="$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')"
   brief="$(printf %s "$brief" | tr '[:upper:]' '[:lower:]')"
   has "$roles" chief-of-staff || roles="chief-of-staff $roles"
-  for r in $roles; do has "$ROLES_ALL ${extra_roles:-}" "$r" || die "unknown role '$r' (kit roles: $ROLES_ALL${extra_roles:+; project roles: $extra_roles})"; done
+  for r in $roles; do has "$ROLES_ALL $ROLES_OPT ${extra_roles:-}" "$r" || die "unknown role '$r' (kit roles: $ROLES_ALL $ROLES_OPT${extra_roles:+; project roles: $extra_roles})"; done
   has "$RUNNERS custom" "$runner" || die "runner must be one of: $RUNNERS, custom"
   [[ "$runner" != custom || -n "$runner_cmd" ]] || die "--runner custom needs --runner-cmd"
   [[ "$runner_cmd" != *"'"* && "$runner_cmd" != *[[:cntrl:]]* ]] || die "the runner command cannot contain single quotes or control characters"
@@ -413,7 +420,7 @@ setup() {
     email="$(ask "Owner email" "$email")"
     echo "  Roles. chief-of-staff is always on: it writes the brief and routes work."
     local picked="chief-of-staff"
-    for r in ${ROLES_ALL#chief-of-staff }; do
+    for r in ${ROLES_ALL#chief-of-staff } $ROLES_OPT; do
       confirm "  $r" "$(has "$roles" "$r" && echo y || echo n)" && picked+=" $r"
     done
     roles="$picked"
@@ -618,7 +625,7 @@ setup() {
       $_ = "$ENV{A}\n" if index($_, "TBD: one paragraph, written by the owner.") == 0;
       $_ = "$ENV{B}\n" if length($ENV{B}) && index($_, "TBD: how qa runs the product locally") == 0' "$ws/AGENTS.md"
   fi
-  for r in $ROLES_ALL; do
+  for r in $ROLES_ALL $ROLES_OPT; do
     has "$roles" "$r" && continue
     # A disabled role leaves the team tables.
     for f in AGENTS.md OPERATIONS.md; do is_placed "$f" && X="| $r |" perl -i -ne 'print unless index($_, $ENV{X}) >= 0' "$ws/$f"; done
@@ -720,6 +727,74 @@ setup() {
 # answers as defaults. Writes the files, keeps the team tables in step, runs
 # bin/roles.sh, and (asked, or with --apply) bin/bootstrap.sh for schedules and repos.
 # A new slug stops the old schedules first. Layout and visibility are not changed here.
+# A role of the project's own: roles/<role>.md from what the owner knows (as little as its name),
+# registered through config like any role, then drafted by an agent ("Drafting a role", CABINET.md).
+ask_free() { local a=""; read -r -u 3 -p "  $1: " a || true; printf '%s' "$a"; }
+cmd_role() {
+  local sub="${1:-}"; (($#)) && shift
+  case "$sub" in new|draft) ;; *) die "usage: cabinet role new <name> [options], or cabinet role draft <name> (see: cabinet role --help)" ;; esac
+  local name="" does="" owns="" decides="" escalates="" draft=0 yes=0
+  while (($#)); do
+    case "$1" in
+      --does|--owns|--decides|--escalates)
+        (($# >= 2)) || die "$1 needs a value"
+        case "$1" in --does) does="$2" ;; --owns) owns="$2" ;; --decides) decides="$2" ;; *) escalates="$2" ;; esac
+        shift 2 ;;
+      --draft) draft=1; shift ;;
+      -y|--yes) yes=1; shift ;;
+      -*) die "unknown option $1 (see: cabinet role --help)" ;;
+      *) [[ -z "$name" ]] || die "one role name at a time"; name="$1"; shift ;;
+    esac
+  done
+  [[ "$name" =~ ^[a-z][a-z0-9-]*$ ]] || die "a role name is lowercase letters, digits and dashes, starting with a letter, like brand-designer"
+  local ws; ws="$(need_ws)" || exit 1
+  if [[ "$sub" == draft ]]; then
+    [[ -z "$does$owns$decides$escalates" ]] || die "to add detail, edit \"The owner's brief\" in roles/$name.md, then draft"
+    exec "$ws/bin/role.sh" "$name"
+  fi
+  has "$ROLES_ALL $ROLES_OPT" "$name" && die "$name is a kit role: turn it on with cabinet config --roles (listing the roles you keep)"
+  has "backend web mobile infrastructure" "$name" && die "$name is a kit builder: it is built when it owns a repo in the team table of AGENTS.md"
+  [[ -e "$ws/roles/$name.md" ]] && die "roles/$name.md exists: cabinet role draft $name drafts it again"
+  local tty=0
+  if ((yes == 0)) && [[ -z "$does$owns$decides$escalates" ]] && { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null; then tty=1; fi
+  if ((tty)); then
+    echo "A new role: $name. Say what you know; Enter leaves it to the agent that drafts the role from what the project shows."
+    does="$(ask_free "What should it do")"; owns="$(ask_free "What does it own (repos, folders, areas)")"
+    decides="$(ask_free "What may it decide on its own")"; escalates="$(ask_free "What must it bring to you")"
+  fi
+  # The owner's words, one line each, kept as data in the role file.
+  said() { local v; v="$(printf '%s' "$1" | tr '\r\n\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; printf '%s' "${v:-not said yet}"; }
+  mkdir -p "$ws/roles"
+  cat > "$ws/roles/$name.md" <<ROLE
+---
+name: $name
+description: TBD: what this role does and when to use it, drafted from the owner's brief below (cabinet role draft $name).
+tools: Read, Grep, Glob, Bash, Edit, Write
+---
+
+You are the $(printf %s "$name" | tr - ' ') for this project. This role is not drafted yet: until it is, do only what the owner's brief below asks, write only where it says, and bring every decision to the owner.
+
+Read \`CABINET.md\`, then \`AGENTS.md\`. Every rule in them applies to you.
+
+## The owner's brief
+
+What the owner said this role is for, kept word for word. It wins over anything drafted from it. Add to it at any time, then redraft: \`cabinet role draft $name\`.
+
+- What it should do: $(said "$does")
+- What it owns: $(said "$owns")
+- What it may decide on its own: $(said "$decides")
+- What it must bring to the owner: $(said "$escalates")
+ROLE
+  local cur runner; cur="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_ROLES:-}" ) )"
+  runner="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_RUNNER:-claude}" ) )"
+  "$KIT/bin/cabinet" config "$ws" --yes --roles "$cur $name" >/dev/null || { rm -f "$ws/roles/$name.md"; die "could not add $name to the team (see above)"; }
+  echo "Added the $name role: roles/$name.md, and its rows in AGENTS.md and OPERATIONS.md."
+  if ((draft == 0 && tty)); then confirm "Draft it now with $runner? It runs your agent tool for a few minutes, which may cost money" n && draft=1; fi
+  ((draft)) && exec "$ws/bin/role.sh" "$name"
+  echo "Next, draft it from your brief and the project: in your agent session, ask to \"draft the $name role\" (CABINET.md, \"Drafting a role\"),"
+  echo "or run cabinet role draft $name. Until then the doctor reminds you."
+}
+
 cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_mac=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" repos=()
@@ -777,10 +852,10 @@ cmd_config() {
   ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
-  for r2 in $o_roles; do has "$ROLES_ALL" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
+  for r2 in $o_roles; do has "$ROLES_ALL $ROLES_OPT" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
   for r2 in "$ws"/roles/*.md; do
     r2="$(basename "$r2" .md)"; [[ -f "$ws/roles/$r2.md" && "$r2" != README ]] || continue
-    has "$ROLES_ALL $extra_roles" "$r2" || { head -1 "$ws/roles/$r2.md" | grep -qx -- '---' && extra_roles+="$r2 "; }
+    has "$ROLES_ALL $ROLES_OPT $extra_roles" "$r2" || { head -1 "$ws/roles/$r2.md" | grep -qx -- '---' && extra_roles+="$r2 "; }
   done
   extra_roles="${extra_roles% }"
 
@@ -796,7 +871,7 @@ cmd_config() {
     email="$(ask "Owner email" "$email")"
     echo "  Roles. chief-of-staff is always on: it writes the brief and routes work."
     local picked="chief-of-staff"
-    for r in ${ROLES_ALL#chief-of-staff } $extra_roles; do
+    for r in ${ROLES_ALL#chief-of-staff } $ROLES_OPT $extra_roles; do
       confirm "  $r" "$(has "$roles" "$r" && echo y || echo n)" && picked+=" $r"
     done
     roles="$picked"
@@ -937,11 +1012,11 @@ cmd_config() {
   local f row
   for f in AGENTS.md OPERATIONS.md; do
     [[ -f "$ws/$f" ]] || continue
-    for r in $ROLES_ALL; do
+    for r in $ROLES_ALL $ROLES_OPT; do
       if has "$roles" "$r"; then
         grep -qF "| $r |" "$ws/$f" && continue
         row="$(grep -F "| $r |" "$KIT/templates/workspace/$f" | head -1)"; [[ -n "$row" ]] || continue
-        X="$row" RS="$ROLES_ALL" perl -0777 -i -pe '
+        X="$row" RS="$ROLES_ALL $ROLES_OPT" perl -0777 -i -pe '
           my @l = split /(?<=\n)/; my $last = -1;
           for my $i (0 .. $#l) { for my $r (split / /, $ENV{RS}) { $last = $i if index($l[$i], "| $r |") >= 0 } }
           splice @l, $last + 1, 0, "$ENV{X}\n" if $last >= 0; $_ = join "", @l' "$ws/$f"
@@ -951,10 +1026,10 @@ cmd_config() {
     done
     # A role the project defines itself gets a row to fill in, so the manual names it.
     for r in $roles; do
-      has "$ROLES_ALL" "$r" && continue
+      has "$ROLES_ALL $ROLES_OPT" "$r" && continue
       grep -qF "| $r |" "$ws/$f" && continue
       if [[ "$f" == OPERATIONS.md ]]; then row="| $r | TBD: what it does |"; else row="| TBD | TBD | $r |"; fi
-      X="$row" RS="$ROLES_ALL $extra_roles" perl -0777 -i -pe '
+      X="$row" RS="$ROLES_ALL $ROLES_OPT $extra_roles" perl -0777 -i -pe '
         my @l = split /(?<=\n)/; my $last = -1;
         for my $i (0 .. $#l) { for my $r (split / /, $ENV{RS}) { $last = $i if length($r) && index($l[$i], "| $r |") >= 0 } }
         splice @l, $last + 1, 0, "$ENV{X}\n" if $last >= 0; $_ = join "", @l' "$ws/$f"
@@ -1455,7 +1530,7 @@ _cabinet() {
   else
     case "\$prev" in
       --runner) words="$RUNNERS custom" ;;
-      --roles) words="$ROLES_ALL" ;;
+      --roles) words="$ROLES_ALL $ROLES_OPT" ;;
       --week-start) words="$DAYS" ;;
       --brief) words="7am 8am 9am off" ;;
       completion) words="bash zsh" ;;
@@ -1544,6 +1619,7 @@ case "${1:-}" in
   init) shift; cmd_init "$@" ;;
   next) shift; cmd_next "$@" ;;
   config) shift; cmd_config "$@" ;;
+  role) shift; cmd_role "$@" ;;
   remove) shift; cmd_remove "$@" ;;
   list) shift; cmd_list "$@" ;;
   digest) shift; cmd_digest "$@" ;;

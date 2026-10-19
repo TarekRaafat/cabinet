@@ -21,27 +21,6 @@ source "$jf"
 limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 [[ "$limit" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "TIMEOUT in jobs/$job.job (or CABINET_JOB_TIMEOUT) must be whole minutes, or 0 for no limit, not '$limit'" >&2; exit 2; }
 
-run_agent() {
-  # Tools without cabinet's named agents get the role file as their first instruction.
-  local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
-  case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto "$PROMPT" ;;
-    codex)    codex exec "$as_role" ;;
-    gemini)   gemini -p "$as_role" ;;
-    qwen)     qwen --approval-mode auto "$as_role" ;;
-    grok)     grok -p "$as_role" --permission-mode auto ;;
-    opencode) opencode run "$as_role" ;;
-    # --force lets print mode write files (the brief); deny rules are the guardrail.
-    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force "$as_role" ;;
-    # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
-    # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
-    custom)
-      [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
-      CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD" ;;
-    *) echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2 ;;
-  esac
-}
-
 # The agent runs in its own process group, so a run past its limit is stopped with
 # everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
 # Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no

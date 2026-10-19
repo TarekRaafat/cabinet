@@ -15,10 +15,11 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 - [cabinet list](#cabinet-list)
 - [cabinet digest](#cabinet-digest)
 - [cabinet config](#cabinet-config)
+- [cabinet role](#cabinet-role)
 - [cabinet remove](#cabinet-remove)
 - [cabinet update](#cabinet-update), [cabinet status](#cabinet-status), [cabinet outdated](#cabinet-outdated), [cabinet changelog](#cabinet-changelog), [cabinet completion](#cabinet-completion), [cabinet version](#cabinet-version)
 - [Which copy of cabinet runs](#which-copy-of-cabinet-runs)
-- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, handoff, archive-handoffs, secrets, roles, scheduled, backup, restore, snapshot, move
+- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, handoff, archive-handoffs, secrets, roles, role, scheduled, backup, restore, snapshot, move
 - [Output for agents and scripts](#output-for-agents-and-scripts): `--json`
 - [Files you can edit](#files-you-can-edit): `cabinet.env`, `jobs/<job>.job`, `cabinet.local.env`, `repos.tsv`
 - [Environment variables](#environment-variables)
@@ -38,7 +39,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--name "Name"` | the folder name | The project's display name. |
 | `--slug <slug>` | the folder name, made lowercase with dashes | Lowercase letters, digits and dashes. Refused when another workspace on this Mac holds it. |
 | `--owner "Name"`, `--email you@example.com` | `git config --global user.name` / `user.email` | The commit author written into `AGENTS.md`. With no identity, setup does not commit. |
-| `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. |
+| `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. The optional kit roles `brand-designer`, `dba`, `code-reviewer` and `auditor` are off unless named. Builders are never listed here: they come with the repos they own. |
 | `--runner <tool>` | the first installed of `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
@@ -153,6 +154,19 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 
 Roles the project defines itself (`roles/<role>.md` with frontmatter) are accepted and asked about. Layout and visibility (inside, beside, private, shared) are not changed by `config`. When nothing changes, it prints `Nothing to change.` and writes nothing.
 
+## cabinet role
+
+```sh
+cabinet role new <name> [--does "..."] [--owns "..."] [--decides "..."] [--escalates "..."] [--draft] [--yes]
+cabinet role draft <name>
+```
+
+`new` adds a role of the project's own from as little as its name (lowercase letters, digits and dashes, not a kit role's or builder's name). In a terminal with no option given, it asks what the role should do, what it owns, what it may decide on its own and what it must bring to you; Enter skips any of them; `--does`, `--owns`, `--decides` and `--escalates` give those answers instead. It writes `roles/<name>.md` with your answers word for word under "The owner's brief" (`not said yet` for the rest) and a `TBD` description, then turns the role on through `cabinet config --roles`, which adds its rows to the team tables and builds it. The new role does only what the brief asks until it is drafted. `--draft`, or yes to the question that follows in a terminal, drafts it at once; `--yes` asks nothing.
+
+`draft` has an agent write the whole role for this project, as `CABINET.md`, "Drafting a role", says: it keeps your brief, learns the rest from the project, writes the role, lists what it assumed for you to confirm, fills the team table rows and commits. It runs `bin/role.sh <name>` with the configured agent tool as chief-of-staff (a few minutes; it may cost money), logging to `~/Library/Logs/cabinet/<slug>/role-<name>.log`. In an agent session, asking the agent to draft the role does the same. Add to the brief at any time and draft again.
+
+Exit 0, or 1 when the name is taken or not valid, the role could not be added, or the draft did not finish.
+
 ## cabinet remove
 
 ```sh
@@ -242,6 +256,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `cabinet archive` | `bin/archive-handoffs.sh` |
 | `cabinet secrets` | `bin/secrets.sh` |
 | `cabinet roles` | `bin/roles.sh` |
+| `cabinet role draft` | `bin/role.sh` |
 | `cabinet backup` | `bin/backup.sh` |
 | `cabinet restore` | `bin/restore.sh` (outside any workspace, the installed kit's copy: a new Mac has no workspace yet) |
 | `cabinet snapshot` | `bin/snapshot.sh` |
@@ -255,6 +270,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"` | Files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs. | 0, 1 when the commit failed (the entry is written) or `HANDOFFS.md` has no "## Open" heading, 2 for a missing value or unknown option |
 | `bin/archive-handoffs.sh` | Moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move. | 0, or 1 when `HANDOFFS.md` has uncommitted lines |
 | `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's own files (tracked, and new files git does not ignore; not the product repos, which have their own git): private key blocks; AWS, GitHub, Slack, Stripe live, Anthropic, OpenAI, Google API and npm keys; and lines that set a password, secret, token or API key to a value that is not a placeholder (`<...>`) or a variable (`$X`). It prints each file and line with the kind of secret, never the value. A false alarm: add `not-a-secret` anywhere on its line. `--staged` checks only the lines staged for the next commit; the workspace's pre-commit hook runs it ([guardrails](guardrails.md#what-bootstrap-installs)). | 0, or 1 when something is found (with `--staged`, the commit is refused) |
+| `bin/role.sh <role>` | Drafts a role the project added (`roles/<role>.md`) with the configured agent tool, as chief-of-staff ([cabinet role](#cabinet-role)). | 0, 1 when the draft did not finish or left the role undrafted, 2 for a role that does not exist or is a kit role's notes |
 | `bin/roles.sh [--check]` | Builds `agents/<role>.md` and `.claude/agents/<role>.md` (and, inside a project, the project's `.claude/agents/` and pointer files). `--check` only reports. | 0, or 1 when a role is missing or out of date |
 | `bin/scheduled.sh <job>` | Runs `jobs/<job>.job` now with the configured runner, logging to `~/Library/Logs/cabinet/<slug>/<job>.log`. | 0, 1 when the run failed, 2 for an unknown or incomplete job |
 | `bin/backup.sh [--verify] [folder]` | One encrypted backup now ([backups](backups.md)). Default folder: `CABINET_BACKUP_DIR`. `--verify` writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). | 0, 1 with no passphrase (or, with `--verify`, no archive or a problem found), 2 for a missing, relative or inside folder, or a keep count under 1 |

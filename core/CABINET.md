@@ -91,7 +91,7 @@ Keep each item short.
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
-**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff (and design-lead for UI changes, when enabled). A qa or security BLOCK holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
+**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
 
 ## Seats
 
@@ -107,7 +107,7 @@ A seat is an agent or a person; the rules are the same for both.
 **Onboarding.** The lead the seat reports to owns its onboarding and first month; security sets up and limits its access to what the seat needs; chief-of-staff tracks each new seat through its checklist in the brief until the one-month review.
 
 Agent seat:
-1. Definition and limits written: what it owns, decides, escalates and may write.
+1. Definition and limits written: what it owns, decides, escalates and may write. A kit role may already fit (`cabinet config --roles`, including the optional brand-designer, dba, code-reviewer and auditor); otherwise `cabinet role new <role>` creates and registers it, and it is drafted as "Drafting a role" says.
 2. Registered: `roles/<role>.md` (and the role name in `CABINET_ROLES`, then `bin/roles.sh`), the team table in `AGENTS.md`, and `OPERATIONS.md`.
 3. Access limited to its own files and repos (security).
 4. The push and publish guardrails confirmed for the tool it runs in (`bin/doctor.sh`, "Push guardrails").
@@ -120,6 +120,19 @@ Person:
 2. The push and publish rules below, the brand guide, and the house rules in `AGENTS.md`.
 3. Their lead as manager; a first task, reviewed by the lead; the lead's corrections recorded in their role notes.
 4. Review after a month: keep, change or retire.
+
+### Drafting a role
+
+A role the owner adds (`cabinet role new <role>`) starts as `roles/<role>.md` with the owner's brief: as much or as little as the owner knew, even only its name. Drafting turns it into a whole role, tailored to this project, without asking the owner for what the project already shows. The agent that drafts it (chief-of-staff through `cabinet role draft <role>`, or the agent the owner asks):
+
+1. **Starts from the owner's brief,** the "The owner's brief" section, and keeps it word for word. What it says wins over everything below.
+2. **Learns the project first:** `AGENTS.md` (what the project is, its product rules, the team table, the guides), `specs/ROADMAP.md` and the specs, `notes/`, each repo's `README` and `AGENTS.md`, and the roles already on the team in `agents/`.
+3. **Writes the role a strong specialist in it would hold on this product,** in the format of the kit's roles (`.cabinet/roles/`): frontmatter (`name`; `description` saying what it does and when to use it; `tools`), "Read `CABINET.md`, then `AGENTS.md`", then what it owns (paths, repos, areas), what it decides alone (tiers 1 and 2), what it brings to the owner (tier 3), how its work is checked and by whom, what it may write, where its work ends and each neighbouring role's begins, and the line every reply ends with.
+4. **Never widens the kit's limits:** no push, merge, deploy, publish or spend, tier 3 to the owner, and the builder never verifies its own work.
+5. **Lists every choice the brief did not make** under "## Assumed, for the owner to confirm", one plain line each. chief-of-staff carries them in the sign-off queue; once the owner answers, each line moves into the role (or out of it).
+6. **Fills the role's rows** in the team tables of `AGENTS.md` (what it owns) and `OPERATIONS.md` (what it does), runs `bin/roles.sh`, and commits those files alone (`roles: draft <role>`).
+
+The owner can add to the brief at any time and redraft (`cabinet role draft <role>`); a redraft keeps what the owner has confirmed.
 
 ## The owner's manual
 

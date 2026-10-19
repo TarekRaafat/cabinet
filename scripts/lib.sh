@@ -35,6 +35,29 @@ K="$WS/.cabinet"                                   # kit-managed files
 LABEL="ai.cabinet.$CABINET_SLUG"                   # launchd labels: $LABEL.<job>
 LOGDIR="$HOME/Library/Logs/cabinet/$CABINET_SLUG"
 KEYCHAIN_ITEM="cabinet.$CABINET_SLUG.backup"
+# Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
+# scheduled jobs and role drafts.
+run_agent() {
+  # Tools without cabinet's named agents get the role file as their first instruction.
+  local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
+  case "$CABINET_RUNNER" in
+    claude)   claude -p --agent "$AGENT" --permission-mode auto "$PROMPT" ;;
+    codex)    codex exec "$as_role" ;;
+    gemini)   gemini -p "$as_role" ;;
+    qwen)     qwen --approval-mode auto "$as_role" ;;
+    grok)     grok -p "$as_role" --permission-mode auto ;;
+    opencode) opencode run "$as_role" ;;
+    # --force lets print mode write files (the brief); deny rules are the guardrail.
+    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force "$as_role" ;;
+    # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
+    # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
+    custom)
+      [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
+      CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD" ;;
+    *) echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2 ;;
+  esac
+}
+
 # Claude Code keeps per-folder memory under the folder's path with every non-alphanumeric as "-".
 # One dash per character, whatever the locale (launchd runs without one).
 claude_slug() { perl -CSA -e '$_ = shift; s/[^A-Za-z0-9]/-/g; print' "$1"; }

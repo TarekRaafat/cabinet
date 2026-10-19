@@ -22,6 +22,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX kit files edited here (an update will refuse them; move the change to a project file or into the kit): <...>` | `kit.unedited` | A file the kit owns (`CABINET.md`, `bin/`, `.cabinet/`) was changed in the workspace. | Move your change to a project file (`AGENTS.md`, `roles/`, `jobs/`), then `git checkout -- <file>`. |
 | `FIX workspace CLAUDE.md link missing (run bin/bootstrap.sh)` | `kit.claude-link` | The workspace's `CLAUDE.md` link to `AGENTS.md` is gone. | `bin/bootstrap.sh`. |
 | `FIX HANDOFFS.md missing` | `kit.handoffs-file` | The handoff log was deleted. | Restore it from git. |
+| `note the <...> role is not drafted yet (cabinet role draft <...>, or ask your agent to draft the <...> role)` | `roles.drafted` | `cabinet role new` made the role from your brief, and no agent has drafted it yet. Until then it does only what the brief asks. | `cabinet role draft <role>`, or ask your agent to draft it ([recipes](recipes.md#add-a-role)). |
 | `FIX <...> (run bin/roles.sh)` | `kit.roles` | A built role is missing or out of date (for example after editing `roles/` or `CABINET_ROLES`). | `bin/roles.sh`. |
 
 ## Push guardrails

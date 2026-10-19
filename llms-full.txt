@@ -17,7 +17,7 @@ File: README.md
 
 Run a product with a team of AI agents and one owner who signs off.
 
-cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, and builders that write the code in each repo the way it is already built), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
 
 - **Platform:** macOS. Linux and Windows (through WSL) are on the [roadmap](ROADMAP.md).
 - **Status:** version 0.1.0, not yet published to npm. Until it is, install from a clone (see [Install](#install)).
@@ -340,7 +340,7 @@ Short answers to common tasks. Every command runs from anywhere inside the works
 ## Contents
 
 - [Add your own rules, guidelines and business documents](#add-your-own-rules-guidelines-and-business-documents)
-- [Add a role the kit does not have](#add-a-role-the-kit-does-not-have)
+- [Add a role](#add-a-role)
 - [Turn a role off, or back on](#turn-a-role-off-or-back-on)
 - [Give a kit role project notes](#give-a-kit-role-project-notes)
 - [Add a scheduled job](#add-a-scheduled-job)
@@ -387,25 +387,39 @@ Pick the place by what it is:
 
 **Folders:** the workspace's git tracks only the folders its `.gitignore` lists (`guides/`, `notes/`, `specs/`, `roles/` and the rest). A new top-level folder of your own is not committed until you add a `!/<folder>/` line to `.gitignore`; prefer `guides/` for documents agents follow.
 
-## Add a role the kit does not have
+## Add a role
 
-1. Write `roles/<role>.md` with frontmatter, like the kit's roles in `.cabinet/roles/`:
+First, check whether a kit role fits. Besides the seven on by default and the four builders, the kit has four optional roles, off until you turn them on:
 
-   ```markdown
-   ---
-   name: growth
-   description: Growth lead. Owns launch posts and the weekly numbers; escalates spend and public copy to the owner.
-   tools: Read, Grep, Glob, Edit, Write
-   ---
+| Role | For |
+|---|---|
+| brand-designer | logos, graphics and templates inside the brand, and a draft brand guide for you to decide |
+| dba | reviewing every migration, database performance, backups and access plans |
+| code-reviewer | reviewing each change's code before a push (PASS or CHANGES) |
+| auditor | audits of dependencies, access, personal data and configuration |
 
-   # growth
+Turn one on with the other roles you keep: `cabinet config --roles "qa security dba"`.
 
-   What it owns, decides, escalates and may write.
-   ```
+For anything else, make a role of the project's own. You need only its name:
 
-2. Turn it on, with the other roles you keep: `cabinet config --roles "qa security growth"`. This builds it into `agents/` and `.claude/agents/` and adds a `TBD` row to the team tables in `AGENTS.md` and `OPERATIONS.md`. Fill that row.
+```sh
+cabinet role new brand-strategist
+```
 
-A new role is the owner's decision (`CABINET.md`, "Seats").
+In a terminal it asks four questions: what it should do, what it owns, what it may decide on its own, and what it must bring to you. Answer what you know and press Enter for the rest; `--does`, `--owns`, `--decides` and `--escalates` give the answers as options, and `--yes` asks nothing. It writes `roles/<role>.md` with your words under "The owner's brief", turns the role on, adds its rows to the team tables, and builds it.
+
+Then have it drafted, in one of two ways:
+
+- **In your agent session:** "draft the brand-strategist role". Any agent tool follows `CABINET.md`, "Drafting a role".
+- **From the terminal:** `cabinet role draft brand-strategist` (or `--draft` on `role new`) runs your configured agent tool as chief-of-staff. It may cost money.
+
+The draft starts from your brief, which wins, and learns the rest from the project: `AGENTS.md`, the specs and roadmap, the notes, the repos and the roles already on the team. It writes the role a strong specialist would hold on this product: what it owns, decides, brings to you, how its work is checked, and where it stops and its neighbours start. Every choice your brief did not make is listed under "Assumed, for the owner to confirm", and chief-of-staff puts those in your sign-off queue until you answer.
+
+Know more later? Add it to "The owner's brief" in `roles/<role>.md` and run `cabinet role draft <role>` again. Until a role is drafted, the doctor reminds you, and the role does only what your brief asks.
+
+By hand instead: write `roles/<role>.md` with frontmatter (`name`, `description`, `tools`) like the kit's roles in `.cabinet/roles/`, then `cabinet config --roles "<the roles you keep> <role>"`.
+
+A new role is your decision (`CABINET.md`, "Seats").
 
 ## Turn a role off, or back on
 
@@ -526,10 +540,11 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 - [cabinet list](#cabinet-list)
 - [cabinet digest](#cabinet-digest)
 - [cabinet config](#cabinet-config)
+- [cabinet role](#cabinet-role)
 - [cabinet remove](#cabinet-remove)
 - [cabinet update](#cabinet-update), [cabinet status](#cabinet-status), [cabinet outdated](#cabinet-outdated), [cabinet changelog](#cabinet-changelog), [cabinet completion](#cabinet-completion), [cabinet version](#cabinet-version)
 - [Which copy of cabinet runs](#which-copy-of-cabinet-runs)
-- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, handoff, archive-handoffs, secrets, roles, scheduled, backup, restore, snapshot, move
+- [Workspace scripts](#workspace-scripts): bootstrap, doctor, handoffs, handoff, archive-handoffs, secrets, roles, role, scheduled, backup, restore, snapshot, move
 - [Output for agents and scripts](#output-for-agents-and-scripts): `--json`
 - [Files you can edit](#files-you-can-edit): `cabinet.env`, `jobs/<job>.job`, `cabinet.local.env`, `repos.tsv`
 - [Environment variables](#environment-variables)
@@ -549,7 +564,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--name "Name"` | the folder name | The project's display name. |
 | `--slug <slug>` | the folder name, made lowercase with dashes | Lowercase letters, digits and dashes. Refused when another workspace on this Mac holds it. |
 | `--owner "Name"`, `--email you@example.com` | `git config --global user.name` / `user.email` | The commit author written into `AGENTS.md`. With no identity, setup does not commit. |
-| `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. |
+| `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. The optional kit roles `brand-designer`, `dba`, `code-reviewer` and `auditor` are off unless named. Builders are never listed here: they come with the repos they own. |
 | `--runner <tool>` | the first installed of `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
@@ -664,6 +679,19 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 
 Roles the project defines itself (`roles/<role>.md` with frontmatter) are accepted and asked about. Layout and visibility (inside, beside, private, shared) are not changed by `config`. When nothing changes, it prints `Nothing to change.` and writes nothing.
 
+## cabinet role
+
+```sh
+cabinet role new <name> [--does "..."] [--owns "..."] [--decides "..."] [--escalates "..."] [--draft] [--yes]
+cabinet role draft <name>
+```
+
+`new` adds a role of the project's own from as little as its name (lowercase letters, digits and dashes, not a kit role's or builder's name). In a terminal with no option given, it asks what the role should do, what it owns, what it may decide on its own and what it must bring to you; Enter skips any of them; `--does`, `--owns`, `--decides` and `--escalates` give those answers instead. It writes `roles/<name>.md` with your answers word for word under "The owner's brief" (`not said yet` for the rest) and a `TBD` description, then turns the role on through `cabinet config --roles`, which adds its rows to the team tables and builds it. The new role does only what the brief asks until it is drafted. `--draft`, or yes to the question that follows in a terminal, drafts it at once; `--yes` asks nothing.
+
+`draft` has an agent write the whole role for this project, as `CABINET.md`, "Drafting a role", says: it keeps your brief, learns the rest from the project, writes the role, lists what it assumed for you to confirm, fills the team table rows and commits. It runs `bin/role.sh <name>` with the configured agent tool as chief-of-staff (a few minutes; it may cost money), logging to `~/Library/Logs/cabinet/<slug>/role-<name>.log`. In an agent session, asking the agent to draft the role does the same. Add to the brief at any time and draft again.
+
+Exit 0, or 1 when the name is taken or not valid, the role could not be added, or the draft did not finish.
+
 ## cabinet remove
 
 ```sh
@@ -753,6 +781,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `cabinet archive` | `bin/archive-handoffs.sh` |
 | `cabinet secrets` | `bin/secrets.sh` |
 | `cabinet roles` | `bin/roles.sh` |
+| `cabinet role draft` | `bin/role.sh` |
 | `cabinet backup` | `bin/backup.sh` |
 | `cabinet restore` | `bin/restore.sh` (outside any workspace, the installed kit's copy: a new Mac has no workspace yet) |
 | `cabinet snapshot` | `bin/snapshot.sh` |
@@ -766,6 +795,7 @@ All of them read `cabinet.env`. Run each as its `cabinet` command from anywhere 
 | `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] "<title>"` | Files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs. | 0, 1 when the commit failed (the entry is written) or `HANDOFFS.md` has no "## Open" heading, 2 for a missing value or unknown option |
 | `bin/archive-handoffs.sh` | Moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move. | 0, or 1 when `HANDOFFS.md` has uncommitted lines |
 | `bin/secrets.sh [--staged]` | Looks for keys, tokens and passwords in the workspace's own files (tracked, and new files git does not ignore; not the product repos, which have their own git): private key blocks; AWS, GitHub, Slack, Stripe live, Anthropic, OpenAI, Google API and npm keys; and lines that set a password, secret, token or API key to a value that is not a placeholder (`<...>`) or a variable (`$X`). It prints each file and line with the kind of secret, never the value. A false alarm: add `not-a-secret` anywhere on its line. `--staged` checks only the lines staged for the next commit; the workspace's pre-commit hook runs it ([guardrails](guardrails.md#what-bootstrap-installs)). | 0, or 1 when something is found (with `--staged`, the commit is refused) |
+| `bin/role.sh <role>` | Drafts a role the project added (`roles/<role>.md`) with the configured agent tool, as chief-of-staff ([cabinet role](#cabinet-role)). | 0, 1 when the draft did not finish or left the role undrafted, 2 for a role that does not exist or is a kit role's notes |
 | `bin/roles.sh [--check]` | Builds `agents/<role>.md` and `.claude/agents/<role>.md` (and, inside a project, the project's `.claude/agents/` and pointer files). `--check` only reports. | 0, or 1 when a role is missing or out of date |
 | `bin/scheduled.sh <job>` | Runs `jobs/<job>.job` now with the configured runner, logging to `~/Library/Logs/cabinet/<slug>/<job>.log`. | 0, 1 when the run failed, 2 for an unknown or incomplete job |
 | `bin/backup.sh [--verify] [folder]` | One encrypted backup now ([backups](backups.md)). Default folder: `CABINET_BACKUP_DIR`. `--verify` writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). | 0, 1 with no passphrase (or, with `--verify`, no archive or a problem found), 2 for a missing, relative or inside folder, or a keep count under 1 |
@@ -950,9 +980,13 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 | security | security and privacy review of unpushed work | PASS or BLOCK | legal and disclosure questions |
 | design-lead | UX and visual consistency inside the brand guide | layout and interaction choices | any brand change |
 | finance | cost and pricing models | how to model | every price, plan and spend |
+| brand-designer (optional) | brand files and the graphics made from them | choices inside the approved brand | any change to the brand, licenses |
+| dba (optional) | database health; reviews migrations | PASS or BLOCK on data changes | anything run on a live database |
+| code-reviewer (optional) | code review of each change | PASS or CHANGES | overrides of CHANGES |
+| auditor (optional) | audits of what is in place | severity of findings | critical findings |
 | backend, web, mobile, infrastructure | the product repos the team table assigns each (the builders) | how to build inside a repo, following its own conventions | changes to a repo's stack or tools; applying infrastructure |
 
-Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`), adds notes to one in `roles/<role>.md`, or defines its own role there.
+Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role new <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
 
 **Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/roles.sh`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
@@ -992,7 +1026,7 @@ The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifi
 
 ## The builder never verifies
 
-Work is ready for you to push only when qa and security have each recorded PASS on its handoff (and design-lead for UI work). A BLOCK holds the push until it is fixed or you override it.
+Work is ready for you to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer you enabled whose subject it touches (design-lead for anything people see, code-reviewer for code, dba for the database). A BLOCK, or a code-reviewer's CHANGES, holds the push until it is fixed or you override it.
 
 ## Seats
 
@@ -1193,6 +1227,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX kit files edited here (an update will refuse them; move the change to a project file or into the kit): <...>` | `kit.unedited` | A file the kit owns (`CABINET.md`, `bin/`, `.cabinet/`) was changed in the workspace. | Move your change to a project file (`AGENTS.md`, `roles/`, `jobs/`), then `git checkout -- <file>`. |
 | `FIX workspace CLAUDE.md link missing (run bin/bootstrap.sh)` | `kit.claude-link` | The workspace's `CLAUDE.md` link to `AGENTS.md` is gone. | `bin/bootstrap.sh`. |
 | `FIX HANDOFFS.md missing` | `kit.handoffs-file` | The handoff log was deleted. | Restore it from git. |
+| `note the <...> role is not drafted yet (cabinet role draft <...>, or ask your agent to draft the <...> role)` | `roles.drafted` | `cabinet role new` made the role from your brief, and no agent has drafted it yet. Until then it does only what the brief asks. | `cabinet role draft <role>`, or ask your agent to draft it ([recipes](recipes.md#add-a-role)). |
 | `FIX <...> (run bin/roles.sh)` | `kit.roles` | A built role is missing or out of date (for example after editing `roles/` or `CABINET_ROLES`). | `bin/roles.sh`. |
 
 ## Push guardrails
@@ -1388,7 +1423,7 @@ Keep each item short.
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
-**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff (and design-lead for UI changes, when enabled). A qa or security BLOCK holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
+**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
 
 ## Seats
 
@@ -1404,7 +1439,7 @@ A seat is an agent or a person; the rules are the same for both.
 **Onboarding.** The lead the seat reports to owns its onboarding and first month; security sets up and limits its access to what the seat needs; chief-of-staff tracks each new seat through its checklist in the brief until the one-month review.
 
 Agent seat:
-1. Definition and limits written: what it owns, decides, escalates and may write.
+1. Definition and limits written: what it owns, decides, escalates and may write. A kit role may already fit (`cabinet config --roles`, including the optional brand-designer, dba, code-reviewer and auditor); otherwise `cabinet role new <role>` creates and registers it, and it is drafted as "Drafting a role" says.
 2. Registered: `roles/<role>.md` (and the role name in `CABINET_ROLES`, then `bin/roles.sh`), the team table in `AGENTS.md`, and `OPERATIONS.md`.
 3. Access limited to its own files and repos (security).
 4. The push and publish guardrails confirmed for the tool it runs in (`bin/doctor.sh`, "Push guardrails").
@@ -1417,6 +1452,19 @@ Person:
 2. The push and publish rules below, the brand guide, and the house rules in `AGENTS.md`.
 3. Their lead as manager; a first task, reviewed by the lead; the lead's corrections recorded in their role notes.
 4. Review after a month: keep, change or retire.
+
+### Drafting a role
+
+A role the owner adds (`cabinet role new <role>`) starts as `roles/<role>.md` with the owner's brief: as much or as little as the owner knew, even only its name. Drafting turns it into a whole role, tailored to this project, without asking the owner for what the project already shows. The agent that drafts it (chief-of-staff through `cabinet role draft <role>`, or the agent the owner asks):
+
+1. **Starts from the owner's brief,** the "The owner's brief" section, and keeps it word for word. What it says wins over everything below.
+2. **Learns the project first:** `AGENTS.md` (what the project is, its product rules, the team table, the guides), `specs/ROADMAP.md` and the specs, `notes/`, each repo's `README` and `AGENTS.md`, and the roles already on the team in `agents/`.
+3. **Writes the role a strong specialist in it would hold on this product,** in the format of the kit's roles (`.cabinet/roles/`): frontmatter (`name`; `description` saying what it does and when to use it; `tools`), "Read `CABINET.md`, then `AGENTS.md`", then what it owns (paths, repos, areas), what it decides alone (tiers 1 and 2), what it brings to the owner (tier 3), how its work is checked and by whom, what it may write, where its work ends and each neighbouring role's begins, and the line every reply ends with.
+4. **Never widens the kit's limits:** no push, merge, deploy, publish or spend, tier 3 to the owner, and the builder never verifies its own work.
+5. **Lists every choice the brief did not make** under "## Assumed, for the owner to confirm", one plain line each. chief-of-staff carries them in the sign-off queue; once the owner answers, each line moves into the role (or out of it).
+6. **Fills the role's rows** in the team tables of `AGENTS.md` (what it owns) and `OPERATIONS.md` (what it does), runs `bin/roles.sh`, and commits those files alone (`roles: draft <role>`).
+
+The owner can add to the brief at any time and redraft (`cabinet role draft <role>`); a redraft keeps what the owner has confirmed.
 
 ## The owner's manual
 
@@ -1576,6 +1624,8 @@ First version.
 
 - Core rules (`CABINET.md`): workspace layout, handoffs, three decision tiers, the sign-off queue, silence, the builder never verifies, seats and onboarding, git and release rules.
 - Roles: chief-of-staff, product-manager, architect, qa, security, design-lead, finance. Project notes and project-only roles through `roles/`.
+- Optional kit roles, off until turned on with `cabinet config --roles`: `brand-designer` (brand files and graphics), `dba` (migration reviews, database health), `code-reviewer` (PASS or CHANGES on each change's code) and `auditor` (dependencies, access, personal data, configuration). A reviewer the project enabled must pass the changes in its subject before a push.
+- `cabinet role new <name>` adds a role of the project's own from as little as its name, asking (or taking as options) what it does, owns, decides and escalates; `cabinet role draft <name>` (`bin/role.sh`), or asking an agent, drafts the whole role for the project as `CABINET.md`, "Drafting a role", says, with its assumptions listed for the owner to confirm. The doctor notes a role not drafted yet (`roles.drafted`).
 - Builders: `backend`, `web`, `mobile` and `infrastructure` write the product's code. Each is built when it owns a repo in the team table of `AGENTS.md`; `bin/bootstrap.sh` gives a repo whose owner is `TBD` the builder it most looks like when the repo first arrives. A builder learns how its repo is already built and follows it, tests every change, commits locally and hands finished work to qa (`CABINET.md`, "Builders").
 - `guides/` for the project's standing documents (brand, style, policies, business documents), listed in a "Guides" table in `AGENTS.md` that every agent reads; `CABINET.md` ranks guides with `AGENTS.md`, and `bin/doctor.sh` reports a guide with no row and a row with no file. A recipe and a concepts section say where each kind of rule goes and which wins.
 

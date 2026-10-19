@@ -64,6 +64,11 @@ done < "$K/manifest"
 ((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
+# A role the owner added (cabinet role new) works only once an agent has drafted it.
+for f in "$WS"/roles/*.md; do
+  [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' && grep -q '^description: TBD' "$f" || continue
+  r="$(basename "$f" .md)"; note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"
+done
 out="$("$WS/bin/roles.sh" --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/roles.sh)"
 
 section "Push guardrails"

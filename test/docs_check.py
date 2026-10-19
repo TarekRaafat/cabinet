@@ -24,7 +24,7 @@ for c in sorted(dispatched ^ set(cmds)):
     problems.append(f"bin/cabinet: the command {c} is " + ("dispatched but not in the table" if c in dispatched else "in the table but not dispatched"))
 # Every option a parser accepts is in the table, for that command.
 parsers = {"setup": ["new", "init", "config"], "cmd_config": ["config"], "cmd_next": ["next"], "cmd_remove": ["remove"],
-           "cmd_status": ["status"], "cmd_help": ["help"], "cmd_list": ["list"], "cmd_digest": ["digest"]}
+           "cmd_status": ["status"], "cmd_role": ["role"], "cmd_help": ["help"], "cmd_list": ["list"], "cmd_digest": ["digest"]}
 sources = {fn: cabinet[cabinet.index(fn + "() {"):] for fn in parsers}
 sources["doctor.sh"], parsers["doctor.sh"] = read("scripts/doctor.sh"), ["doctor"]
 sources["handoffs.sh"], parsers["handoffs.sh"] = read("scripts/handoffs.sh"), ["handoffs"]

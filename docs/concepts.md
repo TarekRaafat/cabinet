@@ -15,9 +15,13 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 | security | security and privacy review of unpushed work | PASS or BLOCK | legal and disclosure questions |
 | design-lead | UX and visual consistency inside the brand guide | layout and interaction choices | any brand change |
 | finance | cost and pricing models | how to model | every price, plan and spend |
+| brand-designer (optional) | brand files and the graphics made from them | choices inside the approved brand | any change to the brand, licenses |
+| dba (optional) | database health; reviews migrations | PASS or BLOCK on data changes | anything run on a live database |
+| code-reviewer (optional) | code review of each change | PASS or CHANGES | overrides of CHANGES |
+| auditor (optional) | audits of what is in place | severity of findings | critical findings |
 | backend, web, mobile, infrastructure | the product repos the team table assigns each (the builders) | how to build inside a repo, following its own conventions | changes to a repo's stack or tools; applying infrastructure |
 
-Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`), adds notes to one in `roles/<role>.md`, or defines its own role there.
+Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role new <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
 
 **Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/roles.sh`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
@@ -57,7 +61,7 @@ The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifi
 
 ## The builder never verifies
 
-Work is ready for you to push only when qa and security have each recorded PASS on its handoff (and design-lead for UI work). A BLOCK holds the push until it is fixed or you override it.
+Work is ready for you to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer you enabled whose subject it touches (design-lead for anything people see, code-reviewer for code, dba for the database). A BLOCK, or a code-reviewer's CHANGES, holds the push until it is fixed or you override it.
 
 ## Seats
 

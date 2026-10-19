@@ -24,6 +24,7 @@
 !/guides/
 !/specs/
 !/finance/
+!/brand/
 !/.claude/
 /.claude/*
 !/.claude/agents/

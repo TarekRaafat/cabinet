@@ -15,7 +15,7 @@ You sign off; the team runs the rest. Every decision belongs to one of three tie
 | You | Owner sign-off | Irreversible, public or costs money: pushes, deploys, publishing, prices, spend, brand, positioning, legal, and adding or changing an agent. |
 
 - **One queue.** Everything waiting on you is at the top of `$WS/BRIEF.md`, written by chief-of-staff each morning (`jobs/brief.job`).
-- **Nothing ships unverified.** Work is ready to push only when qa and security have both passed it, and design-lead too for UI.
+- **Nothing ships unverified.** Work is ready to push only when qa and security have both passed it, and every other reviewer you enabled whose subject it touches (design-lead for UI, code-reviewer for code, dba for the database).
 - **Silence.** A reversible item marked "default" may go ahead as local commits after 72 hours. Never a push.
 
 ### The team
@@ -29,6 +29,10 @@ You sign off; the team runs the rest. Every decision belongs to one of three tie
 | qa | Verifies finished work; can block a push |
 | security | Security and privacy review before a push; can block it |
 | finance | Pricing and unit economics; proposes prices, decides none |
+| brand-designer | Logos, graphics and templates inside the brand; drafts the brand guide for you to decide |
+| dba | Reviews every migration; database performance, backups and access plans |
+| code-reviewer | Reviews each change's code before a push; can hold it |
+| auditor | Audits dependencies, access, personal data and configuration; changes nothing |
 
 **Builders.** Each product repo is built by a builder role: backend (servers and APIs), web (what runs in a browser), mobile (iOS and Android apps) or infrastructure (CI, deploys, infrastructure as code; it plans, and applying is yours). `bin/bootstrap.sh` picks one for each repo whose owner is `TBD` in the team table of `AGENTS.md`, from what the repo holds; change the row to choose another, then `bin/roles.sh`. Builders follow the way each repo is already built, commit locally, and hand finished work to qa; they never verify their own work and never push.
 
@@ -66,6 +70,7 @@ git -C <repo> push
 | `bin/handoffs.sh [name]` | Every open handoff with its age; with a repo or role name, every entry addressed to it, in full. |
 | `bin/handoff.sh --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
 | `bin/archive-handoffs.sh` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
+| `bin/role.sh <role>` | Drafts a role you added with `cabinet role new`, from your brief and the project (it runs the agent tool). |
 | `bin/roles.sh [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
 | `bin/scheduled.sh <job>` | Runs a job from `jobs/` now (for example `brief`). |
 | `bin/bootstrap.sh [--dry-run]` | Sets up a machine: clones repos, restores local-only files, installs guardrails and schedules. Safe to rerun. |

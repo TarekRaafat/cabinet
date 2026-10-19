@@ -5,7 +5,7 @@ Short answers to common tasks. Every command runs from anywhere inside the works
 ## Contents
 
 - [Add your own rules, guidelines and business documents](#add-your-own-rules-guidelines-and-business-documents)
-- [Add a role the kit does not have](#add-a-role-the-kit-does-not-have)
+- [Add a role](#add-a-role)
 - [Turn a role off, or back on](#turn-a-role-off-or-back-on)
 - [Give a kit role project notes](#give-a-kit-role-project-notes)
 - [Add a scheduled job](#add-a-scheduled-job)
@@ -52,25 +52,39 @@ Pick the place by what it is:
 
 **Folders:** the workspace's git tracks only the folders its `.gitignore` lists (`guides/`, `notes/`, `specs/`, `roles/` and the rest). A new top-level folder of your own is not committed until you add a `!/<folder>/` line to `.gitignore`; prefer `guides/` for documents agents follow.
 
-## Add a role the kit does not have
+## Add a role
 
-1. Write `roles/<role>.md` with frontmatter, like the kit's roles in `.cabinet/roles/`:
+First, check whether a kit role fits. Besides the seven on by default and the four builders, the kit has four optional roles, off until you turn them on:
 
-   ```markdown
-   ---
-   name: growth
-   description: Growth lead. Owns launch posts and the weekly numbers; escalates spend and public copy to the owner.
-   tools: Read, Grep, Glob, Edit, Write
-   ---
+| Role | For |
+|---|---|
+| brand-designer | logos, graphics and templates inside the brand, and a draft brand guide for you to decide |
+| dba | reviewing every migration, database performance, backups and access plans |
+| code-reviewer | reviewing each change's code before a push (PASS or CHANGES) |
+| auditor | audits of dependencies, access, personal data and configuration |
 
-   # growth
+Turn one on with the other roles you keep: `cabinet config --roles "qa security dba"`.
 
-   What it owns, decides, escalates and may write.
-   ```
+For anything else, make a role of the project's own. You need only its name:
 
-2. Turn it on, with the other roles you keep: `cabinet config --roles "qa security growth"`. This builds it into `agents/` and `.claude/agents/` and adds a `TBD` row to the team tables in `AGENTS.md` and `OPERATIONS.md`. Fill that row.
+```sh
+cabinet role new brand-strategist
+```
 
-A new role is the owner's decision (`CABINET.md`, "Seats").
+In a terminal it asks four questions: what it should do, what it owns, what it may decide on its own, and what it must bring to you. Answer what you know and press Enter for the rest; `--does`, `--owns`, `--decides` and `--escalates` give the answers as options, and `--yes` asks nothing. It writes `roles/<role>.md` with your words under "The owner's brief", turns the role on, adds its rows to the team tables, and builds it.
+
+Then have it drafted, in one of two ways:
+
+- **In your agent session:** "draft the brand-strategist role". Any agent tool follows `CABINET.md`, "Drafting a role".
+- **From the terminal:** `cabinet role draft brand-strategist` (or `--draft` on `role new`) runs your configured agent tool as chief-of-staff. It may cost money.
+
+The draft starts from your brief, which wins, and learns the rest from the project: `AGENTS.md`, the specs and roadmap, the notes, the repos and the roles already on the team. It writes the role a strong specialist would hold on this product: what it owns, decides, brings to you, how its work is checked, and where it stops and its neighbours start. Every choice your brief did not make is listed under "Assumed, for the owner to confirm", and chief-of-staff puts those in your sign-off queue until you answer.
+
+Know more later? Add it to "The owner's brief" in `roles/<role>.md` and run `cabinet role draft <role>` again. Until a role is drafted, the doctor reminds you, and the role does only what your brief asks.
+
+By hand instead: write `roles/<role>.md` with frontmatter (`name`, `description`, `tools`) like the kit's roles in `.cabinet/roles/`, then `cabinet config --roles "<the roles you keep> <role>"`.
+
+A new role is your decision (`CABINET.md`, "Seats").
 
 ## Turn a role off, or back on
 

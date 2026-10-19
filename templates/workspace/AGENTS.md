@@ -19,6 +19,10 @@ Each agent owns its repos end to end, documentation included. No agent writes to
 | `specs/security/` | Security and privacy review, PASS or BLOCK | security |
 | `specs/design/` | UX and visual consistency inside the brand guide | design-lead |
 | `finance/` | Pricing and unit economics; decides no price | finance |
+| `brand/` | The brand identity's files and the graphics made from it | brand-designer |
+| `specs/db/` | The databases' health: migration reviews, performance, backups and access plans | dba |
+| `specs/reviews/` | Code review of each change, PASS or CHANGES | code-reviewer |
+| `specs/audits/` | Audits of what is in place: dependencies, access, personal data, configuration | auditor |
 
 Add one row per product repo (and list it in `repos.tsv`). A repo whose owning agent is `TBD` gets a builder (`backend`, `web`, `mobile` or `infrastructure`, by what the repo holds) from `bin/bootstrap.sh` when it first arrives; change it to another builder, a project role, or `owner` for a repo only you change. Remove the rows of roles this project does not enable in `cabinet.env`.
 
