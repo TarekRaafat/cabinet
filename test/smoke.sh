@@ -1240,6 +1240,53 @@ sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="a week"/' "$Q/jobs/brief.job"; st=0; r >/dev/
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "spend: what agent runs cost this week, and a budget the doctor warns about" ""
+s46() {
+"$F" new "$T/spend" --yes >/dev/null
+S="$T/spend"
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$S/jobs/brief.job"; git -C "$S" commit -qam "run every time"
+# A fake claude that answers as claude -p --output-format json does, at $1.50 a run.
+mkdir -p "$T/fakeclaude"
+printf '#!/bin/sh\necho "$*" >> "%s"\nprintf %s > BRIEF.md\nprintf %s\n' "$T/claude.args" "'# Brief\n'" \
+  "'{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"brief written\",\"total_cost_usd\":1.5}'" > "$T/fakeclaude/claude"
+chmod +x "$T/fakeclaude/claude"
+r() { PATH="$T/fakeclaude:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; }
+dr() { "$S/bin/doctor.sh" --json | jq -r '.results[] | select(.id == "spend.budget") | "\(.level) \(.message)"'; }
+r || fail "a run with the claude runner failed"
+grep -q -- '--output-format json' "$T/claude.args" || fail "claude not asked for JSON"
+grep -qx 'brief written' "$HOME/$LOGS/spend/brief.log" || fail "the reply did not reach the log"
+grep -q 'cost \$1.50, as claude reports it; this week \$1.50$' "$HOME/$LOGS/spend/brief.log" || fail "the run's cost is not in the log"
+"$S/bin/job.sh" list | grep -E '^brief .* \$1\.50$' >/dev/null || fail "job list does not show the job's cost"
+"$S/bin/job.sh" list | grep -q 'This week: \$1.50 in all, as claude reports it, no budget set' || fail "job list total"
+"$S/bin/job.sh" list --json | jq -e '.[0].cost_this_week_usd == 1.5' >/dev/null || fail "job list --json cost"
+dr | grep -q '^ok agent runs cost \$1.50 this week, as claude reports it; no budget set' || fail "doctor without a budget"
+# Runs from before this week do not count.
+printf '%s\tbrief\tclaude\t9\n' "$(( $(bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$S") - 1 ))" >> "$HOME/$LOGS/spend/spend.tsv"
+dr | grep -q 'cost \$1.50 this week' || fail "a run from last week was counted"
+# The week starts on the day AGENTS.md names: today, so it began at midnight.
+sedi "s/^- \*\*Week starts on:\*\* [A-Za-z]*\./- **Week starts on:** $(LC_ALL=C date +%A)./" "$S/AGENTS.md"
+ws="$(bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$S")"; now="$(date +%s)"
+(( now - ws >= 0 && now - ws < 86400 )) && [[ "$(pf epoch_date "$ws" +%H%M%S)" == 000000 ]] || fail "the week does not start today at midnight"
+git -C "$S" checkout -q -- AGENTS.md
+# A budget: warned from 80%, and when passed.
+(cd "$S" && "$F" config --yes --budget 1.8) >/dev/null || fail "config --budget"
+grep -qx 'CABINET_BUDGET="1.8"' "$S/cabinet.env" || fail "budget not written"
+dr | grep -q '^fix agent runs cost \$1.50 this week, 83% of the \$1.8 budget' || fail "no warning at 83%"
+git -C "$S" commit -qam budget; r
+dr | grep -q '^fix agent runs cost \$3.00 this week, over the \$1.8 budget' || fail "no warning over the budget"
+grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" || fail "the log does not name the budget"
+(cd "$S" && "$F" config --yes --budget 20) >/dev/null; dr | grep -q '^ok agent runs cost \$3.00 this week, 15% of the \$20 budget' || fail "under the budget"
+(cd "$S" && "$F" config --yes --budget 1.234) >/dev/null 2>&1 && fail "a budget with three decimals accepted"
+(cd "$S" && "$F" config --yes --budget 0) >/dev/null 2>&1 && fail "a zero budget accepted"
+(cd "$S" && "$F" config --yes --this-machine --budget 5) >/dev/null 2>&1 && fail "--this-machine accepted --budget"
+(cd "$S" && "$F" config --yes --budget off) >/dev/null && grep -qx 'CABINET_BUDGET=""' "$S/cabinet.env" || fail "budget off"
+# A runner that does not report its cost: no column, and a set budget is named as untracked.
+(cd "$S" && "$F" config --yes --runner codex --budget 20) >/dev/null
+"$S/bin/job.sh" list | grep -q 'codex does not report what a run costs' && "$S/bin/job.sh" list | grep -E '^brief .* min  -$' >/dev/null || fail "job list with codex"
+"$S/bin/doctor.sh" --json | jq -e '.results[] | select(.id == "spend.unreported")' >/dev/null || fail "an untracked budget not noted"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

@@ -123,7 +123,7 @@ PROMPT="Draft the role in $rf, as CABINET.md, \"Drafting a role\", says: keep it
 mkdir -p -m 700 "$LOGDIR"; log="$LOGDIR/role-$role.log"
 echo "=== $(date '+%F %T') draft $role ($CABINET_RUNNER)" >> "$log"
 echo "Drafting $role with $CABINET_RUNNER, as chief-of-staff. It takes a few minutes and prints nothing until it finishes."
-run_agent </dev/null 2>&1 | tee -a "$log" || { echo "The draft did not finish: see $log" >&2; exit 1; }
+SPEND_LABEL="role draft $role" run_agent </dev/null 2>&1 | tee -a "$log" || { echo "The draft did not finish: see $log" >&2; exit 1; }
 grep -q '^description: TBD' "$rf" && { echo "$rf is still not drafted (its description is TBD): see $log" >&2; exit 1; }
 r_build >/dev/null
 echo

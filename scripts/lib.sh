@@ -18,6 +18,7 @@ CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
 CABINET_JOB_TIMEOUT="${CABINET_JOB_TIMEOUT:-60}"
+CABINET_BUDGET="${CABINET_BUDGET:-}"   # US dollars a week for the agent runs cabinet starts; empty: none
 # Settings for this machine only, in cabinet.local.env: never committed (the workspace's
 # .gitignore tracks only its own files), so each teammate's machine keeps its own. Read, never
 # sourced. CABINET_SCHEDULES="off": another machine runs the jobs (cabinet bootstrap --no-schedules).
@@ -36,13 +37,41 @@ K="$WS/.cabinet"                                   # kit-managed files
 LABEL="ai.cabinet.$CABINET_SLUG"                   # schedule labels: $LABEL.<job>
 LOGDIR="$LOGROOT/$CABINET_SLUG"
 KEYCHAIN_ITEM="cabinet.$CABINET_SLUG.backup"
+# What the agent runs cabinet starts cost, as the tool reports it: one line per run, on this
+# machine only: seconds, what ran ($SPEND_LABEL: the job, or "role draft <role>"), runner, US dollars.
+SPEND="$LOGDIR/spend.tsv"
+SPEND_RUNNERS="claude"   # the runners that report a run's cost
+spend_add() {
+  [[ "${1:-}" =~ ^[0-9][0-9.eE+-]*$ ]] || return 0
+  mkdir -p -m 700 "$LOGDIR"
+  printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$1" >> "$SPEND"
+}
+# Midnight at the start of this week, the day "Week starts on" in AGENTS.md names (Sunday by default).
+# ponytail: counts days as 24 hours, so in the week a clock changes the week starts an hour off.
+week_start() {
+  local d i=0 s=0 x now w h m sec
+  d="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$WS/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
+  for x in sun mon tue wed thu fri sat; do [[ "$x" == "${d:-sun}" ]] && s=$i; i=$((i + 1)); done
+  read -r now w h m sec <<<"$(date '+%s %w %H %M %S')"
+  echo $(( now - 10#$h * 3600 - 10#$m * 60 - 10#$sec - (w - s + 7) % 7 * 86400 ))
+}
+# spend_since <seconds> [<label>]: dollars spent since then, by every run or one label's, as "1.25".
+spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
+
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
 # scheduled jobs and role drafts.
 run_agent() {
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
   case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto "$PROMPT" ;;
+    # JSON, for the cost it reports: the reply goes on to the log as before, the cost to $SPEND.
+    claude)
+      local out st=0; out="$(mktemp)"
+      claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" > "$out" || st=$?
+      if jq -e 'type == "object" and has("result")' "$out" >/dev/null 2>&1; then
+        jq -r '.result // ""' "$out"; spend_add "$(jq -r '.total_cost_usd // empty' "$out")"
+      else cat "$out"; fi
+      rm -f "$out"; return "$st" ;;
     codex)    codex exec "$as_role" ;;
     gemini)   gemini -p "$as_role" ;;
     qwen)     qwen --approval-mode auto "$as_role" ;;

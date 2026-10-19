@@ -110,6 +110,14 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX <...> still runs this workspace under an old name (<...>)` | `schedules.old-slug` | A schedule left over from an earlier slug. | Run what it names: on macOS `launchctl bootout gui/$(id -u)/<label>`, with systemd `systemctl --user disable --now <label>.timer`; then delete the file it names. |
 | `FIX no scheduler on this machine (a running systemd user session, or cron), so no job runs on its own: install cron, then run bin/bootstrap.sh` | `schedules.scheduler` | Linux without a systemd user session or `crontab`, as in many containers. Jobs only run by hand. | Install cron (or run under systemd), then `bin/bootstrap.sh`. |
 
+## Spend
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `FIX agent runs cost $<...> this week, <...>% of the $<...> budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>` | `spend.budget` | The agent runs cabinet started this week cost 80% or more of `CABINET_BUDGET`, as the agent tool reported it. See [what agent runs cost](concepts.md#what-agent-runs-cost). | `cabinet job list` shows which job cost what. Raise the budget (`cabinet config --budget <dollars>`), run jobs less often (`WHEN`, `QUIET_DAYS`), or let the week end. |
+| `FIX agent runs cost $<...> this week, over the $<...> budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>` | `spend.budget` | The week's runs passed the budget. Nothing is stopped. | The same. |
+| `note <...> does not report what a run costs, so the $<...> budget is not tracked (claude reports it)` | `spend.unreported` | A budget is set, and the runner does not report cost. | Use the `claude` runner to track it, or remove the budget: `cabinet config --budget off`. |
+
 ## Backups
 
 | Message | ID | Cause | Fix |

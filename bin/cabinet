@@ -121,6 +121,7 @@ O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
+O	config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
 O	new,init,config	--repo	<git url>	A product repo to clone; repeat for more.
 O	init	--inside		In a project repo: the workspace is cabinet/ inside it (the default there).
 O	init	--private		With --inside (the default): cabinet/ has its own git; no tracked project file changes.
@@ -865,8 +866,8 @@ ROLE
 
 cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
-  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" repos=()
-  local set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0
+  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" repos=()
+  local set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; set_name=1; shift 2 ;;
@@ -880,6 +881,7 @@ cmd_config() {
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; set_backup=1; shift 2 ;;
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
+      --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; set_budget=1; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --apply) apply=1; shift ;;
       --this-machine) this_machine=1; shift ;;
@@ -892,7 +894,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_budget || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
     (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
@@ -905,9 +907,10 @@ cmd_config() {
 
   # Current answers, read from the files setup wrote.
   envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
-  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime
+  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget
   o_name="$(envget CABINET_PROJECT)"; o_slug="$(envget CABINET_SLUG)"
   o_roles="$(envget CABINET_ROLES)"; o_runner="$(envget CABINET_RUNNER)"; o_runner="${o_runner:-claude}"; o_cmd="$(envget CABINET_RUNNER_CMD)"
+  o_budget="$(envget CABINET_BUDGET)"
   o_backup="$(envget CABINET_BACKUP_DIR)"; o_btime="$(envget CABINET_BACKUP_TIME)"; o_btime="${o_btime:-1:00 PM}"; o_btime="$(when_time_only "$o_btime" || printf '%s' "$o_btime")"
   o_owner="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
   o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
@@ -917,7 +920,7 @@ cmd_config() {
   ((set_name)) || name="$o_name"; ((set_slug)) || slug="$o_slug"; ((set_owner)) || owner="$o_owner"; ((set_email)) || email="$o_email"
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
-  ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"
+  ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
   for r2 in $o_roles; do has "$ROLES_ALL $ROLES_OPT" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
@@ -961,6 +964,8 @@ cmd_config() {
   check_answers
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
   backup_time="$(when_time_only "$backup_time")" || die "the backup time must be a time like \"1 PM\" or \"1:30 PM\", with no day: backups run every day"
+  [[ "$(printf %s "$budget" | tr '[:upper:]' '[:lower:]')" == off ]] && budget=""
+  [[ -z "$budget" || "$budget" =~ ^[0-9]+(\.[0-9]{1,2})?$ && ! "$budget" =~ ^0+(\.0*)?$ ]] || die "the budget must be dollars a week, like 20 or 12.50, or off"
   if [[ "$slug" != "$o_slug" ]]; then
     local other; other="$(slug_owner "$slug" "$ws")"
     [[ -z "$other" ]] || die "$(slug_taken "$slug" "$other"): choose another"
@@ -1017,6 +1022,7 @@ cmd_config() {
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
   [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
+  [[ "$budget" != "$o_budget" ]] && changes+=("budget: $( [[ -n "$o_budget" ]] && echo "\$$o_budget a week" || echo off) -> $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off)")
   local newrows=()
   for r in ${repos[@]+"${repos[@]}"}; do
     url_ok "$r" || die "'$r' is not a git URL (https://, ssh://, git@host:path or a local path)"
@@ -1037,6 +1043,7 @@ cmd_config() {
   }
   setenv CABINET_PROJECT "$name"; setenv CABINET_ROLES "$roles"; setenv CABINET_RUNNER "$runner"
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
+  [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ -f "$ws/jobs/brief.job" ]] && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
   D="$Week" O="$owner" E="$email" perl -i -pe '

@@ -152,7 +152,7 @@ Details: [layouts](docs/layouts.md).
 cabinet config        # in the workspace, or the project's top folder when cabinet/ is inside it
 ```
 
-It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`. Details: [commands](docs/commands.md#cabinet-config).
+It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`; `cabinet config --budget 20` sets a weekly budget for the agent runs cabinet starts ([what they cost](docs/concepts.md#what-agent-runs-cost)). Details: [commands](docs/commands.md#cabinet-config).
 
 ## Update the kit
 

@@ -214,7 +214,7 @@ cabinet job run <job>
 cabinet job list [--json]
 ```
 
-**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `<job>.log` in the workspace's log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; the scheduler runs the same on the job's schedule, except that a scheduled run of a job with `QUIET_DAYS` is skipped when nothing changed since its last full run (see below). **`list`** shows each job's role, schedule and time limit.
+**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `<job>.log` in the workspace's log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; the scheduler runs the same on the job's schedule, except that a scheduled run of a job with `QUIET_DAYS` is skipped when nothing changed since its last full run (see below). **`list`** shows each job's role, schedule, time limit and [what it cost this week](concepts.md#what-agent-runs-cost), then the week's total and the budget.
 
 Exit 0; 1 when the run failed; 124 when it was stopped by its time limit; 2 for an unknown or incomplete job.
 
@@ -254,7 +254,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`; not asked in a terminal, so give it as an option), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -270,6 +270,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Brief | `WHEN` in `jobs/brief.job` |
 | Week start | the house rule in `AGENTS.md` |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
+| Budget | `CABINET_BUDGET` |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
 
 Roles the project defines itself (`roles/<role>.md` with frontmatter) are accepted and asked about. Layout and visibility (inside, beside, private, shared) are not changed by `config`. When nothing changes, it prints `Nothing to change.` and writes nothing.
@@ -392,7 +393,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `cabinet list --json` | `[{slug, project, path, exists, version, update_available, waiting_on_owner, doctor_problems, brief_written}]`. `brief_written` is ISO 8601 UTC, or `null`; the counts are `null` for a workspace whose folder is gone. |
 | `cabinet role list --json` | `[{name, kind, on, drafted}]`. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
 | `cabinet repo list --json` | `[{name, path, present, owner, url}]`. `owner` is `null` while the team table says `TBD`; `url` is `null` for a repo with no clone URL. |
-| `cabinet job list --json` | `[{name, role, when, timeout_minutes}]`. `when` is the schedule as people read it, or `by hand only`. |
+| `cabinet job list --json` | `[{name, role, when, timeout_minutes, cost_this_week_usd}]`. `when` is the schedule as people read it, or `by hand only`. `cost_this_week_usd` is `null` when the runner does not report cost. |
 | `cabinet secret check --json` | `[{file, line, kind}]`, never the value. Exit 1 when the list is not empty. |
 | `cabinet backup verify --json` | `{archive, backed_up, ok, problems, results: [{repo, result, text}]}`. `result` is `ok`, `skipped` or `problem`; `repo` is `null` for the archive as a whole. Exit 1 when `ok` is false. |
 | `cabinet outdated --json` | `{workspace_version, kit_version, latest, update_available}`. `latest` and `update_available` are `null` when the registry cannot be reached. |
@@ -416,6 +417,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_BACKUP_TIME` | Time of the daily backup, like `1:00 PM` (default). |
 | `CABINET_BACKUP_KEEP` | How many of this workspace's archives to keep (default 14, at least 1). |
 | `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
+| `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job

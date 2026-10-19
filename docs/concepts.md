@@ -59,6 +59,16 @@ An agent unsure of the tier treats it as the higher one. A reversible tier 3 ite
 
 The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifies handoffs against git, checks the repos and the doctor, and puts every decision waiting on you at the top. Each decision has a plain question, lettered options with their consequences, each expert's recommendation, one overall recommendation, and whether it can be undone. You answer in one message; the agents apply your answers. Its parts sit under fixed headings (`## Sign-off queue`, `## Actions for the owner`, ...), so with several projects `cabinet digest` gathers every queue into one read. On a day when nothing changed (no commit, no new doctor problem, no answer, no work left uncommitted, no reversible item waiting for its 72 hours), the scheduled brief starts no agent and the last brief stands, for up to six days in a row ([quiet days](commands.md#jobsltjobgtjob)).
 
+
+## What agent runs cost
+
+Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), as the agent tool reports it, in `spend.tsv` in the workspace's log folder, on this machine only. Of the runners, `claude` reports it (the cost Claude Code gives for each headless run, which on a subscription is what the run would cost through the API); the others do not yet, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.
+
+- Each job's log ends a run with its cost and the week's.
+- `cabinet job list` shows what each job cost this week, and the week's total.
+- `cabinet config --budget 20` sets a weekly budget in US dollars. From 80% of it, the doctor reports `spend.budget`, so the brief lists it under "Actions for the owner"; past it, the doctor says so. Nothing is stopped: you decide whether to raise the budget, run jobs less often, or let the week end. The week starts on the day `AGENTS.md` names (Sunday by default).
+
+Two settings keep the cost down: a brief that skips its agent on [quiet days](commands.md#jobsltjobgtjob), and fewer scheduled jobs.
 ## The builder never verifies
 
 Work is ready for you to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer you enabled whose subject it touches (design-lead for anything people see, code-reviewer for code, dba for the database). A BLOCK, or a code-reviewer's CHANGES, holds the push until it is fixed or you override it.

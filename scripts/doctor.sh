@@ -267,6 +267,21 @@ else
   done
 fi
 
+section "Spend"
+# What the agent runs cabinet started cost this week, as the tool reports it; a warning from 80% of the budget.
+if ! has "$SPEND_RUNNERS" "$CABINET_RUNNER"; then
+  [[ -z "$CABINET_BUDGET" ]] || note spend.unreported "$CABINET_RUNNER does not report what a run costs, so the \$$CABINET_BUDGET budget is not tracked (claude reports it)"
+else
+  w="$(spend_since "$(week_start)")"
+  if [[ -z "$CABINET_BUDGET" ]]; then ok spend.budget "agent runs cost \$$w this week, as $CABINET_RUNNER reports it; no budget set (cabinet config --budget <dollars>)"
+  else
+    pct="$(awk -v w="$w" -v b="$CABINET_BUDGET" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }')"
+    if ((pct >= 100)); then bad spend.budget "agent runs cost \$$w this week, over the \$$CABINET_BUDGET budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>"
+    elif ((pct >= 80)); then bad spend.budget "agent runs cost \$$w this week, $pct% of the \$$CABINET_BUDGET budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>"
+    else ok spend.budget "agent runs cost \$$w this week, $pct% of the \$$CABINET_BUDGET budget"; fi
+  fi
+fi
+
 section "Backups"
 if [[ -z "$CABINET_BACKUP_DIR" ]] && ((BACKUP_DIR_LOCAL)); then
   note backups.enabled "backups are off on this machine (cabinet.local.env; cabinet config --this-machine --backup-dir <folder> turns them on)"

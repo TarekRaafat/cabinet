@@ -9,19 +9,25 @@
 #       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
 #       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run.
 #   bin/job.sh list [--json]
-#       Every job: its name, role, schedule and time limit.
+#       Every job: its name, role, schedule, time limit and what it cost this week, with the week's
+#       total and budget (CABINET_BUDGET), from what the agent tool reports.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 j_list() {
-  local json=0 a jf
+  local json=0 a jf ws reported=0
   for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/job.sh list [--json]" >&2; exit 2 ;; esac; done
+  ws="$(week_start)"; has "$SPEND_RUNNERS" "$CABINET_RUNNER" && reported=1
   for jf in "$WS"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
-    ( AGENT="" WHEN="" TIMEOUT=""; source "$jf"
-      printf '%s\t%s\t%s\t%s\n' "$(basename "$jf" .job)" "$AGENT" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" )
-  done | if ((json)); then jq -Rn '[inputs | split("\t") | {name: .[0], role: .[1], when: .[2], timeout_minutes: (.[3] | tonumber? // null)}]'
-         else awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-16s %-18s %-34s %s min\n", $1, $2, $3, $4} END {if (!n) print "No jobs in jobs/."}'; fi
+    ( AGENT="" WHEN="" TIMEOUT=""; source "$jf"; j="$(basename "$jf" .job)"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$j" "$AGENT" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" \
+        "$( ((reported)) && spend_since "$ws" "$j")" )
+  done | if ((json)); then jq -Rn '[inputs | split("\t") | {name: .[0], role: .[1], when: .[2], timeout_minutes: (.[3] | tonumber? // null), cost_this_week_usd: (.[4] | tonumber? // null)}]'
+         else awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-16s %-18s %-34s %4s min  %s\n", $1, $2, $3, $4, ($5 == "" ? "-" : "$" $5)} END {if (!n) print "No jobs in jobs/."}'; fi
+  ((json)) && return 0
+  if ((reported)); then echo "This week: \$$(spend_since "$ws") in all, as $CABINET_RUNNER reports it, $( [[ -n "$CABINET_BUDGET" ]] && echo "of a \$$CABINET_BUDGET budget" || echo "no budget set (cabinet config --budget <dollars>)")."
+  else echo "Cost: $CABINET_RUNNER does not report what a run costs, so cabinet cannot count it."; fi
 }
 
 j_run() {
@@ -90,6 +96,12 @@ cd "$WS"
 mkdir -p -m 700 "$LOGDIR"
 log="$LOGDIR/$job.log"
 started="$(date +%s)"
+SPEND_LABEL="$job"
+# The run's cost and the week's, when the tool reported it.
+cost() {
+  [[ "$(spend_since "$started" "$job")" != 0.00 ]] || return 0
+  echo "cost \$$(spend_since "$started" "$job"), as $CABINET_RUNNER reports it; this week \$$(spend_since "$(week_start)")${CABINET_BUDGET:+ of the \$$CABINET_BUDGET budget}"
+}
 if [[ ! -t 1 ]] && quiet; then
   # Touched, so the digest and cabinet next see it as current, not late.
   msg="$job skipped: nothing changed since the full run of $(epoch_date "$(head -1 "$state_file")" '+%F %T') (QUIET_DAYS in jobs/$job.job)"
@@ -105,12 +117,15 @@ if [[ -t 1 ]]; then
   echo "Result: $RESULT and $log"
   start=$SECONDS status=0
   limited 2>&1 | tee -a "$log" || status=$?
+  cost | tee -a "$log"
   ((status)) || { after; remember; }
   echo
   echo "Finished in $(( (SECONDS - start) / 60 )) min (exit $status). Open $RESULT."
   exit "$status"
 fi
-limited >>"$log" 2>&1 || { echo "exit $? at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
+st=0; limited >>"$log" 2>&1 || st=$?
+cost >>"$log"
+((st == 0)) || { echo "exit $st at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
 after
 remember
 }
