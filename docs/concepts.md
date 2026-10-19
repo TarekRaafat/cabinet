@@ -63,7 +63,7 @@ The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifi
 
 ## Writing to the owner
 
-How agents write to you is a house rule in `AGENTS.md`, set with `--writing` on `cabinet new`, `init` or `config`. `standard` is the sign-off format in plain words. `short` is for an owner with little time to read, or who reads best in small pieces (for example with ADHD): the same facts and decisions in fewer words.
+How agents write to you is a house rule in `AGENTS.md`, asked at setup and by `cabinet config`, or set with `--writing` on `cabinet new`, `init` or `config`. `standard` is the sign-off format in plain words. `short` is for an owner with little time to read, or who reads best in small pieces (for example with ADHD): the same facts and decisions in fewer words.
 
 - The answer, or what is needed from you, comes first, in one sentence.
 - One point per line, with the word that matters in bold; three points at most, then "N more: ask".

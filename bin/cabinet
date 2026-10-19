@@ -481,6 +481,8 @@ setup() {
     fi
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
+    echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
+    writing="$(ask "Writing" "$writing")"
     echo "  Daily encrypted backup: a folder outside the workspace (a synced drive works well), or off."
     backup="$(ask "Backup folder" "${backup:-off}")"
     if [[ "$place" != inside ]]; then
@@ -957,6 +959,8 @@ cmd_config() {
     [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] && runner_cmd="$(ask "Command, with the prompt as \"\$CABINET_PROMPT\"" "$runner_cmd")"
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
+    echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
+    writing="$(ask "Writing" "$writing")"
     backup="$(ask "Backup folder (outside the workspace and its repos), or off" "$backup")"
     [[ "$backup" != off ]] && backup_time="$(ask "Backup time, like 1 PM" "$backup_time")"
     echo "  Repos now: $(grep -v '^#' "$ws/repos.tsv" 2>/dev/null | cut -f1 | tr '\n' ' ')"

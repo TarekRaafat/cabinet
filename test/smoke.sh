@@ -94,15 +94,16 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 section "new, answered at the prompts" ""
 s2() {
 # Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, brief,
-# week, backup, one repo then done, create, no npm install, no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" gemini "8:30 am" sunday off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+# week, writing, backup, one repo then done, create, no npm install, no machine setup.
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" gemini "8:30 am" sunday short off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
 grep -qx 'CABINET_ROLES="chief-of-staff architect qa security design-lead"' "$A/cabinet.env" || fail "prompted roles"
 grep -qx 'CABINET_RUNNER="gemini"' "$A/cabinet.env" && grep -qx 'WHEN="8:30 AM"' "$A/jobs/brief.job" || fail "prompted runner or brief"
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
-printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
+grep -q '^- \*\*Writing to the owner:\*\* short\.' "$A/AGENTS.md" || fail "prompted writing"
+printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
 [[ ! -e "$T/nope" ]] || fail "declined setup created files"
 
@@ -440,10 +441,11 @@ cfg --yes --roles "qa security finance" >/dev/null
 cfg --yes | grep -qx 'Nothing to change.' || fail "no-op config changed something"
 cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail "a bad slug was accepted"
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
-# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner, brief, week, backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" off "" off "" y n > "$T/answers"
+# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner, brief, week, writing, backup, no repos, apply, no bootstrap.
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" off "" short off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
+grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" || fail "prompted writing not written by config"
 fake_sched "$LA/ai.cabinet.old-name.brief$SX" "$(cd "$C" && pwd -P)/bin/job.sh"
 HOME="$H" "$C/bin/doctor.sh" 2>&1 | grep -q 'ai.cabinet.old-name.brief still runs this workspace under an old name' || fail "doctor missed a leftover schedule"
   return 0   # a last "check && fail" line must not end the run
