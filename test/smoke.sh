@@ -521,7 +521,7 @@ git -C "$I" config core.hooksPath .husky
 "$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app sets its own core.hooksPath (.husky)" || fail "doctor missed the project's own hooks path"
 git -C "$I" config --unset core.hooksPath
 # The guardrails close the known ways around the push gate and to credentials.
-for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)' 'Bash(secret-tool lookup*)'; do
+for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)' 'Bash(secret-tool lookup*)' 'Bash(*cabinet/passphrases*)'; do
   jq -e --arg r "$r" '.permissions.deny | index($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
 done
   return 0   # a last "check && fail" line must not end the run
@@ -768,7 +768,7 @@ w="$(bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet remove --d); C
 }
 
 
-section "a teammate's Mac: no schedules, its own backups" "2"
+section "a teammate's machine: no schedules, its own backups" "2"
 s32() {
 P="$T/team-app"; mkrepo "$P"; echo '{"name":"team-app"}' > "$P/package.json"; git -C "$P" add -A; git -C "$P" commit -qm pkg
 (cd "$P" && "$F" init --yes --inside --shared) >/dev/null; git -C "$P" add -A; git -C "$P" commit -qm cabinet
@@ -780,25 +780,25 @@ git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first
 [[ -z "$(git -C "$P" status --porcelain --untracked-files=all)" ]] || { git -C "$P" status --porcelain; fail "cabinet.local.env shows in the project's git"; }
 (cd "$P" && "$F" bootstrap) >/dev/null 2>&1 || true; [[ ! -f "$LA" ]] || fail "a plain bootstrap forgot --no-schedules"
 (cd "$P" && "$F" doctor --json) | jq -e '([.results[] | select(.id == "schedules.off")] | length == 1) and ([.results[] | select(.id == "schedules.job")] | length == 0)' >/dev/null || fail "doctor with schedules off"
-(cd "$P" && "$F" next --json) | jq -e '[.steps[].id] | index("bootstrap") | not' >/dev/null || fail "next asks for bootstrap on a Mac that schedules nothing"
+(cd "$P" && "$F" next --json) | jq -e '[.steps[].id] | index("bootstrap") | not' >/dev/null || fail "next asks for bootstrap on a machine that schedules nothing"
 (cd "$P" && "$F" bootstrap --schedules) >/dev/null 2>&1 || true
 [[ -f "$LA" && ! -e "$P/cabinet/cabinet.local.env" ]] || fail "--schedules"
 rc=0; (cd "$P" && "$F" bootstrap --nope) >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "bootstrap with an unknown option exits $rc, not 2"
-# Backups for this Mac only: cabinet.local.env, never cabinet.env, never in git.
+# Backups for this machine only: cabinet.local.env, never cabinet.env, never in git.
 BL="$HOME/$SD/ai.cabinet.team-app.backup$SX"
-(cd "$P/src" && "$F" config --this-mac --backup-dir "$T/team-bk" --apply) >/dev/null 2>&1 || true
-grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && grep -qx 'CABINET_BACKUP_DIR=""' "$P/cabinet/cabinet.env" || fail "--this-mac --backup-dir"
-[[ -f "$BL" ]] && grep -q 'team-bk' "$BL" || fail "--this-mac --apply did not schedule this Mac's backup"
-[[ -z "$(git -C "$P" status --porcelain --untracked-files=all)" ]] || { git -C "$P" status --porcelain; fail "a per-Mac backup setting shows in git"; }
-(cd "$P" && "$F" config --this-mac --name Other) >/dev/null 2>&1 && fail "--this-mac changed a shared setting"
-(cd "$P" && "$F" config --this-mac --backup-dir "$P/cabinet/bk") >/dev/null 2>&1 && fail "--this-mac accepted a backup folder inside the workspace"
-(cd "$P" && "$F" config --yes --dry-run --backup-dir "$T/shared-bk") | grep -q 'this Mac keeps its own folder' || fail "config did not say this Mac keeps its own folder"
-(cd "$P" && "$F" config --this-mac --backup-dir off --apply) >/dev/null 2>&1 || true
-[[ ! -f "$BL" ]] || fail "--this-mac --backup-dir off kept the backup schedule"
-(cd "$P" && "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.enabled") | .message | contains("on this Mac")' >/dev/null || fail "doctor with backups off on this Mac"
-(cd "$P" && "$F" config --this-mac --clear) >/dev/null 2>&1 || true
+(cd "$P/src" && "$F" config --this-machine --backup-dir "$T/team-bk" --apply) >/dev/null 2>&1 || true
+grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && grep -qx 'CABINET_BACKUP_DIR=""' "$P/cabinet/cabinet.env" || fail "--this-machine --backup-dir"
+[[ -f "$BL" ]] && grep -q 'team-bk' "$BL" || fail "--this-machine --apply did not schedule this machine's backup"
+[[ -z "$(git -C "$P" status --porcelain --untracked-files=all)" ]] || { git -C "$P" status --porcelain; fail "a per-machine backup setting shows in git"; }
+(cd "$P" && "$F" config --this-machine --name Other) >/dev/null 2>&1 && fail "--this-machine changed a shared setting"
+(cd "$P" && "$F" config --this-machine --backup-dir "$P/cabinet/bk") >/dev/null 2>&1 && fail "--this-machine accepted a backup folder inside the workspace"
+(cd "$P" && "$F" config --yes --dry-run --backup-dir "$T/shared-bk") | grep -q 'this machine keeps its own folder' || fail "config did not say this machine keeps its own folder"
+(cd "$P" && "$F" config --this-machine --backup-dir off --apply) >/dev/null 2>&1 || true
+[[ ! -f "$BL" ]] || fail "--this-machine --backup-dir off kept the backup schedule"
+(cd "$P" && "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.enabled") | .message | contains("on this machine")' >/dev/null || fail "doctor with backups off on this machine"
+(cd "$P" && "$F" config --this-machine --clear) >/dev/null 2>&1 || true
 [[ ! -e "$P/cabinet/cabinet.local.env" ]] || { cat "$P/cabinet/cabinet.local.env"; fail "--clear left backup lines"; }
-(cd "$P" && "$F" config --this-mac --clear) | grep -q 'already follows cabinet.env' || fail "a second --clear"
+(cd "$P" && "$F" config --this-machine --clear) | grep -q 'already follows cabinet.env' || fail "a second --clear"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -821,7 +821,7 @@ perl -i -pe 's/^\| `guides\/brand.md` \|.*\n/| none yet | x | |\n/; $_ = "" if /
 }
 
 
-section "list every workspace on this Mac" "0"
+section "list every workspace on this machine" "0"
 s34() {
 "$F" new "$T/listed-old" --yes >/dev/null; echo 0.0.1 > "$T/listed-old/.cabinet/version"
 "$F" new "$T/listed-gone" --yes >/dev/null; rm -rf "$T/listed-gone"
@@ -966,7 +966,7 @@ HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'ok    a restore was verified 0 day
 touch -t 202601010000 "$VH/$LOGS/acme-app/backup-verified"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  the last verified restore was [0-9]* days ago' || fail "the doctor missed an old verify"
 rm "$VH/$LOGS/acme-app/backup-verified"
-HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this Mac yet' || fail "the doctor missed a missing verify"
+HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this machine yet' || fail "the doctor missed a missing verify"
 cp "$T/env.bak" "$C/cabinet.env"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -1149,6 +1149,22 @@ HOME="$CH" CABINET_SCHEDULER=cron "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
 [[ "$(cat "$T/crontab")" == "$(printf '%s\n' "MAILTO=me" "0 1 * * * /bin/true # mine")" ]] || { cat "$T/crontab"; fail "cron: the block not removed cleanly"; }
 printf '%s\n' "# BEGIN cabinet" "my own line" > "$T/crontab"; HOME="$CH" CABINET_SCHEDULER=cron pf cron_sync
 grep -qx 'my own line' "$T/crontab" || fail "cron: a block with no end lost the lines after it"
+# A cron backup reads its passphrase from a file only the user can read, and runs unattended.
+BW="$T/cron-bk-ws"; "$F" new "$BW" --slug cbk --yes --backup-dir "$T/cron-bk" >/dev/null; : > "$T/crontab"
+HOME="$CH" CABINET_SCHEDULER=cron "$BW/bin/bootstrap.sh" 2>&1 | grep -qF 'passphrases/cabinet.cbk.backup' || fail "bootstrap with cron: the passphrase file command"
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "fix"' >/dev/null || fail "doctor with cron and no passphrase file"
+[[ "$(HOME="$CH" CABINET_SCHEDULER=cron pf deps_backups)" != *secret-tool* ]] || fail "cron backups asked for secret-tool"
+printf 'cron pass\n' | HOME="$CH" bash -c "$(HOME="$CH" CABINET_SCHEDULER=cron pf pass_add_cmd cabinet.cbk.backup)" >/dev/null
+PFILE="$CH/.config/cabinet/passphrases/cabinet.cbk.backup"
+[[ "$(perm "$PFILE")" == 600 && "$(cat "$PFILE")" == "cron pass" ]] || fail "the passphrase file command"
+line="$(grep 'bin/job.sh.*backup\|bin/backup.sh' "$T/crontab")" || { cat "$T/crontab"; fail "the backup in the crontab"; }
+env -i HOME="$CH" sh -c "$(printf '%s' "$line" | cut -d' ' -f6- | sed 's/\\%/%/g')" || true
+ls "$T/cron-bk"/cbk-*.tar.gz.enc >/dev/null 2>&1 || { cat "$CH/$LOGS/cbk/backup.log"; fail "a cron backup did not run unattended"; }
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "ok"' >/dev/null || fail "doctor with the passphrase file"
+chmod 644 "$PFILE"
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "fix" and (.message | contains("chmod 600"))' >/dev/null || fail "doctor with a passphrase file others can read"
+[[ -z "$(HOME="$CH" pf pass_get cabinet.cbk.backup)" ]] || fail "a passphrase file others can read was used"
+HOME="$CH" pf pass_del cabinet.cbk.backup && [[ ! -e "$PFILE" ]] || fail "pass_del kept the passphrase file"
 # No scheduler at all (a container without cron): said plainly by bootstrap and the doctor.
 git -C "$OW" checkout -q -- jobs/brief.job
 HOME="$CH" CABINET_SCHEDULER=none "$OW/bin/bootstrap.sh" 2>&1 | grep -q 'no scheduler found' || fail "bootstrap with no scheduler"

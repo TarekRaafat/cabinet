@@ -30,7 +30,7 @@ npm i -g @tarekraafat/cabinet     # once published; until then see Install
 cabinet new                       # answers a few questions, creates and commits the workspace
 cd <your new workspace>
 cabinet next                      # what to do next, in order
-cabinet bootstrap --dry-run       # see what it would change on this Mac
+cabinet bootstrap --dry-run       # see what it would change on this machine
 cabinet bootstrap                 # guardrails for your agent tools, and the daily brief schedule
 cabinet doctor                    # everything that needs attention; --fix runs the fixes it knows
 ```
@@ -50,7 +50,7 @@ New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 |---|---|
 | Workspace | The folder that holds the team's files (`CABINET.md`, `AGENTS.md`, `HANDOFFS.md`, roles, specs, notes) and usually the product repos. It is its own private git repo. |
 | Layout | Where the workspace sits: a new folder, around an existing folder of repos, inside a project as `cabinet/`, or beside a project. See [layouts](docs/layouts.md). |
-| Slug | The workspace's short name (`acme`). It names its schedules, logs, backups and backup key, so projects on one Mac never collide. |
+| Slug | The workspace's short name (`acme`). It names its schedules, logs, backups and backup key, so projects on one machine never collide. |
 | Guide | A standing document the agents follow, such as a brand guide, style guide, policy or business document. It lives in `guides/`, with a row in `AGENTS.md`. |
 | Role | An agent's job description: what it owns, decides, escalates and may write. Kit roles live in `.cabinet/roles/`; a project adds notes in `roles/`. |
 | Handoff | One entry in `HANDOFFS.md`: who it is for, what changed, what they need to do. The only channel between agents. |
@@ -74,7 +74,7 @@ You need macOS or Linux, and:
 | Optional | For | Without it |
 |---|---|---|
 | openssl | Encrypted backups (built into macOS) | No backups; everything else works |
-| `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Set `CABINET_BACKUP_PASSPHRASE` instead ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
+| `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Not needed with cron, which reads a passphrase file; or set `CABINET_BACKUP_PASSPHRASE` ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
 | `notify-send` (Linux) | `cabinet digest --notify` | The digest is still written, with no notification |
 | lsof | `cabinet move` checking that no agent session still has the folder open | The move skips that check |
 
@@ -113,7 +113,7 @@ It asks, each with a default you keep by pressing Enter:
 - a folder for the encrypted daily backup, outside the workspace (or `off`);
 - the product repos, as git URLs.
 
-It shows a summary, creates and commits the workspace, then offers to pin the kit (`npm install`) and to set up the Mac (`bin/bootstrap.sh`, shown as a dry run first).
+It shows a summary, creates and commits the workspace, then offers to pin the kit (`npm install`) and to set up the machine (`bin/bootstrap.sh`, shown as a dry run first).
 
 Every answer is also an option, and `--yes` skips the questions:
 

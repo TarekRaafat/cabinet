@@ -18,11 +18,11 @@ CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
 CABINET_JOB_TIMEOUT="${CABINET_JOB_TIMEOUT:-60}"
-# Settings for this Mac only, in cabinet.local.env: never committed (the workspace's
-# .gitignore tracks only its own files), so each teammate's Mac keeps its own. Read, never
-# sourced. CABINET_SCHEDULES="off": another Mac runs the jobs (cabinet bootstrap --no-schedules).
-# CABINET_BACKUP_DIR and CABINET_BACKUP_TIME, when present, replace cabinet.env's on this Mac
-# (cabinet config --this-mac); an empty CABINET_BACKUP_DIR turns backups off here.
+# Settings for this machine only, in cabinet.local.env: never committed (the workspace's
+# .gitignore tracks only its own files), so each teammate's machine keeps its own. Read, never
+# sourced. CABINET_SCHEDULES="off": another machine runs the jobs (cabinet bootstrap --no-schedules).
+# CABINET_BACKUP_DIR and CABINET_BACKUP_TIME, when present, replace cabinet.env's on this machine
+# (cabinet config --this-machine); an empty CABINET_BACKUP_DIR turns backups off here.
 LOCAL_ENV="$WS/cabinet.local.env"
 local_has() { grep -q "^$1=" "$LOCAL_ENV" 2>/dev/null; }
 local_get() { sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$LOCAL_ENV" 2>/dev/null | tail -1 || true; }

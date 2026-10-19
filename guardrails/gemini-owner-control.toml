@@ -52,7 +52,7 @@ denyMessage = "Only the owner publishes packages."
 
 [[rule]]
 toolName = "run_shell_command"
-commandRegex = "^gh auth token\\b|^gh auth status\\b.*(--show-token|\\s-t\\b)|^security (find-generic-password|dump-keychain)\\b|^secret-tool (lookup|search)\\b"
+commandRegex = "^gh auth token\\b|^gh auth status\\b.*(--show-token|\\s-t\\b)|^security (find-generic-password|dump-keychain)\\b|^secret-tool (lookup|search)\\b|cabinet/passphrases"
 decision = "deny"
 priority = 990
 denyMessage = "Credentials stay with the owner."

@@ -53,7 +53,8 @@
       "Bash(security find-generic-password*)",
       "Bash(security dump-keychain*)",
       "Bash(secret-tool lookup*)",
-      "Bash(secret-tool search*)"
+      "Bash(secret-tool search*)",
+      "Bash(*cabinet/passphrases*)"
     ],
     "ask": [
       "Bash(git reset --hard*)",

@@ -40,7 +40,7 @@ The rule formats differ, so the coverage does too.
 
 - push, `git send-pack` (which pushes without hooks), merge, release, `gh api` writes, publishing (npm, npx, bun, pnpm, yarn, also with options before `publish`);
 - the ways around the gate: `-c core.hooksPath` in common spellings, `GIT_CONFIG_*` variables, `env -i` and `env -u`, a push behind a `HOME=` override (caught because `git push` is matched anywhere), `--no-verify` and its abbreviations, faking a terminal (`script`, `expect`, `unbuffer`, Python's `pty.spawn`);
-- printing the GitHub token, and reading the keychain or the Linux secret store (`secret-tool lookup` and `search`).
+- printing the GitHub token, and reading the keychain, the Linux secret store (`secret-tool lookup` and `search`) or the backup passphrase file (any command naming `cabinet/passphrases`).
 
 Side effects: some harmless commands are refused too, such as an npm script named like `publish-docs`, or any command that mentions `git push` (for example in an `echo`).
 
@@ -63,12 +63,13 @@ These are on the [roadmap](../ROADMAP.md):
 
 - archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
+- the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
 - opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result;
 - on opencode 2.x the doctor cannot read the resolved rules.
 
 ## Undoing the guardrails
 
-The guardrails are shared by every workspace on the Mac, so removing a workspace leaves them. To remove them:
+The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
 - **The push gate and hook stubs:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.

@@ -240,7 +240,7 @@ done < <({ printf 'the workspace\t%s\n' "$WS"; while IFS=$'\t' read -r name url 
 
 section "Schedules"
 if [[ "$SCHEDULER" != none && "$CABINET_SCHEDULES" == off ]]; then
-  note schedules.off "jobs are not scheduled on this Mac (CABINET_SCHEDULES=off in cabinet.local.env): another Mac runs them; cabinet bootstrap --schedules turns them on"
+  note schedules.off "jobs are not scheduled on this machine (CABINET_SCHEDULES=off in cabinet.local.env): another machine runs them; cabinet bootstrap --schedules turns them on"
 fi
 if [[ "$SCHEDULER" == none ]]; then
   grep -qs '^WHEN="\{0,1\}[^"]' "$WS"/jobs/*.job && bad schedules.scheduler "no scheduler on this machine (a running systemd user session, or cron), so no job runs on its own: install cron, then run bin/bootstrap.sh"
@@ -269,7 +269,7 @@ fi
 
 section "Backups"
 if [[ -z "$CABINET_BACKUP_DIR" ]] && ((BACKUP_DIR_LOCAL)); then
-  note backups.enabled "backups are off on this Mac (cabinet.local.env; cabinet config --this-mac --backup-dir <folder> turns them on)"
+  note backups.enabled "backups are off on this machine (cabinet.local.env; cabinet config --this-machine --backup-dir <folder> turns them on)"
 elif [[ -z "$CABINET_BACKUP_DIR" ]]; then
   note backups.enabled "backups are off (set CABINET_BACKUP_DIR in cabinet.env, then run bin/bootstrap.sh)"
 else
@@ -290,13 +290,16 @@ else
   fi
   # A backup counts once a restore of it has been checked (cabinet backup verify), once a quarter.
   vf="$LOGDIR/backup-verified"
-  if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this Mac yet (cabinet backup verify)"
+  if [[ ! -f "$vf" ]]; then note backups.verified "no restore of a backup has been verified on this machine yet (cabinet backup verify)"
   else
     vdays=$(( ($(date +%s) - $(mtime "$vf")) / 86400 )) vwhen="$(human_mtime "$vf")"
     ((vdays <= 92)) && ok backups.verified "a restore was verified $vdays day(s) ago ($vwhen): $(cat "$vf")" \
       || note backups.verified "the last verified restore was $vdays days ago ($vwhen): verify again (cabinet backup verify)"
   fi
-  if pass_has "$KEYCHAIN_ITEM"; then ok backups.passphrase "backup passphrase in the $PASS_STORE"
+  pf="$(pass_file "$KEYCHAIN_ITEM")"
+  if [[ -f "$pf" ]] && ! pass_file_ok "$pf"; then bad backups.passphrase "the passphrase file $pf can be read by other users, so it is not used: chmod 600 $pf"
+  elif [[ -f "$pf" ]]; then ok backups.passphrase "backup passphrase in $pf"
+  elif pass_has "$KEYCHAIN_ITEM"; then ok backups.passphrase "backup passphrase in the $PASS_STORE"
   elif [[ -n "${CABINET_BACKUP_PASSPHRASE:-}" ]]; then ok backups.passphrase "backup passphrase from CABINET_BACKUP_PASSPHRASE (scheduled backups need it set where they run, or in the $PASS_STORE)"
   else h="$(pass_add_cmd "$KEYCHAIN_ITEM")"; bad backups.passphrase "backup passphrase missing from the $PASS_STORE ($KEYCHAIN_ITEM: $h)"; fi
   miss="$(deps_backups)"

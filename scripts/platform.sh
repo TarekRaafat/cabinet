@@ -28,23 +28,42 @@ human_stamp() {
 sha256() { if command -v shasum >/dev/null; then shasum -a 256 "$1"; else sha256sum "$1"; fi | cut -d' ' -f1; }
 
 # The backup passphrase, by the item's name: the keychain on macOS, the secret store
-# (secret-tool) on Linux. CABINET_BACKUP_PASSPHRASE, when set, comes first for the callers.
+# (secret-tool) on Linux, or a file only the user can read in PASS_DIR, which comes first
+# when it exists. Where cron runs the schedules the file is the store: a cron run reaches
+# neither the secret store's session nor systemd's environment. CABINET_BACKUP_PASSPHRASE,
+# when set, comes first for the callers.
+PASS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/cabinet/passphrases"
+pass_file() { printf '%s/%s' "$PASS_DIR" "$1"; }
+pass_file_ok() {  # readable by its owner only
+  local m; if [[ $OS == mac ]]; then m="$(stat -f %Lp "$1")"; else m="$(stat -c %a "$1")"; fi 2>/dev/null
+  [[ "$m" == [46]00 ]]
+}
 pass_get() {
+  local f; f="$(pass_file "$1")"
+  if [[ -f "$f" ]]; then pass_file_ok "$f" && cat "$f"; return; fi   # never read one others can
   if [[ $OS == mac ]]; then security find-generic-password -a "$USER" -s "$1" -w
   else secret-tool lookup service "$1" account "$USER"; fi 2>/dev/null
 }
-# pass_has never reads the passphrase on macOS, so it never asks for keychain access.
+# pass_has: a scheduled run can read it. It never reads the passphrase on macOS, so it never
+# asks for keychain access; under cron only the file counts.
 pass_has() {
-  if [[ $OS == mac ]]; then security find-generic-password -a "$USER" -s "$1" >/dev/null 2>&1
+  local f; f="$(pass_file "$1")"
+  if [[ -f "$f" ]]; then pass_file_ok "$f"
+  elif [[ "$SCHEDULER" == cron ]]; then return 1
+  elif [[ $OS == mac ]]; then security find-generic-password -a "$USER" -s "$1" >/dev/null 2>&1
   else [[ -n "$(pass_get "$1")" ]]; fi
 }
 pass_del() {
-  pass_has "$1" || return 1
-  if [[ $OS == mac ]]; then security delete-generic-password -a "$USER" -s "$1" >/dev/null 2>&1
-  else secret-tool clear service "$1" account "$USER" 2>/dev/null; fi
+  local f gone=1; f="$(pass_file "$1")"
+  [[ -f "$f" ]] && rm -f "$f" && gone=0
+  if [[ $OS == mac ]]; then security delete-generic-password -a "$USER" -s "$1" >/dev/null 2>&1 && gone=0
+  elif [[ -n "$(secret-tool lookup service "$1" account "$USER" 2>/dev/null)" ]]; then secret-tool clear service "$1" account "$USER" 2>/dev/null && gone=0; fi
+  return $gone
 }
 pass_add_cmd() {  # the command a person runs to store it
-  if [[ $OS == mac ]]; then printf 'security add-generic-password -a "$USER" -s %s -w' "$1"
+  if [[ "$SCHEDULER" == cron ]]; then
+    printf "bash -c 'umask 077 && mkdir -p \"\${0%%/*}\" && read -rsp \"Passphrase: \" p && echo && printf \"%%s\\\\n\" \"\$p\" > \"\$0\"' %s" "$(sh_q "$(pass_file "$1")")"
+  elif [[ $OS == mac ]]; then printf 'security add-generic-password -a "$USER" -s %s -w' "$1"
   else printf 'secret-tool store --label=%s service %s account "$USER"' "$1" "$1"; fi
 }
 
@@ -65,6 +84,8 @@ if [[ -z "$SCHEDULER" ]]; then
   elif command -v crontab >/dev/null; then SCHEDULER=cron
   else SCHEDULER=none; fi
 fi
+# Under cron the backup passphrase lives in a file (pass_get).
+if [[ "$SCHEDULER" == cron ]]; then PASS_STORE="passphrase file"; fi
 # Each schedule is one file named for its label, so every caller finds them the same way.
 case "$SCHEDULER" in
   launchd) SCHED_DIR="$HOME/Library/LaunchAgents" SCHED_EXT=.plist ;;
@@ -224,9 +245,9 @@ deps_missing() {
   done
   printf '%s' "$out"
 }
-# The backup tools this machine lacks: openssl, and on Linux secret-tool unless the passphrase comes from the environment.
+# The backup tools this machine lacks: openssl, and on Linux secret-tool unless the passphrase comes from the environment or cron runs the schedules (a file then).
 deps_backups() {
-  local t="openssl"; [[ $OS == linux && -z "${CABINET_BACKUP_PASSPHRASE:-}" ]] && t+=" secret-tool"
+  local t="openssl"; [[ $OS == linux && $SCHEDULER != cron && -z "${CABINET_BACKUP_PASSPHRASE:-}" ]] && t+=" secret-tool"
   deps_missing "$t"
 }
 pkg_manager() {

@@ -47,7 +47,7 @@ npm i -g @tarekraafat/cabinet     # once published; until then see Install
 cabinet new                       # answers a few questions, creates and commits the workspace
 cd <your new workspace>
 cabinet next                      # what to do next, in order
-cabinet bootstrap --dry-run       # see what it would change on this Mac
+cabinet bootstrap --dry-run       # see what it would change on this machine
 cabinet bootstrap                 # guardrails for your agent tools, and the daily brief schedule
 cabinet doctor                    # everything that needs attention; --fix runs the fixes it knows
 ```
@@ -67,7 +67,7 @@ New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 |---|---|
 | Workspace | The folder that holds the team's files (`CABINET.md`, `AGENTS.md`, `HANDOFFS.md`, roles, specs, notes) and usually the product repos. It is its own private git repo. |
 | Layout | Where the workspace sits: a new folder, around an existing folder of repos, inside a project as `cabinet/`, or beside a project. See [layouts](docs/layouts.md). |
-| Slug | The workspace's short name (`acme`). It names its schedules, logs, backups and backup key, so projects on one Mac never collide. |
+| Slug | The workspace's short name (`acme`). It names its schedules, logs, backups and backup key, so projects on one machine never collide. |
 | Guide | A standing document the agents follow, such as a brand guide, style guide, policy or business document. It lives in `guides/`, with a row in `AGENTS.md`. |
 | Role | An agent's job description: what it owns, decides, escalates and may write. Kit roles live in `.cabinet/roles/`; a project adds notes in `roles/`. |
 | Handoff | One entry in `HANDOFFS.md`: who it is for, what changed, what they need to do. The only channel between agents. |
@@ -91,7 +91,7 @@ You need macOS or Linux, and:
 | Optional | For | Without it |
 |---|---|---|
 | openssl | Encrypted backups (built into macOS) | No backups; everything else works |
-| `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Set `CABINET_BACKUP_PASSPHRASE` instead ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
+| `secret-tool` (Linux) | Keeping the backup passphrase in the secret store, as the keychain does on macOS | Not needed with cron, which reads a passphrase file; or set `CABINET_BACKUP_PASSPHRASE` ([macOS and Linux](docs/concepts.md#macos-and-linux)) |
 | `notify-send` (Linux) | `cabinet digest --notify` | The digest is still written, with no notification |
 | lsof | `cabinet move` checking that no agent session still has the folder open | The move skips that check |
 
@@ -130,7 +130,7 @@ It asks, each with a default you keep by pressing Enter:
 - a folder for the encrypted daily backup, outside the workspace (or `off`);
 - the product repos, as git URLs.
 
-It shows a summary, creates and commits the workspace, then offers to pin the kit (`npm install`) and to set up the Mac (`bin/bootstrap.sh`, shown as a dry run first).
+It shows a summary, creates and commits the workspace, then offers to pin the kit (`npm install`) and to set up the machine (`bin/bootstrap.sh`, shown as a dry run first).
 
 Every answer is also an option, and `--yes` skips the questions:
 
@@ -214,7 +214,7 @@ File: docs/tutorial.md
 
 # Tutorial: your first day with cabinet
 
-About 15 minutes. You create a workspace for a made-up product, Acme, set up your Mac, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
+About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
 
 You need macOS or Linux, git, jq, perl, python3, Node.js and at least one agent tool (Claude Code, Codex, Gemini CLI, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
 
@@ -255,7 +255,7 @@ cabinet next
 Next in Acme (~/dev/acme):
   1. Fill the TBDs in AGENTS.md: What Acme is, Contracts that cross repo lines, House rules, Product rules, How to test.
   2. Download the pinned kit (in ~/dev/acme). Run: npm install
-  3. Set up this Mac: guardrails and schedules (add --dry-run to see the changes first). Run: cabinet bootstrap
+  3. Set up this machine: guardrails and schedules (add --dry-run to see the changes first). Run: cabinet bootstrap
   4. The first brief comes at 7:00 AM (or write it now). Run: cabinet brief
   5. The doctor found 9 thing(s) to fix (cabinet doctor --fix runs the ones it can). Run: cabinet doctor
   Optional: Daily encrypted backups. Run: cabinet config --backup-dir <a folder outside the workspace>
@@ -274,7 +274,7 @@ npm install                # skip until the package is published to npm
 git add -A && git commit -m "Describe Acme"
 ```
 
-## 4. Set up this Mac
+## 4. Set up this machine
 
 See first, then apply:
 
@@ -296,7 +296,7 @@ cabinet bootstrap
   installed ai.cabinet.acme.brief (7:00 AM)
 ```
 
-Bootstrap installs the guardrails: every push now asks you at your own terminal, and each agent tool on this Mac denies push, merge, release and publish ([guardrails](guardrails.md)). It also schedules the daily brief. It saves a `.bak` copy of every settings file it changes, and running it again is safe.
+Bootstrap installs the guardrails: every push now asks you at your own terminal, and each agent tool on this machine denies push, merge, release and publish ([guardrails](guardrails.md)). It also schedules the daily brief. It saves a `.bak` copy of every settings file it changes, and running it again is safe.
 
 ## 5. Check everything
 
@@ -345,7 +345,7 @@ When qa and security have recorded PASS on a piece of work, you push it from you
 
 ## Where next
 
-- [Recipes](recipes.md): add a role or a job, switch agent tools, move to a new Mac, add a teammate.
+- [Recipes](recipes.md): add a role or a job, switch agent tools, move to a new machine, add a teammate.
 - [Commands](commands.md): every command and option. `cabinet <command> --help` shows them too.
 - [Layouts](layouts.md): add cabinet to an existing project instead.
 
@@ -369,7 +369,7 @@ Short answers to common tasks. Every command runs from anywhere inside the works
 - [Switch the agent tool for scheduled jobs](#switch-the-agent-tool-for-scheduled-jobs)
 - [Add a product repo](#add-a-product-repo)
 - [Turn on backups](#turn-on-backups)
-- [Move to a new Mac](#move-to-a-new-mac)
+- [Move to a new machine](#move-to-a-new-machine)
 - [Add a teammate to a shared workspace](#add-a-teammate-to-a-shared-workspace)
 - [Run several projects](#run-several-projects)
 - [Update the kit](#update-the-kit)
@@ -489,7 +489,7 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 2. Choose a passphrase, keep it in your password manager, and put it in the keychain: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w`. On Linux, in the secret store: `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"`.
 3. `cabinet backup create` makes one now; the schedule makes one daily. Once a quarter, `cabinet backup verify`. See [backups](backups.md).
 
-## Move to a new Mac
+## Move to a new machine
 
 1. Install cabinet and its needs ([Install](../README.md#install)).
 2. Put the backup passphrase in the keychain or secret store, as in step 2 of [Turn on backups](#turn-on-backups).
@@ -498,22 +498,22 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 
 Without a backup, clone the workspace's own repo instead, then `cabinet bootstrap`.
 
-To move a workspace to another folder on the same Mac: `cabinet move <new-path>`.
+To move a workspace to another folder on the same machine: `cabinet move <new-path>`.
 
 ## Add a teammate to a shared workspace
 
 A shared workspace (`cabinet init --inside --shared`) is committed with the project, so a teammate gets it by cloning:
 
 1. The teammate clones the project and runs `npm install`, which installs the pinned kit.
-2. They run `cabinet bootstrap --no-schedules` on their Mac, then `cabinet doctor`. This installs the push gate and their agent tools' guardrails, but no schedules: one Mac, usually the owner's, runs the brief and the other jobs, so it is written once. The choice is saved for that Mac only (`cabinet.local.env`, which git does not track).
+2. They run `cabinet bootstrap --no-schedules` on their machine, then `cabinet doctor`. This installs the push gate and their agent tools' guardrails, but no schedules: one machine, usually the owner's, runs the brief and the other jobs, so it is written once. The choice is saved for that machine only (`cabinet.local.env`, which git does not track).
 
-3. Backups follow the workspace's `CABINET_BACKUP_DIR`, which is shared. Each teammate sets their own folder for their Mac, or none: `cabinet config --this-mac --backup-dir ~/Backups/cabinet --apply` (or `--backup-dir off`). That also lives in `cabinet.local.env`.
+3. Backups follow the workspace's `CABINET_BACKUP_DIR`, which is shared. Each teammate sets their own folder for their machine, or none: `cabinet config --this-machine --backup-dir ~/Backups/cabinet --apply` (or `--backup-dir off`). That also lives in `cabinet.local.env`.
 
-Any teammate can still run a job by hand (`cabinet job run <job>`). To make another Mac the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
+Any teammate can still run a job by hand (`cabinet job run <job>`). To make another machine the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
 
 ## Run several projects
 
-One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has its own slug, so its own schedules, logs, backups and brief; the guardrails are shared by the whole Mac. One project with several repos or products is one workspace, with every repo in `repos.tsv`.
+One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has its own slug, so its own schedules, logs, backups and brief; the guardrails are shared by the whole machine. One project with several repos or products is one workspace, with every repo in `repos.tsv`.
 
 `cabinet list` shows them all in one table: what waits on you, what the doctor finds, the latest brief. Each morning, `cabinet digest` gathers every project's sign-off queue and your actions into one read (`cabinet digest --schedule --notify` writes it to `~/Library/Logs/cabinet/digest.md` every day at 10:00 AM and tells you; `--schedule "8 AM"` for another time, `--schedule "sun,mon,tue,wed,thu 8 AM"` for chosen days); answer each queue in its own workspace (`cd` there and tell its agent). Then `cabinet next` inside any of them.
 
@@ -573,13 +573,13 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 
 Once you know one command, you can guess the next:
 
-- **One word** acts on the workspace as a whole, or on this Mac: `cabinet doctor`, `cabinet update`.
+- **One word** acts on the workspace as a whole, or on this machine: `cabinet doctor`, `cabinet update`.
 - **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `repo`, `job`, `secret` and `backup`, always singular.
 - **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
 - **The same options everywhere:** `--json` on every command that reports, `--dry-run` on every command that changes the setup or deletes anything, `--yes` (`-y`) on every command that asks.
 - **Any workspace, from anywhere:** every command finds the workspace from the folder you are in, upward, so it works anywhere inside the workspace or the project around a `cabinet/` workspace. `cabinet -C <dir> <command>` runs it as if started in `<dir>`, as git does.
 - **Exit codes:** 0 done (or nothing found), 1 failed or found a problem, 2 wrong usage (an unknown command or option, a missing value).
-- **The same words without the `cabinet` command:** every workspace has its scripts in `bin/`, named the same way (`bin/role.sh build`, `bin/handoff.sh list qa`), for agents, schedules and Macs without the command ([Workspace scripts](#workspace-scripts)).
+- **The same words without the `cabinet` command:** every workspace has its scripts in `bin/`, named the same way (`bin/role.sh build`, `bin/handoff.sh list qa`), for agents, schedules and machines without the command ([Workspace scripts](#workspace-scripts)).
 
 ## cabinet new
 
@@ -595,7 +595,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 |---|---|---|
 | `[dir]` | asked (`~/dev/<name>`) | Must not exist, or be empty. |
 | `--name "Name"` | the folder name | The project's display name. |
-| `--slug <slug>` | the folder name, made lowercase with dashes | Lowercase letters, digits and dashes. Refused when another workspace on this Mac holds it. |
+| `--slug <slug>` | the folder name, made lowercase with dashes | Lowercase letters, digits and dashes. Refused when another workspace on this machine holds it. |
 | `--owner "Name"`, `--email you@example.com` | `git config --global user.name` / `user.email` | The commit author written into `AGENTS.md`. With no identity, setup does not commit. |
 | `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. The optional kit roles `brand-designer`, `dba`, `code-reviewer` and `auditor` are off unless named. Builders are never listed here: they come with the repos they own. |
 | `--runner <tool>` | the first installed of `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
@@ -654,7 +654,7 @@ In every case, existing files are kept and reported, never replaced. Around a fo
 cabinet next [--json]
 ```
 
-Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a Mac without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
+Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a machine without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
 
 ## cabinet brief
 
@@ -672,7 +672,7 @@ cabinet digest --write <file> [--notify]
 cabinet digest --schedule [<when>|off] [--file <file>] [--notify]
 ```
 
-One morning read for every workspace on this Mac: from each one's latest `BRIEF.md`, the "Sign-off queue" and "Actions for the owner" parts, by their `## ` headings (the chief-of-staff role writes them with these names), and how many handoffs wait on you. It flags a brief older than a day and a half (is the brief job running?), a workspace with no brief yet, and a brief without the "## Sign-off queue" heading. It reads only: you still answer each queue in its own workspace, to that workspace's agent. It starts with one line of counts (decisions, actions and handoffs waiting, and briefs late, missing or unreadable), and ends by saying whether it is scheduled.
+One morning read for every workspace on this machine: from each one's latest `BRIEF.md`, the "Sign-off queue" and "Actions for the owner" parts, by their `## ` headings (the chief-of-staff role writes them with these names), and how many handoffs wait on you. It flags a brief older than a day and a half (is the brief job running?), a workspace with no brief yet, and a brief without the "## Sign-off queue" heading. It reads only: you still answer each queue in its own workspace, to that workspace's agent. It starts with one line of counts (decisions, actions and handoffs waiting, and briefs late, missing or unreadable), and ends by saying whether it is scheduled.
 
 | Option | Notes |
 |---|---|
@@ -690,7 +690,7 @@ The schedule is one job for the whole machine, `ai.cabinet-digest` ([launchd, sy
 cabinet list [--json]
 ```
 
-Every workspace on this Mac, from anywhere: its slug, project name, kit version (marked `*` when it is not the installed kit), how many handoffs wait on you, what the doctor finds, when the latest brief was written, and its folder. The doctors run side by side, each with its workspace's own scripts, so it takes about as long as one doctor run. A workspace is listed once setup or bootstrap has claimed its slug on this Mac; `cabinet remove` takes it off the list. A workspace whose folder is gone shows as `folder gone`, with how to free its slug. Changes nothing. Exit 0.
+Every workspace on this machine, from anywhere: its slug, project name, kit version (marked `*` when it is not the installed kit), how many handoffs wait on you, what the doctor finds, when the latest brief was written, and its folder. The doctors run side by side, each with its workspace's own scripts, so it takes about as long as one doctor run. A workspace is listed once setup or bootstrap has claimed its slug on this machine; `cabinet remove` takes it off the list. A workspace whose folder is gone shows as `folder gone`, with how to free its slug. Changes nothing. Exit 0.
 
 ## cabinet doctor
 
@@ -751,7 +751,7 @@ cabinet repo snapshot
 
 **`remove`** takes a repo out of the workspace: its row in `repos.tsv` and in the team table. Its folder, its history and `local/<name>/` are left as they are. `bin/doctor.sh` then notes any open handoff still addressed to it.
 
-**`list`** shows every repo: its owner in the team table, whether it is on this Mac, and where it lives.
+**`list`** shows every repo: its owner in the team table, whether it is on this machine, and where it lives.
 
 **`snapshot`** copies each repo's local-only files and `.git/info/exclude` entries into `local/<repo>/`, so they can be reviewed and committed in the workspace. The backup runs it first.
 
@@ -784,7 +784,7 @@ cabinet backup verify [folder] [--json]
 cabinet backup restore <archive> [dir]
 ```
 
-**`create`** writes one encrypted archive now ([backups](backups.md)); the default folder is `CABINET_BACKUP_DIR`, and the schedule runs the same. **`verify`** writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). **`restore`** rebuilds the workspace and its repos from an archive, never losing a file; outside any workspace it runs the installed kit's copy, since a new Mac has no workspace yet. It starts by naming the backup's date.
+**`create`** writes one encrypted archive now ([backups](backups.md)); the default folder is `CABINET_BACKUP_DIR`, and the schedule runs the same. **`verify`** writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). **`restore`** rebuilds the workspace and its repos from an archive, never losing a file; outside any workspace it runs the installed kit's copy, since a new machine has no workspace yet. It starts by naming the backup's date.
 
 Exit 0; 1 with no passphrase, no archive, or (for `verify`) a problem found; 2 for a missing, relative or inside folder, or a keep count under 1.
 
@@ -794,7 +794,7 @@ Exit 0; 1 with no passphrase, no archive, or (for `verify`) a problem found; 2 f
 cabinet bootstrap [--dry-run] [--no-schedules | --schedules]
 ```
 
-Sets up this Mac for the workspace: clones missing repos, restores local-only files, links `CLAUDE.md`, gives each repo whose owner is `TBD` a builder ([concepts](concepts.md#the-team)), builds the roles, installs the guardrails ([guardrails](guardrails.md)) and the workspace's secrets check before each commit, and adds, updates or removes the schedules to match `jobs/` and the backup setting. `--dry-run` only prints. `--no-schedules` stops and from then on skips the jobs' schedules on this Mac, for a workspace whose jobs another Mac runs (a teammate's, in a shared workspace); `--schedules` undoes it. Both are saved in `cabinet.local.env`. The backup schedule is not affected. Safe to rerun. Exit 0, or 1 when any step did not complete (each one says why).
+Sets up this machine for the workspace: clones missing repos, restores local-only files, links `CLAUDE.md`, gives each repo whose owner is `TBD` a builder ([concepts](concepts.md#the-team)), builds the roles, installs the guardrails ([guardrails](guardrails.md)) and the workspace's secrets check before each commit, and adds, updates or removes the schedules to match `jobs/` and the backup setting. `--dry-run` only prints. `--no-schedules` stops and from then on skips the jobs' schedules on this machine, for a workspace whose jobs another machine runs (a teammate's, in a shared workspace); `--schedules` undoes it. Both are saved in `cabinet.local.env`. The backup schedule is not affected. Safe to rerun. Exit 0, or 1 when any step did not complete (each one says why).
 
 ## cabinet config
 
@@ -806,7 +806,7 @@ Changes a workspace's settings after setup: the whole setup at once. To change o
 
 Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
-**For this Mac only:** `cabinet config --this-mac --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this Mac and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-mac --clear` makes this Mac follow `cabinet.env` again. With `--this-mac`, no other setting can be changed (they are shared by every Mac), and nothing is asked.
+**For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
 **What it changes:**
 
@@ -838,7 +838,7 @@ Moves a workspace folder and updates what remembers its path: Claude Code's memo
 cabinet remove [--dry-run] [--yes] [--force] [--delete-key]
 ```
 
-Removes the workspace you are in from this Mac (another one: `cabinet -C <dir> remove`). It first prints the plan:
+Removes the workspace you are in from this machine (another one: `cabinet -C <dir> remove`). It first prints the plan:
 
 - stop and delete the workspace's own schedules (a schedule is its own when it runs this workspace's `bin/`; another workspace's are never touched);
 - delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which frees the slug;
@@ -852,7 +852,7 @@ Removes the workspace you are in from this Mac (another one: `cabinet -C <dir> r
 | `--dry-run` | Print the plan only. |
 | `--yes`, `-y` | Do not ask. Without it you type the slug to confirm. |
 | `--force` | Go ahead even when the workspace has uncommitted changes or commits on no remote. Without it, those stop the removal (`Not safe to delete`). |
-| `--delete-key` | Also delete the backup passphrase `cabinet.<slug>.backup` from the keychain or secret store. |
+| `--delete-key` | Also delete the backup passphrase `cabinet.<slug>.backup` from the keychain or secret store, and its passphrase file if there is one. |
 
 The guardrails in your agent tools stay, since other workspaces use them. Exit codes: 0, or 1 when refused or not confirmed.
 
@@ -911,7 +911,7 @@ Prints the installed kit's version.
 
 ## Workspace scripts
 
-Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project), named like the commands: one script per noun, taking the verb, and one per one-word command that has a script. Agents, the schedules and a Mac without the `cabinet` command use them; all of them read `cabinet.env`, and their options and exit codes are the commands'.
+Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project), named like the commands: one script per noun, taking the verb, and one per one-word command that has a script. Agents, the schedules and a machine without the `cabinet` command use them; all of them read `cabinet.env`, and their options and exit codes are the commands'.
 
 | Command | Script |
 |---|---|
@@ -974,12 +974,12 @@ One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [sch
 
 ### cabinet.local.env
 
-Settings for this Mac only. Git never tracks it (the workspace's `.gitignore` tracks only its own files), so in a shared workspace each teammate's Mac keeps its own. It is read, never run as shell. Its keys:
+Settings for this machine only. Git never tracks it (the workspace's `.gitignore` tracks only its own files), so in a shared workspace each teammate's machine keeps its own. It is read, never run as shell. Its keys:
 
 | Key | Meaning |
 |---|---|
-| `CABINET_SCHEDULES` | `off`: this Mac schedules none of the jobs in `jobs/` (another Mac runs them). Set and cleared with `cabinet bootstrap --no-schedules` and `--schedules`. Jobs still run by hand with `cabinet job run <job>`. |
-| `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` | When present, they replace `cabinet.env`'s on this Mac; an empty `CABINET_BACKUP_DIR` turns backups off here. Set with `cabinet config --this-mac`, removed with `cabinet config --this-mac --clear`. |
+| `CABINET_SCHEDULES` | `off`: this machine schedules none of the jobs in `jobs/` (another machine runs them). Set and cleared with `cabinet bootstrap --no-schedules` and `--schedules`. Jobs still run by hand with `cabinet job run <job>`. |
+| `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` | When present, they replace `cabinet.env`'s on this machine; an empty `CABINET_BACKUP_DIR` turns backups off here. Set with `cabinet config --this-machine`, removed with `cabinet config --this-machine --clear`. |
 
 ### Schedule times
 
@@ -1005,7 +1005,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain or secret store. Never put it in `cabinet.env`, which git tracks. |
+| `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain, the secret store or the passphrase file. Never put it in `cabinet.env`, which git tracks. |
 | `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
 | `CABINET_PROMPT`, `CABINET_AGENT` | the `custom` runner | The prompt and role, for `CABINET_RUNNER_CMD`. |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
@@ -1017,7 +1017,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 
 1. Stop its schedules. On macOS: `launchctl bootout gui/$(id -u)/ai.cabinet.<slug>.<job>` for each, then delete `~/Library/LaunchAgents/ai.cabinet.<slug>.*.plist`. With systemd: `systemctl --user disable --now ai.cabinet.<slug>.<job>.timer` for each, then delete `~/.config/systemd/user/ai.cabinet.<slug>.*.service` and `.timer`. With cron: delete `~/.config/cabinet/cron/ai.cabinet.<slug>.*.cron`, then run `cabinet bootstrap` in any other workspace, which rewrites cabinet's block of the crontab (or delete its lines from `crontab -e` by hand).
 2. Delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which also frees the slug.
-3. If it had backups: `security delete-generic-password -a "$USER" -s cabinet.<slug>.backup` (on Linux: `secret-tool clear service cabinet.<slug>.backup account "$USER"`), and delete its archives if you no longer want them.
+3. If it had backups: `security delete-generic-password -a "$USER" -s cabinet.<slug>.backup` (on Linux: `secret-tool clear service cabinet.<slug>.backup account "$USER"`, or delete `~/.config/cabinet/passphrases/cabinet.<slug>.backup`), and delete its archives if you no longer want them.
 4. Delete the workspace folder.
 5. Inside a project: for private, remove the `/cabinet/`, `/CLAUDE.local.md`, `/QWEN.local.md`, `/AGENTS.md` (if setup created it) and `/.claude/agents/<role>.md` lines from the project's `.git/info/exclude`, and the files they name if setup made them; for shared, remove the "Agent team" section and the `@tarekraafat/cabinet` devDependency from the project.
 
@@ -1120,7 +1120,7 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 
 Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role add <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
 
-**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/role.sh build`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
+**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a machine, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/role.sh build`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
 ## Rules, guides and notes
 
@@ -1176,13 +1176,13 @@ cabinet works the same on both. Only where it keeps things on the machine differ
 |---|---|---|
 | Schedules | launchd: `~/Library/LaunchAgents/ai.cabinet.<slug>.<job>.plist` | systemd user timers: `~/.config/systemd/user/ai.cabinet.<slug>.<job>.service` and `.timer`. On a machine that did not boot with systemd (many containers, older WSL): cron, as one block cabinet writes into your crontab from `~/.config/cabinet/cron/`, keeping every line of your own. |
 | Log folder | `~/Library/Logs/cabinet/<slug>/` | `~/.local/state/cabinet/<slug>/` (under `$XDG_STATE_HOME` when set) |
-| Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu) |
+| Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu); with cron, a file only you can read: `~/.config/cabinet/passphrases/cabinet.<slug>.backup` |
 | Notifications | Notification Center | `notify-send` |
 
 `CABINET_SCHEDULER` (`launchd`, `systemd`, `cron` or `none`) overrides the choice. On Linux:
 
 - systemd runs a user's timers only while that user is logged in, unless lingering is on: `loginctl enable-linger "$USER"` once, on a server or a machine you leave logged out. A timer missed while the machine was off runs when it starts again, as launchd does after sleep.
-- The secret store needs a desktop session. Without one, give scheduled backups the passphrase through systemd instead: `read -rs CABINET_BACKUP_PASSPHRASE; export CABINET_BACKUP_PASSPHRASE; systemctl --user import-environment CABINET_BACKUP_PASSPHRASE` (until the user's systemd stops; run it again after a restart). Cron jobs reach neither, so with cron a backup runs only by hand (`cabinet backup create` with the variable set).
+- The secret store needs a desktop session. Without one, give scheduled backups the passphrase through systemd instead: `read -rs CABINET_BACKUP_PASSPHRASE; export CABINET_BACKUP_PASSPHRASE; systemctl --user import-environment CABINET_BACKUP_PASSPHRASE` (until the user's systemd stops; run it again after a restart). Cron jobs reach neither, so with cron the passphrase is kept in a file only you can read, `~/.config/cabinet/passphrases/cabinet.<slug>.backup` (under `$XDG_CONFIG_HOME` when set; `bin/bootstrap.sh` prints the command that writes it). On any machine that file, when it exists, comes before the keychain or secret store, and one that other users can read is never used.
 - Run `cabinet bootstrap` as yourself, not through `sudo`: schedules are per user.
 
 ## Agent tools and models
@@ -1249,7 +1249,7 @@ The rule formats differ, so the coverage does too.
 
 - push, `git send-pack` (which pushes without hooks), merge, release, `gh api` writes, publishing (npm, npx, bun, pnpm, yarn, also with options before `publish`);
 - the ways around the gate: `-c core.hooksPath` in common spellings, `GIT_CONFIG_*` variables, `env -i` and `env -u`, a push behind a `HOME=` override (caught because `git push` is matched anywhere), `--no-verify` and its abbreviations, faking a terminal (`script`, `expect`, `unbuffer`, Python's `pty.spawn`);
-- printing the GitHub token, and reading the keychain or the Linux secret store (`secret-tool lookup` and `search`).
+- printing the GitHub token, and reading the keychain, the Linux secret store (`secret-tool lookup` and `search`) or the backup passphrase file (any command naming `cabinet/passphrases`).
 
 Side effects: some harmless commands are refused too, such as an npm script named like `publish-docs`, or any command that mentions `git push` (for example in an `echo`).
 
@@ -1272,12 +1272,13 @@ These are on the [roadmap](../ROADMAP.md):
 
 - archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
+- the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
 - opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result;
 - on opencode 2.x the doctor cannot read the resolved rules.
 
 ## Undoing the guardrails
 
-The guardrails are shared by every workspace on the Mac, so removing a workspace leaves them. To remove them:
+The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
 - **The push gate and hook stubs:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
@@ -1291,7 +1292,7 @@ File: docs/backups.md
 
 # Backups
 
-An encrypted daily archive of everything a lost Mac would take with it, and a restore that never loses a file.
+An encrypted daily archive of everything a lost machine would take with it, and a restore that never loses a file.
 
 ## What a backup holds
 
@@ -1310,7 +1311,7 @@ Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`, encrypted with AES-2
 
 1. Choose a folder **outside** the workspace and every repo it lists: a synced drive or an external disk. Setup, `cabinet config` and the backup itself refuse a folder inside them, because a backup there is lost with what it protects, copies itself into every later archive, and can be committed.
 2. Set it with `cabinet config --backup-dir <folder>` (and `--backup-time "<time>"`, default 1:00 PM), then `bin/bootstrap.sh` to schedule it.
-3. Put the passphrase in the keychain (macOS) or the secret store (Linux), and keep the same one in your password manager: without it no archive opens. `bin/bootstrap.sh` prints the command for your system; on Linux without a desktop session see [macOS and Linux](concepts.md#macos-and-linux).
+3. Put the passphrase in the keychain (macOS), the secret store (Linux) or, where cron runs the schedules, a file only you can read, and keep the same one in your password manager: without it no archive opens. `bin/bootstrap.sh` prints the command for your system; on Linux without a desktop session see [macOS and Linux](concepts.md#macos-and-linux).
 
 ```sh
 security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w
@@ -1458,7 +1459,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 |---|---|---|---|
 | `FIX jobs/<...>.job has a WHEN bootstrap cannot schedule ('<...>'): use a time like 7 AM for every day, or days and a time like fri 4 PM or sun,mon,tue,wed,thu 8 AM` | `schedules.when` | A mistyped time or day. Bootstrap keeps the working schedule meanwhile. The forms are in [commands](commands.md#schedule-times). | Fix `WHEN`, then `bin/bootstrap.sh`. |
 | `FIX <...>.<...> not scheduled (run bin/bootstrap.sh)` | `schedules.job` | A job has a time but no schedule. | `bin/bootstrap.sh`. |
-| `note jobs are not scheduled on this Mac (CABINET_SCHEDULES=off in cabinet.local.env): another Mac runs them; cabinet bootstrap --schedules turns them on` | `schedules.off` | This Mac was set up with `cabinet bootstrap --no-schedules`, so the job checks are skipped here. | Nothing, when another Mac runs the jobs. To run them here: `cabinet bootstrap --schedules`. |
+| `note jobs are not scheduled on this machine (CABINET_SCHEDULES=off in cabinet.local.env): another machine runs them; cabinet bootstrap --schedules turns them on` | `schedules.off` | This machine was set up with `cabinet bootstrap --no-schedules`, so the job checks are skipped here. | Nothing, when another machine runs the jobs. To run them here: `cabinet bootstrap --schedules`. |
 | `FIX <...>.<...> runs another workspace: give this one its own slug (cabinet config --slug)` | `schedules.job-owner` | Two workspaces share a slug. | `cabinet config --slug <new>` in one of them. |
 | `FIX <...>.<...> is written but not loaded by <...> (run bin/bootstrap.sh)` | `schedules.job-loaded` | The schedule file exists, but the scheduler (launchd, systemd or cron) has not loaded it. | `bin/bootstrap.sh`. |
 | `FIX <...> still runs this workspace under an old name (<...>)` | `schedules.old-slug` | A schedule left over from an earlier slug. | Run what it names: on macOS `launchctl bootout gui/$(id -u)/<label>`, with systemd `systemctl --user disable --now <label>.timer`; then delete the file it names. |
@@ -1468,15 +1469,16 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `note backups are off on this Mac (cabinet.local.env; cabinet config --this-mac --backup-dir <folder> turns them on)` | `backups.enabled` | This Mac turned backups off for itself (`cabinet config --this-mac --backup-dir off`). | Nothing, when another Mac backs up. To back up here: `cabinet config --this-mac --backup-dir <folder> --apply`. |
+| `note backups are off on this machine (cabinet.local.env; cabinet config --this-machine --backup-dir <folder> turns them on)` | `backups.enabled` | This machine turned backups off for itself (`cabinet config --this-machine --backup-dir off`). | Nothing, when another machine backs up. To back up here: `cabinet config --this-machine --backup-dir <folder> --apply`. |
 | `note backups are off (set CABINET_BACKUP_DIR in cabinet.env, then run bin/bootstrap.sh)` | `backups.enabled` | No backup folder set. | `cabinet config --backup-dir <folder>`, then `bin/bootstrap.sh`. See [backups](backups.md). |
 | `FIX CABINET_BACKUP_DIR must be an absolute path` | `backups.dir-absolute` | A relative backup folder. | `cabinet config --backup-dir <absolute folder>`. |
 | `FIX the backup folder is inside <...>: a backup there is lost with it and can be committed (choose a folder outside, then cabinet config)` | `backups.dir-outside` | The backup folder is inside the workspace or one of its repos. | Choose a folder outside them with `cabinet config --backup-dir`. |
 | `FIX no scheduled backup in <...>/backup.log yet (<...>)` | `backups.recent` | No scheduled backup has run yet. | Run what it names (`launchctl kickstart` on macOS, `systemctl --user start` with systemd, `cabinet backup create` with cron), or wait for the time set. |
-| `FIX newest backup is <...>h old (<...>): <...>` | `backups.recent` | No scheduled backup in the last 36 hours (the Mac was asleep or the job failed). | Read `~/Library/Logs/cabinet/<slug>/backup.log`. |
-| `note no restore of a backup has been verified on this Mac yet (cabinet backup verify)` | `backups.verified` | `cabinet backup verify` has not passed on this Mac. | `cabinet backup verify` ([backups](backups.md#checking-it)). |
+| `FIX newest backup is <...>h old (<...>): <...>` | `backups.recent` | No scheduled backup in the last 36 hours (the machine was asleep or the job failed). | Read `backup.log` in the log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux). |
+| `note no restore of a backup has been verified on this machine yet (cabinet backup verify)` | `backups.verified` | `cabinet backup verify` has not passed on this machine. | `cabinet backup verify` ([backups](backups.md#checking-it)). |
 | `note the last verified restore was <...> days ago (<...>): verify again (cabinet backup verify)` | `backups.verified` | The last good verify is more than 92 days old. | `cabinet backup verify`. |
-| `FIX backup passphrase missing from the <...> (<...>: <...>)` | `backups.passphrase` | No item `cabinet.<slug>.backup` in the keychain (macOS) or the secret store (Linux), and `CABINET_BACKUP_PASSPHRASE` is not set. | Run the command it names, with the same passphrase as in your password manager: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` on macOS, `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"` on Linux. |
+| `FIX backup passphrase missing from the <...> (<...>: <...>)` | `backups.passphrase` | No item `cabinet.<slug>.backup` in the keychain (macOS) or the secret store (Linux), or with cron no passphrase file (a cron run cannot reach the secret store), and `CABINET_BACKUP_PASSPHRASE` is not set. | Run the command it names, with the same passphrase as in your password manager: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w` on macOS, `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"` on Linux, and with cron a command that writes `~/.config/cabinet/passphrases/cabinet.<slug>.backup` readable by you only ([macOS and Linux](concepts.md#macos-and-linux)). |
+| `FIX the passphrase file <...> can be read by other users, so it is not used: chmod 600 <...>` | `backups.passphrase` | The passphrase file exists, but its permissions let others read it, so backups ignore it. | `chmod 600` on the file, as the message says. |
 
 ## Other commands
 
@@ -1538,7 +1540,7 @@ Each agent owns its repos end to end, documentation included, as the team table 
 
 ## Builders
 
-Product repos are built by builder roles: `backend` (servers, APIs, workers, libraries), `web` (what runs in a browser), `mobile` (iOS and Android apps) and `infrastructure` (CI, deploys, infrastructure as code). The team table in `AGENTS.md` names each repo's owning agent; a repo whose owner is `TBD` gets a builder from `bin/bootstrap.sh` when it first arrives on a Mac, guessed from what the repo holds, and the owner may change the row to another builder, a project role, or `owner`. A builder:
+Product repos are built by builder roles: `backend` (servers, APIs, workers, libraries), `web` (what runs in a browser), `mobile` (iOS and Android apps) and `infrastructure` (CI, deploys, infrastructure as code). The team table in `AGENTS.md` names each repo's owning agent; a repo whose owner is `TBD` gets a builder from `bin/bootstrap.sh` when it first arrives on a machine, guessed from what the repo holds, and the owner may change the row to another builder, a project role, or `owner`. A builder:
 
 1. **Learns the repo before its first change, and follows it.** The repo's own `AGENTS.md` (or `CLAUDE.md`), `README`, `CONTRIBUTING`, and how it is really built: the package scripts or `Makefile`, the test, lint, type and build commands, the CI configuration, the formatter and lint settings, the folder layout, the dependencies already chosen, and the message style of recent commits. What the repo does wins over the builder's habits and over any default. Never replace its stack, tools or conventions; propose a change as a tier 2 or 3 decision instead. Only a new, empty repo gets defaults: a test command, a linter, a `README` and an `AGENTS.md` that records them, set up first.
 2. **Works from a spec or a handoff addressed to it,** and takes nothing else on beyond tier 1 (see "Decision rights and sign-off").
@@ -1723,7 +1725,7 @@ Not ranked yet; each is picked and ordered when its implementation starts.
 
 - **Write limits per role, enforced.** Today each role's "What you may write" is an instruction the agent follows; only push, merge and publish are enforced, by the guardrails. The more roles a project has, the more places one can step outside its lane unnoticed until a reviewer sees it. Where a tool supports rules per agent (Claude Code agents' tools and permissions, for example), build each role with deny rules for the paths and repos it does not own, from the team table; elsewhere, a check after each run (or a pre-commit hook in the workspace) that names the files a role changed outside its own. Each tool's per-agent rule shape is confirmed live before the kit relies on it. Done when: in each tool that can enforce it, a role cannot write outside what the team table gives it, and in the others the change is reported the same day.
 - **Pause and resume.** Today stopping the schedules for a holiday, a trip or a project on hold means turning them off one by one and setting them up again. `cabinet pause [until <date>]` stops every schedule of one workspace, or of all of them with `--all`, and `cabinet resume` (or the date passing) brings them back exactly as they were; `cabinet list`, the digest and the doctor show a paused workspace as paused, not broken. Done when: pause and resume leave every schedule as it was, and a pause with a date ends on its own.
-- **Guardrails status and removal.** Today the guardrails are checked per workspace by the doctor, and removed by hand from each tool's settings. `cabinet guardrail list` shows, for every agent tool on the Mac, which of the kit's rules are in place, and `cabinet guardrail remove` takes out exactly what cabinet added (from the backups bootstrap made, or rule by rule), leaving the owner's own rules. Done when: after `remove`, each tool's settings match what they were before the first bootstrap, apart from the owner's later changes.
+- **Guardrails status and removal.** Today the guardrails are checked per workspace by the doctor, and removed by hand from each tool's settings. `cabinet guardrail list` shows, for every agent tool on the machine, which of the kit's rules are in place, and `cabinet guardrail remove` takes out exactly what cabinet added (from the backups bootstrap made, or rule by rule), leaving the owner's own rules. Done when: after `remove`, each tool's settings match what they were before the first bootstrap, apart from the owner's later changes.
 
 ### Starting and working
 
@@ -1742,17 +1744,17 @@ Not ranked yet; each is picked and ordered when its implementation starts.
 
 These send data out of the machine or depend on outside services, so each starts as a decision for the owner.
 
-- **Digest notifications by email, Slack or Telegram**, for owners away from the Mac.
+- **Digest notifications by email, Slack or Telegram**, for owners away from the machine.
 - **A CI check for shared workspaces**, verifying the handoff log, the built roles and the guides table on every pull request.
 
 ## Later, when a project needs it
 
-- **Hardening found in review:** archives use AES-256-CBC without a MAC (tampering shows only as a tar or gzip error); the keychain item can be read without a prompt by any process of the user (deny rules stop agents in the guarded tools; creating the item to always ask would need a decision for scheduled backups); opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules (`bin/doctor.sh` checks only the global result); folder names without Latin letters or digits need `--slug`; on opencode 2.x, `bin/doctor.sh` cannot read the resolved permission rules (its debug commands need opencode's background service), so its guardrails are unverified there.
+- **Hardening found in review:** archives use AES-256-CBC without a MAC (tampering shows only as a tar or gzip error); the keychain item can be read without a prompt by any process of the user (deny rules stop agents in the guarded tools; creating the item to always ask would need a decision for scheduled backups); the passphrase file used with cron is denied to agents only in shell commands that name its folder (a file reader, Cursor, Codex and Antigravity can still read it); opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules (`bin/doctor.sh` checks only the global result); folder names without Latin letters or digits need `--slug`; on opencode 2.x, `bin/doctor.sh` cannot read the resolved permission rules (its debug commands need opencode's background service), so its guardrails are unverified there.
 
-- **Linux, the rest:** messages and docs still say "this Mac" on Linux; on a Linux machine scheduled by cron, a scheduled backup cannot reach the secret store or systemd's environment, so it needs the passphrase another way (a file only the user can read, for example); and the kit is tested on Debian only. Done when: no message names a Mac on Linux, and a cron-scheduled backup runs unattended.
+- **Linux beyond Debian:** the kit is tested on Debian only. Done when: the suite passes on Fedora and Arch too.
 
 - **More than one owner:** today the kit assumes one person signs off. Two founders, or a lead per area, each sign off their own decisions: owners named in `AGENTS.md` with what each decides, every sign-off item addressed to one of them, the brief's queue grouped by owner, and the digest showing each person only their own. The push gate and guardrails stay per person. Wait until a team needs it: it is the largest change here. Done when: an item addressed to one owner reaches only that owner, and an owner's answer applies only to their items.
-- **One Mac runs the jobs, without asking teammates:** in a shared workspace, a teammate must remember `cabinet bootstrap --no-schedules`, or their Mac schedules the brief too and the team gets two. A choice to study: record in the shared `cabinet.env` which Mac runs the jobs (filled at setup with the owner's Mac), so bootstrap on any other Mac skips schedules on its own and names the Mac that runs them, while `--schedules` still lets a Mac take over. Open questions: how to tell Macs apart (the computer name changes when a Mac is renamed, which would stop its schedules until re-recorded), what the doctor reports on each side, and how a handover works when the owner's Mac is gone. Done when: a teammate who clones a shared workspace and runs a plain `cabinet bootstrap` schedules nothing, and the owner's Mac keeps its schedules.
+- **One machine runs the jobs, without asking teammates:** in a shared workspace, a teammate must remember `cabinet bootstrap --no-schedules`, or their machine schedules the brief too and the team gets two. A choice to study: record in the shared `cabinet.env` which machine runs the jobs (filled at setup with the owner's machine), so bootstrap on any other machine skips schedules on its own and names the machine that runs them, while `--schedules` still lets a machine take over. Open questions: how to tell machines apart (the computer name changes when a machine is renamed, which would stop its schedules until re-recorded), what the doctor reports on each side, and how a handover works when the owner's machine is gone. Done when: a teammate who clones a shared workspace and runs a plain `cabinet bootstrap` schedules nothing, and the owner's machine keeps its schedules.
 - **Projects in other languages:** `cabinet init` reads `pyproject.toml`, `Cargo.toml`, `go.mod` and `composer.json` for the name, description and test commands, as it reads `package.json` today.
 - **Install without Node.js:** `git clone` and one symlink, with the version pin kept as a git tag in `cabinet/.cabinet/` and read by `cabinet update`. The npm package stays the main route.
 
@@ -1774,7 +1776,7 @@ First version.
 - Installed per workspace as the dev dependency `@tarekraafat/cabinet`; the package names its repository, home page and issue tracker on GitHub, publishes as public, and installs on macOS and Linux.
 - `cabinet new` asks its setup questions in a terminal (name, folder, owner, roles, agent tool, brief time, week start, backups, repos); each is also an option, and `--yes` skips them for scripts.
 - `cabinet init` adds cabinet to an existing project: inside it as `cabinet/`, private or shared, or beside it; or makes an existing folder of repos the workspace. Nothing existing is replaced. It fills the project name, description, test commands, repository URL and owner from the project's `package.json` and git, each marked with its source.
-- `cabinet config` changes settings after setup: the same questions with the current answers as defaults. It keeps the team tables, roles and schedules in step, and moves schedules on a slug change. `cabinet config --this-mac --backup-dir <folder>|off [--backup-time <time>]` sets backups for one Mac only, in `cabinet.local.env`, so each teammate in a shared workspace picks their own folder or none; `--clear` follows `cabinet.env` again.
+- `cabinet config` changes settings after setup: the same questions with the current answers as defaults. It keeps the team tables, roles and schedules in step, and moves schedules on a slug change. `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` sets backups for one machine only, in `cabinet.local.env`, so each teammate in a shared workspace picks their own folder or none; `--clear` follows `cabinet.env` again.
 - `cabinet update` applies the installed kit and shows the changelog since the workspace's version; `cabinet changelog`, `status`, `version` and `outdated`.
 - `cabinet remove` removes a workspace (its schedules, logs and folder, and inside a project what setup added), refusing work that exists nowhere else unless `--force`.
 - Tools first: `cabinet new`, `init` and `bootstrap` check for git, jq, perl, python3, node and npm, name what is missing with the command that installs it here (`brew`, `apt-get`, `dnf` or `pacman`), and in a terminal offer to run it; with `--yes` or `--dry-run` they never install. The doctor reports a missing tool (`deps.required`) and a tool enabled backups need (`deps.backups`: openssl, and `secret-tool` on Linux), `cabinet doctor --fix` installs them after asking (always in a terminal, even with `--yes`), and `cabinet next` shows the step `deps`. Agents are told to pass the command to the owner, never to install system packages themselves.
@@ -1794,8 +1796,8 @@ First version.
 
 - One command for everything, named by one set of conventions (`AGENTS.md`, "Command conventions"): one word for the workspace as a whole (`cabinet doctor`, `bootstrap`, `brief`, `move`, ...), and a noun then a verb for what it holds: `cabinet role add|remove|list|draft|build`, `handoff add|list|archive`, `repo add|remove|list|snapshot`, `job run|list`, `secret check`, `backup create|verify|restore`. Every command works from any folder inside the workspace or its project, and `cabinet -C <dir>` runs one as if started there. `--json` on every command that reports, `--dry-run` on every command that changes the setup, `--yes` on every command that asks; usage errors exit 2. The workspace scripts use the same words (`bin/<noun>.sh <verb>`), and the tests fail when a command breaks a convention. `cabinet next` says what to do next.
 - `cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." "<title>"` (`bin/handoff.sh add`, which `CABINET.md` tells agents to use) files a handoff with the next free ID for today, today's date and the template's lines, and commits it on its own; with someone else's uncommitted lines in `HANDOFFS.md`, it writes the entry but does not commit, so their lines never go into its commit.
-- `cabinet digest`: one morning read with the sign-off queue and the owner's actions from the latest brief of every workspace on this Mac. `--write <file>` writes it to a file, `--notify` sends a macOS notification with the counts, and `--schedule [<when>]` (default every day at 10:00 AM; or another time, or chosen days and a time; `off` to stop) runs it as one launchd job for the whole Mac. The chief-of-staff role writes the brief's parts under fixed `## ` headings so the digest can find them.
-- `cabinet list`: every workspace on this Mac in one table (kit version, what waits on the owner, the doctor's count, the latest brief).
+- `cabinet digest`: one morning read with the sign-off queue and the owner's actions from the latest brief of every workspace on this machine. `--write <file>` writes it to a file, `--notify` sends a desktop notification with the counts, and `--schedule [<when>]` (default every day at 10:00 AM; or another time, or chosen days and a time; `off` to stop) runs it as one launchd job for the whole machine. The chief-of-staff role writes the brief's parts under fixed `## ` headings so the digest can find them.
+- `cabinet list`: every workspace on this machine in one table (kit version, what waits on the owner, the doctor's count, the latest brief).
 - `bin/doctor.sh` leads with a summary of what needs attention, and `--fix` runs the fixes it knows (asking first).
 - One command table in `bin/cabinet` drives `cabinet help`, `cabinet <command> --help`, `cabinet help --json` (every command and option, for agents) and tab completion (`cabinet completion bash|zsh`: commands, options, and job names for `cabinet run`).
 - JSON for agents and scripts: `--json` for `status`, `doctor`, `next`, `handoffs [name]`, `digest` and `list`; every doctor result carries a stable check ID, listed in the troubleshooting docs.
@@ -1803,15 +1805,15 @@ First version.
 
 ### Schedules
 
-- macOS and Linux: schedules are launchd jobs on macOS and systemd user timers on Linux, or one block of the crontab where the machine did not boot with systemd (every other crontab line is kept); logs go to `~/.local/state/cabinet/<slug>/` on Linux; the backup passphrase comes from the secret store (`secret-tool`) on Linux, and the doctor also accepts `CABINET_BACKUP_PASSPHRASE`; notifications use `notify-send`; `cabinet list` no longer needs `column`, and paths under the home folder show as `~/` with bash 5 too. `bin/platform.sh` holds every difference, and `CABINET_SCHEDULER` overrides the scheduler it finds. The doctor reports a Linux machine with no scheduler (`schedules.scheduler`). The test suite runs on both (`npm run test:linux` runs it in a Debian container), and a workspace on a systemd Linux ran its brief and backup on schedule with the doctor all green.
+- macOS and Linux: schedules are launchd jobs on macOS and systemd user timers on Linux, or one block of the crontab where the machine did not boot with systemd (every other crontab line is kept); logs go to `~/.local/state/cabinet/<slug>/` on Linux; the backup passphrase comes from the secret store (`secret-tool`) on Linux, and the doctor also accepts `CABINET_BACKUP_PASSPHRASE`; where cron runs the schedules, a cron run reaches neither the secret store nor systemd's environment, so the passphrase lives in a file only the user can read (`~/.config/cabinet/passphrases/cabinet.<slug>.backup`, written by the command bootstrap prints), and a cron-scheduled backup runs unattended; the file, when it exists, comes first on any machine, one others can read is never used, and the doctor says so (`backups.passphrase`); messages, help and docs say "this machine", not "this Mac" (so `cabinet config --this-machine`), and `digest --notify` shows a desktop notification on both; notifications use `notify-send`; `cabinet list` no longer needs `column`, and paths under the home folder show as `~/` with bash 5 too. `bin/platform.sh` holds every difference, and `CABINET_SCHEDULER` overrides the scheduler it finds. The doctor reports a Linux machine with no scheduler (`schedules.scheduler`). The test suite runs on both (`npm run test:linux` runs it in a Debian container), and a workspace on a systemd Linux ran its brief and backup on schedule with the doctor all green.
 - Jobs as `jobs/<job>.job`, scheduled daily or weekly. A run is stopped, with everything it started, after its time limit: `TIMEOUT` minutes in the job file, else `CABINET_JOB_TIMEOUT` in `cabinet.env` (default 60; `0` for none), with the reason in the job's log. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
 - One form for every schedule (the brief, any job, the backup time, the digest): 12-hour times (`7 AM`, `4:30 PM`), every day or on days, one or several (`fri 4 PM`, `sun,mon,tue,wed,thu 8 AM`), with days by short or full name in any case. Times are stored and shown as `4:00 PM`; 24-hour times are still read.
 - Scheduled runners: claude, codex, gemini, qwen, grok, opencode, cursor, and `custom` for any other tool (`CABINET_RUNNER_CMD`).
-- `cabinet bootstrap --no-schedules` (and `--schedules` to undo it): a Mac that should not run the workspace's jobs, such as a teammate's in a shared workspace, skips their schedules from then on; the choice is saved in `cabinet.local.env`, which git never tracks.
+- `cabinet bootstrap --no-schedules` (and `--schedules` to undo it): a machine that should not run the workspace's jobs, such as a teammate's in a shared workspace, skips their schedules from then on; the choice is saved in `cabinet.local.env`, which git never tracks.
 
 ### Guardrails and safety
 
-- Agents are denied reading the backup passphrase from the Linux secret store (`secret-tool lookup` and `search`), as from the macOS keychain, in every tool's rules.
+- Agents are denied reading the backup passphrase from the Linux secret store (`secret-tool lookup` and `search`), as from the macOS keychain, in every tool's rules, and any shell command naming the passphrase file's folder in Claude Code, Grok, Qwen Code, opencode and Gemini CLI.
 - Guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI (Grok reads the Claude Code rules; the Cursor rule shapes were probed live on Cursor CLI 2026.10.16), checked by `bin/doctor.sh` (opencode on 1.x only), which also names installed tools it cannot guard; and the owner's pre-push gate for every tool.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
 - Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file. `cabinet backup verify` restores the newest archive into a temporary folder, checks the workspace and each repo against it (a damaged or incomplete archive fails), and deletes the copy; the doctor notes when no restore has been verified in 92 days (`backups.verified`).
@@ -1867,7 +1869,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 
 Every command follows these, so a person or an agent who knows one command can guess the next. `test/docs_check.py` enforces the parts a script can check.
 
-1. **Two shapes.** A one-word command acts on the workspace as a whole or on this Mac: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the Mac as a whole.
+1. **Two shapes.** A one-word command acts on the workspace as a whole or on this machine: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the machine as a whole.
 2. **Nouns are singular,** and no two commands differ only by a plural.
 3. **Verbs come from one list, each with one meaning:**
 
@@ -1884,13 +1886,13 @@ Every command follows these, so a person or an agent who knows one command can g
    | `build` | Make generated files from their sources. |
    | `draft` | Have an agent write it. |
    | `archive` | Move finished ones out of the working file. |
-   | `snapshot` | Copy files that live only on this Mac into the workspace. |
+   | `snapshot` | Copy files that live only on this machine into the workspace. |
 
    A new verb is added to this list, with its meaning, in the same change.
 4. **A noun alone shows its verbs** (`cabinet role` is `cabinet role --help`).
 5. **Options mean the same everywhere.**
    - `--json`: every command that reports (`list`, `check`, `verify`, `next`, `doctor`, `digest`, `status`, `outdated`, `changelog`, `version`, `help`) prints JSON instead, on stdout. Its fields are never renamed without a changelog entry.
-   - `--dry-run`: every command that changes the setup (settings, the team, repos, this Mac) or deletes anything prints what it would do and changes nothing.
+   - `--dry-run`: every command that changes the setup (settings, the team, repos, this machine) or deletes anything prints what it would do and changes nothing.
    - `--yes` (`-y`): every command that asks takes the defaults and asks nothing.
    - `-C <dir>`, before the command: run as if started in `<dir>`, as git does. Commands find the workspace from the current folder upward, so none takes a folder to act on as an argument; `new` and `init` take the folder they make or adopt, which is what they act on.
    - Names are lowercase words joined by dashes, and a setting's option is named for the setting (`--backup-dir`, `--brief-time`). A time or schedule takes a [schedule time](docs/commands.md#schedule-times) or `off`. A switch takes no value; a pair is `--<x>` and `--no-<x>`. A value follows its option after a space.

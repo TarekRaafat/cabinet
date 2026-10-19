@@ -36,7 +36,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 
 Every command follows these, so a person or an agent who knows one command can guess the next. `test/docs_check.py` enforces the parts a script can check.
 
-1. **Two shapes.** A one-word command acts on the workspace as a whole or on this Mac: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the Mac as a whole.
+1. **Two shapes.** A one-word command acts on the workspace as a whole or on this machine: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the machine as a whole.
 2. **Nouns are singular,** and no two commands differ only by a plural.
 3. **Verbs come from one list, each with one meaning:**
 
@@ -53,13 +53,13 @@ Every command follows these, so a person or an agent who knows one command can g
    | `build` | Make generated files from their sources. |
    | `draft` | Have an agent write it. |
    | `archive` | Move finished ones out of the working file. |
-   | `snapshot` | Copy files that live only on this Mac into the workspace. |
+   | `snapshot` | Copy files that live only on this machine into the workspace. |
 
    A new verb is added to this list, with its meaning, in the same change.
 4. **A noun alone shows its verbs** (`cabinet role` is `cabinet role --help`).
 5. **Options mean the same everywhere.**
    - `--json`: every command that reports (`list`, `check`, `verify`, `next`, `doctor`, `digest`, `status`, `outdated`, `changelog`, `version`, `help`) prints JSON instead, on stdout. Its fields are never renamed without a changelog entry.
-   - `--dry-run`: every command that changes the setup (settings, the team, repos, this Mac) or deletes anything prints what it would do and changes nothing.
+   - `--dry-run`: every command that changes the setup (settings, the team, repos, this machine) or deletes anything prints what it would do and changes nothing.
    - `--yes` (`-y`): every command that asks takes the defaults and asks nothing.
    - `-C <dir>`, before the command: run as if started in `<dir>`, as git does. Commands find the workspace from the current folder upward, so none takes a folder to act on as an argument; `new` and `init` take the folder they make or adopt, which is what they act on.
    - Names are lowercase words joined by dashes, and a setting's option is named for the setting (`--backup-dir`, `--brief-time`). A time or schedule takes a [schedule time](docs/commands.md#schedule-times) or `off`. A switch takes no value; a pair is `--<x>` and `--no-<x>`. A value follows its option after a space.

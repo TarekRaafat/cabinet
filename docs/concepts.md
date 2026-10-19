@@ -23,7 +23,7 @@ A workspace runs a product with AI agents, each in a role, and one owner (you) w
 
 Each role's file says what it owns, decides, escalates and may write. A project turns roles on or off (`CABINET_ROLES`; the optional ones are off until turned on), adds notes to one in `roles/<role>.md`, or adds a role of its own: `cabinet role add <role>` takes as little as a name, and an agent drafts the whole role for the project from what the owner said and what the project shows, listing its assumptions for the owner to confirm ([recipes](recipes.md#add-a-role)).
 
-**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a Mac, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/role.sh build`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
+**Builders** are the roles that write the product's code. They are not in `CABINET_ROLES`: a builder is built when it owns a repo in the team table of `AGENTS.md`. When a repo whose owner is `TBD` first arrives on a machine, `bin/bootstrap.sh` gives it the builder it most looks like: `mobile` for an `ios/` or `android/` folder, a `pubspec.yaml`, an Xcode project, or React Native or Expo; `infrastructure` for Terraform, Pulumi, Helm or CDK files; `web` for React, Next, Vue, Svelte, Angular, Astro or Nuxt, or an `index.html`; otherwise `backend`. Change the row to choose another builder, a project role, or `owner`, then `bin/role.sh build`. In a repo that already exists a builder learns how it is built (its `AGENTS.md`, scripts, CI, lint and style) and follows it; only a new, empty repo gets defaults (`CABINET.md`, "Builders").
 
 ## Rules, guides and notes
 
@@ -79,13 +79,13 @@ cabinet works the same on both. Only where it keeps things on the machine differ
 |---|---|---|
 | Schedules | launchd: `~/Library/LaunchAgents/ai.cabinet.<slug>.<job>.plist` | systemd user timers: `~/.config/systemd/user/ai.cabinet.<slug>.<job>.service` and `.timer`. On a machine that did not boot with systemd (many containers, older WSL): cron, as one block cabinet writes into your crontab from `~/.config/cabinet/cron/`, keeping every line of your own. |
 | Log folder | `~/Library/Logs/cabinet/<slug>/` | `~/.local/state/cabinet/<slug>/` (under `$XDG_STATE_HOME` when set) |
-| Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu) |
+| Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu); with cron, a file only you can read: `~/.config/cabinet/passphrases/cabinet.<slug>.backup` |
 | Notifications | Notification Center | `notify-send` |
 
 `CABINET_SCHEDULER` (`launchd`, `systemd`, `cron` or `none`) overrides the choice. On Linux:
 
 - systemd runs a user's timers only while that user is logged in, unless lingering is on: `loginctl enable-linger "$USER"` once, on a server or a machine you leave logged out. A timer missed while the machine was off runs when it starts again, as launchd does after sleep.
-- The secret store needs a desktop session. Without one, give scheduled backups the passphrase through systemd instead: `read -rs CABINET_BACKUP_PASSPHRASE; export CABINET_BACKUP_PASSPHRASE; systemctl --user import-environment CABINET_BACKUP_PASSPHRASE` (until the user's systemd stops; run it again after a restart). Cron jobs reach neither, so with cron a backup runs only by hand (`cabinet backup create` with the variable set).
+- The secret store needs a desktop session. Without one, give scheduled backups the passphrase through systemd instead: `read -rs CABINET_BACKUP_PASSPHRASE; export CABINET_BACKUP_PASSPHRASE; systemctl --user import-environment CABINET_BACKUP_PASSPHRASE` (until the user's systemd stops; run it again after a restart). Cron jobs reach neither, so with cron the passphrase is kept in a file only you can read, `~/.config/cabinet/passphrases/cabinet.<slug>.backup` (under `$XDG_CONFIG_HOME` when set; `bin/bootstrap.sh` prints the command that writes it). On any machine that file, when it exists, comes before the keychain or secret store, and one that other users can read is never used.
 - Run `cabinet bootstrap` as yourself, not through `sudo`: schedules are per user.
 
 ## Agent tools and models

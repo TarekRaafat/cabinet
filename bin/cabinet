@@ -78,8 +78,8 @@ C	Start	new	[dir] [options]	Create a workspace in a new or empty folder. Asks it
 C	Start	init	[dir] [options]	Add cabinet to an existing project, or make a folder of repos the workspace (default: this folder).
 C	Daily	next		What to do next in this workspace, in order. Changes nothing.
 C	Daily	brief		Write the brief now (runs the brief job).
-C	Daily	digest		One morning read: the sign-off queue and your actions from the latest brief of every workspace on this Mac.
-C	Daily	list		Every workspace on this Mac: its kit version, what waits on you, what the doctor finds, the latest brief.
+C	Daily	digest		One morning read: the sign-off queue and your actions from the latest brief of every workspace on this machine.
+C	Daily	list		Every workspace on this machine: its kit version, what waits on you, what the doctor finds, the latest brief.
 C	Daily	doctor		Check everything (repos, roles, guardrails, schedules, backups) and say how to fix it.
 C	Team	role add	<name> [options]	Turn on a kit role, or add a role of the project's own from as little as its name.
 C	Team	role remove	<name>	Turn a role off. A role of the project's own keeps its file in roles/.
@@ -91,7 +91,7 @@ C	Team	handoff list	[name]	Open handoffs, oldest first; with a repo or role name
 C	Team	handoff archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
 C	Work	repo add	<git url>	Add a product repo; bootstrap clones it and gives it a builder.
 C	Work	repo remove	<name>	Take a repo out of repos.tsv and the team table; its folder is left as it is.
-C	Work	repo list		Every repo: its owner, whether it is on this Mac, where it lives.
+C	Work	repo list		Every repo: its owner, whether it is on this machine, where it lives.
 C	Work	repo snapshot		Copy each repo's local-only files into local/.
 C	Work	job run	<job>	Run a job from jobs/ now.
 C	Work	job list		Every job: its role, schedule and time limit.
@@ -99,10 +99,10 @@ C	Safety	secret check		Look for keys, tokens and passwords in the workspace's fi
 C	Safety	backup create	[folder]	One encrypted backup now (default folder: CABINET_BACKUP_DIR).
 C	Safety	backup verify	[folder]	Restore the newest archive into a temporary folder, check it against the workspace and its repos, delete it.
 C	Safety	backup restore	<archive> [dir]	Rebuild a workspace and its repos from a backup, never losing a file. Works before any workspace exists.
-C	Setup	bootstrap		Set up this Mac for the workspace: repos, builders, guardrails, schedules. Safe to rerun.
+C	Setup	bootstrap		Set up this machine for the workspace: repos, builders, guardrails, schedules. Safe to rerun.
 C	Setup	config	[options]	Change settings: the setup questions again, with the current answers as defaults.
 C	Setup	move	<new-path>	Move the workspace folder and update what remembers its path.
-C	Setup	remove		Remove this workspace from this Mac after showing the plan: schedules, logs, folder, and what setup added to a project.
+C	Setup	remove		Remove this workspace from this machine after showing the plan: schedules, logs, folder, and what setup added to a project.
 C	Kit	update		Apply the installed kit to this workspace and print the changelog since its version.
 C	Kit	status		This workspace's kit version, the installed kit's, and every kit file edited here.
 C	Kit	outdated		Is a newer kit published? Compares this workspace, the installed kit and the npm registry.
@@ -128,11 +128,11 @@ O	init	--shared		With --inside: cabinet/ is committed with the project.
 O	init	--beside		In a project repo: the workspace is a folder next to it.
 O	init	--workspace	<folder>	With --beside: where that folder goes (default: <project>-hq).
 O	config	--apply		Run bootstrap after the change without asking.
-O	config	--this-mac		With --backup-dir or --backup-time: set them for this Mac only, in cabinet.local.env (not committed).
-O	config	--clear		With --this-mac: this Mac follows the backup settings in cabinet.env again.
+O	config	--this-machine		With --backup-dir or --backup-time: set them for this machine only, in cabinet.local.env (not committed).
+O	config	--clear		With --this-machine: this machine follows the backup settings in cabinet.env again.
 O	repo add	--apply		Run bootstrap right after, which clones the repo and gives it a builder.
-O	bootstrap	--no-schedules		From now on, schedule no jobs on this Mac: another Mac runs them (saved in cabinet.local.env, not committed).
-O	bootstrap	--schedules		Schedule this Mac's jobs again (undoes --no-schedules).
+O	bootstrap	--no-schedules		From now on, schedule no jobs on this machine: another machine runs them (saved in cabinet.local.env, not committed).
+O	bootstrap	--schedules		Schedule this machine's jobs again (undoes --no-schedules).
 O	role add	--does	"..."	What it should do, in your words (asked in a terminal when no option is given).
 O	role add	--owns	"..."	The repos, folders or areas it owns.
 O	role add	--decides	"..."	What it may decide on its own.
@@ -147,11 +147,11 @@ O	handoff add	--depends-on	"..."	The commit or branch it depends on (default: no
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
-O	digest	--notify		Also show a macOS notification with the counts (with --write or --schedule).
+O	digest	--notify		Also show a desktop notification with the counts (with --write or --schedule).
 O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 10:00 AM), or at another time ("8 AM"), or on days and a time ("fri 10 AM", "sun,mon,tue,wed,thu 8 AM"); off stops it.
 O	digest	--file	<file>	With --schedule: where it is written (default: digest.md in the log folder, ~/Library/Logs/cabinet/ on macOS, ~/.local/state/cabinet/ on Linux).
 O	remove	--force		Remove even with uncommitted changes or commits on no remote.
-O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store.
+O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
 O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,handoff list,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
@@ -763,7 +763,7 @@ setup() {
   echo "Next:"
   echo "  - Fill the TBDs in $([[ "$layout" == inside ]] && echo cabinet/)AGENTS.md: what $name is, its product rules, how to test, the repo rows."
   ((installed)) || ((pinned == 0)) || echo "  - In $pinat: npm install (downloads the pinned kit and locks its version)."
-  ((setup)) || echo "  - Set up this Mac: cabinet bootstrap --dry-run, then cabinet bootstrap."
+  ((setup)) || echo "  - Set up this machine: cabinet bootstrap --dry-run, then cabinet bootstrap."
   echo "  - cabinet next shows what is left, at any time, from anywhere in $ws."
   echo "Updates: npm update, then cabinet update (npx cabinet update without a global install)."
 }
@@ -864,7 +864,7 @@ ROLE
 }
 
 cmd_config() {
-  local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_mac=0 clear=0
+  local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" repos=()
   local set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0
   while (($#)); do
@@ -882,7 +882,7 @@ cmd_config() {
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --apply) apply=1; shift ;;
-      --this-mac) this_mac=1; shift ;;
+      --this-machine) this_machine=1; shift ;;
       --clear) clear=1; shift ;;
       --dry-run) dry=1; shift ;;
       -y|--yes) yes=1; shift ;;
@@ -890,15 +890,15 @@ cmd_config() {
       *) bad_usage "unexpected argument '$1' (to name a workspace: cabinet -C <dir> config)" ;;
     esac
   done
-  if ((this_mac)); then
-    # Only the backup settings are per Mac; the rest is shared by every Mac.
+  if ((this_machine)); then
+    # Only the backup settings are per machine; the rest is shared by every machine.
     (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || ${#repos[@]} )) \
-      && die "--this-mac sets only --backup-dir and --backup-time: the other settings are shared by every Mac"
-    (( set_backup || set_btime || clear )) || die "--this-mac needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
+      && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
+    (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
     yes=1
   else
-    ((clear == 0)) || die "--clear goes with --this-mac"
+    ((clear == 0)) || die "--clear goes with --this-machine"
   fi
   local ws; ws="$(find_ws "$dirarg")"
   [[ -f "$ws/.cabinet/version" && -f "$ws/cabinet.env" ]] || die "$ws is not a cabinet workspace"
@@ -973,25 +973,25 @@ cmd_config() {
   done < <(awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2' "$ws/repos.tsv" 2>/dev/null)
   check_backup_outside "${dd[@]}"
 
-  # This Mac only: the backup lines of cabinet.local.env, which git never tracks.
+  # This machine only: the backup lines of cabinet.local.env, which git never tracks.
   local lenv="$ws/cabinet.local.env"
   lhas() { grep -q "^$1=" "$lenv" 2>/dev/null; }
   lget() { sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$lenv" 2>/dev/null | tail -1 || true; }
-  if ((this_mac)); then
+  if ((this_machine)); then
     local cur_b="$o_backup" cur_t="$o_btime" new_b new_t lchanges=()
     lhas CABINET_BACKUP_DIR && cur_b="$(lget CABINET_BACKUP_DIR)"
     lhas CABINET_BACKUP_TIME && { cur_t="$(lget CABINET_BACKUP_TIME)"; cur_t="$(when_time_only "$cur_t" || printf '%s' "$cur_t")"; }
     if ((clear)); then
-      lhas CABINET_BACKUP_DIR || lhas CABINET_BACKUP_TIME || { echo "Nothing to change: this Mac already follows cabinet.env."; return 0; }
-      new_b="$o_backup"; new_t="$o_btime"; lchanges+=("this Mac: follow cabinet.env again (backups ${o_backup:-off}, at $o_btime)")
+      lhas CABINET_BACKUP_DIR || lhas CABINET_BACKUP_TIME || { echo "Nothing to change: this machine already follows cabinet.env."; return 0; }
+      new_b="$o_backup"; new_t="$o_btime"; lchanges+=("this machine: follow cabinet.env again (backups ${o_backup:-off}, at $o_btime)")
     else
       new_b="$cur_b"; new_t="$cur_t"
       ((set_backup)) && new_b="$backup"; ((set_btime)) && new_t="$backup_time"
-      ((set_backup)) && { [[ "$new_b" != "$cur_b" ]] || ! lhas CABINET_BACKUP_DIR; } && lchanges+=("this Mac: backups ${cur_b:-off} -> ${new_b:-off}")
-      ((set_btime)) && { [[ "$new_t" != "$cur_t" ]] || ! lhas CABINET_BACKUP_TIME; } && lchanges+=("this Mac: backup time $cur_t -> $new_t")
+      ((set_backup)) && { [[ "$new_b" != "$cur_b" ]] || ! lhas CABINET_BACKUP_DIR; } && lchanges+=("this machine: backups ${cur_b:-off} -> ${new_b:-off}")
+      ((set_btime)) && { [[ "$new_t" != "$cur_t" ]] || ! lhas CABINET_BACKUP_TIME; } && lchanges+=("this machine: backup time $cur_t -> $new_t")
     fi
     if ((${#lchanges[@]} == 0)); then echo "Nothing to change."; return 0; fi
-    echo; echo "Changes (cabinet.local.env, this Mac only; not committed):"; printf '  - %s\n' "${lchanges[@]}"
+    echo; echo "Changes (cabinet.local.env, this machine only; not committed):"; printf '  - %s\n' "${lchanges[@]}"
     ((dry)) && { echo "(dry run: nothing written)"; return 0; }
     {
       grep -v -e '^CABINET_BACKUP_DIR=' -e '^CABINET_BACKUP_TIME=' "$lenv" 2>/dev/null || true
@@ -1002,7 +1002,7 @@ cmd_config() {
     } > "$lenv.new"
     if [[ -s "$lenv.new" ]]; then mv "$lenv.new" "$lenv"; else rm -f "$lenv.new" "$lenv"; fi
     if ((apply)); then "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."
-    else echo "Next: cabinet bootstrap (this Mac's backup schedule follows the new setting)."; fi
+    else echo "Next: cabinet bootstrap (this machine's backup schedule follows the new setting)."; fi
     return 0
   fi
 
@@ -1015,7 +1015,7 @@ cmd_config() {
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
-  [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this Mac keeps its own folder from cabinet.local.env; cabinet config --this-mac --clear follows this one)")")
+  [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
   local newrows=()
   for r in ${repos[@]+"${repos[@]}"}; do
@@ -1169,7 +1169,7 @@ cmd_repo() {
   fi
   noun_script repo "$@"
 }
-# Restore works before any workspace exists (a new Mac): the kit's own copy then.
+# Restore works before any workspace exists (a new machine): the kit's own copy then.
 cmd_backup() {
   if [[ "${1:-}" == restore ]]; then
     local ws; if ws="$(find_ws_up)"; then exec "$ws/bin/backup.sh" "$@"; else exec "$KIT/scripts/backup.sh" "$@"; fi
@@ -1212,17 +1212,17 @@ cmd_next() {
   if grep -q '@tarekraafat/cabinet' "$pin/package.json" 2>/dev/null && [[ ! -d "$pin/node_modules/@tarekraafat/cabinet" ]]; then
     step install "Download the pinned kit (in $pin)." "npm install"
   fi
-  # This Mac: guardrails and schedules.
+  # This machine: guardrails and schedules.
   local slug label jf when missing=0
   slug="$(envget CABINET_SLUG)"; label="ai.cabinet.$slug"
   [[ -x "$(git config --global core.hooksPath 2>/dev/null)/pre-push" ]] || missing=1
-  # A Mac set to schedule no jobs (cabinet.local.env) is not missing them.
+  # A machine set to schedule no jobs (cabinet.local.env) is not missing them.
   grep -qx 'CABINET_SCHEDULES="\{0,1\}off"\{0,1\}' "$ws/cabinet.local.env" 2>/dev/null || for jf in "$ws"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
     when="$(WHEN=""; source "$jf" >/dev/null 2>&1; printf '%s' "$WHEN")"
     [[ -n "$when" && "$SCHEDULER" != none && ! -f "$(sched_file "$label.$(basename "$jf" .job)")" ]] && missing=1
   done
-  ((missing)) && step bootstrap "Set up this Mac: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
+  ((missing)) && step bootstrap "Set up this machine: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
   # Work waiting on the owner.
   local waiting
   waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
@@ -1259,7 +1259,7 @@ cmd_next() {
   return 0
 }
 
-# Every workspace this Mac knows: "<slug><TAB><folder>", from the slug claims in
+# Every workspace this machine knows: "<slug><TAB><folder>", from the slug claims in
 # <logs>/<slug>/workspace that setup and bootstrap write (LOGROOT, bin/platform.sh).
 known_workspaces() {
   local claim
@@ -1270,7 +1270,7 @@ known_workspaces() {
 }
 
 # One morning read: the sign-off queue and the owner's actions from the latest brief of
-# every workspace on this Mac, by the headings chief-of-staff writes. Answers still go to
+# every workspace on this machine, by the headings chief-of-staff writes. Answers still go to
 # each workspace's own agent. Reads only, except --write (its file) and --schedule.
 DIGEST_LABEL="ai.cabinet-digest"   # outside ai.cabinet.<slug>.*: never a workspace's schedule
 DIGEST_FILE_DEFAULT="$LOGROOT/digest.md"
@@ -1354,7 +1354,7 @@ cmd_digest() {
 
 digest_text() {  # digest_text <count> <rows>
   local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting
-  ((n)) || { echo "No cabinet workspaces on this Mac yet. Start one: cabinet new, or cabinet init in an existing project."; return 0; }
+  ((n)) || { echo "No cabinet workspaces on this machine yet. Start one: cabinet new, or cabinet init in an existing project."; return 0; }
   while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting; do
     [[ -n "$slug" ]] || continue
     if [[ "$exists" != ok ]]; then echo "== $slug: folder gone (${ws/#$HOME/$TILDE}); cabinet list says how to free the slug"; echo; continue; fi
@@ -1415,7 +1415,7 @@ digest_schedule() {
   else die "$SCHEDULER could not load the schedule (see above); nothing installed"; fi
 }
 
-# Every workspace on this Mac, from the slug claims in <logs>/<slug>/workspace
+# Every workspace on this machine, from the slug claims in <logs>/<slug>/workspace
 # (written by setup and bootstrap): its version, what waits on the owner, the doctor's count
 # and the newest brief. The doctors run side by side, each with its workspace's own scripts.
 cmd_list() {
@@ -1454,11 +1454,11 @@ cmd_list() {
     return 0
   fi
   if ((n == 0)); then
-    echo "No cabinet workspaces on this Mac yet. Start one: cabinet new, or cabinet init in an existing project."
+    echo "No cabinet workspaces on this machine yet. Start one: cabinet new, or cabinet init in an existing project."
     return 0
   fi
   local gone="" newer=0 v w p b
-  echo "Workspaces on this Mac ($n):"
+  echo "Workspaces on this machine ($n):"
   # The table is built first, in this shell: a pipe would lose what the loop learns.
   {
     printf 'SLUG\tPROJECT\tKIT\tWAITING ON YOU\tDOCTOR\tLATEST BRIEF\tFOLDER\n'
@@ -1484,7 +1484,7 @@ cmd_list() {
   return 0
 }
 
-# Remove a workspace from this Mac: its schedules, its log folder, its folder, and inside a
+# Remove a workspace from this machine: its schedules, its log folder, its folder, and inside a
 # project what setup added there. Shows the plan first; the guardrails stay (other
 # workspaces use them); the backup key and archives stay unless --delete-key.
 cmd_remove() {

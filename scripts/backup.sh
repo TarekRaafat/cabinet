@@ -167,7 +167,7 @@ fi
 
 echo "Done. Next: bin/bootstrap.sh (guardrails, links, schedules), then bin/doctor.sh."
 }
-# Restore needs no cabinet.env: it may run on a new Mac, before the workspace exists.
+# Restore needs no cabinet.env: it may run on a new machine, before the workspace exists.
 if [[ "${1:-}" == restore ]]; then shift; b_restore "$@"; exit 0; fi
 
 source "$(dirname "$0")/lib.sh"

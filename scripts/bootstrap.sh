@@ -5,7 +5,7 @@
 #
 #   bin/bootstrap.sh --dry-run        show what would happen
 #   bin/bootstrap.sh                  do it
-#   bin/bootstrap.sh --no-schedules   and from now on, schedule no jobs on this Mac (another Mac
+#   bin/bootstrap.sh --no-schedules   and from now on, schedule no jobs on this machine (another machine
 #                                     runs them; remembered in cabinet.local.env); --schedules undoes it
 #
 # Safe to run again at any time. It never overwrites an existing file: a file
@@ -257,13 +257,13 @@ if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
 fi
 
 echo "== Schedules ($SCHEDULER)"
-# Remember the choice for this Mac in cabinet.local.env (only the one line; other lines are kept).
+# Remember the choice for this machine in cabinet.local.env (only the one line; other lines are kept).
 if [[ -n "$set_schedules" && "$set_schedules" != "$CABINET_SCHEDULES" ]]; then
   if ((DRY)); then echo "  would set CABINET_SCHEDULES=\"$set_schedules\" in $LOCAL_ENV"
   else
     { grep -v '^CABINET_SCHEDULES=' "$LOCAL_ENV" 2>/dev/null || true; [[ "$set_schedules" == off ]] && echo 'CABINET_SCHEDULES="off"'; } > "$LOCAL_ENV.new"
     if [[ -s "$LOCAL_ENV.new" ]]; then mv "$LOCAL_ENV.new" "$LOCAL_ENV"; else rm -f "$LOCAL_ENV.new" "$LOCAL_ENV"; fi
-    echo "  this Mac: jobs scheduled $set_schedules (saved in cabinet.local.env, which git does not track)"
+    echo "  this machine: jobs scheduled $set_schedules (saved in cabinet.local.env, which git does not track)"
   fi
 fi
 [[ -n "$set_schedules" ]] && CABINET_SCHEDULES="$set_schedules"
@@ -306,7 +306,7 @@ else
     echo "  scheduled jobs will not find '$runner' (install it, or run bin/bootstrap.sh from a shell where it is on PATH)"; failures=1
   fi
   if [[ "$CABINET_SCHEDULES" == off ]]; then
-    echo "  jobs are not scheduled on this Mac (another Mac runs them; cabinet bootstrap --schedules turns them on). cabinet job run <job> still runs one by hand."
+    echo "  jobs are not scheduled on this machine (another machine runs them; cabinet bootstrap --schedules turns them on). cabinet job run <job> still runs one by hand."
   else
     for jf in "$WS"/jobs/*.job; do
       [[ -f "$jf" ]] || continue
@@ -316,7 +316,7 @@ else
   fi
   [[ -z "$CABINET_BACKUP_DIR" ]] || schedule backup "$WS/bin/backup.sh" create "$CABINET_BACKUP_DIR" "$CABINET_BACKUP_TIME"
   # Remove this workspace's schedules that are no longer wanted: a job with an
-  # empty WHEN or no job file, every job when this Mac schedules none, or the
+  # empty WHEN or no job file, every job when this machine schedules none, or the
   # backup with CABINET_BACKUP_DIR empty.
   # Only schedules that run this workspace: another workspace's are never touched.
   for live in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do

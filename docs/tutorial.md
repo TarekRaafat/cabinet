@@ -1,6 +1,6 @@
 # Tutorial: your first day with cabinet
 
-About 15 minutes. You create a workspace for a made-up product, Acme, set up your Mac, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
+About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
 
 You need macOS or Linux, git, jq, perl, python3, Node.js and at least one agent tool (Claude Code, Codex, Gemini CLI, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
 
@@ -41,7 +41,7 @@ cabinet next
 Next in Acme (~/dev/acme):
   1. Fill the TBDs in AGENTS.md: What Acme is, Contracts that cross repo lines, House rules, Product rules, How to test.
   2. Download the pinned kit (in ~/dev/acme). Run: npm install
-  3. Set up this Mac: guardrails and schedules (add --dry-run to see the changes first). Run: cabinet bootstrap
+  3. Set up this machine: guardrails and schedules (add --dry-run to see the changes first). Run: cabinet bootstrap
   4. The first brief comes at 7:00 AM (or write it now). Run: cabinet brief
   5. The doctor found 9 thing(s) to fix (cabinet doctor --fix runs the ones it can). Run: cabinet doctor
   Optional: Daily encrypted backups. Run: cabinet config --backup-dir <a folder outside the workspace>
@@ -60,7 +60,7 @@ npm install                # skip until the package is published to npm
 git add -A && git commit -m "Describe Acme"
 ```
 
-## 4. Set up this Mac
+## 4. Set up this machine
 
 See first, then apply:
 
@@ -82,7 +82,7 @@ cabinet bootstrap
   installed ai.cabinet.acme.brief (7:00 AM)
 ```
 
-Bootstrap installs the guardrails: every push now asks you at your own terminal, and each agent tool on this Mac denies push, merge, release and publish ([guardrails](guardrails.md)). It also schedules the daily brief. It saves a `.bak` copy of every settings file it changes, and running it again is safe.
+Bootstrap installs the guardrails: every push now asks you at your own terminal, and each agent tool on this machine denies push, merge, release and publish ([guardrails](guardrails.md)). It also schedules the daily brief. It saves a `.bak` copy of every settings file it changes, and running it again is safe.
 
 ## 5. Check everything
 
@@ -131,6 +131,6 @@ When qa and security have recorded PASS on a piece of work, you push it from you
 
 ## Where next
 
-- [Recipes](recipes.md): add a role or a job, switch agent tools, move to a new Mac, add a teammate.
+- [Recipes](recipes.md): add a role or a job, switch agent tools, move to a new machine, add a teammate.
 - [Commands](commands.md): every command and option. `cabinet <command> --help` shows them too.
 - [Layouts](layouts.md): add cabinet to an existing project instead.

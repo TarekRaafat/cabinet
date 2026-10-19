@@ -13,7 +13,7 @@ Short answers to common tasks. Every command runs from anywhere inside the works
 - [Switch the agent tool for scheduled jobs](#switch-the-agent-tool-for-scheduled-jobs)
 - [Add a product repo](#add-a-product-repo)
 - [Turn on backups](#turn-on-backups)
-- [Move to a new Mac](#move-to-a-new-mac)
+- [Move to a new machine](#move-to-a-new-machine)
 - [Add a teammate to a shared workspace](#add-a-teammate-to-a-shared-workspace)
 - [Run several projects](#run-several-projects)
 - [Update the kit](#update-the-kit)
@@ -133,7 +133,7 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 2. Choose a passphrase, keep it in your password manager, and put it in the keychain: `security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w`. On Linux, in the secret store: `secret-tool store --label=cabinet.<slug>.backup service cabinet.<slug>.backup account "$USER"`.
 3. `cabinet backup create` makes one now; the schedule makes one daily. Once a quarter, `cabinet backup verify`. See [backups](backups.md).
 
-## Move to a new Mac
+## Move to a new machine
 
 1. Install cabinet and its needs ([Install](../README.md#install)).
 2. Put the backup passphrase in the keychain or secret store, as in step 2 of [Turn on backups](#turn-on-backups).
@@ -142,22 +142,22 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 
 Without a backup, clone the workspace's own repo instead, then `cabinet bootstrap`.
 
-To move a workspace to another folder on the same Mac: `cabinet move <new-path>`.
+To move a workspace to another folder on the same machine: `cabinet move <new-path>`.
 
 ## Add a teammate to a shared workspace
 
 A shared workspace (`cabinet init --inside --shared`) is committed with the project, so a teammate gets it by cloning:
 
 1. The teammate clones the project and runs `npm install`, which installs the pinned kit.
-2. They run `cabinet bootstrap --no-schedules` on their Mac, then `cabinet doctor`. This installs the push gate and their agent tools' guardrails, but no schedules: one Mac, usually the owner's, runs the brief and the other jobs, so it is written once. The choice is saved for that Mac only (`cabinet.local.env`, which git does not track).
+2. They run `cabinet bootstrap --no-schedules` on their machine, then `cabinet doctor`. This installs the push gate and their agent tools' guardrails, but no schedules: one machine, usually the owner's, runs the brief and the other jobs, so it is written once. The choice is saved for that machine only (`cabinet.local.env`, which git does not track).
 
-3. Backups follow the workspace's `CABINET_BACKUP_DIR`, which is shared. Each teammate sets their own folder for their Mac, or none: `cabinet config --this-mac --backup-dir ~/Backups/cabinet --apply` (or `--backup-dir off`). That also lives in `cabinet.local.env`.
+3. Backups follow the workspace's `CABINET_BACKUP_DIR`, which is shared. Each teammate sets their own folder for their machine, or none: `cabinet config --this-machine --backup-dir ~/Backups/cabinet --apply` (or `--backup-dir off`). That also lives in `cabinet.local.env`.
 
-Any teammate can still run a job by hand (`cabinet job run <job>`). To make another Mac the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
+Any teammate can still run a job by hand (`cabinet job run <job>`). To make another machine the one that runs the jobs: `cabinet bootstrap --no-schedules` on the old one, `cabinet bootstrap --schedules` on the new one.
 
 ## Run several projects
 
-One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has its own slug, so its own schedules, logs, backups and brief; the guardrails are shared by the whole Mac. One project with several repos or products is one workspace, with every repo in `repos.tsv`.
+One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has its own slug, so its own schedules, logs, backups and brief; the guardrails are shared by the whole machine. One project with several repos or products is one workspace, with every repo in `repos.tsv`.
 
 `cabinet list` shows them all in one table: what waits on you, what the doctor finds, the latest brief. Each morning, `cabinet digest` gathers every project's sign-off queue and your actions into one read (`cabinet digest --schedule --notify` writes it to `~/Library/Logs/cabinet/digest.md` every day at 10:00 AM and tells you; `--schedule "8 AM"` for another time, `--schedule "sun,mon,tue,wed,thu 8 AM"` for chosen days); answer each queue in its own workspace (`cd` there and tell its agent). Then `cabinet next` inside any of them.
 
