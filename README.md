@@ -68,7 +68,7 @@ You need macOS or Linux, and:
 |---|---|
 | git, jq, perl, python3 | Every command, handoffs and the guardrails |
 | Node.js and npm | Installing cabinet and pinning its version in each workspace |
-| At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Gemini CLI, Qwen Code, Grok, opencode, the Cursor CLI, or your own command |
+| At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, or your own command (Gemini CLI for interactive sessions only) |
 | A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
 
 | Optional | For | Without it |

@@ -2,7 +2,7 @@
 
 About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
 
-You need macOS or Linux, git, jq, perl, python3, Node.js and at least one agent tool (Claude Code, Codex, Gemini CLI, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
+You need macOS or Linux, git, jq, perl, python3, Node.js and at least one agent tool (Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
 
 ## 1. Create the workspace
 

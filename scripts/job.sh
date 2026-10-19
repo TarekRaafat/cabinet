@@ -4,7 +4,7 @@
 # now. Logs go to ~/Library/Logs/cabinet/<slug>/.
 #
 #   bin/job.sh run <job>
-#       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, gemini,
+#       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, antigravity,
 #       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). A run is
 #       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
 #       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run.

@@ -94,20 +94,20 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 section "new, answered at the prompts" ""
 s2() {
 # Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, brief,
-# budget and price (gemini reports only tokens), week, writing, backup, one repo then done, create, no npm install,
+# budget and price (antigravity reports only tokens), week, writing, backup, one repo then done, create, no npm install,
 # no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" gemini 5 "1  2" "8:30 am" sunday short off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity 5 "1  2" "8:30 am" sunday short off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
 grep -qx 'CABINET_ROLES="chief-of-staff architect qa security design-lead"' "$A/cabinet.env" || fail "prompted roles"
-grep -qx 'CABINET_RUNNER="gemini"' "$A/cabinet.env" && grep -qx 'WHEN="8:30 AM"' "$A/jobs/brief.job" || fail "prompted runner or brief"
+grep -qx 'CABINET_RUNNER="antigravity"' "$A/cabinet.env" && grep -qx 'WHEN="8:30 AM"' "$A/jobs/brief.job" || fail "prompted runner or brief"
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$A/AGENTS.md" || fail "prompted writing"
 # With claude (the fake comes first on PATH) setup asks for a budget, and no price: claude reports dollars.
 printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_BUDGET="15"' "$T/budgeted/cabinet.env" || fail "prompted budget with claude"
-grep -qx 'CABINET_BUDGET="5"' "$A/cabinet.env" && grep -qx 'CABINET_PRICE="1 2"' "$A/cabinet.env" || fail "prompted budget and price with gemini"
+grep -qx 'CABINET_BUDGET="5"' "$A/cabinet.env" && grep -qx 'CABINET_PRICE="1 2"' "$A/cabinet.env" || fail "prompted budget and price with antigravity"
 grep -qx 'CABINET_PRICE=""' "$T/budgeted/cabinet.env" || fail "a price was set with claude"
 printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
@@ -1304,7 +1304,7 @@ grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" ||
 for bad in abc "1" "1 2 3 4" "1 -2"; do (cd "$S" && "$F" config --yes --price "$bad") >/dev/null 2>&1 && fail "the price '$bad' was accepted"; done
 (cd "$S" && "$F" config --yes --price "2 10 0.5") >/dev/null && grep -qx 'CABINET_PRICE="2 10 0.5"' "$S/cabinet.env" || fail "config --price"
 git -C "$S" commit -qam "codex, priced"
-# Each runner's JSON, as seen live (or documented, for gemini): the reply reaches the log, and the
+# Each runner's JSON, as seen live (documented, for claude): the reply reaches the log, and the
 # run is recorded in dollars, reported or priced at 2, 10 and 0.5 dollars per million tokens.
 mkdir -p "$T/fakes"
 fk() { printf '#!/bin/sh\ncat <<"EOF"\n%s\nEOF\n' "$2" > "$T/fakes/$1"; chmod +x "$T/fakes/$1"; }
@@ -1317,15 +1317,22 @@ fk codex '{"type":"thread.started","thread_id":"x"}
 {"type":"turn.completed","usage":{"input_tokens":3000,"cached_input_tokens":1000,"output_tokens":100}}'
 fk cursor-agent '{"type":"result","subtype":"success","is_error":false,"result":"brief written","usage":{"inputTokens":1000,"outputTokens":100,"cacheReadTokens":1000,"cacheWriteTokens":0}}'
 fk qwen '[{"type":"result","subtype":"success","is_error":false,"result":"brief written","usage":{"input_tokens":1000,"output_tokens":100}}]'
-fk gemini '{"response":"brief written","stats":{"models":{"m":{"tokens":{"prompt":2000,"candidates":100,"cached":1000,"total":2100}}}}}'
-for want in grok:0.015 opencode:0.003000 codex:0.005500 cursor:0.003500 qwen:0.003000 gemini:0.003500; do
+fk agy '{"conversation_id":"x","status":"SUCCESS","response":"brief written","num_turns":1,"usage":{"input_tokens":2000,"output_tokens":80,"thinking_tokens":20,"cache_read_tokens":1000,"total_tokens":2100}}'
+for want in grok:0.015 opencode:0.003000 codex:0.005500 cursor:0.003500 qwen:0.003000 antigravity:0.003500; do
   rn="${want%%:*}"; sedi "s/^CABINET_RUNNER=.*/CABINET_RUNNER=\"$rn\"/" "$S/cabinet.env"; git -C "$S" commit -qam "$rn"
   : > "$HOME/$LOGS/spend/brief.log"
   PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1 || fail "the $rn runner failed"
   grep -qx 'brief written' "$HOME/$LOGS/spend/brief.log" || { cat "$HOME/$LOGS/spend/brief.log"; fail "the $rn reply did not reach the log"; }
   tail -1 "$HOME/$LOGS/spend/spend.tsv" | awk -F'\t' -v r="$rn" -v d="${want#*:}" '$3 == r && $4 == d { ok = 1 } END { exit !ok }' || { tail -1 "$HOME/$LOGS/spend/spend.tsv"; fail "the $rn run was not recorded as \$${want#*:}"; }
 done
-grep -q 'priced from gemini.s token counts' "$HOME/$LOGS/spend/brief.log" || fail "the log does not say the cost was priced from tokens"
+grep -q 'priced from antigravity.s token counts' "$HOME/$LOGS/spend/brief.log" || fail "the log does not say the cost was priced from tokens"
+printf '#!/bin/sh\necho "$*" > "%s"\n' "$T/agy.args" > "$T/fakes/agy"; PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1
+grep -q '^-p Act as the chief-of-staff role: read agents/chief-of-staff.md.* --output-format json --dangerously-skip-permissions$' "$T/agy.args" || { cat "$T/agy.args"; fail "the antigravity runner's arguments"; }
+# gemini was a runner: it says what to use instead.
+sedi 's/^CABINET_RUNNER=.*/CABINET_RUNNER="gemini"/' "$S/cabinet.env"; git -C "$S" commit -qam gemini
+"$S/bin/job.sh" run brief >/dev/null 2>&1 && fail "the gemini runner still runs"
+grep -q 'CABINET_RUNNER=gemini is no longer a runner .*cabinet config --runner antigravity' "$HOME/$LOGS/spend/brief.log" || fail "the gemini runner does not say what to use"
+(cd "$S" && "$F" config --yes --runner gemini) 2>&1 | grep -q 'use --runner antigravity' || fail "config --runner gemini does not say what to use"
 # A runner that is not that JSON (an error, an older version): its output reaches the log as it is.
 fk qwen 'No auth type is selected.'; sedi 's/^CABINET_RUNNER=.*/CABINET_RUNNER="qwen"/' "$S/cabinet.env"; git -C "$S" commit -qam qwen2
 PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; grep -qx 'No auth type is selected.' "$HOME/$LOGS/spend/brief.log" || fail "output that is not JSON was lost"

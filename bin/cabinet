@@ -115,7 +115,7 @@ O	new,init,config	--slug	<slug>	Short name for schedules, logs and backups: lowe
 O	new,init,config	--owner	"Name"	The commit author (default: git config user.name).
 O	new,init,config	--email	<email>	The commit author's email (default: git config user.email).
 O	new,init,config	--roles	"qa security ..."	Roles to enable; chief-of-staff is always on (default: all seven).
-O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, gemini, qwen, grok, opencode, cursor or custom.
+O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, antigravity, qwen, grok, opencode, cursor or custom.
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
@@ -123,7 +123,7 @@ O	new,init,config	--writing	short|standard	How agents write to you: short gives 
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
 O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
-O	new,init,config	--price	"<input> <output> [<cached>]"|off	Dollars per million tokens, to count runs of a runner that reports only tokens: codex, cursor, qwen, gemini (default: off).
+O	new,init,config	--price	"<input> <output> [<cached>]"|off	Dollars per million tokens, to count runs of a runner that reports only tokens: codex, cursor, qwen, antigravity (default: off).
 O	new,init,config	--repo	<git url>	A product repo to clone; repeat for more.
 O	init	--inside		In a project repo: the workspace is cabinet/ inside it (the default there).
 O	init	--private		With --inside (the default): cabinet/ has its own git; no tracked project file changes.
@@ -266,7 +266,7 @@ sync_kit() {
   return "$blocked"
 }
 
-RUNNERS="claude codex gemini qwen grok opencode cursor"   # built in; "custom" runs a command
+RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs a command
 ROLES_ALL="chief-of-staff product-manager architect qa security design-lead finance"
 ROLES_OPT="brand-designer dba code-reviewer auditor"   # kit roles a project turns on; off by default
 DAYS="sunday monday tuesday wednesday thursday friday saturday"
@@ -327,7 +327,7 @@ ask_budget() {
   has "$RUNNERS" "$rn" || return 0
   echo "  A weekly budget for the agent runs cabinet starts, in US dollars: the doctor and the brief warn from 80%."
   budget="$(ask "Weekly budget, like 20, or off" "${budget:-off}")"
-  [[ "$budget" != off && -n "$budget" ]] && has "codex cursor qwen gemini" "$rn" || return 0
+  [[ "$budget" != off && -n "$budget" ]] && has "codex cursor qwen antigravity" "$rn" || return 0
   echo "  $rn reports tokens, not dollars: its price in dollars per million tokens, as input, output and (optional) cached input."
   price="$(ask "Price, like 1.25 10 0.125, or off" "${price:-off}")"
 }
@@ -339,6 +339,7 @@ check_answers() {
   brief="$(printf %s "$brief" | tr '[:upper:]' '[:lower:]')"
   has "$roles" chief-of-staff || roles="chief-of-staff $roles"
   for r in $roles; do has "$ROLES_ALL $ROLES_OPT ${extra_roles:-}" "$r" || die "unknown role '$r' (kit roles: $ROLES_ALL $ROLES_OPT${extra_roles:+; project roles: $extra_roles})"; done
+  [[ "$runner" != gemini ]] || die "gemini is no longer a runner (Gemini CLI users moved to Antigravity): use --runner antigravity"
   has "$RUNNERS custom" "$runner" || die "runner must be one of: $RUNNERS, custom"
   [[ "$runner" != custom || -n "$runner_cmd" ]] || die "--runner custom needs --runner-cmd"
   [[ "$runner_cmd" != *"'"* && "$runner_cmd" != *[[:cntrl:]]* ]] || die "the runner command cannot contain single quotes or control characters"
@@ -459,7 +460,7 @@ setup() {
     for r in $RUNNERS; do
       if [[ "$r" == cursor ]]; then
         { command -v cursor-agent >/dev/null || [[ "$(readlink -f "$(command -v agent 2>/dev/null)" 2>/dev/null)" == *[Cc]ursor* ]]; } && { runner=cursor; break; }
-      elif command -v "$r" >/dev/null; then runner=$r; break; fi
+      elif command -v "$( [[ "$r" == antigravity ]] && echo agy || echo "$r")" >/dev/null; then runner=$r; break; fi
     done
   fi
 

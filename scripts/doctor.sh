@@ -147,6 +147,7 @@ done
 # into an installed schedule when there is one, else the one bootstrap would write.
 c="$CABINET_RUNNER"; [[ "$c" == custom ]] && c="${CABINET_RUNNER_CMD%% *}"
 [[ "$c" == cursor ]] && c="$(basename "$(cursor_bin || echo cursor-agent)")"
+[[ "$c" == antigravity ]] && c=agy
 jp=""
 for pl in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do
   [[ -f "$pl" ]] && mine "$pl" && [[ "$pl" != *".backup$SCHED_EXT" ]] || continue

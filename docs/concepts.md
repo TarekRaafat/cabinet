@@ -84,7 +84,7 @@ Every agent run costs money, as API spend or against a subscription's limits. Ca
 | `codex` | tokens | Codex 0.163.0 |
 | `cursor` | tokens | Cursor CLI 2026.10.16 |
 | `qwen` | tokens | Qwen Code 0.25.3 (the shape of its result; no successful run yet) |
-| `gemini` | tokens | Gemini CLI's documented JSON (not run) |
+| `antigravity` | tokens | Antigravity CLI 1.4.2 |
 | `custom` | nothing | |
 
 Dollars a tool reports are what it says the run cost; on a subscription, that is what the run would cost through the API. For a runner that reports only tokens, set its price, in dollars per million tokens, as input, output and optionally cached input (cached input costs the input price when left out): `cabinet config --price "1.25 10 0.125"`, from the model's price list. Setup asks for it after the budget. With `opencode`, a price also counts runs of a model it reports at 0 dollars. Without a price, those runs are recorded in tokens only, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.
@@ -130,13 +130,13 @@ cabinet works through agent tools, so it works with any model they offer. Everyt
 
 | Runner | Runs a job as |
 |---|---|
-| `claude` | `claude -p --agent <role> --permission-mode auto` (tested with real scheduled jobs) |
-| `codex` | `codex exec "<role instruction> <prompt>"` |
-| `gemini` | `gemini -p "<role instruction> <prompt>"` |
-| `qwen` | `qwen --approval-mode auto "<role instruction> <prompt>"` |
-| `grok` | `grok -p "<role instruction> <prompt>" --permission-mode auto` |
-| `opencode` | `opencode run "<role instruction> <prompt>"` |
-| `cursor` | `cursor-agent -p --force "<role instruction> <prompt>"` (run live) |
+| `claude` | `claude -p --agent <role> --permission-mode auto --output-format json` (tested with real scheduled jobs) |
+| `codex` | `codex exec --json "<role instruction> <prompt>"` |
+| `antigravity` | `agy -p "<role instruction> <prompt>" --output-format json --dangerously-skip-permissions` |
+| `qwen` | `qwen --approval-mode auto -o json "<role instruction> <prompt>"` |
+| `grok` | `grok -p "<role instruction> <prompt>" --permission-mode auto --output-format json` |
+| `opencode` | `opencode run --format json "<role instruction> <prompt>"` |
+| `cursor` | `cursor-agent -p --force --output-format json "<role instruction> <prompt>"` (run live) |
 | `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` |
 
-The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end as scheduled jobs (`grok`, `opencode` and `codex` answered a one-line prompt in that mode; `qwen` needs an auth type set in its settings, and `gemini` needs the workspace trusted in Gemini CLI first); Codex's default sandbox and Gemini's default approvals may not let a scheduled brief write its file. Scheduled jobs get a PATH with the runner's and Node's folders.
+The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end as scheduled jobs (`grok`, `opencode`, `codex` and `antigravity` answered a one-line prompt in that mode; `qwen` needs an auth type set in its settings); Codex's default sandbox may not let a scheduled brief write its file. Headless Antigravity denies any tool it would ask about, and `--mode auto` is not open to every plan, so its runner skips the prompts: its deny rules are then the guardrail ([guardrails](guardrails.md)). Gemini CLI is no longer a runner: Google moved its users to Antigravity. A workspace still set to `gemini` is told to run `cabinet config --runner antigravity`; Gemini CLI keeps its guardrails for interactive use. Scheduled jobs get a PATH with the runner's and Node's folders.

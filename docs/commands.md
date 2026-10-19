@@ -48,12 +48,12 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--slug <slug>` | the folder name, made lowercase with dashes | Lowercase letters, digits and dashes. Refused when another workspace on this machine holds it. |
 | `--owner "Name"`, `--email you@example.com` | `git config --global user.name` / `user.email` | The commit author written into `AGENTS.md`. With no identity, setup does not commit. |
 | `--roles "qa security ..."` | all seven | `chief-of-staff` is always added. The optional kit roles `brand-designer`, `dba`, `code-reviewer` and `auditor` are off unless named. Builders are never listed here: they come with the repos they own. |
-| `--runner <tool>` | the first installed of `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
+| `--runner <tool>` | the first installed of `claude`, `codex`, `antigravity` (`agy`), `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief-time <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
 | `--week-start <day>` | `sunday` | Written into `AGENTS.md` house rules. |
 | `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
-| `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `gemini`), in `cabinet.env`. Asked after the budget for those runners. |
+| `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `antigravity`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
@@ -413,7 +413,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_PROJECT` | Display name. |
 | `CABINET_SLUG` | Short name for everything machine-wide. Change it with `cabinet config --slug`. |
 | `CABINET_ROLES` | Roles to build, space separated. |
-| `CABINET_RUNNER` | `claude`, `codex`, `gemini`, `qwen`, `grok`, `opencode`, `cursor` or `custom`. |
+| `CABINET_RUNNER` | `claude`, `codex`, `antigravity`, `qwen`, `grok`, `opencode`, `cursor` or `custom`. |
 | `CABINET_RUNNER_CMD` | With `custom`: the command, single-quoted. |
 | `CABINET_LAYOUT` | `new`, `around`, `inside` or `beside`. Set by setup; not changed by `config`. |
 | `CABINET_VISIBILITY` | Inside only: `private` or `shared`. |

@@ -13,7 +13,7 @@ source "$WS/bin/platform.sh"   # this machine: logs, dates, the passphrase, sche
 CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
 CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
-RUNNERS="claude codex gemini qwen grok opencode cursor"   # built in; "custom" runs CABINET_RUNNER_CMD
+RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs CABINET_RUNNER_CMD
 CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
@@ -43,21 +43,23 @@ SPEND="$LOGDIR/spend.tsv"
 CABINET_PRICE="${CABINET_PRICE:-}"   # US dollars per million tokens: "<input> <output> [<cached input>]"
 # The runners that report dollars, and those that report only tokens (dollars with CABINET_PRICE).
 SPEND_DOLLARS="claude grok opencode"
-SPEND_TOKENS="codex cursor qwen gemini"
+SPEND_TOKENS="codex cursor qwen antigravity"
 # How the week's dollars were found, for messages.
 spend_source() { if has "$SPEND_DOLLARS" "$CABINET_RUNNER"; then echo "as $CABINET_RUNNER reports it"; else echo "priced from $CABINET_RUNNER's token counts"; fi; }
 spend_counts() { has "$SPEND_DOLLARS" "$CABINET_RUNNER" || { has "$SPEND_TOKENS" "$CABINET_RUNNER" && [[ -n "$CABINET_PRICE" ]]; }; }
 # What each runner's JSON says, as {text, usd, in, cached, out}: the reply, the dollars it reports,
 # and tokens (in: uncached input). Shapes seen live (Grok 1.0.62, opencode 2.0.32, Codex 0.163.0,
-# Cursor 2026.10.16, Qwen Code 0.25.3's envelope) or documented (Claude Code, Gemini CLI).
+# Cursor 2026.10.16, Antigravity CLI 1.4.2, Qwen Code 0.25.3's envelope) or documented (Claude Code).
 spend_jq() {
   case "$1" in
     claude)   echo '{text: .result, usd: .total_cost_usd}' ;;
     grok)     echo '{text: .text, usd: .total_cost_usd, in: .usage.input_tokens, cached: .usage.cache_read_input_tokens, out: .usage.output_tokens}' ;;
     cursor)   echo '{text: .result, in: .usage.inputTokens, cached: .usage.cacheReadTokens, out: .usage.outputTokens}' ;;
     qwen)     echo 'map(select(.type == "result")) | last | {text: .result, in: .usage.input_tokens, cached: (.usage.cache_read_input_tokens // 0), out: .usage.output_tokens}' ;;
-    gemini)   echo '[.stats.models[]?.tokens] as $t | {text: .response, cached: ([$t[].cached // 0] | add), out: ([$t[] | .candidates // .response // 0] | add)}
-                + {in: (([$t[].prompt // 0] | add) - ([$t[].cached // 0] | add))}' ;;
+    # ponytail: takes input_tokens to include cache_read_tokens (total_tokens leaves the cache out);
+    # a run with cache reads, seen live, would settle it.
+    antigravity) echo '{text: .response, cached: (.usage.cache_read_tokens // 0), out: ((.usage.output_tokens // 0) + (.usage.thinking_tokens // 0))}
+                + {in: ((.usage.input_tokens // 0) - (.usage.cache_read_tokens // 0))}' ;;
     # JSON lines, read with jq -s.
     codex)    echo '[.[] | select(.type == "turn.completed") | .usage] as $u | {text: ([.[] | select(.type == "item.completed" and .item.type == "agent_message") | .item.text] | join("\n")),
                 cached: ([$u[].cached_input_tokens // 0] | add), out: ([$u[].output_tokens // 0] | add)} + {in: (([$u[].input_tokens // 0] | add) - ([$u[].cached_input_tokens // 0] | add))}' ;;
@@ -107,6 +109,7 @@ run_agent() {
     [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
     CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD"; return
   fi
+  [[ "$CABINET_RUNNER" != gemini ]] || { echo "CABINET_RUNNER=gemini is no longer a runner (Gemini CLI users moved to Antigravity): cabinet config --runner antigravity" >&2; return 2; }
   has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
   # Each built-in runner prints JSON, for the cost it reports: the reply goes on to the log as
   # before, the cost to $SPEND (spend_report).
@@ -114,7 +117,9 @@ run_agent() {
   case "$CABINET_RUNNER" in
     claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" ;;
     codex)    codex exec --json "$as_role" ;;
-    gemini)   gemini -p "$as_role" -o json ;;
+    # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the
+    # prompts keeps its deny rules, as the owner saw with a denied command (docs/guardrails.md).
+    antigravity) agy -p "$as_role" --output-format json --dangerously-skip-permissions ;;
     qwen)     qwen --approval-mode auto -o json "$as_role" ;;
     grok)     grok -p "$as_role" --permission-mode auto --output-format json ;;
     opencode) opencode run --format json "$as_role" ;;
@@ -209,6 +214,7 @@ job_path() {
   local p="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" t d
   local runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
   [[ "$runner" == cursor ]] && runner="$(cursor_bin || echo cursor-agent)"
+  [[ "$runner" == antigravity ]] && runner=agy
   for t in "$runner" node git jq perl openssl python3; do
     d="$(command -v "$t" 2>/dev/null)" || continue
     [[ "$d" == /* ]] || continue
