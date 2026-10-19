@@ -93,7 +93,7 @@ Keep each item short. In a session, give each evidence link as its full path ins
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
-**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. A project without qa or security enabled sends that verification to the owner.
+**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. qa never records PASS on a handoff without evidence (see "Handoffs"), so whatever reaches the owner to push shows what was built. A project without qa or security enabled sends that verification to the owner.
 
 ## Writing to the owner
 

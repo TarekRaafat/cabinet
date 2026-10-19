@@ -97,7 +97,7 @@ Dollars a tool reports are what it says the run cost; on a subscription, that is
 Two settings keep the cost down: a brief that skips its agent on [quiet days](commands.md#jobsltjobgtjob), and fewer scheduled jobs.
 ## The builder never verifies
 
-Work is ready for you to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer you enabled whose subject it touches (design-lead for anything people see, code-reviewer for code, dba for the database). A BLOCK, or a code-reviewer's CHANGES, holds the push until it is fixed or you override it.
+Work is ready for you to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer you enabled whose subject it touches (design-lead for anything people see, code-reviewer for code, dba for the database). A BLOCK, or a code-reviewer's CHANGES, holds the push until it is fixed or you override it. qa never passes work without evidence you can check without reading code (screenshots, a recording, a link to try it, or command output), and the brief links it.
 
 ## Seats
 

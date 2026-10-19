@@ -306,6 +306,8 @@ grep -qxF -- "- Evidence: [login-page.png](specs/evidence/$id/login-page.png), [
 "$W/bin/handoff.sh" add --from web --to qa --changed x --needed y --evidence "ftp://x" "Bad link" >/dev/null 2>&1 && fail "a link that is not http(s) was accepted"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "refused evidence changed a file"
 sed -i.bak "/^### $id:/,/^- Status:/s/^- Status: open/- Status: done/" "$W/HANDOFFS.md" && rm "$W/HANDOFFS.md.bak" && git -C "$W" commit -qam "done" && "$W/bin/handoff.sh" archive >/dev/null
+grep -q '^\*\*No evidence, no PASS\.\*\*' "$KIT/roles/qa.md" && grep -q 'qa never records PASS on a handoff without evidence' "$KIT/core/CABINET.md" \
+  && grep -q 'A qa PASS on a handoff with no evidence does not count' "$KIT/roles/chief-of-staff.md" || fail "the no-evidence-no-PASS rule left qa, CABINET.md or the brief"
 grep -qF "[run.txt](../specs/evidence/$id/run.txt)" "$W/handoffs/archive-${id:2:4}-${id:6:2}.md" || fail "archived evidence links do not open from handoffs/"
   return 0   # a last "check && fail" line must not end the run
 }
