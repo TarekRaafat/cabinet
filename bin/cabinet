@@ -122,7 +122,8 @@ O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
-O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts, counted with the claude runner; the doctor warns from 80% (default: off).
+O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
+O	new,init,config	--price	"<input> <output> [<cached>]"|off	Dollars per million tokens, to count runs of a runner that reports only tokens: codex, cursor, qwen, gemini (default: off).
 O	new,init,config	--repo	<git url>	A product repo to clone; repeat for more.
 O	init	--inside		In a project repo: the workspace is cabinet/ inside it (the default there).
 O	init	--private		With --inside (the default): cabinet/ has its own git; no tracked project file changes.
@@ -320,11 +321,15 @@ slug_taken() {  # slug_taken <slug> <other workspace>
 # Record which workspace owns a slug, so another setup sees it even before bootstrap runs.
 claim_slug() { mkdir -p -m 700 "$LOGROOT/$1" 2>/dev/null && printf '%s\n' "$(abspath "$2")" > "$LOGROOT/$1/workspace"; return 0; }
 
-# The budget question, for setup and config: only the claude runner reports what a run costs.
+# The budget question, for setup and config. A runner that reports only tokens also needs a price.
 ask_budget() {
-  [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == claude ]] || return 0
+  local rn; rn="$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')"
+  has "$RUNNERS" "$rn" || return 0
   echo "  A weekly budget for the agent runs cabinet starts, in US dollars: the doctor and the brief warn from 80%."
   budget="$(ask "Weekly budget, like 20, or off" "${budget:-off}")"
+  [[ "$budget" != off && -n "$budget" ]] && has "codex cursor qwen gemini" "$rn" || return 0
+  echo "  $rn reports tokens, not dollars: its price in dollars per million tokens, as input, output and (optional) cached input."
+  price="$(ask "Price, like 1.25 10 0.125, or off" "${price:-off}")"
 }
 
 # The checks every answer passes, for setup and config (they share these variables).
@@ -345,6 +350,9 @@ check_answers() {
   [[ "$writing" == short || "$writing" == standard ]] || die "--writing must be short or standard"
   [[ "$(printf %s "$budget" | tr '[:upper:]' '[:lower:]')" == off ]] && budget=""
   [[ -z "$budget" || "$budget" =~ ^[0-9]+(\.[0-9]{1,2})?$ && ! "$budget" =~ ^0+(\.0*)?$ ]] || die "the budget must be dollars a week, like 20 or 12.50, or off"
+  price="$(printf %s "$price" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
+  [[ "$(printf %s "$price" | tr '[:upper:]' '[:lower:]')" == off ]] && price=""
+  [[ -z "$price" || "$price" =~ ^[0-9]+(\.[0-9]+)?( [0-9]+(\.[0-9]+)?){1,2}$ ]] || die "the price must be dollars per million tokens: input and output, and optionally cached input, like \"1.25 10\" or \"1.25 10 0.125\", or off"
   for v in "$name" "$owner" "$email" "$backup"; do safe "$v" || die "'$v' cannot be used: no \$, backtick, backslash, double quote or line break"; done
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
@@ -370,7 +378,7 @@ cmd_init() { setup init "$@"; }
 # Nothing that already exists is overwritten.
 setup() {
   local how=$1; shift
-  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" backup="" yes=0 repos=() r
+  local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" price="" backup="" yes=0 repos=() r
   local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0
   while (($#)); do
     case "$1" in
@@ -385,6 +393,7 @@ setup() {
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
       --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; shift 2 ;;
+      --price) need "--price needs dollars per million tokens, like \"1.25 10\", or off" "$@"; price="$2"; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --inside) place=inside; shift ;;
@@ -619,7 +628,7 @@ setup() {
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
     echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week, writing $writing"
-    [[ -n "$budget" ]] && echo "  Budget    \$$budget a week"
+    [[ -n "$budget" ]] && echo "  Budget    \$$budget a week${price:+, priced at $price per million tokens}"
     echo "  Backups   ${backup:-off}"
     local listed="none yet"; ((${#rows[@]})) && listed="$(printf '%s\n' "${rows[@]}" | cut -f1 | tr '\n' ' ')"
     echo "  Repos     $listed"
@@ -664,10 +673,10 @@ setup() {
 
   # The answers, written into the files this setup placed (a kept file is the project's own).
   if is_placed cabinet.env; then
-    R="$roles" N="$runner" C="$runner_cmd" B="$backup" U="$budget" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" perl -i -pe '
+    R="$roles" N="$runner" C="$runner_cmd" B="$backup" U="$budget" P="$price" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" perl -i -pe '
       s/^CABINET_ROLES=.*/CABINET_ROLES="$ENV{R}"/; s/^CABINET_RUNNER=.*/CABINET_RUNNER="$ENV{N}"/;
       s/^CABINET_RUNNER_CMD=.*/CABINET_RUNNER_CMD=\x27$ENV{C}\x27/;
-      s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_BUDGET=.*/CABINET_BUDGET="$ENV{U}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
+      s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_BUDGET=.*/CABINET_BUDGET="$ENV{U}"/; s/^CABINET_PRICE=.*/CABINET_PRICE="$ENV{P}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
   fi
   is_placed jobs/brief.job && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
   is_placed AGENTS.md && D="$Week" G="$writing" perl -i -pe 's/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./; s/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
@@ -884,8 +893,8 @@ ROLE
 
 cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
-  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" writing="" repos=()
-  local set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
+  local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
+  local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; set_name=1; shift 2 ;;
@@ -901,6 +910,7 @@ cmd_config() {
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; set_backup=1; shift 2 ;;
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
       --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; set_budget=1; shift 2 ;;
+      --price) need "--price needs dollars per million tokens, like \"1.25 10\", or off" "$@"; price="$2"; set_price=1; shift 2 ;;
       --repo) need "--repo needs a git URL" "$@"; repos+=("$2"); shift 2 ;;
       --apply) apply=1; shift ;;
       --this-machine) this_machine=1; shift ;;
@@ -913,7 +923,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_budget || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_budget || set_price || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
     (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
@@ -926,10 +936,10 @@ cmd_config() {
 
   # Current answers, read from the files setup wrote.
   envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
-  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget o_writing
+  local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget o_price o_writing
   o_name="$(envget CABINET_PROJECT)"; o_slug="$(envget CABINET_SLUG)"
   o_roles="$(envget CABINET_ROLES)"; o_runner="$(envget CABINET_RUNNER)"; o_runner="${o_runner:-claude}"; o_cmd="$(envget CABINET_RUNNER_CMD)"
-  o_budget="$(envget CABINET_BUDGET)"
+  o_budget="$(envget CABINET_BUDGET)"; o_price="$(envget CABINET_PRICE)"
   o_backup="$(envget CABINET_BACKUP_DIR)"; o_btime="$(envget CABINET_BACKUP_TIME)"; o_btime="${o_btime:-1:00 PM}"; o_btime="$(when_time_only "$o_btime" || printf '%s' "$o_btime")"
   o_owner="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
   o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
@@ -941,7 +951,7 @@ cmd_config() {
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
   ((set_writing)) || writing="${o_writing:-standard}"
-  ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"
+  ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"; ((set_price)) || price="$o_price"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
   for r2 in $o_roles; do has "$ROLES_ALL $ROLES_OPT" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
@@ -1046,6 +1056,7 @@ cmd_config() {
   [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
   [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
+  [[ "$price" != "$o_price" ]] && changes+=("price per million tokens (input, output, cached input): ${o_price:-off} -> ${price:-off}")
   [[ "$budget" != "$o_budget" ]] && changes+=("budget: $( [[ -n "$o_budget" ]] && echo "\$$o_budget a week" || echo off) -> $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off)")
   local newrows=()
   for r in ${repos[@]+"${repos[@]}"}; do
@@ -1068,6 +1079,7 @@ cmd_config() {
   setenv CABINET_PROJECT "$name"; setenv CABINET_ROLES "$roles"; setenv CABINET_RUNNER "$runner"
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
+  [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
   [[ -f "$ws/jobs/brief.job" ]] && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
   # An AGENTS.md from before the setting gets its line after the week start.
@@ -1399,8 +1411,8 @@ cmd_digest() {
 # ws_spend <workspace>: "<dollars this week>|<budget>", from the workspace's own scripts. Dollars are
 # empty when its runner does not report cost, or its kit predates spend tracking.
 ws_spend() {
-  bash -c 'source "$1/bin/lib.sh" && declare -F spend_since >/dev/null || exit 0
-    has "$SPEND_RUNNERS" "$CABINET_RUNNER" && printf %s "$(spend_since "$(week_start)")"; printf "|%s" "$CABINET_BUDGET"' _ "$1" 2>/dev/null || true
+  bash -c 'source "$1/bin/lib.sh" && declare -F spend_counts >/dev/null || exit 0
+    spend_counts && printf %s "$(spend_since "$(week_start)")"; printf "|%s" "$CABINET_BUDGET"' _ "$1" 2>/dev/null || true
 }
 budget_pct() { awk -v w="$1" -v b="$2" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }'; }   # budget_pct <spent> <budget>
 

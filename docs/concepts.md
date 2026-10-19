@@ -74,12 +74,25 @@ How agents write to you is a house rule in `AGENTS.md`, asked at setup and by `c
 The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. Ask any agent for details on a point and it gives them.
 ## What agent runs cost
 
-Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), as the agent tool reports it, in `spend.tsv` in the workspace's log folder, on this machine only. Of the runners, `claude` reports it (the cost Claude Code gives for each headless run, which on a subscription is what the run would cost through the API); the others do not yet, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.
+Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), from what the agent tool reports, in `spend.tsv` in the workspace's log folder (time, job, runner, dollars, then uncached input, cached input and output tokens), on this machine only. Each built-in runner prints JSON for this; the reply still goes to the job's log, and output that is not that JSON (an error, a different version) goes there as it is.
+
+| Runner | Reports | Seen on |
+|---|---|---|
+| `claude` | dollars | Claude Code's documented JSON |
+| `grok` | dollars and tokens | Grok 1.0.62 |
+| `opencode` | dollars and tokens; 0 dollars for a model it has no price for | opencode 2.0.32 |
+| `codex` | tokens | Codex 0.163.0 |
+| `cursor` | tokens | Cursor CLI 2026.10.16 |
+| `qwen` | tokens | Qwen Code 0.25.3 (the shape of its result; no successful run yet) |
+| `gemini` | tokens | Gemini CLI's documented JSON (not run) |
+| `custom` | nothing | |
+
+Dollars a tool reports are what it says the run cost; on a subscription, that is what the run would cost through the API. For a runner that reports only tokens, set its price, in dollars per million tokens, as input, output and optionally cached input (cached input costs the input price when left out): `cabinet config --price "1.25 10 0.125"`, from the model's price list. Setup asks for it after the budget. With `opencode`, a price also counts runs of a model it reports at 0 dollars. Without a price, those runs are recorded in tokens only, and the doctor says so when a budget is set (`spend.unreported`). Sessions you or a teammate run in an agent tool are not counted, nor is a run stopped by its time limit.
 
 - Each job's log ends a run with its cost and the week's.
 - `cabinet job list` shows what each job cost this week, and the week's total.
 - `cabinet digest` shows each project's week against its budget, and the total across every project on this machine.
-- Setup asks for a weekly budget in US dollars when the runner is `claude`; `cabinet config --budget 20` sets or changes it. From 80% of it, the doctor reports `spend.budget`, so the brief lists it under "Actions for the owner"; past it, the doctor says so. Nothing is stopped: you decide whether to raise the budget, run jobs less often, or let the week end. The week starts on the day `AGENTS.md` names (Sunday by default).
+- Setup asks for a weekly budget in US dollars, and a price for a runner that reports only tokens; `cabinet config --budget 20` sets or changes it. From 80% of it, the doctor reports `spend.budget`, so the brief lists it under "Actions for the owner"; past it, the doctor says so. Nothing is stopped: you decide whether to raise the budget, run jobs less often, or let the week end. The week starts on the day `AGENTS.md` names (Sunday by default).
 
 Two settings keep the cost down: a brief that skips its agent on [quiet days](commands.md#jobsltjobgtjob), and fewer scheduled jobs.
 ## The builder never verifies
@@ -126,4 +139,4 @@ cabinet works through agent tools, so it works with any model they offer. Everyt
 | `cursor` | `cursor-agent -p --force "<role instruction> <prompt>"` (run live) |
 | `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` |
 
-The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end; Codex's default sandbox and Gemini's default approvals may not let a scheduled brief write its file. Scheduled jobs get a PATH with the runner's and Node's folders.
+The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end as scheduled jobs (`grok`, `opencode` and `codex` answered a one-line prompt in that mode; `qwen` needs an auth type set in its settings, and `gemini` needs the workspace trusted in Gemini CLI first); Codex's default sandbox and Gemini's default approvals may not let a scheduled brief write its file. Scheduled jobs get a PATH with the runner's and Node's folders.

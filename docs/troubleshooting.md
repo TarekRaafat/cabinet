@@ -116,7 +116,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 |---|---|---|---|
 | `FIX agent runs cost $<...> this week, <...>% of the $<...> budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>` | `spend.budget` | The agent runs cabinet started this week cost 80% or more of `CABINET_BUDGET`, as the agent tool reported it. See [what agent runs cost](concepts.md#what-agent-runs-cost). | `cabinet job list` shows which job cost what. Raise the budget (`cabinet config --budget <dollars>`), run jobs less often (`WHEN`, `QUIET_DAYS`), or let the week end. |
 | `FIX agent runs cost $<...> this week, over the $<...> budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>` | `spend.budget` | The week's runs passed the budget. Nothing is stopped. | The same. |
-| `note <...> does not report what a run costs, so the $<...> budget is not tracked (claude reports it)` | `spend.unreported` | A budget is set, and the runner does not report cost. | Use the `claude` runner to track it, or remove the budget: `cabinet config --budget off`. |
+| `note <...> reports tokens, not dollars, so the $<...> budget is not tracked: set its price with cabinet config --price "<input> <output> [<cached input>]" (dollars per million tokens)` | `spend.unreported` | A budget is set, and the runner (codex, cursor, qwen or gemini) reports only tokens. | `cabinet config --price "<input> <output> [<cached input>]"`, from the model's price list. See [what agent runs cost](concepts.md#what-agent-runs-cost). |
+| `note <...> does not report what a run costs, so the $<...> budget is not tracked (the built-in runners report it)` | `spend.unreported` | A budget is set, and the runner is `custom`. | Use a built-in runner to track it, or remove the budget: `cabinet config --budget off`. |
 
 ## Backups
 

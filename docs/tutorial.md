@@ -11,7 +11,7 @@ cd ~/dev
 cabinet new acme --name "Acme"
 ```
 
-In a terminal, `cabinet new` asks a few questions, each with a default you keep by pressing Enter: the owner, which roles to enable, the agent tool that runs scheduled jobs, a weekly budget (with `claude`), the brief time, how agents write to you (standard, or short for little time to read), backups and the product repos. Here we keep every default (`--yes` does the same without asking):
+In a terminal, `cabinet new` asks a few questions, each with a default you keep by pressing Enter: the owner, which roles to enable, the agent tool that runs scheduled jobs, a weekly budget (and a price, for a runner that reports only tokens), the brief time, how agents write to you (standard, or short for little time to read), backups and the product repos. Here we keep every default (`--yes` does the same without asking):
 
 ```
 == Project files

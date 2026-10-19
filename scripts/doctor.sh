@@ -269,11 +269,13 @@ fi
 
 section "Spend"
 # What the agent runs cabinet started cost this week, as the tool reports it; a warning from 80% of the budget.
-if ! has "$SPEND_RUNNERS" "$CABINET_RUNNER"; then
-  [[ -z "$CABINET_BUDGET" ]] || note spend.unreported "$CABINET_RUNNER does not report what a run costs, so the \$$CABINET_BUDGET budget is not tracked (claude reports it)"
+if ! spend_counts; then
+  if [[ -z "$CABINET_BUDGET" ]]; then :
+  elif has "$SPEND_TOKENS" "$CABINET_RUNNER"; then note spend.unreported "$CABINET_RUNNER reports tokens, not dollars, so the \$$CABINET_BUDGET budget is not tracked: set its price with cabinet config --price \"<input> <output> [<cached input>]\" (dollars per million tokens)"
+  else note spend.unreported "$CABINET_RUNNER does not report what a run costs, so the \$$CABINET_BUDGET budget is not tracked (the built-in runners report it)"; fi
 else
   w="$(spend_since "$(week_start)")"
-  if [[ -z "$CABINET_BUDGET" ]]; then ok spend.budget "agent runs cost \$$w this week, as $CABINET_RUNNER reports it; no budget set (cabinet config --budget <dollars>)"
+  if [[ -z "$CABINET_BUDGET" ]]; then ok spend.budget "agent runs cost \$$w this week, $(spend_source); no budget set (cabinet config --budget <dollars>)"
   else
     pct="$(awk -v w="$w" -v b="$CABINET_BUDGET" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }')"
     if ((pct >= 100)); then bad spend.budget "agent runs cost \$$w this week, over the \$$CABINET_BUDGET budget: cabinet job list shows what each job cost; raise it with cabinet config --budget <dollars>"

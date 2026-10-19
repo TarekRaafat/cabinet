@@ -40,11 +40,49 @@ KEYCHAIN_ITEM="cabinet.$CABINET_SLUG.backup"
 # What the agent runs cabinet starts cost, as the tool reports it: one line per run, on this
 # machine only: seconds, what ran ($SPEND_LABEL: the job, or "role draft <role>"), runner, US dollars.
 SPEND="$LOGDIR/spend.tsv"
-SPEND_RUNNERS="claude"   # the runners that report a run's cost
-spend_add() {
-  [[ "${1:-}" =~ ^[0-9][0-9.eE+-]*$ ]] || return 0
+CABINET_PRICE="${CABINET_PRICE:-}"   # US dollars per million tokens: "<input> <output> [<cached input>]"
+# The runners that report dollars, and those that report only tokens (dollars with CABINET_PRICE).
+SPEND_DOLLARS="claude grok opencode"
+SPEND_TOKENS="codex cursor qwen gemini"
+# How the week's dollars were found, for messages.
+spend_source() { if has "$SPEND_DOLLARS" "$CABINET_RUNNER"; then echo "as $CABINET_RUNNER reports it"; else echo "priced from $CABINET_RUNNER's token counts"; fi; }
+spend_counts() { has "$SPEND_DOLLARS" "$CABINET_RUNNER" || { has "$SPEND_TOKENS" "$CABINET_RUNNER" && [[ -n "$CABINET_PRICE" ]]; }; }
+# What each runner's JSON says, as {text, usd, in, cached, out}: the reply, the dollars it reports,
+# and tokens (in: uncached input). Shapes seen live (Grok 1.0.62, opencode 2.0.32, Codex 0.163.0,
+# Cursor 2026.10.16, Qwen Code 0.25.3's envelope) or documented (Claude Code, Gemini CLI).
+spend_jq() {
+  case "$1" in
+    claude)   echo '{text: .result, usd: .total_cost_usd}' ;;
+    grok)     echo '{text: .text, usd: .total_cost_usd, in: .usage.input_tokens, cached: .usage.cache_read_input_tokens, out: .usage.output_tokens}' ;;
+    cursor)   echo '{text: .result, in: .usage.inputTokens, cached: .usage.cacheReadTokens, out: .usage.outputTokens}' ;;
+    qwen)     echo 'map(select(.type == "result")) | last | {text: .result, in: .usage.input_tokens, cached: (.usage.cache_read_input_tokens // 0), out: .usage.output_tokens}' ;;
+    gemini)   echo '[.stats.models[]?.tokens] as $t | {text: .response, cached: ([$t[].cached // 0] | add), out: ([$t[] | .candidates // .response // 0] | add)}
+                + {in: (([$t[].prompt // 0] | add) - ([$t[].cached // 0] | add))}' ;;
+    # JSON lines, read with jq -s.
+    codex)    echo '[.[] | select(.type == "turn.completed") | .usage] as $u | {text: ([.[] | select(.type == "item.completed" and .item.type == "agent_message") | .item.text] | join("\n")),
+                cached: ([$u[].cached_input_tokens // 0] | add), out: ([$u[].output_tokens // 0] | add)} + {in: (([$u[].input_tokens // 0] | add) - ([$u[].cached_input_tokens // 0] | add))}' ;;
+    opencode) echo '[.[] | select(.type == "step_finish") | .part] as $p | {text: ([.[] | select(.type == "text") | .part.text] | join("")), usd: ([$p[].cost // 0] | add),
+                in: ([$p[].tokens.input // 0] | add), cached: ([$p[].tokens.cache.read // 0] | add), out: ([$p[] | (.tokens.output // 0) + (.tokens.reasoning // 0)] | add)}' ;;
+  esac
+}
+# spend_report <out file>: print the reply from the runner's JSON (or the output as it is, when it
+# is not that JSON) and record the run: dollars the tool reported, else priced from tokens.
+spend_report() {
+  local f="$1" j slurp="" usd tin tc tout
+  case "$CABINET_RUNNER" in codex|opencode) slurp=-s ;; esac
+  if ! j="$(jq -c $slurp "$(spend_jq "$CABINET_RUNNER")" "$f" 2>/dev/null)" || [[ "$(jq -r '.text | type' <<<"$j" 2>/dev/null)" != string ]]; then
+    cat "$f"; return 0
+  fi
+  jq -r '.text' <<<"$j"
+  read -r usd tin tc tout <<<"$(jq -r '[.usd, .in, .cached, .out] | map(if . == null then "-" else tostring end) | join(" ")' <<<"$j")"
+  if [[ "$usd" == - || "$usd" == 0 ]] && [[ -n "$CABINET_PRICE" && "$tin$tout" != -- ]]; then
+    usd="$(awk -v p="$CABINET_PRICE" -v i="${tin/-/0}" -v c="${tc/-/0}" -v o="${tout/-/0}" \
+      'BEGIN { n = split(p, x, " "); if (n < 3) x[3] = x[1]; printf "%.6f", (i * x[1] + c * x[3] + o * x[2]) / 1000000 }')"
+  fi
+  [[ "$usd" == - ]] && usd=""
+  [[ -z "$usd$tin$tout" || "$usd$tin$tout" == -- ]] && return 0
   mkdir -p -m 700 "$LOGDIR"
-  printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$1" >> "$SPEND"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$usd" "${tin/-/}" "${tc/-/}" "${tout/-/}" >> "$SPEND"
 }
 # Midnight at the start of this week, the day "Week starts on" in AGENTS.md names (Sunday by default).
 # ponytail: counts days as 24 hours, so in the week a clock changes the week starts an hour off.
@@ -63,29 +101,27 @@ spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 ==
 run_agent() {
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
+  # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
+  # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
+  if [[ "$CABINET_RUNNER" == custom ]]; then
+    [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
+    CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD"; return
+  fi
+  has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
+  # Each built-in runner prints JSON, for the cost it reports: the reply goes on to the log as
+  # before, the cost to $SPEND (spend_report).
+  local out st=0; out="$(mktemp)"
   case "$CABINET_RUNNER" in
-    # JSON, for the cost it reports: the reply goes on to the log as before, the cost to $SPEND.
-    claude)
-      local out st=0; out="$(mktemp)"
-      claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" > "$out" || st=$?
-      if jq -e 'type == "object" and has("result")' "$out" >/dev/null 2>&1; then
-        jq -r '.result // ""' "$out"; spend_add "$(jq -r '.total_cost_usd // empty' "$out")"
-      else cat "$out"; fi
-      rm -f "$out"; return "$st" ;;
-    codex)    codex exec "$as_role" ;;
-    gemini)   gemini -p "$as_role" ;;
-    qwen)     qwen --approval-mode auto "$as_role" ;;
-    grok)     grok -p "$as_role" --permission-mode auto ;;
-    opencode) opencode run "$as_role" ;;
+    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" ;;
+    codex)    codex exec --json "$as_role" ;;
+    gemini)   gemini -p "$as_role" -o json ;;
+    qwen)     qwen --approval-mode auto -o json "$as_role" ;;
+    grok)     grok -p "$as_role" --permission-mode auto --output-format json ;;
+    opencode) opencode run --format json "$as_role" ;;
     # --force lets print mode write files (the brief); deny rules are the guardrail.
-    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force "$as_role" ;;
-    # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
-    # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
-    custom)
-      [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
-      CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD" ;;
-    *) echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2 ;;
-  esac
+    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json "$as_role" ;;
+  esac > "$out" || st=$?
+  spend_report "$out"; rm -f "$out"; return "$st"
 }
 
 # Claude Code keeps per-folder memory under the folder's path with every non-alphanumeric as "-".

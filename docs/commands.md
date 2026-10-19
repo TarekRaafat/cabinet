@@ -52,7 +52,8 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief-time <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
 | `--week-start <day>` | `sunday` | Written into `AGENTS.md` house rules. |
-| `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs cabinet starts, in `cabinet.env`. Asked only when the runner is `claude`, the one that reports what a run costs ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
+| `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
+| `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `gemini`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
@@ -256,7 +257,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -273,7 +274,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Week start | the house rule in `AGENTS.md` |
 | Writing | the "Writing to the owner" house rule in `AGENTS.md` (added after the week start when an older `AGENTS.md` lacks it) |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
-| Budget | `CABINET_BUDGET` |
+| Budget and price | `CABINET_BUDGET`, `CABINET_PRICE` |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
 
 Roles the project defines itself (`roles/<role>.md` with frontmatter) are accepted and asked about. Layout and visibility (inside, beside, private, shared) are not changed by `config`. When nothing changes, it prints `Nothing to change.` and writes nothing.
@@ -396,7 +397,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `cabinet list --json` | `[{slug, project, path, exists, version, update_available, waiting_on_owner, doctor_problems, brief_written}]`. `brief_written` is ISO 8601 UTC, or `null`; the counts are `null` for a workspace whose folder is gone. |
 | `cabinet role list --json` | `[{name, kind, on, drafted}]`. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
 | `cabinet repo list --json` | `[{name, path, present, owner, url}]`. `owner` is `null` while the team table says `TBD`; `url` is `null` for a repo with no clone URL. |
-| `cabinet job list --json` | `[{name, role, when, timeout_minutes, cost_this_week_usd}]`. `when` is the schedule as people read it, or `by hand only`. `cost_this_week_usd` is `null` when the runner does not report cost. |
+| `cabinet job list --json` | `[{name, role, when, timeout_minutes, cost_this_week_usd}]`. `when` is the schedule as people read it, or `by hand only`. `cost_this_week_usd` is `null` when the runner's runs are not counted in dollars (a token-only runner with no price, or `custom`). |
 | `cabinet secret check --json` | `[{file, line, kind}]`, never the value. Exit 1 when the list is not empty. |
 | `cabinet backup verify --json` | `{archive, backed_up, ok, problems, results: [{repo, result, text}]}`. `result` is `ok`, `skipped` or `problem`; `repo` is `null` for the archive as a whole. Exit 1 when `ok` is false. |
 | `cabinet outdated --json` | `{workspace_version, kit_version, latest, update_available}`. `latest` and `update_available` are `null` when the registry cannot be reached. |
@@ -421,6 +422,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_BACKUP_KEEP` | How many of this workspace's archives to keep (default 14, at least 1). |
 | `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
 | `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
+| `CABINET_PRICE` | Dollars per million tokens, `"<input> <output> [<cached input>]"`, to count runs of a runner that reports only tokens; empty for none. |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job
