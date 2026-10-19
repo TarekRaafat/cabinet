@@ -6,7 +6,8 @@
 #   bin/job.sh run <job>
 #       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, gemini,
 #       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). A run is
-#       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none).
+#       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
+#       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run.
 #   bin/job.sh list [--json]
 #       Every job: its name, role, schedule and time limit.
 set -euo pipefail
@@ -27,12 +28,14 @@ j_run() {
 job="${1:-}"; [[ -n "$job" ]] || { echo "usage: bin/job.sh run <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))" >&2; exit 2; }
 jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
-AGENT="" PROMPT="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT=""
+AGENT="" PROMPT="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS=""
 # shellcheck disable=SC1090
 source "$jf"
 [[ -n "$AGENT" && -n "$PROMPT" ]] || { echo "jobs/$job.job needs AGENT and PROMPT" >&2; exit 2; }
 limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 [[ "$limit" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "TIMEOUT in jobs/$job.job (or CABINET_JOB_TIMEOUT) must be whole minutes, or 0 for no limit, not '$limit'" >&2; exit 2; }
+QUIET_DAYS="${QUIET_DAYS:-0}"
+[[ "$QUIET_DAYS" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "QUIET_DAYS in jobs/$job.job must be whole days, or 0 to run every time, not '$QUIET_DAYS'" >&2; exit 2; }
 
 # The agent runs in its own process group, so a run past its limit is stopped with
 # everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
@@ -52,25 +55,64 @@ limited() {
   return "$st"
 }
 
+# What a quiet run is judged by: every branch and remote branch of the workspace and its repos,
+# the doctor's problems, and the result file as the last run left it. Fails when any of them has
+# uncommitted changes: work pending for a day is asked about, so it never counts as quiet.
+quiet_state() {
+  local d
+  while IFS= read -r d; do
+    [[ -e "$d/.git" ]] || continue
+    [[ -z "$(git -C "$d" status --porcelain 2>/dev/null)" ]] || return 1
+    echo "$d"; git -C "$d" for-each-ref --format='%(refname) %(objectname)'
+  done < <(data_dirs)
+  { "$WS/bin/doctor.sh" --json 2>/dev/null || true; } | jq -r '.results[] | select(.level == "fix") | .id' | sort -u
+  [[ -f "$WS/$RESULT" ]] && sha256 "$WS/$RESULT"
+}
+state_file="$LOGDIR/$job.quiet"   # the start of the last full run, and quiet_state after it
+remember() {
+  local s
+  if ((QUIET_DAYS)) && s="$(quiet_state)"; then printf '%s\n%s\n' "$started" "$(printf '%s' "$s" | sha256 /dev/stdin)" > "$state_file"; else rm -f "$state_file"; fi
+}
+# Skip when nothing changed since the last full run, for at most QUIET_DAYS days after it, and never
+# while a reversible sign-off item waits: it goes ahead after 72 hours, and only a run says so.
+quiet() {
+  local since was s
+  ((QUIET_DAYS)) && [[ -f "$state_file" && -f "$WS/$RESULT" ]] || return 1
+  { read -r since; read -r was; } < "$state_file" || return 1
+  [[ "$since" =~ ^[0-9]+$ ]] && (( $(date +%s) - since < QUIET_DAYS * 86400 )) || return 1
+  awk '/^## / { q = ($0 == "## Sign-off queue") } q && tolower($0) ~ /default/ { f = 1 } END { exit f }' "$WS/$RESULT" || return 1
+  s="$(quiet_state)" && [[ "$(printf '%s' "$s" | sha256 /dev/stdin)" == "$was" ]]
+}
+
 after() { [[ -z "$AFTER" ]] || (cd "$WS" && bash -c "$AFTER") >>"$log" 2>&1 || echo "after-step failed: see the lines above" >>"$log"; }
 
 cd "$WS"
 mkdir -p -m 700 "$LOGDIR"
 log="$LOGDIR/$job.log"
+started="$(date +%s)"
+if [[ ! -t 1 ]] && quiet; then
+  # Touched, so the digest and cabinet next see it as current, not late.
+  msg="$job skipped: nothing changed since the full run of $(epoch_date "$(head -1 "$state_file")" '+%F %T') (QUIET_DAYS in jobs/$job.job)"
+  echo "=== $(date '+%F %T') $msg" >>"$log"; echo "$msg"
+  touch "$WS/$RESULT"
+  exit 0
+fi
 echo "=== $(date '+%F %T') $job ($AGENT, $CABINET_RUNNER)" >>"$log"
+rm -f "$state_file"
 if [[ -t 1 ]]; then
   # Started by hand: say what is happening, then show the result here too.
   echo "Running $job with $AGENT. It takes $MINUTES minutes and prints nothing until it finishes."
   echo "Result: $RESULT and $log"
   start=$SECONDS status=0
   limited 2>&1 | tee -a "$log" || status=$?
-  ((status)) || after
+  ((status)) || { after; remember; }
   echo
   echo "Finished in $(( (SECONDS - start) / 60 )) min (exit $status). Open $RESULT."
   exit "$status"
 fi
 limited >>"$log" 2>&1 || { echo "exit $? at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
 after
+remember
 }
 
 verb="${1:-}"; (($#)) && shift

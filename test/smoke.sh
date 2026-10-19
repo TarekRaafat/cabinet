@@ -1205,6 +1205,41 @@ echo "$out" | grep -q 'installing tools always asks' && [[ "$(installs)" == 0 ]]
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "quiet days: a scheduled brief skips its agent when nothing changed" ""
+s45() {
+"$F" new "$T/quiet" --yes >/dev/null
+Q="$T/quiet"
+# The runner counts its runs and writes the brief from $T/qbrief.
+printf '# Brief\n\n## Sign-off queue\n\nNone.\n' > "$T/qbrief"
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='echo run >> \"$T/qruns\"; cp \"$T/qbrief\" BRIEF.md'" >> "$Q/cabinet.env"
+qc() { git -C "$Q" add -A && git -C "$Q" commit -qm "$1"; }
+qc "custom runner"
+r() { "$Q/bin/job.sh" run brief 2>&1; }   # stdout is not a terminal: run as the scheduler runs it
+runs() { [[ "$(wc -l < "$T/qruns" | tr -d ' ')" == "$1" ]]; }
+r >/dev/null; runs 1 || fail "the first run did not run"
+touch -t 202601010000 "$Q/BRIEF.md"
+r | grep -q 'brief skipped: nothing changed since the full run of' && runs 1 || fail "a run with nothing new was not skipped"
+grep -q 'brief skipped: nothing changed' "$HOME/$LOGS/quiet/brief.log" || fail "the skip is not in the log"
+[[ -n "$(find "$Q/BRIEF.md" -newer "$Q/cabinet.env")" ]] || fail "a skipped run left BRIEF.md looking late"
+# A commit, uncommitted work (every time: it is asked about after a day) and an edited brief each run it.
+echo x > "$Q/notes/q.md"; qc "a note"; r >/dev/null; runs 2 && r >/dev/null && runs 2 || fail "a commit did not run the brief, or the next run did not skip"
+echo y >> "$Q/notes/q.md"; r >/dev/null; r >/dev/null; runs 4 || fail "uncommitted work did not run the brief every time"
+git -C "$Q" checkout -q -- notes/q.md; r >/dev/null; r >/dev/null; runs 5 || fail "back to clean: not one run, then a skip"
+echo "1. answered: a" >> "$Q/BRIEF.md"; r >/dev/null; r >/dev/null; runs 6 || fail "an edited brief did not run it once"
+# A reversible item waiting for its 72 hours runs it every time.
+printf '# Brief\n\n## Sign-off queue\n\n1. Rename the page. Reversible: default.\n' > "$T/qbrief"
+echo "2. b" >> "$Q/BRIEF.md"; r >/dev/null; r >/dev/null; runs 8 || fail "a default item in the queue was skipped"
+printf '# Brief\n\n## Sign-off queue\n\nNone.\n' > "$T/qbrief"; r >/dev/null; r >/dev/null; runs 9 || fail "no skip after the default item went"
+# At most QUIET_DAYS days after the last full run.
+st="$HOME/$LOGS/quiet/brief.quiet"; { echo $(( $(date +%s) - 6 * 86400 - 60 )); tail -1 "$st"; } > "$T/q.state"; cp "$T/q.state" "$st"
+r >/dev/null; r >/dev/null; runs 10 || fail "a run past QUIET_DAYS was skipped"
+# 0 runs every time; anything but whole days is refused.
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$Q/jobs/brief.job"; qc "never quiet"; r >/dev/null; r >/dev/null; runs 12 || fail "QUIET_DAYS=0 skipped"
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="a week"/' "$Q/jobs/brief.job"; st=0; r >/dev/null || st=$?
+((st == 2)) && runs 12 || fail "a QUIET_DAYS that is not whole days was not refused"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

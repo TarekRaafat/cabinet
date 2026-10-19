@@ -108,6 +108,7 @@ Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontm
    RESULT="specs/weekly.md"
    PROMPT="Write this week's numbers."
    AFTER=""
+   QUIET_DAYS="0"            # skip scheduled runs while nothing changed, for up to this many days; "0" runs every time
    ```
 
 2. Name the job in `OPERATIONS.md` (the doctor checks that the manual names every job).

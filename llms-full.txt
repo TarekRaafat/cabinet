@@ -464,6 +464,7 @@ Write `roles/<role>.md` (for example `roles/qa.md`) as plain Markdown, no frontm
    RESULT="specs/weekly.md"
    PROMPT="Write this week's numbers."
    AFTER=""
+   QUIET_DAYS="0"            # skip scheduled runs while nothing changed, for up to this many days; "0" runs every time
    ```
 
 2. Name the job in `OPERATIONS.md` (the doctor checks that the manual names every job).
@@ -764,7 +765,7 @@ cabinet job run <job>
 cabinet job list [--json]
 ```
 
-**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `<job>.log` in the workspace's log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; the scheduler runs the same on the job's schedule. **`list`** shows each job's role, schedule and time limit.
+**`run`** runs `jobs/<job>.job` now with the configured agent tool, logging to `<job>.log` in the workspace's log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), and stops it after its time limit (`TIMEOUT`, or `CABINET_JOB_TIMEOUT`). By hand it shows the result too; the scheduler runs the same on the job's schedule, except that a scheduled run of a job with `QUIET_DAYS` is skipped when nothing changed since its last full run (see below). **`list`** shows each job's role, schedule and time limit.
 
 Exit 0; 1 when the run failed; 124 when it was stopped by its time limit; 2 for an unknown or incomplete job.
 
@@ -970,7 +971,9 @@ Text output is for people and may be reworded at any time. For a script or an ag
 
 ### jobs/&lt;job&gt;.job
 
-One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run). After a change, run `bin/bootstrap.sh`.
+One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run), `QUIET_DAYS` (whole days; empty or `0` runs every time). After a change, run `bin/bootstrap.sh`.
+
+**Quiet days.** With `QUIET_DAYS`, a scheduled run starts no agent when nothing changed since the job's last full run: no commit, branch or fetch in the workspace, the project around it or any repo, no new doctor problem (by check ID), and the `RESULT` file as that run left it (an answer written into `BRIEF.md` counts as a change). It logs `<job> skipped: nothing changed since the full run of <time>` and touches the `RESULT` file, so `cabinet digest` and `cabinet next` see the brief as current. It never skips when any of those folders has uncommitted changes (the brief asks about work pending for more than a day), when the sign-off queue in the `RESULT` file holds a `default` item (it goes ahead after 72 hours of silence, and only a run says so), after a failed run, or once `QUIET_DAYS` days have passed since the last full run. A run by hand always runs. The brief has `QUIET_DAYS="6"`: on a quiet week, one full run a week. The state is `<job>.quiet` in the log folder, on this machine only.
 
 ### cabinet.local.env
 
@@ -1154,7 +1157,7 @@ An agent unsure of the tier treats it as the higher one. A reversible tier 3 ite
 
 ## The brief and the sign-off queue
 
-The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifies handoffs against git, checks the repos and the doctor, and puts every decision waiting on you at the top. Each decision has a plain question, lettered options with their consequences, each expert's recommendation, one overall recommendation, and whether it can be undone. You answer in one message; the agents apply your answers. Its parts sit under fixed headings (`## Sign-off queue`, `## Actions for the owner`, ...), so with several projects `cabinet digest` gathers every queue into one read.
+The chief-of-staff writes `BRIEF.md` on a schedule (`jobs/brief.job`). It verifies handoffs against git, checks the repos and the doctor, and puts every decision waiting on you at the top. Each decision has a plain question, lettered options with their consequences, each expert's recommendation, one overall recommendation, and whether it can be undone. You answer in one message; the agents apply your answers. Its parts sit under fixed headings (`## Sign-off queue`, `## Actions for the owner`, ...), so with several projects `cabinet digest` gathers every queue into one read. On a day when nothing changed (no commit, no new doctor problem, no answer, no work left uncommitted, no reversible item waiting for its 72 hours), the scheduled brief starts no agent and the last brief stands, for up to six days in a row ([quiet days](commands.md#jobsltjobgtjob)).
 
 ## The builder never verifies
 
@@ -1808,6 +1811,7 @@ First version.
 
 - macOS and Linux: schedules are launchd jobs on macOS and systemd user timers on Linux, or one block of the crontab where the machine did not boot with systemd (every other crontab line is kept); logs go to `~/.local/state/cabinet/<slug>/` on Linux; the backup passphrase comes from the secret store (`secret-tool`) on Linux, and the doctor also accepts `CABINET_BACKUP_PASSPHRASE`; where cron runs the schedules, a cron run reaches neither the secret store nor systemd's environment, so the passphrase lives in a file only the user can read (`~/.config/cabinet/passphrases/cabinet.<slug>.backup`, written by the command bootstrap prints), and a cron-scheduled backup runs unattended; the file, when it exists, comes first on any machine, one others can read is never used, and the doctor says so (`backups.passphrase`); messages, help and docs say "this machine", not "this Mac" (so `cabinet config --this-machine`), and `digest --notify` shows a desktop notification on both; notifications use `notify-send`; `cabinet list` no longer needs `column`, and paths under the home folder show as `~/` with bash 5 too. `bin/platform.sh` holds every difference, and `CABINET_SCHEDULER` overrides the scheduler it finds. The doctor reports a Linux machine with no scheduler (`schedules.scheduler`). The test suite runs on both (`npm run test:linux` runs it in a Debian container), and a workspace on a systemd Linux ran its brief and backup on schedule with the doctor all green.
 - Jobs as `jobs/<job>.job`, scheduled daily or weekly. A run is stopped, with everything it started, after its time limit: `TIMEOUT` minutes in the job file, else `CABINET_JOB_TIMEOUT` in `cabinet.env` (default 60; `0` for none), with the reason in the job's log. `bin/bootstrap.sh` adds, updates or removes each schedule to match `jobs/` and the backup setting.
+- Quiet days: a scheduled run of a job with `QUIET_DAYS` starts no agent when nothing changed since its last full run (no commit, branch or fetch in the workspace or a repo, no new doctor problem, the result file as that run left it), never with uncommitted work or a `default` item waiting in the sign-off queue, and for at most that many days in a row. The brief has `QUIET_DAYS="6"`, so a quiet workspace costs one agent run a week instead of seven. A run by hand always runs.
 - One form for every schedule (the brief, any job, the backup time, the digest): 12-hour times (`7 AM`, `4:30 PM`), every day or on days, one or several (`fri 4 PM`, `sun,mon,tue,wed,thu 8 AM`), with days by short or full name in any case. Times are stored and shown as `4:00 PM`; 24-hour times are still read.
 - Scheduled runners: claude, codex, gemini, qwen, grok, opencode, cursor, and `custom` for any other tool (`CABINET_RUNNER_CMD`).
 - `cabinet bootstrap --no-schedules` (and `--schedules` to undo it): a machine that should not run the workspace's jobs, such as a teammate's in a shared workspace, skips their schedules from then on; the choice is saved in `cabinet.local.env`, which git never tracks.

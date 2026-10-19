@@ -21,9 +21,11 @@ stamp_epoch() {
   if [[ $OS == mac ]]; then date -j -f %Y%m%d-%H%M%S "$1" +%s
   else date -d "${1:0:4}-${1:4:2}-${1:6:2} ${1:9:2}:${1:11:2}:${1:13:2}" +%s; fi 2>/dev/null
 }
+# epoch_date <seconds> <format>: that time in a date(1) format.
+epoch_date() { if [[ $OS == mac ]]; then LC_ALL=C date -r "$1" "$2"; else LC_ALL=C date -d "@$1" "$2"; fi; }
 human_stamp() {
   local e; e="$(stamp_epoch "$1")" || { printf '%s' "$1"; return 0; }
-  if [[ $OS == mac ]]; then LC_ALL=C date -r "$e" "+%-d %b %Y, %-I:%M %p"; else LC_ALL=C date -d "@$e" "+%-d %b %Y, %-I:%M %p"; fi
+  epoch_date "$e" "+%-d %b %Y, %-I:%M %p"
 }
 sha256() { if command -v shasum >/dev/null; then shasum -a 256 "$1"; else sha256sum "$1"; fi | cut -d' ' -f1; }
 
