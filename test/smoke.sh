@@ -352,6 +352,26 @@ rc=0; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits xyz --note specs/
 "$W/bin/handoff.sh" record H-20200101-01 --role qa PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null 2>&1 && fail "record wrote on an entry that does not exist"
 echo n > "$W/README-note.md"; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note README-note.md >/dev/null 2>&1 && fail "record took a note outside specs/"
 rm "$W/README-note.md"; [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused record or attach changed a file"
+# Readiness, computed: the reviewers an entry needs, at the latest commits, and only that work is ready.
+rj() { "$W/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+r="$("$W/bin/handoff.sh" add --from web --to "qa, security" --changed "Login screen" --needed "Verify it" --evidence https://example.com/l "Login UI")"; r="${r%% *}"
+[[ "$(rj "$r" '[.needs, .missing, .ready]')" == '[["qa","security","design-lead"],["qa","security","design-lead"],false]' ]] || fail "readiness of new work from the web builder: $(rj "$r" .)"
+for x in qa security design-lead; do "$W/bin/handoff.sh" record "$r" --role "$x" PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null || fail "record $x for readiness"; done
+[[ "$(rj "$r" .ready)" == true ]] && "$W/bin/handoff.sh" list --ready | grep -q "$r" && "$F" -C "$W" handoff list --ready --json | jq -e --arg i "$r" 'map(.id) == [$i]' >/dev/null || fail "work every reviewer passed is not ready: $(rj "$r" .)"
+"$W/bin/handoff.sh" record "$r" --role qa PASS --commits a1b2c3d,e4f5a6b7 --note specs/qa/r.md >/dev/null
+[[ "$(rj "$r" '[.stale, .ready]')" == '[["security","design-lead"],false]' ]] || fail "a fix did not make the earlier passes stale: $(rj "$r" .)"
+! "$W/bin/handoff.sh" list --ready | grep -q "$r" || fail "stale work listed as ready"
+"$W/bin/handoff.sh" record "$r" --role security PASS --commits a1b2c3d4,e4f5a6b --note specs/qa/r.md >/dev/null
+"$W/bin/handoff.sh" record "$r" --role design-lead BLOCK --commits a1b2c3d,e4f5a6b --note specs/qa/r.md >/dev/null
+[[ "$(rj "$r" '[.stale, .blocking, .missing, .ready]')" == '[[],["design-lead"],[],false]' ]] || fail "a BLOCK, or hashes of two lengths: $(rj "$r" .)"
+[[ "$(rj "$r" '.verdicts | map(.role + " " + .verdict) | join(",")')" == '"qa PASS,security PASS,design-lead BLOCK"' ]] || fail "the verdicts in list --json"
+perl -pi -e "s/^(- Status: open \\([0-9-]+\\))\$/\$1 qa PASS, looks fine/ if \$on; \$on = 1 if /^### \Q$r\E:/; \$on = 0 if /^- Status:/" "$W/HANDOFFS.md"
+[[ "$(rj "$r" '.unread_verdicts | length')" == 1 ]] && "$W/bin/doctor.sh" 2>&1 | grep -q "written outside a Verdict line, so not counted: $r" || fail "a verdict in prose was not reported: $(rj "$r" .unread_verdicts)"
+git -C "$W" checkout -q -- HANDOFFS.md
+o="$("$W/bin/handoff.sh" add --from chief-of-staff --to owner --changed x --needed "Decide" "Pricing")"; o="${o%% *}"
+[[ "$(rj "$o" '[.needs, .ready]')" == '[[],null]' ]] || fail "a decision for the owner needs a review: $(rj "$o" .)"
+rc=0; "$W/bin/handoff.sh" list qa --ready >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "list --ready with a name, in text, was not refused"
+grep -q '^- \*\*Readiness is computed\.\*\*' "$KIT/core/rules/reviews.md" && grep -q 'never judge readiness yourself' "$KIT/roles/chief-of-staff.md" || fail "the readiness rules left reviews.md or the chief-of-staff"
 # Work that changes no repo: a verdict with no commits, never for work addressed to a builder.
 w="$("$W/bin/handoff.sh" add --from product-manager --to qa --changed "Landing copy drafted" --needed "Check it" --evidence https://example.com/copy "Copy")"; w="${w%% *}"
 out="$("$W/bin/handoff.sh" record "$w" --role qa PASS --commits none --note specs/qa/r.md)" || fail "a verdict on work with no commits: $out"

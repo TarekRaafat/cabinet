@@ -21,11 +21,15 @@
 #       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
 #       span repos or change a path AGENTS.md guards (small_problems in lib.sh). --commits none is for
 #       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
-#   bin/handoff.sh list [name] [--json]
+#   bin/handoff.sh list [name] [--ready] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
 #       A repo or role name (api, qa, owner, ...): every entry addressed to it that is not done or
 #       rejected, in full; the start-of-session read. --json: the same as JSON (id, status, date,
-#       age_days, from, to, title; with a name, each entry's full text too).
+#       age_days, from, to, title; with a name, each entry's full text too), with its readiness:
+#       verdicts, needs (the reviewers it needs), missing, blocking, stale (a PASS that does not
+#       cover every commit a verdict names), ready (true, false, or null when it needs no review)
+#       and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read).
+#       --ready: only the entries ready for the owner to push.
 #   bin/handoff.sh archive
 #       Move every committed closed entry (done or rejected) to handoffs/archive-YYYY-MM.md (month of
 #       its ID) and commit the move; chief-of-staff runs it daily. Refuses while HANDOFFS.md has
@@ -285,11 +289,79 @@ entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel
 save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" HANDOFFS.md
 }
 
+# readiness: {"<ID>": {verdicts, needs, missing, blocking, stale, ready, unread_verdicts}} for every
+# entry. Needed: each reviewer the entry is addressed to, and for code (from a builder, or a verdict
+# that names commits) qa, security and code-reviewer, with design-lead for a web or mobile builder,
+# each when on the team. The work's commits are every commit a verdict names; a PASS counts only when
+# it covers them all, so a fix after a PASS needs that reviewer again.
+readiness() {
+  local names builds ui n o
+  names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
+  builds="$names $BUILDERS" ui="web mobile"
+  while IFS=$'\t' read -r n o; do
+    has "$names" "$n" || continue
+    builds+=" $o"; [[ "$o" == web || "$o" == mobile ]] && ui+=" $n"
+  done < <(team_rows)
+  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" python3 -I - "$WS/HANDOFFS.md" <<'PY'
+import json, os, re, sys
+team, builds, ui = (set(os.environ.get(k, "").split()) for k in ("TEAM", "BUILDS", "UI"))
+VER = re.compile(r"- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$")
+def names(s):
+    s = re.sub(r"\([^)]*\)", "", s).replace(" and ", ",").replace("&", ",").replace("`", "")
+    return [n.strip().lower() for n in s.split(",") if n.strip()]
+def covers(have, want):  # short and long hashes of one commit match
+    return all(any(w.startswith(h) or h.startswith(w) for h in have) for w in want)
+entries, cur, on = [], None, False
+for l in open(sys.argv[1], encoding="utf-8").read().split("\n"):
+    if l.startswith("## "):
+        on, cur = l.startswith(("## Open", "## Archive")), None
+    elif on and l.startswith("### H-"):
+        cur = {"id": l.split()[1].rstrip(":"), "lines": []}
+        entries.append(cur)
+    elif cur is not None:
+        cur["lines"].append(l)
+out = {}
+for e in entries:
+    frm, to, vs, unread = "", "", [], []
+    for l in e["lines"]:
+        m = re.match(r"- From: (.*?) -> To: (.*)", l)
+        if m and not frm:
+            frm, to = m.group(1).strip().lower(), m.group(2)
+        v = VER.match(l.strip())
+        if v:
+            vs.append({"role": v.group(1), "verdict": v.group(2), "date": v.group(3),
+                       "commits": [] if v.group(4) == "none" else v.group(4).split(","), "note": v.group(5)})
+        elif re.search(r"\b(PASS|BLOCK|CHANGES)\b", l):
+            unread.append(l.strip())
+    needs = []
+    for n in names(to):
+        if n in team and n not in builds and n != "chief-of-staff" and n not in needs:
+            needs.append(n)
+    if frm in builds or any(v["commits"] for v in vs):
+        for r in ["qa", "security", "code-reviewer"] + (["design-lead"] if frm in ui else []):
+            if r in team and r not in needs:
+                needs.append(r)
+    work = []
+    for c in (c for v in vs for c in v["commits"]):
+        if not covers(work, [c]):
+            work.append(c)
+    last = {v["role"]: v for v in vs}
+    blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
+    stale = [r for r, v in last.items() if v["verdict"] == "PASS" and not covers(v["commits"], work)]
+    missing = [r for r in needs if r not in last]
+    out[e["id"]] = {"verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
+                    "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}
+print(json.dumps(out))
+PY
+}
+
 h_list() {
 # --json (anywhere in the arguments): the same entries as JSON, for agents and scripts.
-json=0; args=()
-for a in "$@"; do [[ "$a" == --json ]] && json=1 || args+=("$a"); done
+# --ready: only the entries every reviewer they need has passed, at the latest commits.
+json=0 ready=0; args=()
+for a in "$@"; do case "$a" in --json) json=1 ;; --ready) ready=1 ;; *) args+=("$a") ;; esac; done
 set -- ${args[@]+"${args[@]}"}
+local rd; rd="$(readiness)"
 
 # Epoch seconds for a YYYY-MM-DD date: GNU date, then BSD/macOS.
 epoch() { date -d "$1" +%s 2>/dev/null || date -j -f %Y-%m-%d "$1" +%s; }
@@ -316,11 +388,13 @@ if ((json)); then
      | select(if $who == "" then .section == "open" and (.status == "open" or .status == "acknowledged")
               else (.to | test("(^|[^a-z-])(" + $who + ")([^a-z-]|$)")) and (.status | test("^(done|rejected)") | not) end)
      | del(.section)]
-    | if $who == "" then sort_by(.date // "9999-99-99") | map(del(.text)) else . end'
+    | if $who == "" then sort_by(.date // "9999-99-99") | map(del(.text)) else . end' \
+  | jq --argjson r "$rd" --argjson only "$ready" 'map(. + ($r[.id] // {})) | if $only == 1 then map(select(.ready == true)) else . end'
   exit 0
 fi
 
 if [[ $# -gt 0 ]]; then
+  ((ready == 0)) || { echo "--ready lists every entry ready to push; it takes no name (or add --json)" >&2; exit 2; }
   # "owner" and "founder" name the same person.
   who="$1"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
   awk -v who="$who" '
@@ -349,10 +423,11 @@ awk '
   st=$3; sub(/[^a-z].*/, "", st); print d "\t" st "\t" id "\t" to "\t" title; id=""
 }
 ' "$WS/HANDOFFS.md" | sort | while IFS=$'\t' read -r d st id to title; do
+  ((ready == 0)) || jq -e --arg i "$id" '.[$i].ready == true' <<<"$rd" >/dev/null || continue
   if [[ "$d" == 9999-99-99 ]]; then age="?"
   else age=$(( (today - $(epoch "$d") + 43200) / 86400 )); fi  # rounded, so a DST day still counts as one
   printf '%3sd  %-12s  %-14s  %-24s  %s\n' "$age" "$st" "$id" "$to" "$title"
-done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || echo "No open handoffs."; }
+done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || { ((ready)) && echo "No handoffs ready to push." || echo "No open handoffs."; }; }
 }
 
 h_archive() {

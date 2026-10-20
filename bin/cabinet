@@ -91,7 +91,7 @@ C	Team	handoff attach	<ID> <file or URL>... --from <name>	Add evidence to your o
 C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
 C	Team	spec check	[spec]	Check each spec against its status: ready needs criteria qa passed, no TBD, every decision answered.
 C	Team	spec record	<spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, design-lead's of its design, or architect's of its plan, and commit it.
-C	Team	handoff list	[name]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full.
+C	Team	handoff list	[name] [--ready]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full; --ready, the work ready to push.
 C	Team	handoff archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
 C	Work	repo add	<git url>	Add a product repo; bootstrap clones it and gives it a builder.
 C	Work	repo remove	<name>	Take a repo out of repos.tsv and the team table; its folder is left as it is.
@@ -161,6 +161,7 @@ O	handoff record	--commits	<hash,...>|none	The commits reviewed, joined by comma
 O	handoff record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	spec record	--role	<qa|architect|design-lead>	qa reviews the acceptance criteria; design-lead the design; architect the plan.
 O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
+O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.

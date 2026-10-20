@@ -238,6 +238,10 @@ vcheck="$(cd "$WS" && awk '
 vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
 [[ -z "$vbad" ]] && ok handoffs.verdicts "every verdict is in the verdict format, with its note" \
   || bad handoffs.verdicts "verdicts not in the format, or naming a note that does not exist: $vbad (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)"
+# A verdict written in prose (a status line saying "qa PASS") is never read as one: say where.
+unread="$("$WS/bin/handoff.sh" list --json 2>/dev/null | jq -r '[.[] | select((.unread_verdicts // []) | length > 0) | .id] | join(" ")' 2>/dev/null || true)"
+[[ -z "$unread" ]] && ok handoffs.unread-verdicts "no verdict is written outside a Verdict line" \
+  || note handoffs.unread-verdicts "PASS, BLOCK or CHANGES written outside a Verdict line, so not counted: $unread (the reviewer records it with bin/handoff.sh record)"
 # A small task that passed stays small: its commits in one repo, touching no path AGENTS.md guards.
 notsmall=""
 while IFS=$'\t' read -r sid scommits; do
