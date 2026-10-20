@@ -197,6 +197,11 @@ for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh|platform.s
 for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
 for f in "$WS"/tools/*; do [[ -f "$f" && "${f##*/}" != README.md ]] || continue; grep -qF "tools/${f##*/}" "$WS/OPERATIONS.md" || missing+=("tools/${f##*/}"); done
 for r in $(team_roles); do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
+# The manual as a page (bin/manual.sh): untracked, rebuilt after each brief; say when it is behind.
+if [[ -f "$WS/OPERATIONS.md" && -x "$WS/bin/manual.sh" ]]; then
+  "$WS/bin/manual.sh" build --check >/dev/null 2>&1 && ok manual.page "OPERATIONS.html matches OPERATIONS.md" \
+    || note manual.page "OPERATIONS.html is older than OPERATIONS.md, or missing (cabinet manual build; the brief rebuilds it each morning)"
+fi
 ((${#missing[@]})) && bad manual.complete "OPERATIONS.md does not mention: ${missing[*]}" || ok manual.complete "manual names every script, job and role"
 
 section "Guides"

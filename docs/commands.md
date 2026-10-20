@@ -24,7 +24,7 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 Once you know one command, you can guess the next:
 
 - **One word** acts on the workspace as a whole, or on this machine: `cabinet doctor`, `cabinet update`.
-- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `spec`, `repo`, `job`, `secret` and `backup`, always singular.
+- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `spec`, `manual`, `repo`, `job`, `secret` and `backup`, always singular.
 - **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `spec record`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
 - **The same options everywhere:** `--json` on every command that reports, `--dry-run` on every command that changes the setup or deletes anything, `--yes` (`-y`) on every command that asks.
 - **Any workspace, from anywhere:** every command finds the workspace from the folder you are in, upward, so it works anywhere inside the workspace or the project around a `cabinet/` workspace. `cabinet -C <dir> <command>` runs it as if started in `<dir>`, as git does.
@@ -221,6 +221,14 @@ It decides nothing itself: it also stops when an agent fails or hits its time li
 `add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
 
 Exit 0 (for `run`: the work is ready to push); 3 when `run` pauses at a scheduled run's cost limit; 1 when `run` stops before that, `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
+
+## cabinet manual
+
+```sh
+cabinet manual build [--check]
+```
+
+**`build`** writes `OPERATIONS.html`, the owner's manual (`OPERATIONS.md`) as one page you open in a browser: a table of contents, a search box that narrows the page to the sections that match, light and dark themes, and each `- [ ]` line as a tick box, remembered in that browser for the day, so a daily list starts fresh. The page holds everything it needs (no fonts, scripts or styles fetched) and works offline. Nothing in the Markdown runs: it is all escaped, and only `http(s)`, `mailto`, relative and `#` links become links. Like `BRIEF.md` it is untracked: setup, `cabinet update` and the brief job (its `AFTER`) rebuild it, and the doctor notes when it is older than `OPERATIONS.md` (`manual.page`). `--check` only reports (exit 1 when it is behind).
 
 ## cabinet spec
 
@@ -430,6 +438,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet job run`, `job list` | `bin/job.sh run <job>`, `bin/job.sh list` |
 | `cabinet handoff add`, `attach`, `record`, `list`, `run`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `run`, `archive` |
 | `cabinet spec check`, `record`, `run` | `bin/spec.sh check`, `record`, `run` |
+| `cabinet manual build` | `bin/manual.sh build` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
 | `cabinet secret check` | `bin/secret.sh check` |

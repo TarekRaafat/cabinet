@@ -39,7 +39,6 @@ Patterns proven in daily use of an agent team, made general. Each is optional an
 - **Checks on contracts between repos.** Today the contracts table names each contract and its source of truth, and nothing verifies them. A contract can name its check (a script, a schema comparison, a test), run by the doctor and by qa before a push; a change on one side that breaks the other is caught then, not by users. Done when: a declared contract with a check fails the review of a change that breaks it.
 - **One writer for shared outputs.** Today two agents can work in the same repo copy and collide. A project can name a repo or area with a single writer (a docs site, a website, a release): the others write their part in their own repos and hand it off, and only the writer commits there. Done when: in a single-writer area, every commit comes from its writer, and the others' content arrives through handoffs.
 - **A market watch job.** Today nothing keeps an eye on the market. An optional weekly job tracks what the project names: other products, prices, launches, reviews, rules in its industry, and reports what changed since last week, for the team only. Done when: a project that turns it on gets a weekly report of changes, and nothing from it reaches anything published.
-- **A readable manual.** Today the owner's manual is Markdown. It is also built as a formatted page (contents, links, search), rebuilt whenever `OPERATIONS.md` changes, and the doctor says when the page is behind. Done when: the page always matches the Markdown.
 
 ## Ideas to pick from
 

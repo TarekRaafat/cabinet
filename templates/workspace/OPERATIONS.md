@@ -76,6 +76,7 @@ git -C <repo> push
 | `bin/handoff.sh run <ID>` | Moves one piece of work through build, review and fixes with agent runs, and stops when it is ready to push or needs you. It may cost money. |
 | `bin/handoff.sh archive` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
 | `bin/role.sh draft <role>` | Drafts a role you added with `cabinet role add`, from your brief and the project (it runs the agent tool). |
+| `bin/manual.sh build [--check]` | Writes `OPERATIONS.html`, this manual as one page with contents, search and tick boxes for the daily and weekly lists. The doctor says when it is older than this file. |
 | `bin/role.sh build [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |
 | `bin/job.sh run <job>` | Runs a job from `jobs/` now (for example `brief`). |
 | `bin/role.sh list`, `bin/repo.sh list`, `bin/job.sh list` | The team, the repos, the jobs. |

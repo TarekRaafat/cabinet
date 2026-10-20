@@ -14,5 +14,5 @@ TIMEOUT=""
 # in a row, then a full run. 0: run every time.
 QUIET_DAYS="6"
 PROMPT="Scheduled daily run. Write BRIEF.md as your definition says, sign-off queue first. Apply any answered queue items. Commit your HANDOFFS.md changes and any leftover finished handoff lines, then run bin/handoff.sh archive, as CABINET.md says."
-# AFTER: an optional shell command run in the workspace after a successful run.
-AFTER=""
+# AFTER: an optional shell command run in the workspace after a successful run (here: the manual page).
+AFTER="bin/manual.sh build"

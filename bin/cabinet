@@ -83,6 +83,7 @@ C	Daily	list		Every workspace on this machine: its kit version, what waits on yo
 C	Daily	doctor		Check everything (repos, roles, guardrails, schedules, backups) and say how to fix it.
 C	Team	role add	<name> [options]	Turn on a kit role, or add a role of the project's own from as little as its name.
 C	Team	role remove	<name>	Turn a role off. A role of the project's own keeps its file in roles/.
+C	Daily	manual build		Write OPERATIONS.html, the owner's manual as one page, from OPERATIONS.md.
 C	Team	role list		Every role on the team, and the optional kit roles that are off.
 C	Team	role draft	<name>	Have an agent draft a role you added, for this project (runs the agent tool; it may cost money).
 C	Team	role build		Build the role definitions from the kit's roles and roles/.
@@ -157,6 +158,7 @@ O	role add	--name	"..."	Its display name ("Product Agent"); also when turning on
 O	role add	--function	"..."	The function it belongs to on the org page, when not its lead's (default: its lead's, or Other).
 O	role add	--draft		Draft it now with the configured agent tool (it may cost money).
 O	role build	--check		Only report what is missing or out of date.
+O	manual build	--check		Only report whether OPERATIONS.html is older than OPERATIONS.md.
 O	handoff add	--from	<repo or role>	Who files it.
 O	handoff add	--to	<repo, role or owner>	Who it is for.
 O	handoff add	--changed	"..."	Exactly what changed: endpoint, field, limit, status code, default, version, file.
@@ -188,7 +190,7 @@ O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,hando
 TABLE
 }
 is_cmd() { commands_table | awk -F'\t' -v c="$1" '$1 == "C" && $3 == c {f = 1} END {exit !f}'; }
-# A noun: the first word of two-word commands (role, repo, handoff, spec, job, backup, secret).
+# A noun: the first word of two-word commands (role, repo, handoff, spec, manual, job, backup, secret).
 is_noun() { commands_table | awk -F'\t' -v n="$1" '$1 == "C" && index($3, n " ") == 1 {f = 1} END {exit !f}'; }
 
 cmd_help() {
@@ -769,6 +771,7 @@ setup() {
     fi
   fi
   "$ws/bin/role.sh" build
+  [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "  OPERATIONS.html not built (bin/manual.sh build)"
   # Written last: a workspace with a version is a finished one.
   echo "$VERSION" > "$ws/.cabinet/version"
 
@@ -1970,6 +1973,7 @@ cmd_update() {
     exit 1
   fi
   "$ws/bin/role.sh" build
+  [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "OPERATIONS.html not built (bin/manual.sh build)"
   if [[ "$old" != "$VERSION" ]]; then
     echo
     echo "== What changed since $old"
@@ -2027,6 +2031,7 @@ case "${1:-}" in
   role) shift; cmd_role "$@" ;;
   handoff) shift; noun_script handoff "$@" ;;
   spec) shift; noun_script spec "$@" ;;
+  manual) shift; noun_script manual "$@" ;;
   repo) shift; cmd_repo "$@" ;;
   job) shift; noun_script job "$@" ;;
   secret) shift; noun_script secret "$@" ;;

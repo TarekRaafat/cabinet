@@ -1914,6 +1914,43 @@ grep -q '^## Critical areas$' "$KIT/core/rules/reviews.md" && grep -q '^## Criti
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "the manual as a page: built from OPERATIONS.md, safe, never silently behind" ""
+s54() {
+MW="$T/man"; "$F" new "$MW" --yes --name "Manual Co" >/dev/null || fail "new for the manual page"
+h="$MW/OPERATIONS.html"
+[[ -f "$h" ]] && git -C "$MW" check-ignore -q OPERATIONS.html || fail "setup did not build the page, or it is tracked"
+grep -q '<title>.*Manual Co' "$h" && grep -q '<nav>' "$h" && grep -q '<li class="l2"><a href="#' "$h" && grep -q '<table>' "$h" && grep -q 'type="checkbox" data-box="1"' "$h" || fail "the page's parts"
+! grep -qE '<link |<script src=|src="https?:|url\(https?:' "$h" || fail "the page fetches something"
+"$MW/bin/manual.sh" build --check || fail "a fresh page is called older"
+grep -qx 'AFTER="bin/manual.sh build"' "$MW/jobs/brief.job" || fail "the brief does not rebuild the page"
+# The Markdown is escaped: nothing in it runs, and only safe links link.
+cat >> "$MW/OPERATIONS.md" <<'MD'
+
+## Page test
+
+A <script>alert(1)</script> line, a [bad](javascript:alert(1)) link, a [good](https://example.com/x) one, **bold**, *slant* and `a<b`.
+
+<img src=x onerror=alert(1)>
+
+| a | b \| c |
+|---|---|
+| `x|y` | [doc](docs/a.md) |
+
+- [ ] Check the brief
+  - nested
+1. first
+MD
+rc=0; "$MW/bin/manual.sh" build --check >/dev/null || rc=$?; [[ $rc == 1 ]] || fail "a page older than the Markdown passed the check"
+"$MW/bin/doctor.sh" 2>&1 | grep -q 'note  OPERATIONS.html is older than OPERATIONS.md' || fail "doctor: a page behind"
+"$F" -C "$MW" manual build | grep -q 'Wrote OPERATIONS.html' || fail "cabinet manual build"
+! grep -q '<script>alert' "$h" && ! grep -q 'href="javascript' "$h" && ! grep -q '<img' "$h" && grep -q '&lt;script&gt;alert(1)&lt;/script&gt;' "$h" \
+  && grep -q '<a href="https://example.com/x">good</a>' "$h" && grep -q '<a href="docs/a.md">doc</a>' "$h" && grep -q '<strong>bold</strong>' "$h" \
+  && grep -q '<em>slant</em>' "$h" && grep -q '<code>a&lt;b</code>' "$h" && grep -q '<th>b | c</th>' "$h" || fail "the page's escaping and markup: $(grep -n 'Page test' -A12 "$h")"
+grep -q '<h2 id="page-test">Page test</h2>' "$h" && "$MW/bin/doctor.sh" 2>&1 | grep -q 'ok    OPERATIONS.html matches OPERATIONS.md' || fail "the rebuilt page"
+"$F" -C "$MW" remove --yes --force >/dev/null
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

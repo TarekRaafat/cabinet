@@ -54,6 +54,8 @@ Some parts of a project cost more when they go wrong: payments, personal data, a
 | Client work | the deliverable | owner | a preview link | a link checker |
 | Business with little code | pricing page | finance | old and new prices side by side | none |
 
+`OPERATIONS.md`, the owner's manual, is also a page: `cabinet manual build` writes `OPERATIONS.html`, with contents, search and tick boxes for the daily and weekly lists, rebuilt after each brief.
+
 `tools/` is the project's own scripts: updates never touch it, the manual names each one (the doctor checks), and jobs and checks call them.
 
 ## Ready to build
