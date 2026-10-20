@@ -298,83 +298,6 @@ entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel
 save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" HANDOFFS.md
 }
 
-# readiness: {"<ID>": {verdicts, needs, missing, blocking, stale, ready, unread_verdicts}} for every
-# entry. Needed: each reviewer the entry is addressed to, and for code (from a builder, or a verdict
-# that names commits) qa, security and code-reviewer, with design-lead for a web or mobile builder,
-# each when on the team. The work's commits are every commit a verdict names; a PASS counts only when
-# it covers them all, so a fix after a PASS needs that reviewer again.
-readiness() {
-  local names builds ui n o
-  names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
-  builds="$names $BUILDERS" ui="web mobile"
-  while IFS=$'\t' read -r n o; do
-    has "$names" "$n" || continue
-    builds+=" $o"; [[ "$o" == web || "$o" == mobile ]] && ui+=" $n"
-  done < <(team_rows)
-  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" python3 -I - "$WS/HANDOFFS.md" "$SPEND" <<'PY'
-import json, os, re, sys
-cost = {}
-try:
-    for row in open(sys.argv[2], encoding="utf-8"):
-        f = row.rstrip("\n").split("\t")
-        if len(f) >= 4 and f[3]:
-            cost[f[1]] = cost.get(f[1], 0) + float(f[3])
-except (OSError, ValueError):
-    pass
-team, builds, ui = (set(os.environ.get(k, "").split()) for k in ("TEAM", "BUILDS", "UI"))
-VER = re.compile(r"- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$")
-def names(s):
-    s = re.sub(r"\([^)]*\)", "", s).replace(" and ", ",").replace("&", ",").replace("`", "")
-    return [n.strip().lower() for n in s.split(",") if n.strip()]
-def covers(have, want):  # short and long hashes of one commit match
-    return all(any(w.startswith(h) or h.startswith(w) for h in have) for w in want)
-entries, cur, on = [], None, False
-for l in open(sys.argv[1], encoding="utf-8").read().split("\n"):
-    if l.startswith("## "):
-        on, cur = l.startswith(("## Open", "## Archive")), None
-    elif on and l.startswith("### H-"):
-        cur = {"id": l.split()[1].rstrip(":"), "lines": []}
-        entries.append(cur)
-    elif cur is not None:
-        cur["lines"].append(l)
-out = {}
-for e in entries:
-    frm, to, vs, unread = "", "", [], []
-    for l in e["lines"]:
-        m = re.match(r"- From: (.*?) -> To: (.*)", l)
-        if m and not frm:
-            frm, to = m.group(1).strip().lower(), m.group(2)
-        v = VER.match(l.strip())
-        if v:
-            vs.append({"role": v.group(1), "verdict": v.group(2), "date": v.group(3),
-                       "commits": [] if v.group(4) == "none" else v.group(4).split(","), "note": v.group(5)})
-        elif re.search(r"\b(PASS|BLOCK|CHANGES)\b", l):
-            unread.append(l.strip())
-    needs = []
-    for n in names(to):
-        if n in team and n not in builds and n != "chief-of-staff" and n not in needs:
-            needs.append(n)
-    if frm in builds or any(v["commits"] for v in vs):
-        for r in ["qa", "security", "code-reviewer"] + (["design-lead"] if frm in ui else []):
-            if r in team and r not in needs:
-                needs.append(r)
-    work = []
-    for c in (c for v in vs for c in v["commits"]):
-        if not covers(work, [c]):
-            work.append(c)
-    last = {v["role"]: v for v in vs}
-    blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
-    stale = [r for r, v in last.items() if v["verdict"] == "PASS" and not covers(v["commits"], work)]
-    missing = [r for r in needs if r not in last]
-    dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
-    st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
-    out[e["id"]] = {"depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
-                    "spec": next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), ""),
-                    "cost_usd": round(cost[e["id"]], 6) if e["id"] in cost else None, "verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
-                    "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}
-print(json.dumps(out))
-PY
-}
 
 h_list() {
 # --json (anywhere in the arguments): the same entries as JSON, for agents and scripts.
@@ -548,7 +471,7 @@ while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
   w="$(jq -c --arg i "$id" '.[$i]' <<<"$rd")"
-  v="$(jq -r --arg i "$id" 'to_entries | map(select(.key != $i and (.value.depends_on | test("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])")) and (.value.status_now | test("^(done|rejected)") | not))) | .[0].key // empty' <<<"$rd")"
+  v="$(jq -r --arg i "$id" 'to_entries | map(select(.key != $i and (.value.small | not) and .value.spec == "" and (.value.depends_on | test("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])")) and (.value.status_now | test("^(done|rejected)") | not))) | .[0].key // empty' <<<"$rd")"
   if [[ -z "$v" ]]; then
     case "$(jq -r .status_now <<<"$w")" in
       rejected*) stop "$builder sent $id back (its status line says why)" ;;

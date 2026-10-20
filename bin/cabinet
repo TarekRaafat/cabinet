@@ -91,6 +91,7 @@ C	Team	handoff attach	<ID> <file or URL>... --from <name>	Add evidence to your o
 C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
 C	Team	spec check	[spec]	Check each spec against its status: ready needs criteria qa passed, no TBD, every decision answered.
 C	Team	spec record	<spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, design-lead's of its design, or architect's of its plan, and commit it.
+C	Team	spec run	<spec> [--retries <n>]	Move a ready spec through routing, plans and each of its handoffs with agent runs, until all its work is ready to push.
 C	Team	handoff list	[name] [--ready]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full; --ready, the work ready to push.
 C	Team	handoff run	<ID> [--retries <n>]	Move one piece of work through build, review and fixes with agent runs, until it is ready to push or needs you.
 C	Team	handoff archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
@@ -163,6 +164,7 @@ O	handoff record	--note	<file>	The reviewer's committed note under specs/, with 
 O	spec record	--role	<qa|architect|design-lead>	qa reviews the acceptance criteria; design-lead the design; architect the plan.
 O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	handoff run	--retries	<n>	Fix rounds after a BLOCK before it stops and asks you (default 2).
+O	spec run	--retries	<n>	Fix rounds after a BLOCK, for each of its handoffs, before it stops and asks you (default 2).
 O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
@@ -172,7 +174,7 @@ O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 1
 O	digest	--file	<file>	With --schedule: where it is written (default: digest.md in the log folder, ~/Library/Logs/cabinet/ on macOS, ~/.local/state/cabinet/ on Linux).
 O	remove	--force		Remove even with uncommitted changes or commits on no remote.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
-O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run	--dry-run		Print what it would do, and change nothing.
+O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
 O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE

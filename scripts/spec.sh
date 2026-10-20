@@ -14,6 +14,13 @@
 #       plan, design-lead of its design. Writes, or replaces, the role's "- Verdict:" line under "## Reviews" with today's date
 #       and a fingerprint of the part reviewed, so a later change to it needs a new review, and
 #       commits the spec. The spec and the note must be committed.
+#   bin/spec.sh run <spec> [--retries <n>] [--dry-run]
+#       Move a spec that is ready to build until all its work is ready to push, an agent run per step:
+#       chief-of-staff routes it (one handoff per builder, --spec), each builder writes its plan, and
+#       for more than one repo architect reviews the plan; then each of its handoffs is run in order
+#       (bin/handoff.sh run, with --retries). It stops at the first step that does not finish, as
+#       handoff run does. Logged as run-<spec>.log; routing, plans and review are recorded under the
+#       spec's path in the spend file, each handoff's runs under its ID.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -80,6 +87,14 @@ def verdicts(lines):
             v[m.group(1)] = (m.group(2), m.group(3))
     return v
 
+def plan_state(text):
+    """The repos, those with no plan yet, and the architect's review of the plan as it is now."""
+    fm, secs = parse(text)
+    rs, parts, v = repos(fm), plan(secs.get("Plan", [])), verdicts(secs.get("Reviews", []))
+    a = v.get("architect")
+    review = "none" if not a else a[0] if a[0] != "PASS" else "PASS" if a[1] == fingerprint(secs.get("Plan", [])) else "changed"
+    return {"repos": rs, "missing_plans": [r for r in rs if not parts.get(r)], "plan_review": review}
+
 def problems(text):
     fm, secs = parse(text)
     status, p = fm.get("status", ""), []
@@ -121,8 +136,9 @@ def problems(text):
 if mode == "check":
     out = []
     for f in args:
-        status, p = problems(open(os.path.join(ws, f), encoding="utf-8").read())
-        out.append({"spec": f, "status": status, "problems": p})
+        text = open(os.path.join(ws, f), encoding="utf-8").read()
+        status, p = problems(text)
+        out.append(dict({"spec": f, "status": status, "problems": p}, **plan_state(text)))
     print(json.dumps(out))
 elif mode == "record":
     f, role, verdict, date, note = args
@@ -207,9 +223,85 @@ git -C "$WS" commit -q -m "specs: ${spec#specs/} $role $verdict" -- "$spec" || {
 echo "$spec: $role $verdict recorded and committed"
 }
 
+s_run() {
+usage="usage: bin/spec.sh run <spec> [--retries <n>] [--dry-run]"
+local spec="" retries=2 dry=0 routed=0 step=0 st works w r o x c total
+local -a pass
+pass=()
+while (($#)); do
+  case "$1" in
+    --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; pass+=(--retries "$2"); shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
+    *) [[ -z "$spec" ]] || { echo "one spec at a time. $usage" >&2; exit 2; }; spec="$1"; shift ;;
+  esac
+done
+[[ "$retries" =~ ^[0-9]+$ ]] || { echo "--retries is a number of fix rounds, like 2. $usage" >&2; exit 2; }
+[[ -n "$spec" ]] || { echo "the spec first. $usage" >&2; exit 2; }
+spec="$(ws_md "the spec" "$spec")" || exit 1
+[[ "$spec" =~ ^specs/[^/]+\.md$ && "$spec" != specs/_template.md && "$spec" != specs/ROADMAP.md ]] || { echo "$spec is not a spec (specs/<feature>.md)" >&2; exit 1; }
+cd "$WS"
+sc() { "$WS/bin/spec.sh" check "$spec" --json 2>/dev/null | jq -c '.[0]'; }
+st="$(sc)"
+[[ "$(jq -r .status <<<"$st")" =~ ^(ready|building)$ && "$(jq '.problems | length' <<<"$st")" == 0 ]] \
+  || { echo "$spec is not ready to build: $(jq -r '.status + ": " + (.problems | join("; "))' <<<"$st") (bin/spec.sh check $spec)" >&2; exit 1; }
+
+mkdir -p -m 700 "$LOGDIR"
+local name="${spec#specs/}"; name="${name%.md}"
+local lock="$K/run-spec-$name.lock" log="$LOGDIR/run-$name.log"
+if ((dry == 0)); then
+  mkdir "$lock" 2>/dev/null || { echo "$spec is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
+  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+fi
+SPEND_LABEL="$spec"
+say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
+stop() { say "Stopped: $1"; echo "Log: $log"; exit 1; }
+agent() {  # agent <role> <what it does> <prompt>
+  say "$1: $2"
+  ((dry)) && exit 0
+  AGENT=$1 PROMPT=$3
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+}
+# Its work: every handoff filed with --spec for it, not sent back, oldest first (the order routing set).
+work() { readiness | jq -r --arg s "$spec" 'to_entries | map(select(.value.spec == $s and (.value.status_now | test("^rejected") | not))) | map(.key) | sort | .[]'; }
+while :; do
+  step=$((step + 1)); ((step <= 20)) || stop "more steps than a spec takes; the owner looks at it"
+  works="$(work)"
+  if [[ -z "$works" ]]; then
+    ((routed == 0)) || stop "chief-of-staff routed nothing for $spec"
+    agent chief-of-staff "routes $spec" "Route $spec as your role says (\"Routing a task\"): one handoff per owning builder, each filed with --spec $spec, ordered by dependency, a later entry naming the earlier IDs it depends on, as that section says. Route nothing else."
+    routed=1; continue
+  fi
+  st="$(sc)"
+  x="$(jq -r '.missing_plans[]' <<<"$st" | head -1)"
+  if [[ -n "$x" ]]; then
+    o="$(owner_of "$x")"; [[ -n "$o" ]] || stop "$x has no owning role in the team table, so no one plans it"
+    agent "$o" "plans $x" "Write your plan for $x in $spec, under \"## Plan\" as \"### $x\" (.cabinet/rules/ready-to-build.md): the files you change, the tests you add, the order across repos, the risks. Commit the spec. Do not build yet."
+    [[ "$(sc | jq -r --arg x "$x" '.missing_plans | index($x)')" == null ]] || stop "$o wrote no plan for $x in $spec"
+    continue
+  fi
+  if [[ "$(jq '.repos | length' <<<"$st")" -gt 1 && "$(jq -r .plan_review <<<"$st")" != PASS ]]; then
+    [[ "$(jq -r .plan_review <<<"$st")" != BLOCK ]] || stop "architect blocked the plan in $spec: the builders revise it (its note says why), then run again"
+    agent architect "reviews the plan in $spec" "Review the plan in $spec as your role says, then record bin/spec.sh record $spec --role architect PASS|BLOCK --note specs/adr/<note>.md."
+    [[ "$(sc | jq -r .plan_review)" =~ ^(PASS|BLOCK)$ ]] || stop "architect recorded no review of the plan in $spec"
+    continue
+  fi
+  for w in $works; do
+    if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
+    say "running $w"
+    "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} || stop "$w did not reach ready to push (see above), so the rest of $spec waits"
+  done
+  # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
+  total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$works" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
+  say "$spec is ready to push: all its work ($(printf '%s' "$works" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal."
+  exit 0
+done
+}
+
 verb="${1:-}"; (($#)) && shift
 case "$verb" in
   check) s_check "$@" ;;
   record) s_record "$@" ;;
-  *) echo "usage: bin/spec.sh check|record (see the top of this file)" >&2; exit 2 ;;
+  run) s_run "$@" ;;
+  *) echo "usage: bin/spec.sh check|record|run (see the top of this file)" >&2; exit 2 ;;
 esac

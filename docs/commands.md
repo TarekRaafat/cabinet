@@ -220,13 +220,16 @@ Exit 0 (for `run`: the work is ready to push); 1 when `run` stops before that, `
 ```sh
 cabinet spec check [spec] [--json]
 cabinet spec record <spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>
+cabinet spec run <spec> [--retries <n>] [--dry-run]
 ```
 
-**`check`** holds every spec in `specs/` (or the one named) to what its status needs ([concepts](concepts.md#ready-to-build)). `draft`, `shipped` and `dropped` need nothing. `ready` needs acceptance criteria, no `TBD` in "Rules", every row of the Decisions table answered, at least one repo in `repos` (or a workspace area, for work with no code), and a qa PASS on the acceptance criteria as they are now. A spec built in a repo whose owner in the team table is the web or mobile builder also needs, while design-lead is on the team, a "Design" section and a design-lead PASS on it as it is now. `building` also needs a plan for each repo (a `### <repo>` part under "## Plan" with something in it) and, for more than one repo, an architect PASS on the plan as it is now. It prints each spec, its status and its problems (or `ok`). `--json`: `[{spec, status, problems}]`. The doctor runs it (`specs.ready`).
+**`check`** holds every spec in `specs/` (or the one named) to what its status needs (`--json` adds `repos`, `missing_plans` and `plan_review`, the architect's review of the plan as it is now: `PASS`, `BLOCK`, `changed` or `none`) ([concepts](concepts.md#ready-to-build)). `draft`, `shipped` and `dropped` need nothing. `ready` needs acceptance criteria, no `TBD` in "Rules", every row of the Decisions table answered, at least one repo in `repos` (or a workspace area, for work with no code), and a qa PASS on the acceptance criteria as they are now. A spec built in a repo whose owner in the team table is the web or mobile builder also needs, while design-lead is on the team, a "Design" section and a design-lead PASS on it as it is now. `building` also needs a plan for each repo (a `### <repo>` part under "## Plan" with something in it) and, for more than one repo, an architect PASS on the plan as it is now. It prints each spec, its status and its problems (or `ok`). `--json`: `[{spec, status, problems}]`. The doctor runs it (`specs.ready`).
 
 **`record`** records a review of a spec under its "## Reviews" heading: qa's of the acceptance criteria (can each be tested as written?), design-lead's of the design, or architect's of the plan. It writes `- Verdict: <role> <PASS|BLOCK> <YYYY-MM-DD> <fingerprint> <note>`, replacing that role's earlier review, and commits the spec (`specs: <feature>.md <role> <verdict>`). The fingerprint is of the part reviewed, so a later change to it shows as unreviewed in `check`. The spec and the note must be committed, the note a `.md` file under `specs/`; both are read from the folder you run it in, else from the workspace.
 
-Exit 0; 1 when `check` finds a spec not ready for its status, or `record` refuses (a file not committed, not a spec, or the spec given as its own note); 2 for a missing value, an unknown option, a role other than qa, architect or design-lead, or a verdict other than PASS or BLOCK.
+**`run`** moves a spec that passes `check` (`ready` or `building`) until all its work is ready to push, an agent run per step, so you start no agent by hand: chief-of-staff routes it (one handoff per owning builder, filed `--spec`), each builder writes its plan for its repo, and, for more than one repo, architect reviews the plan; then each of its handoffs runs in the order routing set, as `cabinet handoff run` runs one (`--retries` is passed on). It stops at the first step that does not finish: an agent that fails or leaves no trace, a plan the architect blocks, or a handoff that does not reach ready. Run again after you settle it: work already done is not redone. It ends with what all its runs cost. Logged in `run-<feature>.log` in the log folder; one run at a time per spec; `--dry-run` prints the next step. It may cost money.
+
+Exit 0; 1 when `check` finds a spec not ready for its status, `run` stops before all its work is ready, or `record` refuses (a file not committed, not a spec, or the spec given as its own note); 2 for a missing value, an unknown option, a role other than qa, architect or design-lead, or a verdict other than PASS or BLOCK.
 
 ## cabinet repo
 
@@ -416,7 +419,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet brief` | `bin/job.sh run brief` |
 | `cabinet job run`, `job list` | `bin/job.sh run <job>`, `bin/job.sh list` |
 | `cabinet handoff add`, `attach`, `record`, `list`, `run`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `run`, `archive` |
-| `cabinet spec check`, `record` | `bin/spec.sh check`, `record` |
+| `cabinet spec check`, `record`, `run` | `bin/spec.sh check`, `record`, `run` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
 | `cabinet secret check` | `bin/secret.sh check` |

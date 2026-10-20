@@ -1635,16 +1635,27 @@ cat > "$T/pfakes/claude" <<'FAKE'
 agent="" prompt=""
 while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
 id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
-if [[ "$agent" == web && "$prompt" == "Pick up handoff"* ]]; then
+repo=app; [[ "$agent" == backend ]] && repo=api
+spec="$(printf '%s' "$prompt" | grep -oE 'specs/[a-z-]+\.md' | head -1)"
+if [[ "$agent" == chief-of-staff && "$prompt" == "Route "* ]]; then
+  a="$(bin/handoff.sh add --from chief-of-staff --to app --spec "$spec" --changed "Nothing yet." --needed "Build the screen" "Login screen")"
+  bin/handoff.sh add --from chief-of-staff --to api --spec "$spec" --changed "Nothing yet." --needed "Build the endpoint" --depends-on "${a%% *}" "Login endpoint" >/dev/null
+elif [[ "$prompt" == "Write your plan for "* ]]; then
+  r="$(printf '%s' "$prompt" | sed 's/^Write your plan for \([a-z]*\) .*/\1/')"
+  perl -0pi -e "s/(## Plan\n\n.*?\n)(\n## Reviews)/\$1\n### $r\n\n- the $r change, with tests\n\$2/s" "$spec"; git commit -qm "plan $r" -- "$spec"
+elif [[ "$agent" == architect ]]; then
+  mkdir -p specs/adr; echo ok > specs/adr/plan.md; git add specs/adr/plan.md; git commit -qm note -- specs/adr/plan.md
+  bin/spec.sh record "$spec" --role architect PASS --note specs/adr/plan.md >/dev/null
+elif [[ ( "$agent" == web || "$agent" == backend ) && "$prompt" == "Pick up handoff"* ]]; then
   if [[ -f "$FS/reject" ]]; then perl -i -pe "s/^- Status: open/- Status: rejected/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm rej -- HANDOFFS.md
   elif [[ ! -f "$FS/lazy" ]]; then
-    echo "$id" >> app/a.txt; git -C app commit -qam "build $id"; git -C app rev-parse --short HEAD > "$FS/commits-$id"
-    bin/handoff.sh add --from web --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
+    echo "$id" >> $repo/a.txt; git -C $repo commit -qam "build $id"; git -C $repo rev-parse --short HEAD > "$FS/commits-$id"
+    bin/handoff.sh add --from $agent --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
     perl -i -pe "s/^- Status: open/- Status: done/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm done -- HANDOFFS.md
   fi
-elif [[ "$agent" == web ]]; then
+elif [[ "$agent" == web || "$agent" == backend ]]; then
   w="$(printf '%s' "$prompt" | grep -oE 'for H-[0-9]{8}-[0-9]+' | cut -c5-)"
-  echo fix >> app/a.txt; git -C app commit -qam "fix $w"; git -C app rev-parse --short HEAD >> "$FS/commits-$w"
+  echo fix >> $repo/a.txt; git -C $repo commit -qam "fix $w"; git -C $repo rev-parse --short HEAD >> "$FS/commits-$w"
 elif [[ ! -f "$FS/silent-$agent" ]]; then
   w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
   v=PASS; n="$(cat "$FS/block-$agent" 2>/dev/null || echo 0)"; ((n > 0)) && { v=BLOCK; echo $((n - 1)) > "$FS/block-$agent"; }
@@ -1692,6 +1703,58 @@ rm -f "$FS/reject"
 # One run at a time for a piece of work.
 mkdir "$PW/.cabinet/run-$g.lock"; out="$(run "$g")" && fail "two runs of one piece of work"; echo "$out" | grep -q 'is already being run' || fail "the run lock: $out"
 rmdir "$PW/.cabinet/run-$g.lock"
+# From a ready spec to ready to push: routing, each builder's plan, the architect's review of it, then
+# each of its handoffs in order. Two repos, two builders.
+git init -q "$PW/api" && echo x > "$PW/api/a.txt" && git -C "$PW/api" add -A && git -C "$PW/api" commit -qm init
+printf 'api\t-\t-\tno\n' >> "$PW/repos.tsv"
+X='| `api` | The API | backend |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$PW/AGENTS.md"
+cat > "$PW/specs/login.md" <<'SPEC'
+---
+feature: login
+status: ready
+repos: [app, api]
+---
+
+# Login
+
+## Rules
+
+Email and password.
+
+## Design
+
+- One screen: email, password, a button; states: empty, wrong password.
+
+## Acceptance criteria
+
+- A valid password signs in.
+
+## Decisions
+
+| # | Question | Options | Recommendation | Owner answer (date) |
+|---|---|---|---|---|
+
+## Plan
+
+How it will be built.
+
+## Reviews
+
+SPEC
+mkdir -p "$PW/specs/qa" "$PW/specs/design"; echo ok > "$PW/specs/qa/login.md"; echo ok > "$PW/specs/design/login.md"
+git -C "$PW" add -A && git -C "$PW" commit -qm "login spec"
+"$PW/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null && "$PW/bin/spec.sh" record specs/login.md --role design-lead PASS --note specs/design/login.md >/dev/null \
+  && "$PW/bin/spec.sh" check specs/login.md >/dev/null || fail "test setup: a ready spec: $("$PW/bin/spec.sh" check specs/login.md)"
+srun() { FS="$FS" PATH="$T/pfakes:$PATH" "$F" -C "$PW" spec run "$@" 2>&1; }
+out="$(srun specs/login.md --dry-run)" && [[ "$out" == "chief-of-staff: routes specs/login.md" ]] || fail "spec run --dry-run: $out"
+out="$(srun specs/login.md)" || fail "spec run: $out"
+echo "$out" | grep -q '^chief-of-staff: routes specs/login.md$' && echo "$out" | grep -q '^web: plans app$' && echo "$out" | grep -q '^backend: plans api$' \
+  && echo "$out" | grep -q '^architect: reviews the plan in specs/login.md$' && echo "$out" | grep -q '^web: builds H-' && echo "$out" | grep -q '^backend: builds H-' \
+  && echo "$out" | tail -1 | grep -qE '^specs/login.md is ready to push: all its work \(H-[0-9]+-[0-9]+, H-[0-9]+-[0-9]+\) passed review, \$0\.11 in all\. Push it' || fail "spec run to ready: $out"
+[[ "$(echo "$out" | grep -n 'web: builds' | cut -d: -f1)" -lt "$(echo "$out" | grep -n 'backend: builds' | cut -d: -f1)" ]] || fail "spec run did not run the work in the order routing set"
+out="$(srun specs/login.md)" && echo "$out" | tail -1 | grep -q 'is ready to push' && ! echo "$out" | grep -q ': builds ' || fail "a second spec run started agents for work already ready: $out"
+sed -i.bak 's/^status: ready/status: draft/' "$PW/specs/login.md" && rm "$PW/specs/login.md.bak" && git -C "$PW" commit -qam draft
+srun specs/login.md >/dev/null && fail "spec run took a draft spec"
 "$F" -C "$PW" remove --yes --force >/dev/null
   return 0   # a last "check && fail" line must not end the run
 }
