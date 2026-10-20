@@ -71,6 +71,7 @@ git -C <repo> push
 | `bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
 | `bin/spec.sh check [spec]` | Checks each spec against its status: ready needs testable criteria qa passed, no `TBD`, every decision answered; building also a plan. |
 | `bin/spec.sh record <spec> --role qa\|architect PASS\|BLOCK --note <file>` | Records qa's review of a spec's acceptance criteria, or architect's of its plan. |
+| `cabinet config --pipeline small\|all --pipeline-limit <dollars>` | Turns on the scheduled runner (`jobs/pipeline.job`): it moves ready work through build and review while you are away, within that much a run, and writes what it did to `PIPELINE.md`. Off by default. |
 | `bin/spec.sh run <spec>` | Moves a ready spec through routing, plans and each of its handoffs with agent runs, until all its work is ready to push or something needs you. It may cost money. |
 | `bin/handoff.sh run <ID>` | Moves one piece of work through build, review and fixes with agent runs, and stops when it is ready to push or needs you. It may cost money. |
 | `bin/handoff.sh archive` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |

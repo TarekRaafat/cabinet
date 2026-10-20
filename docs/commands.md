@@ -183,6 +183,7 @@ cabinet handoff attach <ID> <file or URL>... --from <name>
 cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 cabinet handoff list [name] [--ready] [--json]
 cabinet handoff run <ID> [--retries <n>] [--dry-run]
+cabinet handoff run --scheduled
 cabinet handoff archive
 ```
 
@@ -209,11 +210,13 @@ cabinet handoff archive
 
 It decides nothing itself: it also stops when an agent fails or hits its time limit (`CABINET_JOB_TIMEOUT`), when a builder files no review handoff or sends the work back, or when a reviewer records no verdict. Each run is logged in `run-<ID>.log` in the workspace's log folder and recorded in the spend file under the work's ID, so `handoff list --json` gives its `cost_usd`. One run at a time per piece of work. `--dry-run` prints the next step and runs nothing. It may cost money, like any agent run.
 
+**`run --scheduled`** is what the pipeline job runs (see `cabinet config --pipeline`). It takes the work `CABINET_PIPELINE` allows, oldest first: with `all`, each spec ready to build (as `spec run`), then each handoff filed `--small` that is open or waiting on its review (as `handoff run`). It writes what happened to `PIPELINE.md` in the workspace (untracked, like `BRIEF.md`; the brief reports it): each piece of work and how it ended, then what the run spent of its limit. Before each agent it checks the limit, `CABINET_PIPELINE_LIMIT` dollars: once reached, the work is paused, not stopped, and the next run goes on from there. Work whose last run stopped for you (still blocked after its fix rounds, sent back, an agent that left no trace) is skipped, so a run never pays for the same stop twice, until you run it by hand (`cabinet handoff run <ID>`, or `spec run`), which clears it. It runs nothing when the runner is off, when it has no limit, when this week's budget (`CABINET_BUDGET`) is spent, or when the agent tool's cost cannot be counted.
+
 **`archive`** moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move; chief-of-staff runs it daily. It refuses while `HANDOFFS.md` has uncommitted lines.
 
 `add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
 
-Exit 0 (for `run`: the work is ready to push); 1 when `run` stops before that, `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
+Exit 0 (for `run`: the work is ready to push); 3 when `run` pauses at a scheduled run's cost limit; 1 when `run` stops before that, `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet spec
 
@@ -297,7 +300,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -316,7 +319,10 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Hard to undo | the list under "Hard to undo" in `AGENTS.md`, keeping the section's other text (the section is added before "House rules" when an older `AGENTS.md` lacks it); `off` writes `- none` |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
 | Budget and price | `CABINET_BUDGET`, `CABINET_PRICE` |
+| Scheduled runner | `CABINET_PIPELINE`, `CABINET_PIPELINE_LIMIT`, and `WHEN` in `jobs/pipeline.job` (made the first time it is turned on; turning it off leaves it, doing nothing) |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
+
+**The scheduled runner** moves ready work through build and review while no one watches: each run is `bin/handoff.sh run --scheduled`, from `jobs/pipeline.job`. It is off until you turn it on. `small` lets it move handoffs filed `--small`; `all` adds every spec that `cabinet spec check` finds ready or building. Turning it on needs `--pipeline-limit`, what one run may spend, and a runner whose cost cabinet counts (claude, grok or opencode, or a token runner with `--price`), or the limit could not hold. `--pipeline-time` sets when it runs (default `10:00 PM`; `off` runs it only by hand: `cabinet job run pipeline`). In a terminal, `config` asks for all three.
 
 **Hard to undo** is the list of paths where a change is hard to undo, such as migrations and public API files: a handoff marked small never touches them ([ready to build](concepts.md#ready-to-build)). Each is `<repo>/<path>`, for a repo in `repos.tsv`; a path ending in `/` covers its folder. It is refused when the repo is unknown, the path has characters other than letters, digits, `.`, `_`, `-` and `/`, or the repo is on this machine and the path is not in it. In a terminal, the question shows what the repos on this machine hold that looks hard to undo (`migrations/`, `db/migrate/`, `prisma/migrations/`, `supabase/migrations/`, `alembic/versions/`, an `openapi` file), as the default when nothing is set yet; nothing is written until you answer, and `--yes` keeps the current list. Editing the section by hand works too.
 
@@ -471,7 +477,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 
 ### jobs/&lt;job&gt;.job
 
-One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT`, `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run), `QUIET_DAYS` (whole days; empty or `0` runs every time). After a change, run `bin/bootstrap.sh`.
+One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT` (or, instead of both, `COMMAND`: a command run in the workspace that starts and limits its own agent runs, as `jobs/pipeline.job` runs `bin/handoff.sh run --scheduled`), `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run), `QUIET_DAYS` (whole days; empty or `0` runs every time). After a change, run `bin/bootstrap.sh`.
 
 **Quiet days.** With `QUIET_DAYS`, a scheduled run starts no agent when nothing changed since the job's last full run: no commit, branch or fetch in the workspace, the project around it or any repo, no new doctor problem (by check ID), and the `RESULT` file as that run left it (an answer written into `BRIEF.md` counts as a change). It logs `<job> skipped: nothing changed since the full run of <time>` and touches the `RESULT` file, so `cabinet digest` and `cabinet next` see the brief as current. It never skips when any of those folders has uncommitted changes (the brief asks about work pending for more than a day), when the sign-off queue in the `RESULT` file holds a `default` item (it goes ahead after 72 hours of silence, and only a run says so), after a failed run, or once `QUIET_DAYS` days have passed since the last full run. A run by hand always runs. The brief has `QUIET_DAYS="6"`: on a quiet week, one full run a week. The state is `<job>.quiet` in the log folder, on this machine only.
 

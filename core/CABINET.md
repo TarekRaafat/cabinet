@@ -131,7 +131,7 @@ A seat is an agent or a person, with the same rules for both. The kit keeps a sm
 
 ## Schedule
 
-Agents also run on a local schedule (`bin/job.sh run`, one `jobs/<job>.job` each), starting with the daily chief-of-staff brief. Jobs are added as the owner trusts them. `cabinet.env` names the agent tool that runs them (`CABINET_RUNNER`).
+Agents also run on a local schedule (`bin/job.sh run`, one `jobs/<job>.job` each), starting with the daily chief-of-staff brief. Jobs are added as the owner trusts them. The scheduled runner (`jobs/pipeline.job`) moves ready work through build and review unattended, only when the owner turns it on, within a cost limit per run, and writes what it did to `PIPELINE.md`. `cabinet.env` names the agent tool that runs them (`CABINET_RUNNER`).
 
 ## Rules for every repo
 

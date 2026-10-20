@@ -7,7 +7,9 @@
 #       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, antigravity,
 #       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). A run is
 #       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
-#       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run.
+#       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run. A job
+#       with COMMAND instead of AGENT and PROMPT runs that command in the workspace (the pipeline job:
+#       bin/handoff.sh run --scheduled), which starts and limits its own agent runs.
 #   bin/job.sh list [--json]
 #       Every job: its name, role, schedule, time limit and what it cost this week, with the week's
 #       total and budget (CABINET_BUDGET), from what the agent tool reports.
@@ -20,8 +22,8 @@ j_list() {
   ws="$(week_start)"; spend_counts && reported=1
   for jf in "$WS"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
-    ( AGENT="" WHEN="" TIMEOUT=""; source "$jf"; j="$(basename "$jf" .job)"
-      printf '%s\t%s\t%s\t%s\t%s\n' "$j" "$AGENT" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" \
+    ( AGENT="" COMMAND="" WHEN="" TIMEOUT=""; source "$jf"; j="$(basename "$jf" .job)"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$j" "${AGENT:-${COMMAND:+command}}" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" \
         "$( ((reported)) && spend_since "$ws" "$j")" )
   done | if ((json)); then jq -Rn '[inputs | split("\t") | {name: .[0], role: .[1], when: .[2], timeout_minutes: (.[3] | tonumber? // null), cost_this_week_usd: (.[4] | tonumber? // null)}]'
          else awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-16s %-18s %-34s %4s min  %s\n", $1, $2, $3, $4, ($5 == "" ? "-" : "$" $5)} END {if (!n) print "No jobs in jobs/."}'; fi
@@ -35,16 +37,19 @@ j_run() {
 job="${1:-}"; [[ -n "$job" ]] || { echo "usage: bin/job.sh run <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))" >&2; exit 2; }
 jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
-AGENT="" PROMPT="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS=""
+AGENT="" PROMPT="" COMMAND="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS=""
 # shellcheck disable=SC1090
 source "$jf"
-[[ -n "$AGENT" && -n "$PROMPT" ]] || { echo "jobs/$job.job needs AGENT and PROMPT" >&2; exit 2; }
+[[ -n "$AGENT" && -n "$PROMPT" ]] || [[ -n "$COMMAND" ]] || { echo "jobs/$job.job needs AGENT and PROMPT, or COMMAND" >&2; exit 2; }
 limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 [[ "$limit" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "TIMEOUT in jobs/$job.job (or CABINET_JOB_TIMEOUT) must be whole minutes, or 0 for no limit, not '$limit'" >&2; exit 2; }
 QUIET_DAYS="${QUIET_DAYS:-0}"
 [[ "$QUIET_DAYS" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "QUIET_DAYS in jobs/$job.job must be whole days, or 0 to run every time, not '$QUIET_DAYS'" >&2; exit 2; }
 
-limited() { run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)"; }
+limited() {
+  if [[ -n "$COMMAND" ]]; then (cd "$WS" && bash -c "$COMMAND"); return; fi   # it limits its own agent runs
+  run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)"
+}
 
 # What a quiet run is judged by: every branch and remote branch of the workspace and its repos,
 # the doctor's problems, and the result file as the last run left it. Fails when any of them has
@@ -96,11 +101,11 @@ if [[ ! -t 1 ]] && quiet; then
   touch "$WS/$RESULT"
   exit 0
 fi
-echo "=== $(date '+%F %T') $job ($AGENT, $CABINET_RUNNER)" >>"$log"
+echo "=== $(date '+%F %T') $job (${AGENT:-$COMMAND}, $CABINET_RUNNER)" >>"$log"
 rm -f "$state_file"
 if [[ -t 1 ]]; then
   # Started by hand: say what is happening, then show the result here too.
-  echo "Running $job with $AGENT. It takes $MINUTES minutes and prints nothing until it finishes."
+  echo "Running $job with ${AGENT:-$COMMAND}. It takes $MINUTES minutes and prints nothing until it finishes."
   echo "Result: $RESULT and $log"
   start=$SECONDS status=0
   limited 2>&1 | tee -a "$log" || status=$?

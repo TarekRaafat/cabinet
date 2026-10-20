@@ -127,6 +127,9 @@ O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
+O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
+O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
+O	config	--pipeline-time	<when>|off	When the scheduled runner runs (default: 10:00 PM); off runs it only by hand.
 O	config	--hard-to-undo	"<repo>/<path> ..."|off	Paths where a change is hard to undo (migrations, public API files): a small task never touches them. Written into AGENTS.md.
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
 O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
@@ -1013,7 +1016,7 @@ PY
 cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
-  local hard="" set_hard=0 o_hard
+  local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1027,6 +1030,9 @@ cmd_config() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
+      --pipeline) need "--pipeline needs off, small or all" "$@"; pipe="$2"; set_pipe=1; shift 2 ;;
+      --pipeline-limit) need "--pipeline-limit needs dollars, like 5" "$@"; plimit="$2"; set_plimit=1; shift 2 ;;
+      --pipeline-time) need "--pipeline-time needs a time, like 10 PM, or off" "$@"; ptime="$2"; set_ptime=1; shift 2 ;;
       --hard-to-undo) need "--hard-to-undo needs paths like \"api/migrations/ api/openapi.yaml\", or off" "$@"; hard="$2"; set_hard=1; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; set_backup=1; shift 2 ;;
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
@@ -1044,7 +1050,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_budget || set_price || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
     (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
@@ -1073,6 +1079,13 @@ cmd_config() {
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
   ((set_writing)) || writing="${o_writing:-standard}"
   o_hard="$(hard_now "$ws")"; ((set_hard)) || hard="$o_hard"
+  o_pipe="$(envget CABINET_PIPELINE)"; o_pipe="${o_pipe:-off}"; o_plimit="$(envget CABINET_PIPELINE_LIMIT)"
+  o_ptime=""   # empty: no pipeline job yet; off: one that runs only by hand
+  if [[ -f "$ws/jobs/pipeline.job" ]]; then
+    o_ptime="$(WHEN=""; source "$ws/jobs/pipeline.job" >/dev/null 2>&1; printf '%s' "$WHEN")"
+    if [[ -n "$o_ptime" ]]; then o_ptime="$(when_norm "$o_ptime" || printf '%s' "$o_ptime")"; else o_ptime=off; fi
+  fi
+  ((set_pipe)) || pipe="$o_pipe"; ((set_plimit)) || plimit="$o_plimit"; ((set_ptime)) || ptime="${o_ptime:-10:00 PM}"
   ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"; ((set_price)) || price="$o_price"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
@@ -1102,6 +1115,13 @@ cmd_config() {
     runner="$(ask "Agent tool for scheduled jobs (${RUNNERS// /, }, or custom)" "$runner")"
     [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] && runner_cmd="$(ask "Command, with the prompt as \"\$CABINET_PROMPT\"" "$runner_cmd")"
     ask_budget
+    echo "  The scheduled runner moves ready work through build and review while you are away, within a cost limit per run:"
+    echo "  off, small (only small tasks) or all (small tasks and ready specs). It runs agents unattended."
+    pipe="$(ask "Scheduled runner" "$pipe")"
+    if [[ "$(printf %s "$pipe" | tr '[:upper:]' '[:lower:]')" != off ]]; then
+      plimit="$(ask "Cost limit for one run, in US dollars" "${plimit:-5}")"
+      ptime="$(ask "When it runs: a time every day (10 PM), days and a time, or off for by hand only" "$ptime")"
+    fi
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
@@ -1123,6 +1143,16 @@ cmd_config() {
   hard="$(printf %s "$hard" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
   [[ "$(printf %s "$hard" | tr '[:upper:]' '[:lower:]')" == off ]] && hard=off
   [[ "$hard" == off || "$hard" == "$o_hard" ]] || hard_check "$ws" "$hard"
+  # The scheduled runner: off by default, and never on without a cost limit it can hold (runners as
+  # SPEND_DOLLARS and SPEND_TOKENS in lib.sh say).
+  pipe="$(printf %s "$pipe" | tr '[:upper:]' '[:lower:]')"
+  has "off small all" "$pipe" || die "--pipeline must be off, small or all"
+  [[ -z "$plimit" || "$plimit" =~ ^[0-9]+(\.[0-9]{1,2})?$ && ! "$plimit" =~ ^0+(\.0*)?$ ]] || die "the pipeline's cost limit must be dollars for one run, like 5 or 2.50"
+  [[ "$pipe" == off || -n "$plimit" ]] || die "the scheduled runner needs a cost limit for one run: --pipeline-limit <dollars>"
+  [[ "$pipe" == off ]] || { r="$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')"; has "claude grok opencode" "$r" || { has "codex cursor qwen antigravity" "$r" && [[ -n "$price" ]]; } \
+    || die "the scheduled runner needs a runner whose cost cabinet can count, or its limit could not hold: $runner does not report dollars$(has "codex cursor qwen antigravity" "$r" && echo "; set its price with --price")"; }
+  [[ "$(printf %s "$ptime" | tr '[:upper:]' '[:lower:]')" == off ]] && ptime=off || ptime="$(when_norm "$ptime")" \
+    || die "the pipeline time must be a time like \"10 PM\", days and a time like \"fri 9 PM\", or off"
   [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] || runner_cmd=""
   check_answers
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
@@ -1183,6 +1213,9 @@ cmd_config() {
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
   [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
   [[ "$hard" != "$o_hard" ]] && changes+=("hard to undo: ${o_hard:-not set} -> ${hard:-not set}")
+  [[ "$pipe" != "$o_pipe" ]] && changes+=("scheduled runner: $o_pipe -> $pipe")
+  [[ "$plimit" != "$o_plimit" ]] && changes+=("its cost limit per run: $( [[ -n "$o_plimit" ]] && echo "\$$o_plimit" || echo none) -> $( [[ -n "$plimit" ]] && echo "\$$plimit" || echo none)")
+  [[ "$pipe" != off && "$ptime" != "${o_ptime:-}" ]] && changes+=("it runs: ${o_ptime:-not scheduled} -> $ptime")
   [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
   [[ "$price" != "$o_price" ]] && changes+=("price per million tokens (input, output, cached input): ${o_price:-off} -> ${price:-off}")
@@ -1216,6 +1249,22 @@ cmd_config() {
     if [[ -n "$o_writing" ]]; then G="$writing" perl -i -pe 's/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
     else G="$writing" perl -i -pe '$_ .= "- **Writing to the owner:** $ENV{G}. `short` gives the shortest briefs, questions and answers (`cabinet config --writing short`; `CABINET.md`, \"Writing to the owner\").\n" if /^- \*\*Week starts on:\*\*/' "$ws/AGENTS.md"; fi
   fi
+  [[ "$pipe" == "$o_pipe" ]] || setenv CABINET_PIPELINE "$pipe"
+  [[ "$plimit" == "$o_plimit" ]] || setenv CABINET_PIPELINE_LIMIT "$plimit"
+  # The pipeline job, made when the runner is first turned on; off leaves it in place, doing nothing.
+  if [[ "$pipe" != off && ! -f "$ws/jobs/pipeline.job" ]]; then
+    cat > "$ws/jobs/pipeline.job" <<'JOB'
+# The scheduled runner (cabinet config --pipeline small|all). Run now: cabinet job run pipeline
+# It moves the work CABINET_PIPELINE allows, within CABINET_PIPELINE_LIMIT dollars a run, and writes
+# what happened to PIPELINE.md. WHEN as in brief.job; after changing it: cabinet bootstrap.
+COMMAND="bin/handoff.sh run --scheduled"
+WHEN=""
+MINUTES="many"
+RESULT="PIPELINE.md"
+TIMEOUT="0"
+JOB
+  fi
+  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/pipeline.job"
   if [[ -n "$hard" && "$hard" != "$o_hard" ]]; then hard_write "$ws" "$hard" || die "AGENTS.md: could not write the Hard to undo section"; fi
   D="$Week" O="$owner" E="$email" perl -i -pe '
     s/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./;
@@ -1290,6 +1339,7 @@ cmd_config() {
   # Schedules, a new slug and new repos take effect through bootstrap.
   local needs=0
   [[ "$brief" != "$o_brief" || "$backup" != "$o_backup" || "$backup_time" != "$o_btime" || "$slug" != "$o_slug" ]] && needs=1
+  [[ "$pipe" != "$o_pipe" || ( "$pipe" != off && "$ptime" != "${o_ptime:-}" ) ]] && needs=1
   ((${#newrows[@]})) && needs=1
   if ((needs)); then
     if ((apply)); then "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."

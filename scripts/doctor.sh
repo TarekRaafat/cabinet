@@ -374,6 +374,15 @@ else
   fi
 fi
 
+section "Scheduled runner"
+# On only with a cost limit it can hold, and a job that runs it.
+if [[ "$CABINET_PIPELINE" == off ]]; then ok pipeline.ready "the scheduled runner is off"
+elif ! has "small all" "$CABINET_PIPELINE"; then bad pipeline.ready "CABINET_PIPELINE is '$CABINET_PIPELINE', not off, small or all (cabinet config --pipeline small, all or off)"
+elif [[ -z "$CABINET_PIPELINE_LIMIT" ]]; then bad pipeline.ready "the scheduled runner is on with no cost limit, so it runs nothing (cabinet config --pipeline-limit <dollars>)"
+elif ! spend_counts; then bad pipeline.ready "the scheduled runner is on, but $CABINET_RUNNER's cost cannot be counted, so it runs nothing (cabinet config --price, or another runner)"
+elif [[ ! -f "$WS/jobs/pipeline.job" ]]; then bad pipeline.ready "the scheduled runner is on, but jobs/pipeline.job is missing (cabinet config --pipeline $CABINET_PIPELINE adds it)"
+else ok pipeline.ready "the scheduled runner moves $CABINET_PIPELINE work, up to \$$CABINET_PIPELINE_LIMIT a run"; fi
+
 section "Backups"
 if [[ -z "$CABINET_BACKUP_DIR" ]] && ((BACKUP_DIR_LOCAL)); then
   note backups.enabled "backups are off on this machine (cabinet.local.env; cabinet config --this-machine --backup-dir <folder> turns them on)"

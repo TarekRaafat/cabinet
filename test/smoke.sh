@@ -531,9 +531,9 @@ cfg --yes --roles "qa security finance" >/dev/null
 cfg --yes | grep -qx 'Nothing to change.' || fail "no-op config changed something"
 cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail "a bad slug was accepted"
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
-# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), budget, brief, week, writing,
+# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), budget, scheduled runner (off), brief, week, writing,
 # hard to undo (Enter: not set, no repos), backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 off "" short "" off "" y n > "$T/answers"
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 "" off "" short "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" && grep -qx 'CABINET_BUDGET="25"' "$C/cabinet.env" || fail "prompted writing or budget not written by config"
@@ -1753,6 +1753,38 @@ echo "$out" | grep -q '^chief-of-staff: routes specs/login.md$' && echo "$out" |
   && echo "$out" | tail -1 | grep -qE '^specs/login.md is ready to push: all its work \(H-[0-9]+-[0-9]+, H-[0-9]+-[0-9]+\) passed review, \$0\.11 in all\. Push it' || fail "spec run to ready: $out"
 [[ "$(echo "$out" | grep -n 'web: builds' | cut -d: -f1)" -lt "$(echo "$out" | grep -n 'backend: builds' | cut -d: -f1)" ]] || fail "spec run did not run the work in the order routing set"
 out="$(srun specs/login.md)" && echo "$out" | tail -1 | grep -q 'is ready to push' && ! echo "$out" | grep -q ': builds ' || fail "a second spec run started agents for work already ready: $out"
+# The scheduled runner: off by default, never on without a cost limit it can hold, and it writes PIPELINE.md.
+cfgp() { "$F" -C "$PW" config --yes "$@" 2>&1; }
+sched() { FS="$FS" PATH="$T/pfakes:$PATH" "$PW/bin/job.sh" run pipeline >/dev/null 2>&1; }
+PL="$HOME/$LOGS/pipe"
+"$PW/bin/doctor.sh" 2>&1 | grep -q 'ok    the scheduled runner is off' || fail "doctor: the runner off"
+cfgp --pipeline small >/dev/null && fail "the runner was turned on with no cost limit"
+cfgp --pipeline small --pipeline-limit 5 --runner custom --runner-cmd 'true' >/dev/null && fail "the runner was turned on with a runner whose cost cannot be counted"
+cfgp --pipeline small --pipeline-limit 0 >/dev/null && fail "a cost limit of 0 was taken"
+cfgp --pipeline small --pipeline-limit 1 --dry-run | grep -q 'scheduled runner: off -> small' && [[ ! -f "$PW/jobs/pipeline.job" ]] || fail "config --pipeline --dry-run"
+out="$(cfgp --pipeline small --pipeline-limit 1)" || fail "config --pipeline: $out"
+grep -qx 'CABINET_PIPELINE="small"' "$PW/cabinet.env" && grep -qx 'CABINET_PIPELINE_LIMIT="1"' "$PW/cabinet.env" && grep -qx 'WHEN="10:00 PM"' "$PW/jobs/pipeline.job" \
+  && grep -qx 'COMMAND="bin/handoff.sh run --scheduled"' "$PW/jobs/pipeline.job" || fail "the runner's settings or job"
+"$PW/bin/doctor.sh" 2>&1 | grep -q 'ok    the scheduled runner moves small work, up to \$1 a run' || fail "doctor: the runner on"
+"$PW/bin/job.sh" list | grep -q '^pipeline  *command  *every day at 10:00 PM' || fail "job list: the pipeline job"
+mv "$PW/jobs/pipeline.job" "$T/pipeline.job.keep"; "$PW/bin/doctor.sh" 2>&1 | grep -q 'jobs/pipeline.job is missing' || fail "doctor: the pipeline job missing"
+cfgp --pipeline small >/dev/null && [[ -f "$PW/jobs/pipeline.job" ]] || fail "config did not make the missing pipeline job again"; rm -f "$T/pipeline.job.keep"
+# Work stopped for the owner is skipped until the owner runs it; the rest runs, oldest first.
+k="$(work "Fix a typo")"; m="$(work "Fix a label")"
+printf '%s %s\n' "$(date +%F)" "qa still blocks it." > "$PL/run-$m.stopped"
+sched || fail "the pipeline job: $(tail -5 "$PL/pipeline.log")"
+grep -q "^- $k: $k is ready to push" "$PW/PIPELINE.md" && grep -q "^- $m: skipped, stopped on $(date +%F) for you: qa still blocks it. Once settled, run it by hand: cabinet handoff run $m" "$PW/PIPELINE.md" \
+  && grep -q '^Spent \$0.04 of the \$1 limit for one run.$' "$PW/PIPELINE.md" || fail "PIPELINE.md: $(cat "$PW/PIPELINE.md")"
+! git -C "$PW" status --porcelain | grep -q PIPELINE.md || fail "PIPELINE.md is tracked"
+# The cost limit pauses a run before the next agent; the next run goes on from there.
+rm -f "$PL/run-$m.stopped"; "$PW/bin/handoff.sh" run "$m" --dry-run >/dev/null
+cfgp --pipeline-limit 0.02 >/dev/null; sched
+grep -q "^- $m: Paused: this run's cost limit (\$0.02) is reached" "$PW/PIPELINE.md" && [[ ! -f "$PL/run-$m.stopped" ]] || fail "the cost limit: $(cat "$PW/PIPELINE.md")"
+cfgp --pipeline all --pipeline-limit 1 >/dev/null; sched
+grep -q "^- $m: $m is ready to push" "$PW/PIPELINE.md" && grep -q '^- specs/login.md: specs/login.md is ready to push' "$PW/PIPELINE.md" || fail "the next run, with specs: $(cat "$PW/PIPELINE.md")"
+# A spent week, or the runner off: nothing runs.
+cfgp --budget 0.01 >/dev/null; sched; grep -q "budget (\$0.01) is spent, so nothing ran" "$PW/PIPELINE.md" || fail "the runner past the week's budget: $(cat "$PW/PIPELINE.md")"
+cfgp --budget off --pipeline off >/dev/null; sched; grep -q 'The pipeline is off' "$PW/PIPELINE.md" && [[ -f "$PW/jobs/pipeline.job" ]] || fail "the runner off: $(cat "$PW/PIPELINE.md")"
 sed -i.bak 's/^status: ready/status: draft/' "$PW/specs/login.md" && rm "$PW/specs/login.md.bak" && git -C "$PW" commit -qam draft
 srun specs/login.md >/dev/null && fail "spec run took a draft spec"
 "$F" -C "$PW" remove --yes --force >/dev/null

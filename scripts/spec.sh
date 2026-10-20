@@ -254,9 +254,12 @@ if ((dry == 0)); then
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 fi
 SPEND_LABEL="$spec"
+local mark="$LOGDIR/run-spec-$name.stopped"
+((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
-stop() { say "Stopped: $1"; echo "Log: $log"; exit 1; }
+stop() { say "Stopped: $1"; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
+  if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
   say "$1: $2"
   ((dry)) && exit 0
   AGENT=$1 PROMPT=$3
@@ -289,12 +292,14 @@ while :; do
   for w in $works; do
     if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
     say "running $w"
-    "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} || stop "$w did not reach ready to push (see above), so the rest of $spec waits"
+    x=0; "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} || x=$?
+    ((x != 3)) || exit 3   # the cost limit: paused, not stopped
+    ((x == 0)) || stop "$w did not reach ready to push (see above), so the rest of $spec waits"
   done
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
   total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$works" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
   say "$spec is ready to push: all its work ($(printf '%s' "$works" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal."
-  exit 0
+  rm -f "$mark"; exit 0
 done
 }
 

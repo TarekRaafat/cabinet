@@ -19,6 +19,8 @@ CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
 CABINET_JOB_TIMEOUT="${CABINET_JOB_TIMEOUT:-60}"
 CABINET_BUDGET="${CABINET_BUDGET:-}"   # US dollars a week for the agent runs cabinet starts; empty: none
+CABINET_PIPELINE="${CABINET_PIPELINE:-off}"   # what the scheduled runner may move: off, small or all
+CABINET_PIPELINE_LIMIT="${CABINET_PIPELINE_LIMIT:-}"   # US dollars one scheduled run may spend
 # Settings for this machine only, in cabinet.local.env: never committed (the workspace's
 # .gitignore tracks only its own files), so each teammate's machine keeps its own. Read, never
 # sourced. CABINET_SCHEDULES="off": another machine runs the jobs (cabinet bootstrap --no-schedules).
@@ -108,6 +110,12 @@ ws_md() {
   git -C "$WS" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && [[ -z "$(git -C "$WS" status --porcelain -- "$f")" ]] \
     || { echo "$f is not committed: commit it first" >&2; return 1; }
   printf '%s\n' "$f"
+}
+# run_over_limit: true when a run with a cost limit (CABINET_RUN_LIMIT dollars, spent since
+# CABINET_RUN_SINCE, both set by a scheduled run) has reached it; checked before each agent starts.
+run_over_limit() {
+  [[ -n "${CABINET_RUN_LIMIT:-}" ]] || return 1
+  awk -v s="$(spend_since "${CABINET_RUN_SINCE:-0}")" -v l="$CABINET_RUN_LIMIT" 'BEGIN { exit !(s + 0 >= l + 0) }'
 }
 # spend_since <seconds> [<label>]: dollars spent since then, by every run or one label's, as "1.25".
 spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
@@ -276,7 +284,7 @@ for n, path in enumerate(sys.argv[2:]):  # HANDOFFS.md, then the archives (close
         if l.startswith("## "):
             on, cur = l.startswith(("## Open", "## Archive")), None
         elif on and l.startswith("### H-"):
-            cur = {"id": l.split()[1].rstrip(":"), "lines": []}
+            cur = {"id": l.split()[1].rstrip(":"), "lines": [], "archived": n > 0}
             entries.append(cur)
         elif cur is not None:
             cur["lines"].append(l)
@@ -311,7 +319,7 @@ for e in entries:
     missing = [r for r in needs if r not in last]
     dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
     st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
-    out[e["id"]] = {"depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
+    out[e["id"]] = {"archived": e["archived"], "depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
                     "spec": next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), ""),
                     "cost_usd": round(cost[e["id"]], 6) if e["id"] in cost else None, "verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
                     "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}

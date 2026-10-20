@@ -39,6 +39,12 @@
 #       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready.
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
 #       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
+#   bin/handoff.sh run --scheduled
+#       What the pipeline job runs: every piece of work CABINET_PIPELINE allows (small: handoffs filed
+#       --small; all: those and every spec ready to build), oldest first, within CABINET_PIPELINE_LIMIT
+#       dollars, writing what happened to PIPELINE.md. Runs nothing when the setting is off, when the
+#       week's budget is spent, or when the agent tool's cost cannot be counted. Skips work whose last
+#       run stopped for the owner, until the owner runs it by hand.
 #   bin/handoff.sh archive
 #       Move every committed closed entry (done or rejected) to handoffs/archive-YYYY-MM.md (month of
 #       its ID) and commit the move; chief-of-staff runs it daily. Refuses while HANDOFFS.md has
@@ -424,8 +430,51 @@ git commit -q -m "handoffs: archive $n closed entries (bin/handoff.sh archive)" 
 echo "archived $n closed entries"
 }
 
+h_scheduled() {
+local out="$WS/PIPELINE.md" spent limit="$CABINET_PIPELINE_LIMIT" item key mark x last
+local -a items cmd
+items=()
+report() { { echo "# Pipeline, $(LC_ALL=C date '+%-d %b %Y, %-I:%M %p')"; echo; printf '%s\n' "$@"; } > "$out"; printf '%s\n' "$@"; }
+case "$CABINET_PIPELINE" in
+  off) report "The pipeline is off: nothing runs on a schedule (cabinet config --pipeline small|all)."; exit 0 ;;
+  small|all) ;;
+  *) report "CABINET_PIPELINE is '$CABINET_PIPELINE', not off, small or all: nothing ran (cabinet config --pipeline)."; exit 1 ;;
+esac
+[[ "$limit" =~ ^[0-9]+(\.[0-9]{1,2})?$ ]] && awk -v l="$limit" 'BEGIN { exit !(l > 0) }' \
+  || { report "No cost limit for a scheduled run (CABINET_PIPELINE_LIMIT), so nothing ran: cabinet config --pipeline-limit <dollars>."; exit 1; }
+spend_counts || { report "$CABINET_RUNNER's cost cannot be counted, so the limit could not hold: nothing runs unattended (cabinet config --price, or another runner)."; exit 1; }
+if [[ -n "$CABINET_BUDGET" ]] && awk -v s="$(spend_since "$(week_start)")" -v b="$CABINET_BUDGET" 'BEGIN { exit !(s + 0 >= b + 0) }'; then
+  report "This week's budget (\$$CABINET_BUDGET) is spent, so nothing ran."; exit 0
+fi
+# The work, oldest first: specs ready to build (all), then handoffs filed --small that are still open
+# or wait on their review; never one archived, sent back, or closed with nothing left to review.
+if [[ "$CABINET_PIPELINE" == all ]]; then
+  while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | jq -r '.[] | select((.status == "ready" or .status == "building") and (.problems | length) == 0) | .spec')
+fi
+while IFS= read -r x; do items+=("handoff $x"); done < <(readiness | jq -r '
+  . as $all | to_entries | map(select(.value.small and (.value.archived | not) and (.value.status_now | test("^rejected") | not))) | map(.key) | sort | .[]
+  | . as $i | select(($all[$i].status_now | test("^done") | not) or ([$all | to_entries[] | select((.value.small | not) and .value.spec == "" and (.value.depends_on | contains($i)) and (.value.status_now | test("^(done|rejected)") | not))] | length > 0))')
+export CABINET_RUN_LIMIT="$limit" CABINET_RUN_SINCE="$(date +%s)" CABINET_RUN_SCHEDULED=1
+local -a lines
+lines=()
+for item in ${items[@]+"${items[@]}"}; do
+  key="${item#* }"
+  case "$item" in spec*) x="${key#specs/}"; mark="$LOGDIR/run-spec-${x%.md}.stopped" ;; *) mark="$LOGDIR/run-$key.stopped" ;; esac
+  if [[ -f "$mark" ]]; then lines+=("- $key: skipped, stopped on $(cut -d' ' -f1 "$mark") for you: $(cut -d' ' -f2- "$mark") Once settled, run it by hand: cabinet ${item%% *} run $key"); continue; fi
+  # Chosen outside $( ): bash 3.2 ends a command substitution at a case pattern's ")".
+  if [[ "$item" == spec* ]]; then cmd=("$WS/bin/spec.sh" run "$key"); else cmd=("$0" run "$key"); fi
+  last="$("${cmd[@]}" 2>&1 | grep -E '^(Stopped|Paused|.* is ready to push)' | tail -1)" || true
+  lines+=("- $key: ${last:-no result; see the log}")
+  [[ "$last" != Paused* ]] || break
+done
+((${#items[@]})) || lines+=("- Nothing to move: no work the setting ($CABINET_PIPELINE) allows is waiting.")
+spent="$(spend_since "$CABINET_RUN_SINCE")"
+report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for one run."
+}
+
 h_run() {
 usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
+[[ "${1:-}" != --scheduled ]] || { (($# == 1)) || { echo "--scheduled takes nothing else. usage: bin/handoff.sh run --scheduled" >&2; exit 2; }; h_scheduled; exit $?; }
 local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v r todo x before
 while (($#)); do
   case "$1" in
@@ -458,10 +507,15 @@ if ((dry == 0)); then
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 fi
 SPEND_LABEL="$id"
+# A stop that needs the owner is remembered, so a scheduled run does not pay for it again; a run by
+# hand clears it, the owner having settled it.
+mark="$LOGDIR/run-$id.stopped"
+((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
 spent() { local c; c="$(jq -r --arg i "$id" '.[$i].cost_usd // empty' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
-stop() { say "Stopped: $1"; echo "Log: $log"; exit 1; }
+stop() { say "Stopped: $1"; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
+  if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
   say "$1: $2"
   ((dry)) && exit 0
   AGENT=$1 PROMPT=$3
@@ -484,7 +538,7 @@ while :; do
   r="$(jq -c --arg v "$v" '.[$v]' <<<"$rd")"
   if [[ "$(jq -r .ready <<<"$r")" == true ]]; then
     say "$id is ready to push: every reviewer passed $v$(spent). Push it from your terminal; chief-of-staff closes $v once it is pushed."
-    exit 0
+    rm -f "$mark"; exit 0
   fi
   [[ "$(jq -r .ready <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
   if [[ "$(jq '.blocking | length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
