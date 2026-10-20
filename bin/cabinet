@@ -1947,8 +1947,9 @@ EOF
 version_mark() {
   local o=o
   case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="●" ;; esac
-  printf '\n      %s\n  %s       %s      cabinet %s\n%s                 a team of AI agents and one owner who signs off\n  %s       %s\n      %s\n\n' \
-    "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o" "$o"
+  # Seven rows for a radius of three: a terminal cell is about twice as tall as it is wide.
+  printf '\n      %s\n  %s       %s\n\n%s               cabinet %s\n                a team of AI agents and one owner who signs off\n  %s       %s\n      %s\n\n' \
+    "$o" "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o"
 }
 cmd_version() {
   case "${1:-}" in "") if [[ -t 1 ]]; then version_mark; else echo "cabinet $VERSION"; fi ;; --json) jq -n --arg v "$VERSION" '{name: "cabinet", version: $v}' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac

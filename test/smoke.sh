@@ -1236,7 +1236,8 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # Every command that reports prints JSON.
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(jq -r .version "$KIT/package.json")" ]] || fail "version piped should print one line"
-LC_ALL=C python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | tr -d '\r' | grep -qx '  o       o      cabinet [0-9.]*' || fail "version in a terminal should print the mark"
+v="$(jq -r .version "$KIT/package.json")"
+[[ "$(LC_ALL=C python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                a team of AI agents and one owner who signs off\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
 LC_ALL=en_US.UTF-8 python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
 "$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
