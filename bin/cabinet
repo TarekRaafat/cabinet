@@ -118,7 +118,7 @@ O	new,init,config	--name	"Name"	The project's display name (default: the folder 
 O	new,init,config	--slug	<slug>	Short name for schedules, logs and backups: lowercase letters, digits, dashes.
 O	new,init,config	--owner	"Name"	The commit author (default: git config user.name).
 O	new,init,config	--email	<email>	The commit author's email (default: git config user.email).
-O	new,init,config	--roles	"qa security ..."	Roles to enable; chief-of-staff is always on (default: all seven).
+O	new,init,config	--roles	"qa security ..."	Roles to enable; chief-of-staff is always on (default: the seven core roles, and code-reviewer when the workspace starts with repos).
 O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, antigravity, qwen, grok, opencode, cursor or custom.
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
@@ -467,7 +467,12 @@ setup() {
   local gitcfg=(git config --global); [[ -n "$host" ]] && gitcfg=(git -C "$host" config)
   [[ -n "$owner" ]] || owner="$("${gitcfg[@]}" user.name 2>/dev/null || echo TBD)"
   [[ -n "$email" ]] || email="$("${gitcfg[@]}" user.email 2>/dev/null || echo TBD)"
-  [[ -n "$roles" ]] || roles="$ROLES_ALL"
+  # The core roles, and code-reviewer when the workspace starts with code: an owner who does not read
+  # code would never see the gap it fills (CABINET.md, "Seats").
+  if [[ -z "$roles" ]]; then
+    roles="$ROLES_ALL"
+    [[ -n "$host" || "$layout" == around || ${#repos[@]} -gt 0 ]] && roles+=" code-reviewer"
+  fi
   if [[ -z "$runner" ]]; then
     runner=claude
     # "cursor" means the Cursor CLI (cursor-agent, or an agent inside Cursor's install), never the editor's `cursor` command.

@@ -1579,6 +1579,18 @@ git -C "$W" reset -q --hard "$base"; rm -rf "$W/api" "$W/app" "$W/specs/qa"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "code-reviewer on by default when setup starts with repos" ""
+s50() {
+git init -q "$T/cr-src" && git -C "$T/cr-src" commit -q --allow-empty -m init
+"$F" new "$T/cr-code" --repo "$T/cr-src" --yes --dry-run >/dev/null || fail "new with a repo, dry run"
+"$F" new "$T/cr-code" --repo "$T/cr-src" --yes >/dev/null && grep -q '^CABINET_ROLES=".*code-reviewer' "$T/cr-code/cabinet.env" || fail "a workspace that starts with a repo has no code-reviewer"
+"$F" new "$T/cr-none" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-none/cabinet.env" || fail "a workspace with no repos got code-reviewer"
+"$F" new "$T/cr-chosen" --repo "$T/cr-src" --roles "qa security" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-chosen/cabinet.env" || fail "--roles did not win over the default"
+grep -q 'product repos with no code-reviewer on the team' "$KIT/core/CABINET.md" || fail "the code-reviewer seat signal left CABINET.md"
+for x in cr-code cr-none cr-chosen; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
