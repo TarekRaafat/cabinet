@@ -112,6 +112,26 @@ ws_md() {
 # spend_since <seconds> [<label>]: dollars spent since then, by every run or one label's, as "1.25".
 spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
 
+# The agent runs in its own process group, so a run past its limit is stopped with
+# everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
+# Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no
+# terminal input, which a background group would stop on.
+run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_agent, stopped at the limit
+  local limit=$1 why=$2
+  ((limit)) || { run_agent; return; }
+  local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
+  set -m; run_agent </dev/null & pid=$!; set +m
+  perl -e 'sleep shift; kill "TERM", -$ARGV[0]; sleep 10; kill "KILL", -$ARGV[0]' "$secs" "$pid" & dog=$!
+  trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; exit 130' INT TERM
+  local start=$SECONDS
+  wait "$pid" || st=$?
+  trap - INT TERM
+  kill "$dog" 2>/dev/null || true
+  wait "$dog" 2>/dev/null || true   # collected quietly: no "Terminated" line from the shell
+  if ((SECONDS - start >= secs)); then echo "stopped after $limit min: $why" >&2; return 124; fi
+  return "$st"
+}
+
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
 # scheduled jobs and role drafts.
 run_agent() {

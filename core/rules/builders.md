@@ -9,5 +9,5 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
 4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
 5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
-6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, `.cabinet/rules/reviews.md`). It never verifies its own work. A BLOCK comes back to it as a fix.
+6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add ... --depends-on <the ID of the work>`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, `.cabinet/rules/reviews.md`). It never verifies its own work. A BLOCK comes back to it as a fix.
 7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.

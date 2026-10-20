@@ -1620,6 +1620,82 @@ for x in cr-code cr-none cr-chosen; do "$F" -C "$T/$x" remove --yes --force >/de
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "pipeline runner: one piece of work from build to ready to push" ""
+s51() {
+PW="$T/pipe"; FS="$T/pipe-state"; mkdir -p "$FS" "$T/pfakes"
+"$F" new "$PW" --yes >/dev/null || fail "new for the runner"
+git init -q "$PW/app" && echo x > "$PW/app/a.txt" && git -C "$PW/app" add -A && git -C "$PW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$PW/repos.tsv"
+X='| `app` | The web app | web |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$PW/AGENTS.md"
+git -C "$PW" commit -qam "app, built by web"
+# A fake claude that acts as each role: the builder commits, hands on with --depends-on and closes the
+# work; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down.
+cat > "$T/pfakes/claude" <<'FAKE'
+#!/bin/bash
+agent="" prompt=""
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
+if [[ "$agent" == web && "$prompt" == "Pick up handoff"* ]]; then
+  if [[ -f "$FS/reject" ]]; then perl -i -pe "s/^- Status: open/- Status: rejected/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm rej -- HANDOFFS.md
+  elif [[ ! -f "$FS/lazy" ]]; then
+    echo "$id" >> app/a.txt; git -C app commit -qam "build $id"; git -C app rev-parse --short HEAD > "$FS/commits-$id"
+    bin/handoff.sh add --from web --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
+    perl -i -pe "s/^- Status: open/- Status: done/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm done -- HANDOFFS.md
+  fi
+elif [[ "$agent" == web ]]; then
+  w="$(printf '%s' "$prompt" | grep -oE 'for H-[0-9]{8}-[0-9]+' | cut -c5-)"
+  echo fix >> app/a.txt; git -C app commit -qam "fix $w"; git -C app rev-parse --short HEAD >> "$FS/commits-$w"
+elif [[ ! -f "$FS/silent-$agent" ]]; then
+  w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
+  v=PASS; n="$(cat "$FS/block-$agent" 2>/dev/null || echo 0)"; ((n > 0)) && { v=BLOCK; echo $((n - 1)) > "$FS/block-$agent"; }
+  mkdir -p "specs/$agent"; echo "checked" > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
+  bin/handoff.sh record "$id" --role "$agent" "$v" --commits "$(paste -sd, "$FS/commits-$w")" --note "specs/$agent/$id.md" >/dev/null
+fi
+echo '{"type":"result","result":"done","total_cost_usd":0.01}'
+FAKE
+chmod +x "$T/pfakes/claude"
+run() { FS="$FS" PATH="$T/pfakes:$PATH" "$F" -C "$PW" handoff run "$@" 2>&1; }
+work() { local i; i="$("$PW/bin/handoff.sh" add --from chief-of-staff --to app --changed "Nothing yet." --needed "$1" --small "$1")"; echo "${i%% *}"; }
+# Work that is not ready to build, or not for one builder, is not run.
+n="$("$PW/bin/handoff.sh" add --from chief-of-staff --to qa --changed x --needed y "Not work")"; n="${n%% *}"
+run "$n" >/dev/null && fail "run took a handoff that is no builder's work"
+rc=0; run H-1 >/dev/null || rc=$?; [[ $rc == 2 ]] || fail "run took a bad ID"
+# A dry run says the next step and changes nothing.
+a="$(work "Add a footer")"; h="$(git -C "$PW" rev-parse HEAD)"
+out="$(run "$a" --dry-run)" && [[ "$out" == "web: builds $a" && "$(git -C "$PW" rev-parse HEAD)" == "$h" ]] || fail "run --dry-run: $out"
+# From the work to ready to push: the builder, then every reviewer it needs, with what it cost.
+out="$(run "$a")" || fail "run: $out"
+echo "$out" | grep -q "^web: builds $a$" && echo "$out" | grep -qE '^(qa|security|design-lead): verifies H-' \
+  && echo "$out" | tail -1 | grep -q "^$a is ready to push: every reviewer passed H-.*, \$0.04 so far\. Push it" || fail "run to ready: $out"
+"$PW/bin/handoff.sh" list --json | jq -e --arg i "$a" 'map(select(.id == $i)) | length == 0' >/dev/null \
+  && "$PW/bin/handoff.sh" list --ready | grep -q "Review $a" || fail "the run's work is not ready by list --ready"
+grep -q "builds $a" "$HOME/$LOGS/pipe/run-$a.log" || fail "the run's log"
+# A BLOCK: the builder fixes it, the blocker checks again, and earlier passes now stale are run again.
+b="$(work "Add a header")"; echo 1 > "$FS/block-qa"
+out="$(run "$b")" || fail "run with a BLOCK: $out"
+echo "$out" | grep -q "^web: fixes what qa blocked, round 1$" && [[ "$(echo "$out" | grep -c ': verifies ')" == 6 ]] && echo "$out" | tail -1 | grep -q "^$b is ready to push" || fail "run after a BLOCK: $out"
+# Still blocked after the set rounds: it stops and asks.
+c="$(work "Add a menu")"; echo 5 > "$FS/block-qa"
+rc=0; out="$(run "$c" --retries 1)" || rc=$?
+[[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: qa still block H-.* after 1 fix round(s): the owner decides" || fail "run past its retries: $out"
+rm -f "$FS/block-qa"
+# An agent that leaves no trace, or work sent back: it stops, naming what happened.
+d="$(work "Add a logo")"; touch "$FS/silent-security"
+out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"
+rm -f "$FS/silent-security"
+e="$(work "Add a map")"; touch "$FS/lazy"
+out="$(run "$e")" && fail "run went on past a builder that filed nothing"; echo "$out" | grep -q "^Stopped: web ran but filed no review handoff for $e" || fail "a builder that filed nothing: $out"
+rm -f "$FS/lazy"
+g="$(work "Add a chart")"; touch "$FS/reject"
+out="$(run "$g")" && fail "run went on past work sent back"; echo "$out" | grep -q "^Stopped: web sent $g back" || fail "work sent back: $out"
+rm -f "$FS/reject"
+# One run at a time for a piece of work.
+mkdir "$PW/.cabinet/run-$g.lock"; out="$(run "$g")" && fail "two runs of one piece of work"; echo "$out" | grep -q 'is already being run' || fail "the run lock: $out"
+rmdir "$PW/.cabinet/run-$g.lock"
+"$F" -C "$PW" remove --yes --force >/dev/null
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

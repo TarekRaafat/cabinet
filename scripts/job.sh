@@ -44,23 +44,7 @@ limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 QUIET_DAYS="${QUIET_DAYS:-0}"
 [[ "$QUIET_DAYS" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "QUIET_DAYS in jobs/$job.job must be whole days, or 0 to run every time, not '$QUIET_DAYS'" >&2; exit 2; }
 
-# The agent runs in its own process group, so a run past its limit is stopped with
-# everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
-# Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no
-# terminal input, which a background group would stop on.
-limited() {
-  ((limit)) || { run_agent; return; }
-  local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
-  set -m; run_agent </dev/null & pid=$!; set +m
-  perl -e 'sleep shift; kill "TERM", -$ARGV[0]; sleep 10; kill "KILL", -$ARGV[0]' "$secs" "$pid" & dog=$!
-  trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; exit 130' INT TERM
-  local start=$SECONDS
-  wait "$pid" || st=$?
-  trap - INT TERM
-  kill "$dog" 2>/dev/null || true
-  if ((SECONDS - start >= secs)); then echo "stopped after $limit min: the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)" >&2; return 124; fi
-  return "$st"
-}
+limited() { run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)"; }
 
 # What a quiet run is judged by: every branch and remote branch of the workspace and its repos,
 # the doctor's problems, and the result file as the last run left it. Fails when any of them has

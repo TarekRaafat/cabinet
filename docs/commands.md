@@ -182,6 +182,7 @@ cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--
 cabinet handoff attach <ID> <file or URL>... --from <name>
 cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 cabinet handoff list [name] [--ready] [--json]
+cabinet handoff run <ID> [--retries <n>] [--dry-run]
 cabinet handoff archive
 ```
 
@@ -199,11 +200,20 @@ cabinet handoff archive
 
 **Readiness** is computed from the verdicts. An entry needs a verdict from each reviewer it is addressed to, and, for code (sent by a builder, or with a verdict that names commits), from qa, security and code-reviewer, and design-lead when a web or mobile builder sent it, each only when on the team; a builder addresses dba (or any other reviewer) when the change touches its subject. The work's commits are every commit any verdict on the entry names (short and full hashes match), and a PASS counts only when it covers them all: after a fix, a reviewer whose PASS names only the earlier commits is `stale` until it records again. An entry is ready when every reviewer it needs has a PASS that counts and none has BLOCK or CHANGES. An entry that needs no review (a decision for you, say) is neither ready nor waiting. PASS, BLOCK or CHANGES written outside a `- Verdict:` line is reported as unread and never counted.
 
+**`run`** moves one piece of work through the steps the team already has, each an agent run with the configured agent tool, so you start no agent by hand. It takes a handoff to one builder (a repo, or the role that owns it), filed with `--small` or with `--spec` for a spec that still passes `cabinet spec check`. It reads the state (`handoff list --json`) and runs whoever is next:
+
+1. No review handoff for the work yet: the builder builds it and hands it on for review with `--depends-on <ID>`, then closes the work entry.
+2. Reviewers missing, or stale after a fix: each verifies and records its verdict.
+3. A BLOCK or CHANGES: the builder fixes it, then the blocking reviewers check again. After `--retries` fix rounds (default 2) it stops and leaves it to you.
+4. Ready (as `handoff list --ready` says): it stops and tells you to push, with what the runs cost.
+
+It decides nothing itself: it also stops when an agent fails or hits its time limit (`CABINET_JOB_TIMEOUT`), when a builder files no review handoff or sends the work back, or when a reviewer records no verdict. Each run is logged in `run-<ID>.log` in the workspace's log folder and recorded in the spend file under the work's ID, so `handoff list --json` gives its `cost_usd`. One run at a time per piece of work. `--dry-run` prints the next step and runs nothing. It may cost money, like any agent run.
+
 **`archive`** moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move; chief-of-staff runs it daily. It refuses while `HANDOFFS.md` has uncommitted lines.
 
 `add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
 
-Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
+Exit 0 (for `run`: the work is ready to push); 1 when `run` stops before that, `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet spec
 
@@ -405,7 +415,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet move` | `bin/move.sh` |
 | `cabinet brief` | `bin/job.sh run brief` |
 | `cabinet job run`, `job list` | `bin/job.sh run <job>`, `bin/job.sh list` |
-| `cabinet handoff add`, `attach`, `record`, `list`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `archive` |
+| `cabinet handoff add`, `attach`, `record`, `list`, `run`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `run`, `archive` |
 | `cabinet spec check`, `record` | `bin/spec.sh check`, `record` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
@@ -421,7 +431,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `cabinet help --json`, `cabinet help <command> --json` | `{name, version, docs, commands: [{name, group, usage, summary, options: [{name, value, text}]}]}` |
 | `cabinet next --json` | `{workspace, project, steps: [{id, text, command}], optional: [...]}`. Step IDs: `tbd`, `commit`, `install`, `bootstrap`, `handoffs`, `brief`, `doctor`; `command` is empty when the step is not a command. Outside a workspace, `workspace` is `null` and the one step is `start`. |
 | `cabinet doctor --json` | `{workspace, problems, notes, can_fix, results: [{level, section, id, message}]}`. `level` is `ok`, `fix` or `note`; `id` names the check (every ID is in [troubleshooting](troubleshooting.md)) and does not change when its message is reworded. Exit 1 when `problems` is above 0. |
-| `cabinet handoff list --json` | The open and acknowledged entries, oldest first: `[{id, status, status_line, date, age_days, from, to, title, verdicts, needs, missing, blocking, stale, ready, unread_verdicts}]`. `date` and `age_days` are `null` when the status line has no date. `verdicts` is `[{role, verdict, date, commits, note}]` (`commits` empty for `none`); `needs`, `missing`, `blocking` and `stale` are role names; `ready` is `true`, `false`, or `null` when the entry needs no review; `unread_verdicts` lists lines with PASS, BLOCK or CHANGES outside a Verdict line. `--ready` keeps only the entries with `ready` true. |
+| `cabinet handoff list --json` | The open and acknowledged entries, oldest first: `[{id, status, status_line, date, age_days, from, to, title, verdicts, needs, missing, blocking, stale, ready, unread_verdicts}]`. `date` and `age_days` are `null` when the status line has no date. `verdicts` is `[{role, verdict, date, commits, note}]` (`commits` empty for `none`); `needs`, `missing`, `blocking` and `stale` are role names; `ready` is `true`, `false`, or `null` when the entry needs no review; `unread_verdicts` lists lines with PASS, BLOCK or CHANGES outside a Verdict line. `depends_on` is the entry's "Depends on" line, `small` and `spec` say how it was filed, and `cost_usd` is what the agent runs recorded under its ID cost (`handoff run`), or `null`. `--ready` keeps only the entries with `ready` true. |
 | `cabinet handoff list <name> --json` | Every entry addressed to that repo or role and not closed, with its full `text`. `owner` and `founder` are the same person. |
 | `cabinet status --json` | `{workspace, version, kit_version, kit, edited}` |
 | `cabinet digest --json` | `[{slug, project, path, exists, brief_written, brief_stale, sign_off_queue, queue_heading_found, actions_for_owner, waiting_on_owner, spend_this_week_usd, budget_usd}]`. The two parts are the Markdown under their headings, or `null`; `queue_heading_found` is `null` with no brief; `spend_this_week_usd` is `null` when the runner does not report cost, `budget_usd` when no budget is set. |

@@ -71,6 +71,7 @@ git -C <repo> push
 | `bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." "<title>"` | Files a handoff with the next free ID and today's date, and commits it. |
 | `bin/spec.sh check [spec]` | Checks each spec against its status: ready needs testable criteria qa passed, no `TBD`, every decision answered; building also a plan. |
 | `bin/spec.sh record <spec> --role qa\|architect PASS\|BLOCK --note <file>` | Records qa's review of a spec's acceptance criteria, or architect's of its plan. |
+| `bin/handoff.sh run <ID>` | Moves one piece of work through build, review and fixes with agent runs, and stops when it is ready to push or needs you. It may cost money. |
 | `bin/handoff.sh archive` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
 | `bin/role.sh draft <role>` | Drafts a role you added with `cabinet role add`, from your brief and the project (it runs the agent tool). |
 | `bin/role.sh build [--check]` | Builds `agents/` and `.claude/agents/` from the kit's roles and `roles/`. |

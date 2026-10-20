@@ -30,6 +30,15 @@
 #       cover every commit a verdict names), ready (true, false, or null when it needs no review)
 #       and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read).
 #       --ready: only the entries ready for the owner to push.
+#   bin/handoff.sh run <ID> [--retries <n>] [--dry-run]
+#       Move one piece of work (a handoff to one builder, filed --small or --spec) through the steps
+#       the team already has, each an agent run, until it is ready to push or needs the owner: the
+#       builder builds it and hands it on for review with --depends-on <ID>; each reviewer missing or
+#       stale verifies and records; after a BLOCK the builder fixes it and the blocking reviewers
+#       check again, up to --retries rounds (default 2). It decides nothing: it reads the state
+#       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready.
+#       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
+#       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
 #   bin/handoff.sh archive
 #       Move every committed closed entry (done or rejected) to handoffs/archive-YYYY-MM.md (month of
 #       its ID) and commit the move; chief-of-staff runs it daily. Refuses while HANDOFFS.md has
@@ -302,8 +311,16 @@ readiness() {
     has "$names" "$n" || continue
     builds+=" $o"; [[ "$o" == web || "$o" == mobile ]] && ui+=" $n"
   done < <(team_rows)
-  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" python3 -I - "$WS/HANDOFFS.md" <<'PY'
+  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" python3 -I - "$WS/HANDOFFS.md" "$SPEND" <<'PY'
 import json, os, re, sys
+cost = {}
+try:
+    for row in open(sys.argv[2], encoding="utf-8"):
+        f = row.rstrip("\n").split("\t")
+        if len(f) >= 4 and f[3]:
+            cost[f[1]] = cost.get(f[1], 0) + float(f[3])
+except (OSError, ValueError):
+    pass
 team, builds, ui = (set(os.environ.get(k, "").split()) for k in ("TEAM", "BUILDS", "UI"))
 VER = re.compile(r"- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$")
 def names(s):
@@ -349,7 +366,11 @@ for e in entries:
     blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
     stale = [r for r, v in last.items() if v["verdict"] == "PASS" and not covers(v["commits"], work)]
     missing = [r for r in needs if r not in last]
-    out[e["id"]] = {"verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
+    dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
+    st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
+    out[e["id"]] = {"depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
+                    "spec": next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), ""),
+                    "cost_usd": round(cost[e["id"]], 6) if e["id"] in cost else None, "verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
                     "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}
 print(json.dumps(out))
 PY
@@ -389,7 +410,7 @@ if ((json)); then
               else (.to | test("(^|[^a-z-])(" + $who + ")([^a-z-]|$)")) and (.status | test("^(done|rejected)") | not) end)
      | del(.section)]
     | if $who == "" then sort_by(.date // "9999-99-99") | map(del(.text)) else . end' \
-  | jq --argjson r "$rd" --argjson only "$ready" 'map(. + ($r[.id] // {})) | if $only == 1 then map(select(.ready == true)) else . end'
+  | jq --argjson r "$rd" --argjson only "$ready" 'map(. + (($r[.id] // {}) | del(.status_now))) | if $only == 1 then map(select(.ready == true)) else . end'
   exit 0
 fi
 
@@ -480,12 +501,93 @@ git commit -q -m "handoffs: archive $n closed entries (bin/handoff.sh archive)" 
 echo "archived $n closed entries"
 }
 
+h_run() {
+usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
+local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v r todo x before
+while (($#)); do
+  case "$1" in
+    --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; shift 2 ;;
+    --dry-run) dry=1; shift ;;
+    -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
+    *) [[ -z "$id" ]] || { echo "one handoff at a time. $usage" >&2; exit 2; }; id="$1"; shift ;;
+  esac
+done
+[[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ ]] || { echo "a handoff ID (H-YYYYMMDD-NN). $usage" >&2; exit 2; }
+[[ "$retries" =~ ^[0-9]+$ ]] || { echo "--retries is a number of fix rounds, like 2. $usage" >&2; exit 2; }
+cd "$WS"
+rd="$(readiness)"
+w="$(jq -c --arg i "$id" '.[$i] // empty' <<<"$rd")"
+[[ -n "$w" ]] || { echo "$id is not in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
+# One builder, and work that is ready to build: what the steps start from.
+builder="$(sed -n "/^### $id:/,/^### /s/^- From: .* -> To: //p" HANDOFFS.md | head -1 | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '\`' | tr ',' '\n' \
+  | while IFS= read -r x; do x="$(lc "$(printf '%s' "$x" | sed 's/^ *//; s/ *$//')")"; [[ -n "$x" ]] && builds_repos "$x" && echo "$x"; done)"
+[[ -n "$builder" && "$builder" != *$'\n'* ]] || { echo "$id is not work for one builder: run takes a handoff to one repo or builder" >&2; exit 1; }
+has "$(team_roles)" "$builder" || builder="$(owner_of "$builder")"
+[[ -n "$builder" ]] || { echo "$id: no role owns its repo in the team table of AGENTS.md" >&2; exit 1; }
+[[ "$(jq -r '.small' <<<"$w")" == true || -n "$(jq -r '.spec' <<<"$w")" ]] || { echo "$id is neither --small nor --spec: only work that is ready to build is run (.cabinet/rules/ready-to-build.md)" >&2; exit 1; }
+x="$(jq -r '.spec' <<<"$w")"
+if [[ -n "$x" ]] && ! "$WS/bin/spec.sh" check "$x" >/dev/null 2>&1; then echo "$x is not ready to build (bin/spec.sh check $x)" >&2; exit 1; fi
+
+mkdir -p -m 700 "$LOGDIR"
+local lock="$K/run-$id.lock" log="$LOGDIR/run-$id.log"
+if ((dry == 0)); then
+  mkdir "$lock" 2>/dev/null || { echo "$id is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
+  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+fi
+SPEND_LABEL="$id"
+say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
+spent() { local c; c="$(jq -r --arg i "$id" '.[$i].cost_usd // empty' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
+stop() { say "Stopped: $1"; echo "Log: $log"; exit 1; }
+agent() {  # agent <role> <what it does> <prompt>
+  say "$1: $2"
+  ((dry)) && exit 0
+  AGENT=$1 PROMPT=$3
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+}
+while :; do
+  step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
+  rd="$(readiness)"
+  w="$(jq -c --arg i "$id" '.[$i]' <<<"$rd")"
+  v="$(jq -r --arg i "$id" 'to_entries | map(select(.key != $i and (.value.depends_on | test("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])")) and (.value.status_now | test("^(done|rejected)") | not))) | .[0].key // empty' <<<"$rd")"
+  if [[ -z "$v" ]]; then
+    case "$(jq -r .status_now <<<"$w")" in
+      rejected*) stop "$builder sent $id back (its status line says why)" ;;
+      done*) stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
+    esac
+    ((built == 0)) || stop "$builder ran but filed no review handoff for $id"
+    agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done. If it is not ready to build, set $id to rejected with what is missing instead."
+    built=1; continue
+  fi
+  r="$(jq -c --arg v "$v" '.[$v]' <<<"$rd")"
+  if [[ "$(jq -r .ready <<<"$r")" == true ]]; then
+    say "$id is ready to push: every reviewer passed $v$(spent). Push it from your terminal; chief-of-staff closes $v once it is pushed."
+    exit 0
+  fi
+  [[ "$(jq -r .ready <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
+  if [[ "$(jq '.blocking | length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
+    rounds=$((rounds + 1))
+    ((rounds <= retries)) || stop "$(jq -r '.blocking | join(", ")' <<<"$r") still block $v after $retries fix round(s): the owner decides (fix it, change the work, or override)"
+    agent "$builder" "fixes what $(jq -r '.blocking | join(", ")' <<<"$r") blocked, round $rounds" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(jq -r '.blocking | join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
+    fixed=1; continue
+  fi
+  todo="$(jq -r '(.blocking + .stale + .missing) | unique | .[]' <<<"$r")"
+  [[ -n "$todo" ]] || stop "$v is not ready, and no reviewer is waiting: see bin/handoff.sh list --json"
+  for x in $todo; do
+    before="$(jq -c --arg x "$x" '[.verdicts[] | select(.role == $x)]' <<<"$r")"
+    agent "$x" "verifies $v" "Verify handoff $v as your role says, then record your verdict with bin/handoff.sh record $v --role $x PASS|BLOCK|CHANGES --commits <every commit of the work> --note <your note>."
+    [[ "$(jq -c --arg x "$x" --arg v "$v" '[.[$v].verdicts[] | select(.role == $x)]' <<<"$(readiness)")" != "$before" ]] || stop "$x recorded no verdict on $v"
+  done
+  fixed=0
+done
+}
+
 verb="${1:-}"; (($#)) && shift
 case "$verb" in
   add) h_add "$@" ;;
   attach) h_attach "$@" ;;
   record) h_record "$@" ;;
+  run) h_run "$@" ;;
   list) h_list "$@" ;;
   archive) h_archive "$@" ;;
-  *) echo "usage: bin/handoff.sh add|attach|record|list|archive (see the top of this file)" >&2; exit 2 ;;
+  *) echo "usage: bin/handoff.sh add|attach|record|list|run|archive (see the top of this file)" >&2; exit 2 ;;
 esac
