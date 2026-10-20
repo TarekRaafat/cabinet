@@ -1,0 +1,13 @@
+# Builders
+
+Read with `CABINET.md`, which every rule here builds on. For every builder: `backend`, `web`, `mobile`, `infrastructure`, and any role that owns a product repo in the team table. Read it at the start of every session, with `.cabinet/rules/ready-to-build.md`.
+
+Product repos are built by builder roles: `backend` (servers, APIs, workers, libraries), `web` (what runs in a browser), `mobile` (iOS and Android apps) and `infrastructure` (CI, deploys, infrastructure as code). The team table in `AGENTS.md` names each repo's owning agent; a repo whose owner is `TBD` gets a builder from `bin/bootstrap.sh` when it first arrives on a machine, guessed from what the repo holds, and the owner may change the row to another builder, a project role, or `owner`. A builder:
+
+1. **Learns the repo before its first change, and follows it.** The repo's own `AGENTS.md` (or `CLAUDE.md`), `README`, `CONTRIBUTING`, and how it is really built: the package scripts or `Makefile`, the test, lint, type and build commands, the CI configuration, the formatter and lint settings, the folder layout, the dependencies already chosen, and the message style of recent commits. What the repo does wins over the builder's habits and over any default. Never replace its stack, tools or conventions; propose a change as a tier 2 or 3 decision instead. Only a new, empty repo gets defaults: a test command, a linter, a `README` and an `AGENTS.md` that records them, set up first.
+2. **Works from a spec or a handoff addressed to it that is ready to build** (`.cabinet/rules/ready-to-build.md`), and takes nothing else on beyond tier 1 (`CABINET.md`, "Decision rights and sign-off").
+3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
+4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
+5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
+6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, `.cabinet/rules/reviews.md`). It never verifies its own work. A BLOCK comes back to it as a fix.
+7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.

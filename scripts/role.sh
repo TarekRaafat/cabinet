@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The team's roles (CABINET.md, "Seats"; concepts in docs/concepts.md).
+# The team's roles (.cabinet/rules/seats.md; concepts in docs/concepts.md).
 #
 #   bin/role.sh build [--check]
 #       Build the definition of every role in CABINET_ROLES (cabinet.env) and every builder that owns
@@ -13,7 +13,7 @@
 #   bin/role.sh draft <role>
 #       Draft, or redraft, a role this project added (cabinet role add) with the configured agent
 #       tool: chief-of-staff starts from the owner's brief in roles/<role>.md, learns the project and
-#       writes the whole role as CABINET.md, "Drafting a role", says. It may cost money; asking an
+#       writes the whole role as .cabinet/rules/seats.md, "Drafting a role", says. It may cost money; asking an
 #       agent in a session to draft the role does the same.
 #   bin/role.sh list [--json]
 #       Every role on the team (name, kind: kit, optional, builder or project; drafted or not) and the

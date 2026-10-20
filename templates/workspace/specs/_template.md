@@ -1,6 +1,6 @@
 ---
 feature: short name
-status: draft # draft | ready | building | shipped | dropped (CABINET.md, "Ready to build"; check: bin/spec.sh check)
+status: draft # draft | ready | building | shipped | dropped (.cabinet/rules/ready-to-build.md; check: bin/spec.sh check)
 owner_decisions_open: 0
 repos: [] # repos (or workspace areas, for work with no code) that build it, e.g. [api, app]
 handoffs: [] # entry IDs that route or track it

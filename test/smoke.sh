@@ -724,6 +724,15 @@ grep -qF "git clone $repo " "$KIT/README.md" || fail "the README's clone command
 jq -e '.publishConfig.access == "public"' "$KIT/package.json" >/dev/null || fail "the scoped package would publish as private"
 jq -e '.os == ["darwin", "linux"]' "$KIT/package.json" >/dev/null && grep -q '^- \*\*Platform:\*\* macOS and Linux ' "$KIT/README.md" || fail "package.json os and the README's platform disagree"
 for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" || fail ".gitignore does not ignore $p"; done
+# CABINET.md holds what every agent needs on every session; the rest is in core/rules/, each file named
+# from it with when to read it, and every reference to one names a file that exists.
+w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3400)) || fail "CABINET.md has $w words, over its 3400: move what only some roles or tasks need to core/rules/"
+for f in "$KIT"/core/rules/*.md; do
+  grep -q "^   | \`.cabinet/rules/${f##*/}\` | " "$KIT/core/CABINET.md" || fail "CABINET.md does not say when to read .cabinet/rules/${f##*/}"
+done
+for r in $(grep -rhoE '\.cabinet/rules/[a-z-]+\.md' "$KIT/core" "$KIT/roles" "$KIT/scripts" "$KIT/bin" "$KIT/templates" "$KIT/docs" | sort -u); do
+  [[ -f "$KIT/core/rules/${r##*/}" ]] || fail "$r is named, but the kit has no core/rules/${r##*/}"
+done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -1071,7 +1080,7 @@ done
 for r in backend web mobile infrastructure; do
   grep -q "^name: $r$" "$B/agents/$r.md" && [[ -f "$B/.claude/agents/$r.md" ]] || fail "the $r builder was not built"
 done
-grep -q '"Builders" section' "$B/agents/web.md" && grep -q '^## Builders$' "$B/CABINET.md" || fail "builders do not point at the shared rules"
+grep -q '`.cabinet/rules/builders.md`' "$B/agents/web.md" && grep -q '^## Builders$' "$B/CABINET.md" && grep -q '^1\. \*\*Learns the repo before its first change' "$B/.cabinet/rules/builders.md" || fail "builders do not point at the shared rules, or they are not installed"
 out="$(HOME="$BH" "$B/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    manual names every script, job and role' && echo "$out" | grep -q 'ok    roles built: .*backend' || fail "doctor after builders: $(echo "$out" | grep -E 'manual|roles')"
 # A row that is not TBD is never changed; the team table decides which builders are built.
@@ -1134,7 +1143,7 @@ echo "$out" | grep -q 'project roles behind the workflow: brand-strategist (neve
   || { echo "$out" | grep -i 'project role\|brand'; fail "doctor: roles.workflow"; }
 printf '%s\n' 'Read `CABINET.md`, then `AGENTS.md`.' 'Record each verdict with bin/handoff.sh record.' 'Write your plan in the spec; attach evidence.' 'A disagreement with design-lead goes to the owner.' >> "$bs"
 "$RW/bin/doctor.sh" 2>&1 | grep -q 'every drafted project role follows the workflow its job touches' || fail "doctor: a role that follows the workflow is still noted"
-grep -q '^4\. \*\*Fits the workflow its job touches' "$KIT/core/CABINET.md" || fail "the drafting rule for the workflow left CABINET.md"
+grep -q '^4\. \*\*Fits the workflow its job touches' "$KIT/core/rules/seats.md" || fail "the drafting rule for the workflow left seats.md"
 cp "$T/bs.keep" "$bs"; cp "$T/bs-agents.keep" "$RW/AGENTS.md"; cp "$T/bs-repos.keep" "$RW/repos.tsv"
 cp "$T/optroles-env.bak" "$RW/cabinet.env"; rm -f "$RW/prompt.out"
   return 0   # a last "check && fail" line must not end the run
@@ -1518,8 +1527,8 @@ mkdir -p "$W/specs/design" && echo "flows ok" > "$W/specs/design/login.md" && gi
 put 's/(states: empty, wrong password, locked\.)/$1 Remember me, off by default./'
 c="$(spc)"; [[ "$c" == "the design changed since design-lead passed it" ]] || fail "a changed design kept its review: $c"
 grep -q '^## Designing a feature' "$KIT/roles/design-lead.md" && grep -q '^## Design$' "$KIT/templates/workspace/specs/_template.md" \
-  && grep -q 'notes/seats.md' "$KIT/core/CABINET.md" && grep -q 'Look at the project as well as the backlog' "$KIT/roles/chief-of-staff.md" \
-  && grep -q 'ships none for each specialty' "$KIT/core/CABINET.md" && grep -q '^- \*\*Work that changes no repo\*\*' "$KIT/core/CABINET.md" || fail "an adaptive-team rule left CABINET.md, the template or a role"
+  && grep -q 'notes/seats.md' "$KIT/core/rules/seats.md" && grep -q 'Look at the project as well as the backlog' "$KIT/roles/chief-of-staff.md" \
+  && grep -q 'ships none for each specialty' "$KIT/core/rules/seats.md" && grep -q '^- \*\*Work that changes no repo\*\*' "$KIT/core/rules/ready-to-build.md" || fail "an adaptive-team rule left CABINET.md, the template or a role"
 git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr" "$W/specs/design"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -1586,7 +1595,7 @@ git init -q "$T/cr-src" && git -C "$T/cr-src" commit -q --allow-empty -m init
 "$F" new "$T/cr-code" --repo "$T/cr-src" --yes >/dev/null && grep -q '^CABINET_ROLES=".*code-reviewer' "$T/cr-code/cabinet.env" || fail "a workspace that starts with a repo has no code-reviewer"
 "$F" new "$T/cr-none" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-none/cabinet.env" || fail "a workspace with no repos got code-reviewer"
 "$F" new "$T/cr-chosen" --repo "$T/cr-src" --roles "qa security" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-chosen/cabinet.env" || fail "--roles did not win over the default"
-grep -q 'product repos with no code-reviewer on the team' "$KIT/core/CABINET.md" || fail "the code-reviewer seat signal left CABINET.md"
+grep -q 'product repos with no code-reviewer on the team' "$KIT/core/rules/seats.md" || fail "the code-reviewer seat signal left seats.md"
 for x in cr-code cr-none cr-chosen; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
   return 0   # a last "check && fail" line must not end the run
 }

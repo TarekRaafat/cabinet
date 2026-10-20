@@ -9,6 +9,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `bin/cabinet` | The `cabinet` command: setup, settings, removal, updates, and every workspace script as a command run from anywhere inside the workspace | (runs from the installed package) |
 | `scripts/*.sh` | The workspace scripts; `lib.sh` is shared and sourced by the rest, `when.sh` is the one parser for schedule times, and `platform.sh` is the one place that knows macOS from Linux (log folder, dates, the passphrase store, launchd, systemd or cron); both are sourced by `lib.sh` and by `bin/cabinet` | `bin/*.sh` |
 | `core/CABINET.md` | How a workspace runs: handoffs, tiers, sign-off, seats, git rules | `CABINET.md` |
+| `core/rules/*.md` | The rules only some roles or tasks need, named from `CABINET.md` with when to read each; keep `CABINET.md` to what every agent needs on every session | `.cabinet/rules/` |
 | `roles/*.md` | The kit's roles | `.cabinet/roles/`, built into `agents/` and `.claude/agents/` |
 | `guardrails/` | Deny rules for each agent tool, the push gate, the hook pass-through stub | `.cabinet/guardrails/`, installed machine-wide by bootstrap |
 | `templates/workspace/` | Project files placed once by `new` and `init` | the workspace's own files |

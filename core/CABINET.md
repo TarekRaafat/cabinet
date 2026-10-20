@@ -22,7 +22,7 @@ One folder holds the files that tie the project's repos together, and usually th
 | `guides/` | Standing documents every agent follows when its work touches their subject; listed in the "Guides" table of `AGENTS.md` | the owner; agents edit one only when asked |
 | `specs/`, `notes/` | Specs, ADRs, verdicts; the owner's notes and decisions | as each role says |
 | `repos.tsv` | Every product repo: clone URL, local-only files, `CLAUDE.md` link, and where it lives when not in the workspace | the project |
-| `bin/`, `.cabinet/` | Kit scripts, roles, guardrails and schedule templates | the kit |
+| `bin/`, `.cabinet/` | Kit scripts, roles, rules read when a task needs them (`.cabinet/rules/`), guardrails and schedule templates | the kit |
 
 A workspace can also be a `cabinet/` folder inside a project (`cabinet init --inside`). Then the project's `AGENTS.md` points here, and every path in this file and in the roles is relative to `cabinet/`: run `cabinet/bin/handoff.sh list` from the project's top folder, or work from inside `cabinet/`. The project's repo is the `..` row of `repos.tsv`. When `cabinet.env` says `CABINET_LAYOUT="inside"` and `CABINET_VISIBILITY="private"`, nothing in `cabinet/` ever goes into the project's history; never move its contents into a tracked file of the project.
 
@@ -32,7 +32,16 @@ A workspace can also be a `cabinet/` folder inside a project (`cabinet init --in
 2. Run `bin/handoff.sh list <your repo or role>`: it prints, in full, every open entry addressed to you. Pick up each one (see "Handoffs").
 3. Before changing anything that crosses a repo line, check the contracts table in `AGENTS.md`.
 4. If `BRIEF.md` exists, read its line for you.
-5. `notes/` holds the owner's decisions and research. Read a note when the owner points to it or your task touches its `topic` or `repos`, and follow its `status` (`draft`, `decided`, `superseded`). Edit notes only when asked.
+5. Before a task one of these covers, read it; your role names the ones its job needs:
+
+   | File | Read before |
+   |---|---|
+   | `.cabinet/rules/builders.md` | any work in a product repo you own (every builder session) |
+   | `.cabinet/rules/ready-to-build.md` | writing, reviewing, routing or building from a spec, or filing work for a builder or taking it on |
+   | `.cabinet/rules/reviews.md` | handing work on with something to show, or recording a verdict |
+   | `.cabinet/rules/seats.md` | proposing, onboarding, reviewing or drafting a role |
+
+6. `notes/` holds the owner's decisions and research. Read a note when the owner points to it or your task touches its `topic` or `repos`, and follow its `status` (`draft`, `decided`, `superseded`). Edit notes only when asked.
 
 ## Ownership
 
@@ -40,43 +49,24 @@ Each agent owns its repos end to end, documentation included, as the team table 
 
 ## Builders
 
-Product repos are built by builder roles: `backend` (servers, APIs, workers, libraries), `web` (what runs in a browser), `mobile` (iOS and Android apps) and `infrastructure` (CI, deploys, infrastructure as code). The team table in `AGENTS.md` names each repo's owning agent; a repo whose owner is `TBD` gets a builder from `bin/bootstrap.sh` when it first arrives on a machine, guessed from what the repo holds, and the owner may change the row to another builder, a project role, or `owner`. A builder:
-
-1. **Learns the repo before its first change, and follows it.** The repo's own `AGENTS.md` (or `CLAUDE.md`), `README`, `CONTRIBUTING`, and how it is really built: the package scripts or `Makefile`, the test, lint, type and build commands, the CI configuration, the formatter and lint settings, the folder layout, the dependencies already chosen, and the message style of recent commits. What the repo does wins over the builder's habits and over any default. Never replace its stack, tools or conventions; propose a change as a tier 2 or 3 decision instead. Only a new, empty repo gets defaults: a test command, a linter, a `README` and an `AGENTS.md` that records them, set up first.
-2. **Works from a spec or a handoff addressed to it that is ready to build** (see "Ready to build"), and takes nothing else on beyond tier 1 (see "Decision rights and sign-off").
-3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
-4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
-5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
-6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, see "Handoffs"). It never verifies its own work. A BLOCK comes back to it as a fix.
-7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.
+Product repos are built by builder roles: `backend`, `web`, `mobile`, `infrastructure`, or any role that owns a product repo in the team table. A builder learns each repo before changing it and follows how it is built, works only from work that is ready to build, changes with a test, runs the repo's own checks, commits locally, hands finished work on with evidence, never verifies its own work, and keeps to its repos. The whole method is `.cabinet/rules/builders.md`.
 
 ## Ready to build
 
-Nothing is built before it is defined, and nothing bigger than a small task before it is planned.
-
-- **A small task:** one repo, no contract change, no decision for the owner, and easy to undo (a bug fix, a copy change, a small internal improvement). It goes straight to a handoff filed with `--small` (a `Size: small` line), whose `Needed:` says what done looks like, in terms qa can test. Work for a repo, or a role that builds one, is filed with `--small` or `--spec`; `bin/handoff.sh add` refuses it with neither. The claim is checked against the result: `bin/handoff.sh record` refuses a PASS on a small task whose commits span more than one repo or change a path `AGENTS.md` guards (a contract's files, "Hard to undo"), and the doctor flags one already passed (`handoffs.small`). What no script can see, a decision the owner should have made, qa and code-reviewer BLOCK.
-- **Work that changes no repo** (copy, research, a campaign, a plan) follows the same steps with the checks that fit it: a handoff, or a spec for anything bigger, that says what done looks like; evidence of the result (the draft, a preview link, the data); and a verdict recorded with `--commits none`. The commit checks (a small task in one repo, the guarded paths, a plan per repo) apply only to work with commits, and work for a repo or a builder always has them: `record` refuses `--commits none` there. A spec for such work names its workspace areas in `repos`.
-- **Everything else** is built from a spec, `specs/<feature>.md`, which product-manager writes from `specs/_template.md`. Unsure whether a task is small? It is not.
-
-A spec moves `draft`, `ready`, `building`, `shipped` (or `dropped`), and `bin/spec.sh check` holds each status to what it needs (the doctor runs it: `specs.ready`):
-
-1. **ready**, set by product-manager: acceptance criteria an agent can test, nothing `TBD` in "Rules", every decision in the table answered by the owner, every repo that builds it in `repos`, a qa PASS on the acceptance criteria, and, for a spec built in a repo a web or mobile builder owns while design-lead is on the team, a "Design" section design-lead wrote and passed (`bin/spec.sh record specs/<feature>.md --role design-lead PASS|BLOCK --note specs/design/<note>.md`): what people see is designed before it is built. product-manager asks for that review with a handoff to qa; qa records `bin/spec.sh record specs/<feature>.md --role qa PASS|BLOCK --note specs/qa/<note>.md`: PASS when each criterion can be tested as written, BLOCK naming each one that cannot. The PASS is for the criteria as they were: change them and qa reviews again.
-2. **Routed:** chief-of-staff routes only a ready spec, with `bin/handoff.sh add ... --spec specs/<feature>.md`, which refuses a spec that fails the check.
-3. **building**, set by a builder before the first change: each owning builder writes its part of the plan under "## Plan", as `### <repo>`: the files it changes, the tests it adds, the order across repos and the risks. With more than one repo, architect reviews the whole plan first (`bin/spec.sh record specs/<feature>.md --role architect PASS|BLOCK --note specs/adr/<note>.md`); a changed plan needs a new review. Set `building`, run `bin/spec.sh check specs/<feature>.md`, and if it reports a problem, set `ready` back and wait. In a spec, builders write only their plan and this status.
-4. **Not ready? Send it back.** A builder given work that misses this section (a small task with no testable `Needed:`, a bigger one with no spec, a spec that fails the check) does not guess: it sets the entry to `rejected` with what is missing, and the sender files it again once it is ready.
+Nothing is built before it is defined, and nothing bigger than a small task before it is planned. A small task (one repo, no contract change, no decision for the owner, easy to undo) goes straight to a handoff filed with `--small`; anything else is built from a spec that `bin/spec.sh check` finds ready, routed with `--spec`; work that changes no repo takes the checks that fit it. Unsure whether a task is small? It is not. A builder given work that is not ready sends it back instead of guessing. The steps and what each status needs: `.cabinet/rules/ready-to-build.md`.
 
 ## Handoffs
 
 `HANDOFFS.md` is the one channel between agents. It is durable, so work is never lost when a session ends, and it gives the owner one place to see everything in flight.
 
 - **When your change affects another repo,** file an entry with `bin/handoff.sh add --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it; never by hand, since a hand-numbered entry can take an ID another agent is filing. It records who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
-- **Evidence is a link the owner can click.** Add `--evidence <file or URL>`, once for each, for what shows the work: a screenshot of each screen and state, a short recording, a link to try it, or a saved command output for work with no screen. A file is copied to `specs/evidence/<ID>/` and committed with the entry; its `Evidence:` line links it from the workspace root, so it opens from `HANDOFFS.md` and `BRIEF.md`. Evidence that comes later (after a fix, or asked for by a BLOCK) is added by the sender to its own entry with `bin/handoff.sh attach <ID> <file or URL>... --from <you>`, so the entry always holds everything that shows the work.
+- **Evidence is a link the owner can click:** what shows the work, filed with `--evidence <file or URL>`, or later with `bin/handoff.sh attach` (`.cabinet/rules/reviews.md`).
 - **When an entry is addressed to you,** verify it against the code before acting: a handoff describes a change, the code is the truth. Set it to `acknowledged` when you start and `done` when your side lands, with the date and your commit. If it is wrong or not needed, set it to `rejected` with the reason.
 - **Commit every edit to `HANDOFFS.md` at once,** as its own commit (`handoffs: ...`). If the file holds someone else's uncommitted lines, stage only yours and name the leftovers in your summary; chief-of-staff commits leftovers in its daily run.
 - **Only edit entries addressed to you, and only their status lines.** Add a follow-up entry instead of rewriting another. Two more lines are written on an entry by others: the sender's `Evidence:` line, and each reviewer's `Verdict:` line. One exception beyond those: chief-of-staff may set any entry to `done` when the code shows it landed, and applies the owner's sign-off answers to the entries they name.
 - **Dates in an entry's ID and status line are ISO (`2026-10-18`):** a machine format `bin/handoff.sh list` reads to age entries. Prose in an entry uses the house date format.
 - **Status lines hold the current state only:** status, date, commit, one sentence. Replace the old state; git keeps the history.
-- **A verdict is one line in one format,** written only with `bin/handoff.sh record <ID> --role <you> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>`, never by hand: below the entry's other lines, one line per reviewer, replaced on each re-check: `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>` (`none` for commits when the work changes no repo), for example `- Verdict: qa PASS 2026-10-20 a1b2c3d,e4f5a6b specs/qa/2026-10-20-login.md`. Commits are short hashes joined by commas, with no spaces; the note is the reviewer's file under `specs/` (letters, digits, `.`, `_`, `-` and `/` only), written and committed before you record, and holds the details: what was run, each failure or finding, the fix. `record` refuses a note that is not committed, a verdict by the entry's own sender, and a qa PASS on an entry with no evidence; `bin/doctor.sh` checks lines written by hand (`handoffs.verdicts`, `handoffs.evidence`). Verifying work with no handoff? File one first, so the verdict has an entry.
+- **A verdict is one line, written only with `bin/handoff.sh record`,** never by hand: `- Verdict: <role> <PASS|BLOCK|CHANGES> <date> <commits> <note>`. Its rules, and what `record` refuses: `.cabinet/rules/reviews.md`.
 - **Entries addressed to `owner`** (`founder` means the same person) are decisions or actions only the owner can take.
 - **Closed entries leave the file.** chief-of-staff runs `bin/handoff.sh archive` daily: it moves every committed `done` or `rejected` entry to `handoffs/archive-YYYY-MM.md` and commits the move. Archive files are read only. An ID stays unique across all of them (`bin/doctor.sh` checks).
 
@@ -111,7 +101,7 @@ Keep each item short. In a session, give each evidence link as its full path ins
 
 **Silence.** A reversible tier 3 item marked "default" in the queue may go ahead after 72 hours without an objection, but only as far as local commits. Nothing is ever pushed, merged, deployed, published, spent or sent on silence.
 
-**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. qa never records PASS on a handoff without evidence (see "Handoffs"), so whatever reaches the owner to push shows what was built. A project without qa or security enabled sends that verification to the owner.
+**The builder never verifies.** Work is ready for the owner to push only when qa and security have each recorded PASS on its handoff, and so has every other reviewer the project enabled whose subject the change touches: design-lead for anything people see, code-reviewer for code, dba for a schema, migration or heavy query. A BLOCK (or a code-reviewer's CHANGES) holds the push until fixed; only the owner can override it. qa never records PASS on a handoff without evidence (`.cabinet/rules/reviews.md`), so whatever reaches the owner to push shows what was built. A project without qa or security enabled sends that verification to the owner.
 
 ## Writing to the owner
 
@@ -133,46 +123,7 @@ The brief, short: its first line says what waits today ("Today: 2 decisions, 1 a
 
 ## Seats
 
-A seat is an agent or a person; the rules are the same for both.
-
-**Spotting the need.** chief-of-staff owns it; any lead may propose a seat at any time.
-
-- Daily, the brief flags signs that a seat may be needed, from the work and from the project itself: recurring work no seat owns; a function falling behind (stale handoffs or a growing backlog for one seat); a planned stage reached; and what the project has that no seat looks after: a surface (a public website, an app, an API others use), an audience or channel (users who need support, search traffic, a mailing list, paid plans), or a goal the owner stated in `AGENTS.md`, the specs or the roadmap. Each with the evidence that shows it (the repo, file, spec or goal; the handoffs and dates), never an invented threshold. One gap needs no other evidence: product repos with no code-reviewer on the team, since nothing else reviews the code itself and an owner who does not read code would never see it. A seat the owner declined is recorded in `notes/seats.md` with its date and proposed again only with new evidence.
-- The kit keeps a small core of roles and ships none for each specialty: a seat the project needs is proposed from this evidence and drafted for this project ("Drafting a role"), so the team grows with the project instead of being defined in advance.
-- Monthly, on the first day of the week that `AGENTS.md` names (Monday when it names none) in the first week of the month, a short org review by chief-of-staff with finance: whether every seat still earns its place (keep, change its authority, or retire it), and the gaps from the daily signals.
-
-**Proposal.** Every new seat reaches the owner as one decision in the sign-off queue format: the need, the evidence, agent or person, the cost (from finance, `TBD` until priced), the alternatives (absorb the work into an existing seat, wait, or hire a person), the expert recommendations, and whether it can be undone. If `AGENTS.md` sets an affordability rule, the proposal shows that check. Every seat is the owner's sign-off.
-
-**Onboarding.** The lead the seat reports to owns its onboarding and first month; security sets up and limits its access to what the seat needs; chief-of-staff tracks each new seat through its checklist in the brief until the one-month review.
-
-Agent seat:
-1. Definition and limits written: what it owns, decides, escalates and may write. A kit role may already fit (`cabinet config --roles`, including the optional brand-designer, dba, code-reviewer and auditor); otherwise `cabinet role add <role>` creates and registers it, and it is drafted as "Drafting a role" says.
-2. Registered: `roles/<role>.md` (and the role name in `CABINET_ROLES`, then `bin/role.sh build`), the team table in `AGENTS.md`, and `OPERATIONS.md`.
-3. Access limited to its own files and repos (security).
-4. The push and publish guardrails confirmed for the tool it runs in (`bin/doctor.sh`, "Push guardrails").
-5. Trial task, reviewed by its lead.
-6. The lead's written corrections recorded into its definition.
-7. Review after a month: keep, change or retire.
-
-Person:
-1. Contract and accounts as the owner sets them; access set up and limited by security.
-2. The push and publish rules below, the brand guide, and the house rules in `AGENTS.md`.
-3. Their lead as manager; a first task, reviewed by the lead; the lead's corrections recorded in their role notes.
-4. Review after a month: keep, change or retire.
-
-### Drafting a role
-
-A role the owner adds (`cabinet role add <role>`) starts as `roles/<role>.md` with the owner's brief: as much or as little as the owner knew, even only its name. Drafting turns it into a whole role, tailored to this project, without asking the owner for what the project already shows. The agent that drafts it (chief-of-staff through `cabinet role draft <role>`, or the agent the owner asks):
-
-1. **Starts from the owner's brief,** the "The owner's brief" section, and keeps it word for word. What it says wins over everything below.
-2. **Learns the project first:** `AGENTS.md` (what the project is, its product rules, the team table, the guides), `specs/ROADMAP.md` and the specs, `notes/`, each repo's `README` and `AGENTS.md`, and the roles already on the team in `agents/`.
-3. **Writes the role a strong specialist in it would hold on this product,** in the format of the kit's roles (`.cabinet/roles/`): frontmatter (`name`; `description` saying what it does and when to use it; `tools`), "Read `CABINET.md`, then `AGENTS.md`", then what it owns (paths, repos, areas), what it decides alone (tiers 1 and 2), what it brings to the owner (tier 3), how its work is checked and by whom, what it may write (only what the team table gives it, or areas no row holds), where its work ends and each neighbouring role's begins, naming them, with how a disagreement with each is settled ("When roles disagree"), and the line every reply ends with.
-4. **Fits the workflow its job touches,** in the role's own words, so they never contradict this file: every role files handoffs only with `bin/handoff.sh add`. A role that reviews others' work records each verdict with `bin/handoff.sh record <ID> --role <role> ...`, its notes in its own folder under `specs/` (a row in the team table), and qa's evidence rule where it passes what the owner will see. A role that owns a repo is a builder ("Builders"): it works only from work that is ready ("Ready to build"), writes its plan in a spec routed to it, attaches evidence (`--evidence`, `bin/handoff.sh attach`), sends back what is not ready, and files work for other builders with `--small` or `--spec`. The kit's roles show each in practice. `bin/doctor.sh` notes a drafted role that misses one (`roles.workflow`).
-5. **Never widens the kit's limits:** no push, merge, deploy, publish or spend, tier 3 to the owner, and the builder never verifies its own work.
-6. **Lists every choice the brief did not make** under "## Assumed, for the owner to confirm", one plain line each. chief-of-staff carries them in the sign-off queue; once the owner answers, each line moves into the role (or out of it).
-7. **Fills the role's rows** in the team tables of `AGENTS.md` (what it owns) and `OPERATIONS.md` (what it does), runs `bin/role.sh build`, and commits those files alone (`roles: draft <role>`).
-
-The owner can add to the brief at any time and redraft (`cabinet role draft <role>`); a redraft keeps what the owner has confirmed.
+A seat is an agent or a person, with the same rules for both. The kit keeps a small core of roles: any other seat is proposed from evidence in the work and in the project, as one sign-off item, and drafted for this project. Every seat is the owner's decision. How seats are spotted, proposed, onboarded, reviewed and drafted: `.cabinet/rules/seats.md`.
 
 ## The owner's manual
 
@@ -184,7 +135,7 @@ Agents also run on a local schedule (`bin/job.sh run`, one `jobs/<job>.job` each
 
 ## Rules for every repo
 
-- **Never push, merge, publish or release.** Only the owner does. It is enforced in every agent tool cabinet knows (`bin/bootstrap.sh` installs the guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI; Grok reads the Claude Code rules; the Cursor editor keeps its own settings and has the push gate only): they deny `git push`, `gh pr merge`, `gh release`, write calls through `gh api`, package publishing, reading the GitHub token or the keychain, and the known ways of skipping git hooks as far as each tool's rule format allows (the kit's `docs/guardrails.md` lists the limits per tool); and a global git pre-push hook refuses any push not confirmed at the owner's terminal. Do not try to work around either: a way around them is a reason to stop and ask the owner, never a way to proceed.
+- **Never push, merge, publish or release.** Only the owner does. It is enforced in every agent tool cabinet knows (`bin/bootstrap.sh` installs the guardrails; the kit's `docs/guardrails.md` lists each tool and its limits): they deny `git push`, `gh pr merge`, `gh release`, write calls through `gh api`, package publishing, reading the GitHub token or the keychain, and the known ways of skipping git hooks as far as each tool's rule format allows; and a global git pre-push hook refuses any push not confirmed at the owner's terminal. Do not try to work around either: a way around them is a reason to stop and ask the owner, never a way to proceed.
 - **Local commits are the only git write.** No push, merge, rebase, amend, reset or other history rewrite. A commit that fails review is reverted, or fixed in a follow-up commit; never amended.
 - **Commit finished work at once.** Every agent commits its own finished, tested changes locally, each one separately with a clear message in the repo's style, authored and signed as `AGENTS.md` says. Uncommitted changes mean work in progress, and only that; an agent ending a session with uncommitted work says so and why. Commit only your own changes, by pathspec (`git commit -- <paths>`), never someone else's uncommitted work.
 - **No fabrication.** Never invent names, limits, prices, dates, library choices or other specifics the owner has not stated or the code does not show. Write TBD, describe the capability, or read the canonical source. When corrected on a fabrication, audit recent work for the same mistake.

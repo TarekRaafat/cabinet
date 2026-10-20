@@ -72,7 +72,7 @@ done < "$K/manifest"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
 # A role the owner added (cabinet role add) works only once an agent has drafted it. A whole role
 # of the project's own with a kit role's name is used instead of the kit's: say so. A drafted one
-# follows the workflow its job touches (CABINET.md, "Drafting a role"): text checks for the gaps a
+# follows the workflow its job touches (.cabinet/rules/seats.md, "Drafting a role"): text checks for the gaps a
 # role written before the workflow has, not a judgment of the role.
 behind="" clash=""
 for f in "$WS"/roles/*.md; do
@@ -219,7 +219,7 @@ hfiles=("$WS/HANDOFFS.md"); for f in "$WS"/handoffs/archive-*.md; do [[ -f "$f" 
 dups="$(awk '/^### H-/ {n++; id[n]=$2} /^- Note: duplicate ID/ {skip[n]=1}
   END {for (i=1;i<=n;i++) if (!skip[i]) c[id[i]]++; for (k in c) if (c[k]>1) print k}' "${hfiles[@]}" | sed 's/:$//' | sort | tr '\n' ' ')"
 [[ -z "$dups" ]] && ok handoffs.unique-ids "every handoff ID is unique" || bad handoffs.unique-ids "these handoff IDs are used more than once: $dups(file the next free number)"
-# Verdicts in the one format (CABINET.md, "Handoffs"), each with its note; a qa PASS needs evidence.
+# Verdicts in the one format (.cabinet/rules/reviews.md), each with its note; a qa PASS needs evidence.
 # Open entries only: the archives are history, written before the format. The note's path is
 # checked by the shell only after the pattern limits it to safe characters.
 vcheck="$(cd "$WS" && awk '

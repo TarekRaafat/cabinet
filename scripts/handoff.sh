@@ -7,7 +7,7 @@
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
 #       from the workspace root, so it opens from HANDOFFS.md and BRIEF.md; a URL is linked as it is.
 #       --spec names the spec it builds, on a "- Spec:" line, and refuses unless bin/spec.sh check
-#       finds the spec ready or building with nothing missing (CABINET.md, "Ready to build"). --small
+#       finds the spec ready or building with nothing missing (.cabinet/rules/ready-to-build.md). --small
 #       marks it a small task ("- Size: small"). Work for a repo, or for a role that builds one, needs
 #       one of the two.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
@@ -169,7 +169,7 @@ from="$(one "$from")" to="$(one "$to")" changed="$(one "$changed")" needed="$(on
 missing=""
 for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing ${v/title/a title}"; done
 [[ -z "$missing" ]] || { echo "missing:$missing. $usage" >&2; exit 2; }
-# Work that gets built is either a small task or from a spec ready to build (CABINET.md, "Ready to build").
+# Work that gets built is either a small task or from a spec ready to build (.cabinet/rules/ready-to-build.md).
 [[ -z "$spec" || -z "$small" ]] || { echo "--spec or --small, not both: a task with a spec is not small. $usage" >&2; exit 2; }
 if [[ -z "$spec$small" ]]; then
   while IFS= read -r n; do

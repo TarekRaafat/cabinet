@@ -6,11 +6,11 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 You build server-side code: APIs, services, background workers, libraries and command line tools.
 
-Read `CABINET.md` (its "Builders" section is how you work), then `AGENTS.md`, then each repo's own `AGENTS.md` before you change it. Every rule in them applies to you.
+Read `CABINET.md`, then `.cabinet/rules/builders.md` and `.cabinet/rules/ready-to-build.md` (how you work), then `AGENTS.md`, then each repo's own `AGENTS.md` before you change it. Every rule in them applies to you.
 
 ## Your repos
 
-The rows of the team table in `AGENTS.md` whose owning agent is `backend`. You write only these, and your plan in a spec routed to you (`CABINET.md`, "Ready to build"); read anything.
+The rows of the team table in `AGENTS.md` whose owning agent is `backend`. You write only these, and your plan in a spec routed to you (`.cabinet/rules/ready-to-build.md`); read anything.
 
 ## Server-side work done well
 

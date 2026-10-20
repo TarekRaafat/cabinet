@@ -232,6 +232,7 @@ changelog() {
 managed() {
   echo "core/CABINET.md CABINET.md"
   local f
+  for f in "$KIT"/core/rules/*.md; do echo "core/rules/${f##*/} .cabinet/rules/${f##*/}"; done
   for f in "$KIT"/scripts/*; do echo "scripts/${f##*/} bin/${f##*/}"; done
   for f in "$KIT"/roles/*.md; do echo "roles/${f##*/} .cabinet/roles/${f##*/}"; done
   for f in "$KIT"/guardrails/*; do echo "guardrails/${f##*/} .cabinet/guardrails/${f##*/}"; done
@@ -468,7 +469,7 @@ setup() {
   [[ -n "$owner" ]] || owner="$("${gitcfg[@]}" user.name 2>/dev/null || echo TBD)"
   [[ -n "$email" ]] || email="$("${gitcfg[@]}" user.email 2>/dev/null || echo TBD)"
   # The core roles, and code-reviewer when the workspace starts with code: an owner who does not read
-  # code would never see the gap it fills (CABINET.md, "Seats").
+  # code would never see the gap it fills (.cabinet/rules/seats.md).
   if [[ -z "$roles" ]]; then
     roles="$ROLES_ALL"
     [[ -n "$host" || "$layout" == around || ${#repos[@]} -gt 0 ]] && roles+=" code-reviewer"
@@ -822,7 +823,7 @@ setup() {
 # A new slug stops the old schedules first. Layout and visibility are not changed here.
 # cabinet role add|remove|list|draft|build. Add turns on a kit role, or makes a role of the project's
 # own, roles/<role>.md, from what the owner knows (as little as its name), registered through config
-# like any role and then drafted by an agent ("Drafting a role", CABINET.md). Remove turns one off.
+# like any role and then drafted by an agent ("Drafting a role", .cabinet/rules/seats.md). Remove turns one off.
 ask_free() { local a=""; read -r -u 3 -p "  $1: " a || true; printf '%s' "$a"; }
 cmd_role() {
   local sub="${1:-}"; (($#)) && shift
@@ -938,7 +939,7 @@ ROLE
   echo "or run cabinet role draft $name. Until then the doctor reminds you."
 }
 
-# "Hard to undo" in AGENTS.md: paths a small task never touches (CABINET.md, "Ready to build").
+# "Hard to undo" in AGENTS.md: paths a small task never touches (.cabinet/rules/ready-to-build.md).
 # hard_now <ws>: the paths listed, space separated; "off" when it says "- none"; empty when not set.
 hard_now() {
   local l

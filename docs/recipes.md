@@ -75,7 +75,7 @@ In a terminal it asks four questions: what it should do, what it owns, what it m
 
 Then have it drafted, in one of two ways:
 
-- **In your agent session:** "draft the brand-strategist role". Any agent tool follows `CABINET.md`, "Drafting a role".
+- **In your agent session:** "draft the brand-strategist role". Any agent tool follows `.cabinet/rules/seats.md`, "Drafting a role".
 - **From the terminal:** `cabinet role draft brand-strategist` (or `--draft` on `role add`) runs your configured agent tool as chief-of-staff. It may cost money.
 
 The draft starts from your brief, which wins, and learns the rest from the project: `AGENTS.md`, the specs and roadmap, the notes, the repos and the roles already on the team. It writes the role a strong specialist would hold on this product: what it owns, decides, brings to you, how its work is checked, and where it stops and its neighbours start. Every choice your brief did not make is listed under "Assumed, for the owner to confirm", and chief-of-staff puts those in your sign-off queue until you answer.
@@ -86,7 +86,7 @@ A role of yours is never mixed with a kit role: if a later kit adds a role with 
 
 By hand instead: write `roles/<role>.md` with frontmatter (`name`, `description`, `tools`) like the kit's roles in `.cabinet/roles/`, then `cabinet config --roles "<the roles you keep> <role>"`.
 
-A new role is your decision (`CABINET.md`, "Seats").
+A new role is your decision (`.cabinet/rules/seats.md`).
 
 ## Turn a role off, or back on
 

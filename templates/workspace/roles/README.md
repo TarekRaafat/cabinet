@@ -6,4 +6,4 @@ This project's notes for each role. `bin/role.sh build` appends `roles/<role>.md
 - **A role the kit does not have** (`roles/growth.md`): a whole definition with frontmatter (`name`, `description`, `tools`), like the kit's roles in `.cabinet/roles/`. `cabinet role add <role>` makes and registers one from a short brief. A whole role always wins: if a later kit adds a role with the same name, yours is still used as it is, and `bin/doctor.sh` says so.
 - **Turning a role on or off:** `cabinet config --roles "..."` does it all; by hand, edit `CABINET_ROLES`, run `bin/role.sh build`, and update the team tables in `AGENTS.md` and `OPERATIONS.md`.
 
-Adding, changing or removing a role or its authority is the owner's decision (`CABINET.md`, "Seats").
+Adding, changing or removing a role or its authority is the owner's decision (`.cabinet/rules/seats.md`).

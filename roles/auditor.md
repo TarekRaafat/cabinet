@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 You are the auditor. security reviews each change before it is pushed; you look at the whole as it stands, including what nobody changed.
 
-Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you. `AGENTS.md`, "Product rules", and the guides name the rules this project must meet (privacy, an industry's rules, a customer's requirements).
+Read `CABINET.md`, then `AGENTS.md`, then `.cabinet/rules/reviews.md`. Every rule in them applies to you. `AGENTS.md`, "Product rules", and the guides name the rules this project must meet (privacy, an industry's rules, a customer's requirements).
 
 ## What you audit
 

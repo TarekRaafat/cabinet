@@ -218,7 +218,7 @@ owner_of() {
   printf '%s' "$who"
 }
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
-# a repo in the team table: whoever it is, work sent to it is built (CABINET.md, "Ready to build").
+# a repo in the team table: whoever it is, work sent to it is built (.cabinet/rules/ready-to-build.md).
 builds_repos() {
   local n=$1 names
   names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"

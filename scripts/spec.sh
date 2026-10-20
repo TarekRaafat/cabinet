@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Specs, one per feature in specs/ (CABINET.md, "Ready to build").
+# Specs, one per feature in specs/ (.cabinet/rules/ready-to-build.md).
 #
 #   bin/spec.sh check [spec] [--json]
 #       Every spec (or one) against what its status needs. ready: acceptance criteria, no TBD in
@@ -167,7 +167,7 @@ else
   done
 fi
 local out='[]' n o ui=""
-# What people see is designed first, when design-lead is on the team (CABINET.md, "Ready to build").
+# What people see is designed first, when design-lead is on the team (.cabinet/rules/ready-to-build.md).
 if has "$(team_roles)" design-lead; then
   for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
 fi
