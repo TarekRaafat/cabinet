@@ -419,7 +419,7 @@ Tab completion for commands, their verbs and options, and the job names of the n
 cabinet version [--json]
 ```
 
-Prints the installed kit's version.
+Prints the installed kit's version. In a terminal it prints the cabinet mark beside it: seven seats around a table, with the eighth left open for the owner. It draws the seats as dots when the terminal's locale is UTF-8, and as the letter `o` otherwise. When the output goes to a script or a file, it prints only `cabinet <version>`.
 
 ## Which copy of cabinet runs
 

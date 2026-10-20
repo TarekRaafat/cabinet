@@ -1942,8 +1942,16 @@ complete -o default -F _cabinet cabinet
 EOF
 }
 
+# The mark: seven seats around a table, the eighth left open for the owner. Only in a
+# terminal, so a script that reads `cabinet version` still gets the one line.
+version_mark() {
+  local o=o
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="●" ;; esac
+  printf '\n      %s\n  %s       %s      cabinet %s\n%s                 a team of AI agents and one owner who signs off\n  %s       %s\n      %s\n\n' \
+    "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o" "$o"
+}
 cmd_version() {
-  case "${1:-}" in "") echo "cabinet $VERSION" ;; --json) jq -n --arg v "$VERSION" '{name: "cabinet", version: $v}' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac
+  case "${1:-}" in "") if [[ -t 1 ]]; then version_mark; else echo "cabinet $VERSION"; fi ;; --json) jq -n --arg v "$VERSION" '{name: "cabinet", version: $v}' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac
 }
 cmd_changelog() {
   local from="" json=0 x

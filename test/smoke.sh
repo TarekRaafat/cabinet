@@ -1234,6 +1234,10 @@ st=0; "$CW/bin/handoff.sh" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a scri
 (cd "$T/plain" && "$F" -C "$CW" status --json) | jq -e --arg w "$(cd "$CW" && pwd -P)" '.workspace == $w' >/dev/null || fail "-C"
 bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP_CWORD=4; _cabinet; echo "${COMPREPLY[*]}"' _ "$F" | grep -q 'add.*remove.*list' || fail "completion of verbs after -C"
 # Every command that reports prints JSON.
+# version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
+[[ "$("$F" version)" == "cabinet $(jq -r .version "$KIT/package.json")" ]] || fail "version piped should print one line"
+LC_ALL=C python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | tr -d '\r' | grep -qx '  o       o      cabinet [0-9.]*' || fail "version in a terminal should print the mark"
+LC_ALL=en_US.UTF-8 python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
 "$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
 (cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | jq -e '.latest == null and .kit_version' >/dev/null || fail "outdated --json"
