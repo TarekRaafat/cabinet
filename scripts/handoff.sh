@@ -51,7 +51,16 @@ lock_handoffs() {
   cd "$WS"
   grep -q '^## Open$' HANDOFFS.md || { echo "no '## Open' heading in HANDOFFS.md" >&2; exit 1; }
   lock="$K/handoff.lock"
-  for _ in 1 2 3 4 5 6 7 8 9 10; do mkdir "$lock" 2>/dev/null && break; sleep 1; done
+  # A write takes under a second: a lock older than a minute was left by a writer that was stopped.
+  # Renamed away, not removed, so of several waiters only one breaks it.
+  # ponytail: a waiter that saw it stale just as another took it over could move the new lock; the doctor's unique-ids check is the backstop.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    mkdir "$lock" 2>/dev/null && break
+    if (( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) > 60 )) && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
+      rm -rf "$lock.stale.$$"; continue
+    fi
+    sleep 1
+  done
   [[ -d "$lock" ]] || { echo "another handoff is being written ($lock); try again, or remove the folder if none is" >&2; exit 1; }
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
   dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1

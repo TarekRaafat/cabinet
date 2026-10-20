@@ -296,6 +296,11 @@ git -C "$W" checkout -q -- HANDOFFS.md
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused handoff changed a file"
 "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
 [[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
+# A lock left by a writer that was stopped is taken over after a minute, not waited on.
+mkdir "$W/.cabinet/handoff.lock" && touch -t 202001010000 "$W/.cabinet/handoff.lock"
+out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "After a stale lock")" && [[ "$out" == *committed && ! -d "$W/.cabinet/handoff.lock" ]] || fail "a stale handoff lock was not taken over: $out"
+grep -q 'never by hand' "$KIT/templates/workspace/HANDOFFS.md" && grep -q 'never by hand, since a hand-numbered entry' "$KIT/core/CABINET.md" || fail "the rule to file handoffs only with handoff add left the template or CABINET.md"
+grep -q '^- \*\*A verdict is one line' "$KIT/core/CABINET.md" || fail "the verdict rule is not its own bullet in CABINET.md"
 # Evidence: files copied under the entry's ID and linked from the workspace root, links kept, both committed.
 printf 'png' > "$T/login page.png"; printf 'log' > "$T/run.txt"
 out="$(cd "$W/specs" && "$F" handoff add --from web --to qa --changed x --needed y --evidence "../../login page.png" --evidence "$T/run.txt" --evidence https://example.com/try "Shown")" || fail "handoff with evidence: $out"

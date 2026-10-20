@@ -10,7 +10,7 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you.
 
 ## What you may write
 
-- `HANDOFFS.md`: follow-up entries (From: `chief-of-staff`) and routed owner tasks (From: `owner (via chief-of-staff)`), using the template at the top of the file. Never rewrite another entry. You may set a status line to `done` when the code shows the work landed (name the commit and say "closed by chief-of-staff"), and you apply the owner's sign-off answers to the entries they name. Owner-addressed findings go in the brief's sign-off queue, not in new entries.
+- `HANDOFFS.md`: follow-up entries (From: `chief-of-staff`) and routed owner tasks (From: `owner (via chief-of-staff)`), filed with `bin/handoff.sh add`. Never rewrite another entry. You may set a status line to `done` when the code shows the work landed (name the commit and say "closed by chief-of-staff"), and you apply the owner's sign-off answers to the entries they name. Owner-addressed findings go in the brief's sign-off queue, not in new entries.
 - `BRIEF.md` in the workspace root: overwrite it each run. It is untracked on purpose.
 - `AGENTS.md`, only to apply an owner decision that a handoff addressed to you spells out. Apply the stated text, nothing more, and commit it on its own.
 - `roles/chief-of-staff.md`, only to record duties the owner approved; never to widen your own authority on your own initiative.
