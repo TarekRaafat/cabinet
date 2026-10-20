@@ -191,10 +191,11 @@ for p in ${CABINET_PLUGINS:-}; do grep -q "\"$p@" ~/.claude/plugins/installed_pl
 ok skills.checked "skills and plugins checked"
 
 section "Operations manual"
-# The manual must name every script, job and role, or it has fallen behind.
+# The manual must name every script (the kit's and the project's tools/), job and role, or it has fallen behind.
 missing=()
 for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh|platform.sh) continue ;; esac; grep -qF "bin/$(basename "$f")" "$WS/OPERATIONS.md" || missing+=("bin/$(basename "$f")"); done
 for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
+for f in "$WS"/tools/*; do [[ -f "$f" && "${f##*/}" != README.md ]] || continue; grep -qF "tools/${f##*/}" "$WS/OPERATIONS.md" || missing+=("tools/${f##*/}"); done
 for r in $(team_roles); do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
 ((${#missing[@]})) && bad manual.complete "OPERATIONS.md does not mention: ${missing[*]}" || ok manual.complete "manual names every script, job and role"
 
@@ -266,6 +267,32 @@ if [[ -n "$(repos 2>/dev/null)" ]]; then
   if grep -q '`' <<<"$hl" || grep -qx -- '- none' <<<"$hl"; then ok agents.hard-to-undo "AGENTS.md says which paths are hard to undo"
   else note agents.hard-to-undo "AGENTS.md lists no paths that are hard to undo, so a small task is checked only for staying in one repo (cabinet config --hard-to-undo \"<repo>/<path> ...\", or off when there are none; cabinet config suggests some)"; fi
 fi
+
+section "Critical areas"
+# Each area's paths are in a known repo (and there, when it is on this machine), its reviewers on the
+# team, and its check a command in tools/ that can run (.cabinet/rules/reviews.md, "Critical areas").
+cbad=""
+while IFS=$'\t' read -r a p r e c; do
+  [[ -n "$a" ]] || continue
+  [[ -n "$p" ]] || cbad+="; $a names no paths"
+  for x in $p; do
+    rn="${x%%/*}"
+    if [[ "$rn" == workspace ]]; then [[ -e "$WS/${x#workspace/}" ]] || cbad+="; $a: $x does not exist"
+    else d="$(repos 2>/dev/null | awk -F'\t' -v n="$rn" '$1 == n { print $5; exit }')"
+      if [[ -z "$d" ]]; then cbad+="; $a: $rn is no repo in repos.tsv"
+      elif [[ -d "$(repo_dir "$d")" && ! -e "$(repo_dir "$d")/${x#*/}" && "$x" == */* ]]; then cbad+="; $a: $x does not exist"; fi
+    fi
+  done
+  [[ -n "$r" ]] || cbad+="; $a names no reviewer"
+  for x in $r; do has "$(team_roles)" "$x" || cbad+="; $a: $x is not on the team"; done
+  if [[ -n "$c" ]]; then
+    x="${c%% *}"
+    [[ "$c" =~ ^tools/[A-Za-z0-9._/-]+( [A-Za-z0-9._/=:,-]+)*$ && "$c" != *..* && -f "$WS/$x" && -x "$WS/$x" ]] || cbad+="; $a: its check is not a command in tools/ that can run ($c)"
+  fi
+done < <(critical_areas)
+if [[ -z "$(critical_areas)" ]]; then ok areas.declared "no critical areas declared"
+elif [[ -z "$cbad" ]]; then ok areas.declared "every critical area names paths, reviewers on the team and a check that can run"
+else bad areas.declared "critical areas in AGENTS.md that cannot hold: ${cbad#; } (fix its row)"; fi
 
 section "Specs"
 # A spec marked ready or building has what that status needs (bin/spec.sh check).

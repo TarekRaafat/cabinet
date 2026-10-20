@@ -40,6 +40,14 @@ Paths where a change is hard to undo (migrations, public files, anything release
 
 - none yet
 
+## Critical areas
+
+Parts of the project where a mistake costs more, such as payments, personal data, a public API, data imports, a store listing or a pricing page. A change that touches one needs the reviewers named here as well as the usual ones, and the evidence they must see; a check, a command in `tools/`, proves what a script can (a replay of saved inputs, a schema or API comparison, a load test) and must pass before such a reviewer's PASS counts. Paths as `` `<repo>/<path>` `` (`workspace/...` for the workspace's own files; a path ending in `/` covers its folder); a spec names the areas it touches in its `areas`. Leave it as it is when nothing is critical (`.cabinet/rules/reviews.md`, "Critical areas").
+
+| Area | Paths | Also reviewed by | Evidence | Check |
+|---|---|---|---|---|
+| none yet | | | | |
+
 ## House rules
 
 The owner's defaults for every repo. Change them here. The kit changes this file only when you run `cabinet config` (the owner line, the week start, writing to the owner and the titles).

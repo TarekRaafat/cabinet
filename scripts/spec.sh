@@ -110,6 +110,11 @@ def problems(text):
     rs = repos(fm)
     if not rs:
         p.append("no repos or areas named")
+    known = set(os.environ.get("AREAS", "").split())
+    m = re.match(r"\[(.*)\]$", fm.get("areas", "") or "[]")
+    for a in ([x.strip().lower() for x in m.group(1).split(",") if x.strip()] if m else []):
+        if a not in known:
+            p.append("areas names %s, which is no critical area in AGENTS.md" % a)
     v = verdicts(secs.get("Reviews", []))
     def review(role):
         part = PART[role]
@@ -187,7 +192,7 @@ local out='[]' n o ui=""
 if has "$(team_roles)" design-lead; then
   for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
 fi
-((${#files[@]})) && out="$(UI_REPOS="$ui" spec_py check "${files[@]}")"
+((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1 | tr '\n' ' ')" spec_py check "${files[@]}")"
 if ((json)); then jq . <<<"$out"
 else
   jq -r '.[] | "\(.spec) (\(.status | if . == "" then "no status" else . end)): \(if (.problems | length) == 0 then "ok" else (.problems | join("; ")) end)"' <<<"$out"

@@ -19,7 +19,9 @@
 #       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
 #       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
 #       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
-#       span repos or change a path AGENTS.md guards (small_problems in lib.sh). --commits none is for
+#       span repos or change a path AGENTS.md guards (small_problems in lib.sh). A PASS from a
+#       reviewer a critical area requires counts only when the area's check (a command in tools/)
+#       passes at those commits; its output is kept as evidence on the entry. --commits none is for
 #       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
 #   bin/handoff.sh list [name] [--ready] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
@@ -281,6 +283,36 @@ commits="$(lc "$commits" | tr -s ' ,' ',,' | sed 's/^,//; s/,$//')"
 [[ "$commits" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40})*$ || "$commits" == none ]] || { echo "--commits needs commit hashes (7 to 40 hex digits, joined by commas), or none for work that changes no repo. $usage" >&2; exit 2; }
 [[ -n "$note" ]] || { echo "--note needs the file that holds the details. $usage" >&2; exit 2; }
 rel="$(ws_md --note "$note")" || exit 1
+# Critical areas (.cabinet/rules/reviews.md): a PASS from a reviewer an area requires counts only when
+# the area's check passes at these commits. Run before the lock, since a check can take a while.
+local -a checked
+checked=()
+run_check() {  # run_check <area> <command>
+  local a=$1 cmd=$2 out="specs/evidence/$id/check-$1.txt" st=0
+  local -a w
+  [[ "$cmd" =~ ^tools/[A-Za-z0-9._/-]+( [A-Za-z0-9._/=:,-]+)*$ && "$cmd" != *..* ]] \
+    || { echo "the $a check in AGENTS.md, '$cmd', is not a command in tools/ (letters, digits and . _ - / = : , only)" >&2; return 1; }
+  set -f; w=($cmd); set +f
+  [[ -f "$WS/${w[0]}" && -x "$WS/${w[0]}" ]] || { echo "the $a check, ${w[0]}, is missing or cannot run (chmod +x)" >&2; return 1; }
+  mkdir -p "$WS/specs/evidence/$id"
+  # No shell: the command and its words as they are, in the workspace, within the run's time limit.
+  (cd "$WS" && CABINET_AREA="$a" CABINET_HANDOFF="$id" CABINET_COMMITS="${commits/none/}" \
+    perl -e 'alarm shift; exec @ARGV or die "cannot run $ARGV[0]: $!\n"' "$((CABINET_JOB_TIMEOUT * 60))" "$WS/${w[0]}" "${w[@]:1}") > "$WS/$out" 2>&1 || st=$?
+  if ((st)); then
+    echo "the $a check failed (exit $st), so $role cannot pass $id; its last lines:" >&2; tail -5 "$WS/$out" >&2; rm -f "$WS/$out"; return 1
+  fi
+  checked+=("$out")
+}
+if [[ "$verdict" == PASS ]]; then
+  local ar lead a p r e c
+  lead="$(role_team "$role" "Reports to")"
+  ar="$( { readiness | jq -r --arg i "$id" '.[$i].areas[]?'; [[ "$commits" == none ]] || areas_hit "$commits"; } | sort -u)"
+  while IFS=$'\t' read -r a p r e c; do
+    grep -qxF "$a" <<<"$ar" || continue
+    has "$r" "$role" || { [[ -n "$lead" ]] && has "$r" "$lead"; } || continue
+    [[ -z "$c" ]] || run_check "$a" "$c" || exit 1
+  done < <(critical_areas)
+fi
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # Split by hand: read would merge the two tabs around an empty field.
@@ -301,7 +333,13 @@ if [[ "$size" == small && "$verdict" == PASS && "$commits" != none ]]; then
   [[ -z "$why" ]] || { echo "$id is marked small, but $why: it needs a spec. Record BLOCK; chief-of-staff routes it again from a spec (CABINET.md, \"Ready to build\")" >&2; exit 1; }
 fi
 entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel"
-save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" HANDOFFS.md
+local -a paths
+paths=(HANDOFFS.md)
+for c in ${checked[@]+"${checked[@]}"}; do
+  grep -qF "]($c)" HANDOFFS.md || entry "$id" evidence "[${c##*/}]($c)"
+  paths+=("$c")
+done
+save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" "${paths[@]}"
 }
 
 

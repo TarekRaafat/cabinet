@@ -51,7 +51,7 @@ The project is not changed at all. The workspace is a folder next to it and poin
 | | What | Who changes it |
 |---|---|---|
 | **Kit files** | `CABINET.md`, `bin/*.sh`, `.cabinet/` (roles, rules read when a task needs them, guardrails, schedule template, version, manifest) | Only `cabinet update`. Never edit them in a workspace: an update stops at an edited one. |
-| **Project files** | `AGENTS.md`, `cabinet.env`, `roles/`, `jobs/`, `HANDOFFS.md`, `OPERATIONS.md`, `repos.tsv`, `specs/`, `notes/` | You and the agents. Placed once by `new` or `init`; afterwards `cabinet config` changes only the settings it manages in them. |
+| **Project files** | `AGENTS.md`, `cabinet.env`, `roles/`, `jobs/`, `HANDOFFS.md`, `OPERATIONS.md`, `repos.tsv`, `specs/`, `notes/`, `tools/` (the project's own scripts) | You and the agents. Placed once by `new` or `init`; afterwards `cabinet config` changes only the settings it manages in them. |
 | **Built** | `agents/<role>.md`, `.claude/agents/<role>.md`: the kit's role plus your `roles/<role>.md` | `bin/role.sh build` |
 
 Instructions layer from general to specific: `CABINET.md`, then the workspace's `AGENTS.md`, then each repo's own `AGENTS.md`.

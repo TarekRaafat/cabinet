@@ -41,6 +41,21 @@ On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's 
 
 Each repo has one owning agent, listed in the team table in `AGENTS.md`, and so does each workspace area (`specs/`, `specs/qa/`, ...). An area inside another belongs to its own row: the most specific row wins. No agent writes to a repo it does not own. When a change affects another repo, the agent files a handoff instead of editing it. The doctor flags an area with two owners (`team.single-owner`), notes a part of a repo given to another role than the repo's (`team.nested`) and a project role whose "What you may write" reaches another role's area (`roles.writes`), and `cabinet role add --owns` refuses an area that is already another role's.
 
+## Critical areas
+
+Some parts of a project cost more when they go wrong: payments, personal data, a public API, data imports, a store listing, a pricing page. The kit does not know which; you declare them under "Critical areas" in `AGENTS.md`, each with its paths, the reviewers it needs as well as the usual ones, the evidence they must see, and optionally a check, a script of your own in `tools/` that proves what a script can (a replay of saved inputs, an API comparison, a load test). Work touching an area, by its commits or by its spec's `areas`, is not ready to push until those reviewers pass, and a reviewer's PASS counts only when the check passes; its output is kept as evidence. Nothing changes for a project that declares none.
+
+| Project | Area | Also reviewed by | Evidence | Check |
+|---|---|---|---|---|
+| SaaS with payments | billing | security, finance | a test payment in the sandbox | a sandbox script |
+| Data or analytics product | importers | architect | results compared | replay saved inputs |
+| Mobile app | store listing, permissions | design-lead, security | real-device screenshots | none |
+| Library | public API | architect | the API diff and version bump | an API diff tool |
+| Client work | the deliverable | owner | a preview link | a link checker |
+| Business with little code | pricing page | finance | old and new prices side by side | none |
+
+`tools/` is the project's own scripts: updates never touch it, the manual names each one (the doctor checks), and jobs and checks call them.
+
 ## Ready to build
 
 Nothing is built before it is defined. A small task (one repo, no contract change, no decision for you, easy to undo) goes straight to a handoff that says what done looks like, marked small (`cabinet handoff add --small`). The claim is checked against what was built: a PASS is refused when the commits span repos or change a file a contract lives in or a path listed as hard to undo in `AGENTS.md`, and the doctor flags one already passed (`handoffs.small`). Whether a decision should have been yours, no script can tell: qa blocks that. `cabinet config --hard-to-undo` sets the list, checking each path against the repos and suggesting what looks hard to undo in them. Anything bigger is built from a spec in `specs/`, which the product-manager writes, and a spec moves through statuses that `cabinet spec check` holds to what each needs:

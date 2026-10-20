@@ -83,6 +83,12 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX handoffs marked small that were not: <...> (route the work again from a spec)` | `handoffs.small` | A handoff filed with `--small` has a PASS, but its commits span more than one repo, are in no repo on this machine, or change a path `AGENTS.md` guards (a contract's files, "Hard to undo"). Each is named with the reason. | Route the work again from a spec ([ready to build](concepts.md#ready-to-build)); the reviewer records BLOCK meanwhile. A commit in no repo here: clone or fetch that repo. |
 | `FIX qa PASS on handoffs with no evidence: <...> (the builder adds an Evidence line, or qa changes its verdict to BLOCK)` | `handoffs.evidence` | qa passed work whose entry has no `- Evidence:` line, so you would approve it without seeing it. | The builder adds evidence with `cabinet handoff attach <ID> <file or URL> --from <builder>`, or qa records BLOCK. |
 
+## Critical areas
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `FIX critical areas in AGENTS.md that cannot hold: <...> (fix its row)` | `areas.declared` | A row under "Critical areas" names no paths, a path in a repo not in `repos.tsv` or that does not exist there, no reviewer or one not on the team, or a check that is not a command in `tools/` that can run. Work in that area waits on a reviewer who cannot come, or a check that cannot run. Each problem is named. | Fix the row in `AGENTS.md`: the paths, the reviewers (or turn the role on), or the check (put it in `tools/`, `chmod +x`). |
+
 ## Specs
 
 | Message | ID | Cause | Fix |

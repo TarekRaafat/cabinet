@@ -1831,6 +1831,71 @@ grep -q '^## Sub-teams$' "$KIT/core/rules/seats.md" && grep -q 'A lead can grow 
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "critical areas and tools/: what a project declares, the kit applies" ""
+s53() {
+CW="$T/crit"; "$F" new "$CW" --yes >/dev/null || fail "new for critical areas"
+[[ -f "$CW/tools/README.md" ]] && git -C "$CW" ls-files --error-unmatch tools/README.md >/dev/null 2>&1 || fail "tools/ is not placed and tracked"
+git init -q "$CW/api" && mkdir -p "$CW/api/billing" "$CW/api/search" && echo x > "$CW/api/billing/charge.js" && echo x > "$CW/api/search/q.js" && git -C "$CW/api" add -A && git -C "$CW/api" commit -qm init
+printf 'api\t-\t-\tno\n' >> "$CW/repos.tsv"
+X='| `api` | The API | backend |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$CW/AGENTS.md"
+mkdir -p "$CW/guides" && echo "Plans and prices." > "$CW/guides/pricing.md"
+git -C "$CW" add -A && git -C "$CW" commit -qm "api and a pricing guide"
+dr() { "$CW/bin/doctor.sh" 2>&1 || true; }
+dr | grep -q 'ok    no critical areas declared' || fail "doctor: no critical areas"
+# Two areas of a made-up project: code with a check, and a workspace file with none.
+perl -i -pe 's/^\| none yet \| \| \| \| \|$/| billing | `api\/billing\/` | security, finance | a test charge in the sandbox | `tools\/check-billing.sh --fast` |\n| pricing | `workspace\/guides\/pricing.md` | finance | old and new prices side by side | none |/' "$CW/AGENTS.md"
+grep -q '^| billing |' "$CW/AGENTS.md" || fail "test setup: the areas"
+dr | grep -q 'critical areas in AGENTS.md that cannot hold: billing: its check is not a command in tools/ that can run' || fail "doctor: a check that cannot run: $(dr | grep -i 'critical')"
+cat > "$CW/tools/check-billing.sh" <<'CHECK'
+#!/bin/sh
+echo "area=$CABINET_AREA handoff=$CABINET_HANDOFF commits=$CABINET_COMMITS args=$*"
+[ ! -f "$CHECK_FAIL" ] || { echo "charge declined"; exit 3; }
+CHECK
+chmod +x "$CW/tools/check-billing.sh"
+dr | grep -q 'ok    every critical area names paths, reviewers on the team and a check that can run' || fail "doctor: sound areas: $(dr | grep -i 'critical')"
+dr | grep -q 'OPERATIONS.md does not mention: tools/check-billing.sh' || fail "doctor: a tool the manual does not name"
+echo '- `tools/check-billing.sh`: charges the sandbox card.' >> "$CW/OPERATIONS.md"
+git -C "$CW" add -A && git -C "$CW" commit -qm "areas, a check, the manual"
+# The areas work touches, from its commits, and their reviewers added to what it needs.
+mkdir -p "$CW/specs/qa" && echo ok > "$CW/specs/qa/n.md" && git -C "$CW" add -A && git -C "$CW" commit -qm note
+cj() { "$CW/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+rec() { CHECK_FAIL="$T/check-fails" "$CW/bin/handoff.sh" record "$1" --role "$2" "${4:-PASS}" --commits "$3" --note specs/qa/n.md 2>&1; }
+echo y >> "$CW/api/billing/charge.js"; git -C "$CW/api" commit -qam bill; cb="$(git -C "$CW/api" rev-parse --short HEAD)"
+echo y >> "$CW/api/search/q.js"; git -C "$CW/api" commit -qam search; cs="$(git -C "$CW/api" rev-parse --short HEAD)"
+b="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/b "Charge")"; b="${b%% *}"
+o="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/o "Search")"; o="${o%% *}"
+out="$(rec "$b" qa "$cb")" && out="$(rec "$o" qa "$cs")" || fail "qa PASS: $out"
+[[ "$(cj "$b" '[.areas, .needs]')" == '[["billing"],["qa","security","finance"]]' && "$(cj "$o" '[.areas, .needs]')" == '[[],["qa","security"]]' ]] || fail "areas from commits: $(cj "$b" '[.areas, .needs]') $(cj "$o" '[.areas, .needs]')"
+# A reviewer the area names passes only when its check passes; the output is kept as evidence.
+touch "$T/check-fails"; out="$(rec "$b" security "$cb")" && fail "a PASS went through a failing check"
+echo "$out" | grep -q 'the billing check failed (exit 3)' && echo "$out" | grep -q 'charge declined' && ! grep -q '^- Verdict: security' "$CW/HANDOFFS.md" && [[ ! -f "$CW/specs/evidence/$b/check-billing.txt" ]] || fail "a failing check: $out"
+rm "$T/check-fails"; out="$(rec "$b" security "$cb")" || fail "security PASS with a passing check: $out"
+grep -q "^area=billing handoff=$b commits=$cb args=--fast$" "$CW/specs/evidence/$b/check-billing.txt" && grep -qF "[check-billing.txt](specs/evidence/$b/check-billing.txt)" "$CW/HANDOFFS.md" \
+  && [[ -z "$(git -C "$CW" status --porcelain -- specs HANDOFFS.md)" ]] || fail "the check's output as evidence"
+rec "$b" finance "$cb" >/dev/null || fail "finance PASS"; [[ "$(cj "$b" .ready)" == true ]] || fail "work through a critical area is not ready: $(cj "$b" .)"
+rec "$o" security "$cs" >/dev/null && [[ "$(cj "$o" .ready)" == true ]] || fail "work outside the areas needed more"
+# A workspace file as an area, for work with no code; and a spec that names an area before any commit.
+echo "Pro: 12 dollars" >> "$CW/guides/pricing.md"; git -C "$CW" commit -qm price -- guides/pricing.md; cp="$(git -C "$CW" rev-parse --short HEAD)"
+q="$("$CW/bin/handoff.sh" add --from product-manager --to qa --changed x --needed y --evidence https://example.com/p "Prices")"; q="${q%% *}"
+out="$(rec "$q" qa "$cp")" || fail "qa PASS on a workspace area: $out"; [[ "$(cj "$q" '[.areas, .needs]')" == '[["pricing"],["qa","finance"]]' ]] || fail "a workspace area: $(cj "$q" '[.areas, .needs]')"
+printf -- '---\nfeature: pay\nstatus: draft\nrepos: [api]\nareas: [billing]\n---\n\n# Pay\n' > "$CW/specs/pay.md"; git -C "$CW" add -A && git -C "$CW" commit -qm spec
+s="$("$CW/bin/handoff.sh" add --from chief-of-staff --to qa --changed x --needed y "Pay")"; s="${s%% *}"
+perl -i -pe "print \"- Spec: specs/pay.md\n\" if \$on && /^- Depends on:/; \$on = 1 if /^### $s:/; \$on = 0 if /^- Spec:/" "$CW/HANDOFFS.md"
+[[ "$(cj "$s" .areas)" == '["billing"]' ]] || fail "areas from a spec, before any commit: $(cj "$s" .)"
+sed -i.bak 's/^areas: \[billing\]/areas: [billing, nope]/; s/^status: draft/status: ready/' "$CW/specs/pay.md" && rm "$CW/specs/pay.md.bak"
+"$CW/bin/spec.sh" check specs/pay.md | grep -q 'areas names nope, which is no critical area in AGENTS.md' || fail "spec check: an unknown area"
+# Only a command in tools/ runs, never through a shell.
+git -C "$CW" checkout -q -- HANDOFFS.md specs 2>/dev/null || true
+perl -i -pe 's/`tools\/check-billing.sh --fast`/`sh -c "touch pwned"`/' "$CW/AGENTS.md"
+dr | grep -q "billing: its check is not a command in tools/ that can run" || fail "doctor: a check outside tools/"
+w2="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/w "Refund")"; w2="${w2%% *}"
+rec "$w2" qa "$cb" >/dev/null || true; out="$(rec "$w2" security "$cb")" && fail "record ran a check outside tools/"
+echo "$out" | grep -q 'is not a command in tools/' && [[ ! -e "$CW/pwned" ]] || fail "a check outside tools/: $out"
+grep -q '^## Critical areas$' "$KIT/core/rules/reviews.md" && grep -q '^## Critical areas$' "$KIT/templates/workspace/AGENTS.md" || fail "the critical areas rules left reviews.md or the AGENTS.md template"
+"$F" -C "$CW" remove --yes --force >/dev/null
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

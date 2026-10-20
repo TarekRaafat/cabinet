@@ -275,13 +275,40 @@ readiness() {
   done < <(team_rows)
   local -a arch
   arch=(); for n in "$WS"/handoffs/archive-*.md; do [[ -f "$n" ]] && arch+=("$n"); done
-  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" python3 -I - "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"} <<'PY'
-import datetime, json, os, re, sys
+  # Critical areas, only when the project declares any: each named in the specs, and the areas the
+  # commits of open entries' verdicts change.
+  local areas="" touch="" sareas="" c a
+  areas="$(critical_areas)"
+  if [[ -n "$areas" ]]; then
+    for c in $(grep -hoE '^- Verdict: [a-z0-9-]+ [A-Z]+ [0-9-]+ [0-9a-f]+(,[0-9a-f]+)*' "$WS/HANDOFFS.md" 2>/dev/null | awk '{ print $NF }' | tr ',' '\n' | sort -u); do
+      while IFS= read -r a; do [[ -n "$a" ]] && touch+="$c"$'\t'"$a"$'\n'; done < <(areas_hit "$c")
+    done
+    for n in "$WS"/specs/*.md; do
+      [[ -f "$n" ]] || continue
+      a="$(awk '/^---$/ { f++; next } f == 1 && /^areas:/ { sub(/^areas: *\[?/, ""); sub(/\].*$/, ""); sub(/ *#.*$/, ""); print; exit }' "$n" | tr ',' ' ')"
+      for c in $a; do sareas+="specs/${n##*/}"$'\t'"$(lc "$c")"$'\n'; done
+    done
+  fi
+  WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" python3 -I - "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"} <<'PY'
+import datetime, json, os, re, subprocess, sys
+in_ws = {}
+def workspace_commit(c):  # the workspace's own files (a guide, a spec) are not code
+    if c not in in_ws:
+        in_ws[c] = subprocess.run(["git", "-C", os.environ["WSDIR"], "cat-file", "-e", c + "^{commit}"],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    return in_ws[c]
 cost = {}
 today = datetime.date.today().isoformat()
 # A role that reports to a lead and covers some work reviews it for the lead (its verdict counts),
 # with the lead's PASS needed too until its trial ends.
 dl = [l.split("\t") for l in os.environ.get("DELEGATES", "").split("\n") if l.count("\t") == 3]
+def rows(k):
+    return [l.split("\t") for l in os.environ.get(k, "").split("\n") if "\t" in l]
+area_reviewers = {r[0]: r[2].split() for r in rows("AREAS")}
+touch = rows("TOUCH")
+spec_areas = {}
+for s_, a_ in rows("SAREAS"):
+    spec_areas.setdefault(s_, set()).add(a_)
 try:
     for row in open(sys.argv[1], encoding="utf-8"):
         f = row.rstrip("\n").split("\t")
@@ -308,6 +335,7 @@ for n, path in enumerate(sys.argv[2:]):  # HANDOFFS.md, then the archives (close
         elif cur is not None:
             cur["lines"].append(l)
 out = {}
+spec_of = {e["id"]: next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), "") for e in entries}
 for e in entries:
     frm, to, vs, unread = "", "", [], []
     for l in e["lines"]:
@@ -324,7 +352,7 @@ for e in entries:
     for n in names(to):
         if n in team and n not in builds and n != "chief-of-staff" and n not in needs:
             needs.append(n)
-    if frm in builds or any(v["commits"] for v in vs):
+    if frm in builds or any(not workspace_commit(c) for v in vs for c in v["commits"]):
         for r in ["qa", "security", "code-reviewer"] + (["design-lead"] if frm in ui else []):
             if r in team and r not in needs:
                 needs.append(r)
@@ -332,6 +360,16 @@ for e in entries:
     for c in (c for v in vs for c in v["commits"]):
         if not covers(work, [c]):
             work.append(c)
+    # The critical areas it touches: by its commits, by its spec, or by the spec of the work it reviews.
+    dep_ids = re.findall(r"H-\d{8}-\d+", next((l for l in e["lines"] if l.startswith("- Depends on:")), ""))
+    areas = {a for c, a in touch if covers(work, [c])}
+    for sp in [spec_of.get(e["id"], "")] + [spec_of.get(d, "") for d in dep_ids]:
+        areas |= spec_areas.get(sp, set())
+    areas &= set(area_reviewers)
+    for a in sorted(areas):
+        for r in area_reviewers[a]:   # required even when off the team: the work waits, the doctor says why
+            if r not in needs:
+                needs.append(r)
     last = {v["role"]: v for v in vs}
     blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
     # Who does each review: the role that covers this sender's work for the lead, else the lead; the
@@ -354,7 +392,7 @@ for e in entries:
         (stale if passed else missing).append(w)
     dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
     st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
-    out[e["id"]] = {"archived": e["archived"], "depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
+    out[e["id"]] = {"areas": sorted(areas), "archived": e["archived"], "depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
                     "spec": next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), ""),
                     "cost_usd": round(cost[e["id"]], 6) if e["id"] in cost else None, "verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
                     "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}
@@ -379,10 +417,10 @@ guarded_paths() {
     c && NF >= 5 {print $4} h && /^- / {print}' "$WS/AGENTS.md" 2>/dev/null \
     | grep -o '`[A-Za-z0-9._-]*/[^`[:space:]]*`' | tr -d '`' | sed 's#/#\t#' || true
 }
-# small_problems <hash,...>: why commits are not a small task, or nothing: they must sit in one repo on
-# this machine (the workspace counts as "workspace") and touch no guarded path.
-small_problems() {
-  local c name url files link path d found in="" touched="" gr gp f t=$'\t'
+# commit_files <hash,...>: "<repo>\t<file>" for every file the commits change, each commit found in
+# the workspace ("workspace") or a repo on this machine; "?\t<hash>" for one found nowhere.
+commit_files() {
+  local c name url files link path d found t=$'\t'
   local -a dirs
   dirs=("workspace$t$WS")
   while IFS=$'\t' read -r name url files link path; do dirs+=("$name$t$(repo_dir "$path")"); done < <(repos 2>/dev/null)
@@ -391,12 +429,45 @@ small_problems() {
     for d in "${dirs[@]}"; do
       git -C "${d#*$t}" cat-file -e "$c^{commit}" 2>/dev/null || continue
       found="${d%%$t*}"
-      has "$in" "$found" || in="${in:+$in }$found"
-      touched+="$(git -C "${d#*$t}" diff-tree --root --no-commit-id --name-only -r "$c" | sed "s#^#$found$t#")"$'\n'
+      git -C "${d#*$t}" diff-tree --root --no-commit-id --name-only -r "$c" | sed "s#^#$found$t#"
       break
     done
-    [[ -n "$found" ]] || { echo "commit $c is in no repo on this machine"; return 0; }
+    [[ -n "$found" ]] || printf '?\t%s\n' "$c"
   done
+  return 0
+}
+# critical_areas: "<area>\t<paths>\t<reviewers>\t<evidence>\t<check>" for each row of "Critical areas"
+# in AGENTS.md: paths as <repo>/<path> and reviewers space separated, the check a command in tools/ or
+# empty (.cabinet/rules/reviews.md, "Critical areas").
+critical_areas() {
+  awk -F'|' '/^## / {on = ($0 == "## Critical areas"); next} on && NF >= 7 {
+      for (i = 2; i <= 6; i++) { gsub(/^ +| +$/, "", $i) }
+      a = tolower($2); if (a == "" || a == "area" || a ~ /^-+$/ || a ~ /^none/) next
+      p = ""; s = $3; while (match(s, /`[^`]+`/)) { p = p " " substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH) }
+      r = tolower($4); gsub(/[`,]/, " ", r); gsub(/ +/, " ", r); gsub(/^ | $/, "", r)
+      c = $6; gsub(/`/, "", c); if (tolower(c) ~ /^(none|-)?$/) c = ""
+      print a "\t" substr(p, 2) "\t" r "\t" $5 "\t" c
+    }' "$WS/AGENTS.md" 2>/dev/null
+}
+# areas_hit <hash,...>: the critical areas the commits change, one per line.
+areas_hit() {
+  local a p r e c x f files
+  files="$(commit_files "$1" | awk -F'\t' '$1 != "?" { print $1 "/" $2 }')"
+  while IFS=$'\t' read -r a p r e c; do
+    for x in $p; do
+      while IFS= read -r f; do [[ -n "$f" && ( "$f" == "${x%/}" || "$f" == "${x%/}/"* ) ]] && { echo "$a"; continue 3; }; done <<<"$files"
+    done
+  done < <(critical_areas)
+  return 0   # the loop's last test is no failure (pipefail would make it one)
+}
+# small_problems <hash,...>: why commits are not a small task, or nothing: they must sit in one repo on
+# this machine (the workspace counts as "workspace") and touch no guarded path.
+small_problems() {
+  local in="" touched gr gp f name
+  touched="$(commit_files "$1")"
+  name="$(awk -F'\t' '$1 == "?" { print $2; exit }' <<<"$touched")"
+  [[ -z "$name" ]] || { echo "commit $name is in no repo on this machine"; return 0; }
+  in="$(cut -f1 <<<"$touched" | sort -u | paste -sd ' ' -)"
   [[ "$in" != *" "* ]] || { echo "its commits span more than one repo ($in)"; return 0; }
   while IFS=$'\t' read -r gr gp; do
     [[ -n "$gr" && "$gr" == "$in" ]] || continue
