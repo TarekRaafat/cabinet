@@ -229,7 +229,7 @@ vcheck="$(cd "$WS" && awk '
   id == "" { next }
   /^- Evidence:.*(\]\(|<https?:)/ { ev = 1 }
   /^- Verdict:/ {
-    if ($0 !~ /^- Verdict: [a-z0-9-]+ (PASS|BLOCK|CHANGES) [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9a-f]+(,[0-9a-f]+)* specs\/[A-Za-z0-9._\/-]+\.md$/ \
+    if ($0 !~ /^- Verdict: [a-z0-9-]+ (PASS|BLOCK|CHANGES) [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] ([0-9a-f]+(,[0-9a-f]+)*|none) specs\/[A-Za-z0-9._\/-]+\.md$/ \
         || (system("test -f \"" $NF "\"") != 0)) bad = bad " " id
     else if ($3 == "qa" && $4 == "PASS") pass = 1
   }

@@ -352,6 +352,13 @@ rc=0; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits xyz --note specs/
 "$W/bin/handoff.sh" record H-20200101-01 --role qa PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null 2>&1 && fail "record wrote on an entry that does not exist"
 echo n > "$W/README-note.md"; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note README-note.md >/dev/null 2>&1 && fail "record took a note outside specs/"
 rm "$W/README-note.md"; [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused record or attach changed a file"
+# Work that changes no repo: a verdict with no commits, never for work addressed to a builder.
+w="$("$W/bin/handoff.sh" add --from product-manager --to qa --changed "Landing copy drafted" --needed "Check it" --evidence https://example.com/copy "Copy")"; w="${w%% *}"
+out="$("$W/bin/handoff.sh" record "$w" --role qa PASS --commits none --note specs/qa/r.md)" || fail "a verdict on work with no commits: $out"
+grep -qxF -- "- Verdict: qa PASS $(date +%F) none specs/qa/r.md" "$W/HANDOFFS.md" && "$W/bin/doctor.sh" 2>&1 | grep -q 'every verdict is in the verdict format' || fail "a verdict with no commits is not in the format"
+b="$("$W/bin/handoff.sh" add --from qa --to web --changed x --needed y --small "Button")"; b="${b%% *}"
+out="$("$W/bin/handoff.sh" record "$b" --role code-reviewer PASS --commits none --note specs/qa/r.md 2>&1)" && fail "a builder's work passed with no commits"
+echo "$out" | grep -q "is work for web, which builds: name its commits" || fail "no commits for a builder: $out"
 git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -1468,7 +1475,7 @@ put() { perl -0pi -e "$1" "$sp"; git -C "$W" commit -qm "spec" -- specs/login.md
 sed 's/^status: draft.*/status: draft/' "$W/specs/_template.md" > "$sp"; git -C "$W" add specs/login.md; git -C "$W" commit -qm "spec: login"
 "$F" -C "$W" spec check >/dev/null || fail "a draft spec failed the check"
 put 's/(?m)^status: draft/status: ready/'
-c="$(spc)"; [[ "$c" == "no acceptance criteria; no repos named; no qa review of the acceptance criteria" ]] || fail "an empty ready spec: $c"
+c="$(spc)"; [[ "$c" == "no acceptance criteria; no repos or areas named; no qa review of the acceptance criteria" ]] || fail "an empty ready spec: $c"
 put 's/(?m)^repos: \[\]/repos: [api]/; s/(## Acceptance criteria\n\n)/$1- GET \/login returns 200 with a session for a valid password\n/; s/(## Rules\n\n)/$1Sessions last TBD days.\n/; s/(\|---\|---\|---\|---\|---\|\n)/$1| 1 | Session length? | A. 7 days. B. 30 days. | A | A (20 Oct 2026) |\n| 2 | Remember me? | A. yes. B. no. | B | |\n/'
 c="$(spc)"; [[ "$c" == "TBD left in Rules; 1 decision(s) not answered; no qa review of the acceptance criteria" ]] || fail "a ready spec with open questions: $c"
 rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed y --spec specs/login.md "Login" >/dev/null 2>&1 || rc=$?
@@ -1501,7 +1508,19 @@ put 's/(### api\n\n.*\n)/$1\n### app\n\n- the login screen, after api\n/'
 "$F" -C "$W" spec check | grep -q '^specs/login.md (building): ok$' || fail "spec check text"
 grep -q '^## Ready to build' "$KIT/core/CABINET.md" && grep -q 'route nothing from the owner.s words' "$KIT/roles/chief-of-staff.md" && grep -q '^## Reviewing a spec' "$KIT/roles/qa.md" \
   && grep -q 'Review the plan of every spec built in more than one repo' "$KIT/roles/architect.md" && grep -q 'your plan in a spec routed to you' "$KIT/roles/web.md" || fail "a ready-to-build rule left CABINET.md or a role"
-git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr"
+# What people see is designed first: a spec built in a repo the web builder owns needs design-lead's design.
+printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"; X='| `app` | The web app | web |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$W/AGENTS.md"
+git -C "$W" commit -qam "app, built by web"
+c="$(spc)"; [[ "$c" == "no design for what people see; no design-lead review of the design" ]] || fail "a UI spec without a design: $c"
+put 's/(## Design\n\n.*\n)/$1\n- Login: email and password, then the dashboard; states: empty, wrong password, locked.\n/'
+mkdir -p "$W/specs/design" && echo "flows ok" > "$W/specs/design/login.md" && git -C "$W" add specs/design && git -C "$W" commit -qm "design note"
+"$W/bin/spec.sh" record specs/login.md --role design-lead PASS --note specs/design/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "a designed UI spec: $(spc)"
+put 's/(states: empty, wrong password, locked\.)/$1 Remember me, off by default./'
+c="$(spc)"; [[ "$c" == "the design changed since design-lead passed it" ]] || fail "a changed design kept its review: $c"
+grep -q '^## Designing a feature' "$KIT/roles/design-lead.md" && grep -q '^## Design$' "$KIT/templates/workspace/specs/_template.md" \
+  && grep -q 'notes/seats.md' "$KIT/core/CABINET.md" && grep -q 'Look at the project as well as the backlog' "$KIT/roles/chief-of-staff.md" \
+  && grep -q 'ships none for each specialty' "$KIT/core/CABINET.md" && grep -q '^- \*\*Work that changes no repo\*\*' "$KIT/core/CABINET.md" || fail "an adaptive-team rule left CABINET.md, the template or a role"
+git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr" "$W/specs/design"
   return 0   # a last "check && fail" line must not end the run
 }
 

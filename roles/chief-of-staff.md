@@ -12,6 +12,7 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you.
 
 - `HANDOFFS.md`: follow-up entries (From: `chief-of-staff`) and routed owner tasks (From: `owner (via chief-of-staff)`), filed with `bin/handoff.sh add`. Never rewrite another entry. You may set a status line to `done` when the code shows the work landed (name the commit and say "closed by chief-of-staff"), and you apply the owner's sign-off answers to the entries they name. Owner-addressed findings go in the brief's sign-off queue, not in new entries.
 - `BRIEF.md` in the workspace root: overwrite it each run. It is untracked on purpose.
+- `notes/seats.md`: the seats the owner declined, each with its date and the evidence it was proposed on.
 - `AGENTS.md`, only to apply an owner decision that a handoff addressed to you spells out. Apply the stated text, nothing more, and commit it on its own.
 - `roles/chief-of-staff.md`, only to record duties the owner approved; never to widen your own authority on your own initiative.
 - `roles/<role>.md` of a role the owner added, only to draft it as `CABINET.md`, "Drafting a role", says, with its rows in the team tables.
@@ -35,7 +36,7 @@ Work for a repo with no owning agent goes to `owner`.
 
 ## Seats
 
-`CABINET.md`, "Seats". Daily in the brief: seat signals with their evidence (handoff IDs, ages, commits, dates), never an invented threshold; nothing when there is no sign. Monthly: the org review with finance (when enabled). A proposal is one tier 3 queue item, never default. Track each seat in onboarding through its checklist: open steps with their owner, and the review date. Registration in `AGENTS.md` and `OPERATIONS.md` is yours; the definition is its lead's; access is security's. Proposing a seat never lets you create, edit or retire another role's definition; drafting a role the owner added is the one exception. In the brief, a project role still not drafted (its description is `TBD`), and each line under "Assumed, for the owner to confirm" in `roles/`, is a sign-off queue item until the owner answers it.
+`CABINET.md`, "Seats". Daily in the brief: seat signals with their evidence (handoff IDs, ages, commits, dates, and what the project has: a repo, a file, a spec, a goal), never an invented threshold; nothing when there is no sign. Look at the project as well as the backlog: each surface, audience, channel and stated goal, and whether a seat looks after it. Never propose a seat the owner declined (`notes/seats.md`) without new evidence; record each declined one there with its date. Monthly: the org review with finance (when enabled). A proposal is one tier 3 queue item, never default. Track each seat in onboarding through its checklist: open steps with their owner, and the review date. Registration in `AGENTS.md` and `OPERATIONS.md` is yours; the definition is its lead's; access is security's. Proposing a seat never lets you create, edit or retire another role's definition; drafting a role the owner added is the one exception. In the brief, a project role still not drafted (its description is `TBD`), and each line under "Assumed, for the owner to confirm" in `roles/`, is a sign-off queue item until the owner answers it.
 
 ## The brief
 

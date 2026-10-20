@@ -15,11 +15,12 @@
 #   bin/handoff.sh attach <ID> <file or URL>... --from <name>
 #       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
 #       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.
-#   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
+#   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 #       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
 #       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
 #       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
-#       span repos or change a path AGENTS.md guards (small_problems in lib.sh).
+#       span repos or change a path AGENTS.md guards (small_problems in lib.sh). --commits none is for
+#       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
 #   bin/handoff.sh list [name] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
 #       A repo or role name (api, qa, owner, ...): every entry addressed to it that is not done or
@@ -83,7 +84,7 @@ save() {
   echo "$did and committed"
 }
 # entry <ID> info|evidence <links>|verdict <role> <line>: read or change one open entry in place.
-# info prints "<sender>\t<1 when it has evidence>\t<small when it is a small task>". Exit 3 when the entry is not under "## Open".
+# info prints "<sender>\t<1 when it has evidence>\t<small when it is a small task>\t<addressee>". Exit 3 when the entry is not under "## Open".
 entry() {
   python3 -I - "$WS/HANDOFFS.md" "$@" <<'PY'
 import re, sys
@@ -111,7 +112,8 @@ has_ev = lambda l: l.startswith("- Evidence:") and re.search(r"\]\(|<https?:", l
 if mode == "info":
     sender = next((m.group(1).strip() for m in (re.match(r"- From: (.*?) ->", l) for l in body) if m), "")
     small = "small" if any(re.match(r"- Size: small\s*$", l) for l in body) else ""
-    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else "") + "\t" + small)
+    to = next((m.group(1).strip() for m in (re.match(r"- From: .*? -> To: (.*)", l) for l in body) if m), "")
+    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else "") + "\t" + small + "\t" + to)
     sys.exit(0)
 if mode == "evidence":
     links = args[0]
@@ -240,7 +242,7 @@ save "$id: evidence attached" "handoffs: $id evidence" "${paths[@]}"
 }
 
 h_record() {
-usage="usage: bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>"
+usage="usage: bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>"
 local id="" role="" verdict="" commits="" note="" rel
 while (($#)); do
   case "$1" in
@@ -257,18 +259,25 @@ commits="$(lc "$commits" | tr -s ' ,' ',,' | sed 's/^,//; s/,$//')"
 [[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ ]] || { echo "an entry ID first (H-YYYYMMDD-NN). $usage" >&2; exit 2; }
 [[ "$role" =~ ^[a-z0-9-]+$ ]] || { echo "--role needs a role name. $usage" >&2; exit 2; }
 [[ "$verdict" =~ ^(PASS|BLOCK|CHANGES)$ ]] || { echo "the verdict is PASS, BLOCK or CHANGES. $usage" >&2; exit 2; }
-[[ "$commits" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40})*$ ]] || { echo "--commits needs commit hashes (7 to 40 hex digits, joined by commas). $usage" >&2; exit 2; }
+[[ "$commits" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40})*$ || "$commits" == none ]] || { echo "--commits needs commit hashes (7 to 40 hex digits, joined by commas), or none for work that changes no repo. $usage" >&2; exit 2; }
 [[ -n "$note" ]] || { echo "--note needs the file that holds the details. $usage" >&2; exit 2; }
 rel="$(ws_md --note "$note")" || exit 1
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # Split by hand: read would merge the two tabs around an empty field.
-sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" size="${rest#*$'\t'}"
+sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; size="${rest%%$'\t'*}" to="${rest#*$'\t'}"
+# Work for a repo or a builder has commits: none is only for work that changes no repo.
+if [[ "$commits" == none ]]; then
+  while IFS= read -r n; do
+    n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
+    [[ -n "$n" ]] && builds_repos "$n" && { echo "$id is work for $n, which builds: name its commits (--commits <hash,...>)" >&2; exit 1; }
+  done < <(printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n')
+fi
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }
 if [[ "$role" == qa && "$verdict" == PASS && -z "$hasev" ]]; then
   echo "$id has no evidence, so qa cannot pass it: record BLOCK naming what is missing; its sender adds it with bin/handoff.sh attach $id <file or URL> --from $sender" >&2; exit 1
 fi
-if [[ "$size" == small && "$verdict" == PASS ]]; then
+if [[ "$size" == small && "$verdict" == PASS && "$commits" != none ]]; then
   why="$(small_problems "$commits")"
   [[ -z "$why" ]] || { echo "$id is marked small, but $why: it needs a spec. Record BLOCK; chief-of-staff routes it again from a spec (CABINET.md, \"Ready to build\")" >&2; exit 1; }
 fi

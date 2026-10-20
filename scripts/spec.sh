@@ -3,14 +3,15 @@
 #
 #   bin/spec.sh check [spec] [--json]
 #       Every spec (or one) against what its status needs. ready: acceptance criteria, no TBD in
-#       Rules, every decision answered, its repos named, and a qa PASS on the acceptance criteria as
-#       they are now. building: also a plan for each repo ("### <repo>" under "## Plan"), and, for
+#       Rules, every decision answered, its repos (or workspace areas) named, and a qa PASS on the
+#       acceptance criteria as they are now; for one built in a repo a web or mobile builder owns, with
+#       design-lead on the team, also a "## Design" section with a design-lead PASS on it as it is now. building: also a plan for each repo ("### <repo>" under "## Plan"), and, for
 #       more than one repo, an architect PASS on the plan as it is now. draft, shipped and dropped
 #       need nothing. Prints each spec with its problems; exit 1 when any has one.
 #       --json: [{spec, status, problems}].
-#   bin/spec.sh record <spec> --role qa|architect <PASS|BLOCK> --note <file>
+#   bin/spec.sh record <spec> --role qa|architect|design-lead <PASS|BLOCK> --note <file>
 #       A review of a spec: qa of its acceptance criteria (can each be tested?), architect of its
-#       plan. Writes, or replaces, the role's "- Verdict:" line under "## Reviews" with today's date
+#       plan, design-lead of its design. Writes, or replaces, the role's "- Verdict:" line under "## Reviews" with today's date
 #       and a fingerprint of the part reviewed, so a later change to it needs a new review, and
 #       commits the spec. The spec and the note must be committed.
 set -euo pipefail
@@ -21,7 +22,8 @@ spec_py() {
   python3 -I - "$WS" "$@" <<'PY'
 import hashlib, json, os, re, sys
 ws, mode, args = sys.argv[1], sys.argv[2], sys.argv[3:]
-PART = {"qa": "Acceptance criteria", "architect": "Plan"}
+PART = {"qa": "Acceptance criteria", "architect": "Plan", "design-lead": "Design"}
+UI = set(os.environ.get("UI_REPOS", "").split())   # repos a web or mobile builder owns, with design-lead on
 # Guidance copied from the template is not content: "Anything not decided is TBD ..." is no TBD.
 try:
     PLACEHOLDERS = {l.strip() for l in open(os.path.join(ws, "specs", "_template.md"), encoding="utf-8")
@@ -92,7 +94,7 @@ def problems(text):
         p.append("%d decision(s) not answered" % len(left))
     rs = repos(fm)
     if not rs:
-        p.append("no repos named")
+        p.append("no repos or areas named")
     v = verdicts(secs.get("Reviews", []))
     def review(role):
         part = PART[role]
@@ -103,6 +105,10 @@ def problems(text):
         if v[role][1] != fingerprint(secs.get(part, [])):
             return "the %s changed since %s passed it" % (part.lower(), role)
     p.append(review("qa"))
+    if UI & set(rs):
+        if not content(secs.get("Design", [])):
+            p.append("no design for what people see")
+        p.append(review("design-lead"))
     if status == "building":
         parts = plan(secs.get("Plan", []))
         missing = [r for r in rs if not parts.get(r)]
@@ -160,8 +166,12 @@ else
     files+=("specs/${f##*/}")
   done
 fi
-local out='[]'
-((${#files[@]})) && out="$(spec_py check "${files[@]}")"
+local out='[]' n o ui=""
+# What people see is designed first, when design-lead is on the team (CABINET.md, "Ready to build").
+if has "$(team_roles)" design-lead; then
+  for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
+fi
+((${#files[@]})) && out="$(UI_REPOS="$ui" spec_py check "${files[@]}")"
 if ((json)); then jq . <<<"$out"
 else
   jq -r '.[] | "\(.spec) (\(.status | if . == "" then "no status" else . end)): \(if (.problems | length) == 0 then "ok" else (.problems | join("; ")) end)"' <<<"$out"
@@ -172,7 +182,7 @@ fi
 }
 
 s_record() {
-usage="usage: bin/spec.sh record <spec> --role qa|architect <PASS|BLOCK> --note <file>"
+usage="usage: bin/spec.sh record <spec> --role qa|architect|design-lead <PASS|BLOCK> --note <file>"
 local spec="" role="" verdict="" note="" rel
 while (($#)); do
   case "$1" in
@@ -185,7 +195,7 @@ while (($#)); do
   esac
 done
 [[ -n "$spec" ]] || { echo "the spec first. $usage" >&2; exit 2; }
-[[ "$role" =~ ^(qa|architect)$ ]] || { echo "--role is qa (the acceptance criteria) or architect (the plan). $usage" >&2; exit 2; }
+[[ "$role" =~ ^(qa|architect|design-lead)$ ]] || { echo "--role is qa (the acceptance criteria), architect (the plan) or design-lead (the design). $usage" >&2; exit 2; }
 [[ "$verdict" =~ ^(PASS|BLOCK)$ ]] || { echo "the verdict is PASS or BLOCK. $usage" >&2; exit 2; }
 [[ -n "$note" ]] || { echo "--note needs the file that holds the details. $usage" >&2; exit 2; }
 spec="$(ws_md "the spec" "$spec")" || exit 1

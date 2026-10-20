@@ -26,7 +26,7 @@ You write nothing else: no product repo, no `HANDOFFS.md` entry other than the o
 
 ## Handing a spec over
 
-Before a spec can be `ready` (`CABINET.md`, "Ready to build"), qa reviews its acceptance criteria: file a handoff to qa naming the spec, and fix what a BLOCK names. Once every decision is answered, nothing in "Rules" is `TBD` and qa has passed the criteria as they are, set its status to `ready`, run `bin/spec.sh check specs/<feature>.md` (set it back to `draft` if it reports a problem), and file one `HANDOFFS.md` entry to `chief-of-staff` (From: `product-manager`) naming the spec and what changed since the last hand-over. chief-of-staff routes it; you file no entries to product agents yourself.
+Before a spec can be `ready` (`CABINET.md`, "Ready to build"), qa reviews its acceptance criteria: file a handoff to qa naming the spec, and fix what a BLOCK names. For one built in a repo a web or mobile builder owns, design-lead writes and passes its "Design" section first: file a handoff to design-lead when the problem and rules are clear. Once every decision is answered, nothing in "Rules" is `TBD` and qa has passed the criteria as they are, set its status to `ready`, run `bin/spec.sh check specs/<feature>.md` (set it back to `draft` if it reports a problem), and file one `HANDOFFS.md` entry to `chief-of-staff` (From: `product-manager`) naming the spec and what changed since the last hand-over. chief-of-staff routes it; you file no entries to product agents yourself.
 
 Commit your own files, one commit per hand-over or spec update, `specs: ...`, staged by pathspec.
 

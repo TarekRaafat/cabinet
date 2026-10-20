@@ -88,9 +88,9 @@ C	Team	role draft	<name>	Have an agent draft a role you added, for this project 
 C	Team	role build		Build the role definitions from the kit's roles and roles/.
 C	Team	handoff add	--from <name> --to <name> --changed "..." --needed "..." "title"	File a handoff with the next free ID and today's date, and commit it.
 C	Team	handoff attach	<ID> <file or URL>... --from <name>	Add evidence to your own handoff: files copied to specs/evidence/<ID>/, linked, committed.
-C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
+C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
 C	Team	spec check	[spec]	Check each spec against its status: ready needs criteria qa passed, no TBD, every decision answered.
-C	Team	spec record	<spec> --role <qa|architect> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, or architect's of its plan, and commit it.
+C	Team	spec record	<spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, design-lead's of its design, or architect's of its plan, and commit it.
 C	Team	handoff list	[name]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full.
 C	Team	handoff archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
 C	Work	repo add	<git url>	Add a product repo; bootstrap clones it and gives it a builder.
@@ -157,9 +157,9 @@ O	handoff add	--small		A small task: one repo, no contract change, no owner deci
 O	handoff add	--evidence	<file or URL>	What shows the work: a file (copied into specs/evidence/<ID>/) or a link. Once for each.
 O	handoff attach	--from	<repo or role>	Who adds it: the handoff's sender, and no one else.
 O	handoff record	--role	<role>	The reviewer recording it (qa, security, code-reviewer, ...).
-O	handoff record	--commits	<hash,...>	The commits reviewed, joined by commas.
+O	handoff record	--commits	<hash,...>|none	The commits reviewed, joined by commas; none for work that changes no repo (not for work addressed to a builder).
 O	handoff record	--note	<file>	The reviewer's committed note under specs/, with the details.
-O	spec record	--role	<qa|architect>	qa reviews the acceptance criteria; architect reviews the plan.
+O	spec record	--role	<qa|architect|design-lead>	qa reviews the acceptance criteria; design-lead the design; architect the plan.
 O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.

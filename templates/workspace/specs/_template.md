@@ -2,7 +2,7 @@
 feature: short name
 status: draft # draft | ready | building | shipped | dropped (CABINET.md, "Ready to build"; check: bin/spec.sh check)
 owner_decisions_open: 0
-repos: [] # repos that build it, e.g. [api, app]
+repos: [] # repos (or workspace areas, for work with no code) that build it, e.g. [api, app]
 handoffs: [] # entry IDs that route or track it
 updated: YYYY-MM-DD
 ---
@@ -20,6 +20,10 @@ Code, endpoints and screens that already cover part of it, with paths.
 ## Rules
 
 What the feature does, as the owner decided it. Anything not decided is TBD and listed under Decisions.
+
+## Design
+
+For anything people see, written by design-lead before the spec is ready: the flows, each screen and its states (empty, loading, error, long text), and how it follows the brand guide.
 
 ## Product fit
 
@@ -44,4 +48,4 @@ How it will be built, written by each owning builder before its first change: on
 
 ## Reviews
 
-Written only by `bin/spec.sh record`: qa on the acceptance criteria, architect on the plan.
+Written only by `bin/spec.sh record`: qa on the acceptance criteria, design-lead on the design, architect on the plan.

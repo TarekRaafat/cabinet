@@ -180,7 +180,7 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 ```sh
 cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--evidence <file or URL>]... "<title>"
 cabinet handoff attach <ID> <file or URL>... --from <name>
-cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
+cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 cabinet handoff list [name] [--json]
 cabinet handoff archive
 ```
@@ -193,7 +193,7 @@ cabinet handoff archive
 
 **`attach`** adds evidence to an open handoff after it was filed (after a BLOCK, a fix, a missed screen), the same way `--evidence` does: files copied to `specs/evidence/<ID>/`, every link added to the entry's `Evidence:` line, committed. Only the entry's sender may: `--from` must match its `From:`.
 
-**`record`** writes a reviewer's verdict on an open handoff as one line, `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>`, with today's date, replacing that role's earlier verdict, and commits it (`handoffs: <ID> <role> <verdict>`). The verdict may be in any case; commits may be joined by commas or spaces. It refuses when the note is not a committed `.md` file under `specs/` (read from the folder you run it in, else from the workspace), when the role is the entry's sender (the builder never verifies its own work), and a qa PASS on an entry with no evidence: qa records BLOCK instead, and the sender runs `attach`. On a small task, it refuses a PASS whose commits are in more than one repo (or in none on this machine), or change a path `AGENTS.md` guards: a contract's files, written as `` `<repo>/<path>` `` under "Source of truth" in the contracts table, or a path under "Hard to undo". The work goes back to be routed from a spec.
+**`record`** writes a reviewer's verdict on an open handoff as one line, `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>`, with today's date, replacing that role's earlier verdict, and commits it (`handoffs: <ID> <role> <verdict>`). The verdict may be in any case; commits may be joined by commas or spaces. `--commits none` is for work that changes no repo (copy, research, a campaign), and is refused when the handoff is addressed to a repo or a role that builds one. It refuses when the note is not a committed `.md` file under `specs/` (read from the folder you run it in, else from the workspace), when the role is the entry's sender (the builder never verifies its own work), and a qa PASS on an entry with no evidence: qa records BLOCK instead, and the sender runs `attach`. On a small task, it refuses a PASS whose commits are in more than one repo (or in none on this machine), or change a path `AGENTS.md` guards: a contract's files, written as `` `<repo>/<path>` `` under "Source of truth" in the contracts table, or a path under "Hard to undo". The work goes back to be routed from a spec.
 
 **`list`**, without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full; this is the start-of-session read.
 
@@ -207,14 +207,14 @@ Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `recor
 
 ```sh
 cabinet spec check [spec] [--json]
-cabinet spec record <spec> --role <qa|architect> <PASS|BLOCK> --note <file>
+cabinet spec record <spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>
 ```
 
-**`check`** holds every spec in `specs/` (or the one named) to what its status needs ([concepts](concepts.md#ready-to-build)). `draft`, `shipped` and `dropped` need nothing. `ready` needs acceptance criteria, no `TBD` in "Rules", every row of the Decisions table answered, at least one repo in `repos`, and a qa PASS on the acceptance criteria as they are now. `building` also needs a plan for each repo (a `### <repo>` part under "## Plan" with something in it) and, for more than one repo, an architect PASS on the plan as it is now. It prints each spec, its status and its problems (or `ok`). `--json`: `[{spec, status, problems}]`. The doctor runs it (`specs.ready`).
+**`check`** holds every spec in `specs/` (or the one named) to what its status needs ([concepts](concepts.md#ready-to-build)). `draft`, `shipped` and `dropped` need nothing. `ready` needs acceptance criteria, no `TBD` in "Rules", every row of the Decisions table answered, at least one repo in `repos` (or a workspace area, for work with no code), and a qa PASS on the acceptance criteria as they are now. A spec built in a repo whose owner in the team table is the web or mobile builder also needs, while design-lead is on the team, a "Design" section and a design-lead PASS on it as it is now. `building` also needs a plan for each repo (a `### <repo>` part under "## Plan" with something in it) and, for more than one repo, an architect PASS on the plan as it is now. It prints each spec, its status and its problems (or `ok`). `--json`: `[{spec, status, problems}]`. The doctor runs it (`specs.ready`).
 
-**`record`** records a review of a spec under its "## Reviews" heading: qa's of the acceptance criteria (can each be tested as written?), or architect's of the plan. It writes `- Verdict: <role> <PASS|BLOCK> <YYYY-MM-DD> <fingerprint> <note>`, replacing that role's earlier review, and commits the spec (`specs: <feature>.md <role> <verdict>`). The fingerprint is of the part reviewed, so a later change to it shows as unreviewed in `check`. The spec and the note must be committed, the note a `.md` file under `specs/`; both are read from the folder you run it in, else from the workspace.
+**`record`** records a review of a spec under its "## Reviews" heading: qa's of the acceptance criteria (can each be tested as written?), design-lead's of the design, or architect's of the plan. It writes `- Verdict: <role> <PASS|BLOCK> <YYYY-MM-DD> <fingerprint> <note>`, replacing that role's earlier review, and commits the spec (`specs: <feature>.md <role> <verdict>`). The fingerprint is of the part reviewed, so a later change to it shows as unreviewed in `check`. The spec and the note must be committed, the note a `.md` file under `specs/`; both are read from the folder you run it in, else from the workspace.
 
-Exit 0; 1 when `check` finds a spec not ready for its status, or `record` refuses (a file not committed, not a spec, or the spec given as its own note); 2 for a missing value, an unknown option, a role other than qa or architect, or a verdict other than PASS or BLOCK.
+Exit 0; 1 when `check` finds a spec not ready for its status, or `record` refuses (a file not committed, not a spec, or the spec given as its own note); 2 for a missing value, an unknown option, a role other than qa, architect or design-lead, or a verdict other than PASS or BLOCK.
 
 ## cabinet repo
 

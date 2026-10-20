@@ -46,11 +46,11 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`, and so 
 Nothing is built before it is defined. A small task (one repo, no contract change, no decision for you, easy to undo) goes straight to a handoff that says what done looks like, marked small (`cabinet handoff add --small`). The claim is checked against what was built: a PASS is refused when the commits span repos or change a file a contract lives in or a path listed as hard to undo in `AGENTS.md`, and the doctor flags one already passed (`handoffs.small`). Whether a decision should have been yours, no script can tell: qa blocks that. `cabinet config --hard-to-undo` sets the list, checking each path against the repos and suggesting what looks hard to undo in them. Anything bigger is built from a spec in `specs/`, which the product-manager writes, and a spec moves through statuses that `cabinet spec check` holds to what each needs:
 
 - **draft** while it is written and its decisions wait on you.
-- **ready** once it has testable acceptance criteria, nothing `TBD` in its rules, every decision answered, and the repos that build it, and qa has passed the criteria as testable (`cabinet spec record`). Only a ready spec is routed to builders (`cabinet handoff add --spec`).
+- **ready** once it has testable acceptance criteria, nothing `TBD` in its rules, every decision answered, and the repos that build it, and qa has passed the criteria as testable (`cabinet spec record`). For anything people see, the design lead first designs it in the spec (the flows, screens and states) and passes that design. Only a ready spec is routed to builders (`cabinet handoff add --spec`).
 - **building** once each builder has written its part of the plan (files, tests, order, risks) and, for work in more than one repo, the architect has passed the plan.
 - **shipped** or **dropped** at the end.
 
-A review counts only for what it reviewed: a change to the criteria or the plan after a PASS needs a new one. A builder given work that is not ready sends it back instead of guessing. The doctor flags a spec marked ready or building that lacks what its status needs (`specs.ready`).
+Work that changes no repo (copy, research, a campaign) goes the same way with the checks that fit it: what done looks like, evidence of the result, and a verdict with no commits; the checks built on commits apply only to work that has them. A review counts only for what it reviewed: a change to the criteria or the plan after a PASS needs a new one. A builder given work that is not ready sends it back instead of guessing. The doctor flags a spec marked ready or building that lacks what its status needs (`specs.ready`).
 
 ## Handoffs
 
@@ -112,7 +112,7 @@ Work is ready for you to push only when qa and security have each recorded PASS 
 
 ## Seats
 
-A seat is a role filled by an agent or a person. The chief-of-staff flags signs that a seat is needed (recurring work no seat owns, a function falling behind) with evidence only, and every new seat is your decision, with its cost and the alternatives. Each new seat goes through an onboarding checklist and a review after a month.
+A seat is a role filled by an agent or a person. The kit ships a small core of roles and none for each specialty: the team grows with the project. The chief-of-staff flags signs that a seat is needed, from the work (recurring work no seat owns, a function falling behind) and from the project itself (a website no one looks after for search, users with no one answering them, a goal you stated with no seat working on it), with evidence only, and every new seat is your decision, with its cost and the alternatives. A seat you decline is recorded in `notes/seats.md` and proposed again only with new evidence. A new seat is drafted for this project (`cabinet role add`). Each new seat goes through an onboarding checklist and a review after a month.
 
 ## Slugs and isolation
 
