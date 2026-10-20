@@ -71,13 +71,26 @@ done < "$K/manifest"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
 # A role the owner added (cabinet role add) works only once an agent has drafted it. A whole role
-# of the project's own with a kit role's name is used instead of the kit's: say so.
+# of the project's own with a kit role's name is used instead of the kit's: say so. A drafted one
+# follows the workflow its job touches (CABINET.md, "Drafting a role"): text checks for the gaps a
+# role written before the workflow has, not a judgment of the role.
+behind=""
 for f in "$WS"/roles/*.md; do
   [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' || continue
   r="$(basename "$f" .md)"
-  grep -q '^description: TBD' "$f" && note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"
+  grep -q '^description: TBD' "$f" && { note roles.drafted "the $r role is not drafted yet (cabinet role draft $r, or ask your agent to draft the $r role)"; continue; }
   [[ -f "$K/roles/$r.md" ]] && note roles.shadows "roles/$r.md is a whole role and the kit also has a $r role: yours is used, not the kit's (rename yours, or remove its frontmatter to add notes to the kit's role)"
+  why=""
+  grep -q 'CABINET\.md' "$f" || why+=", never sends it to CABINET.md"
+  grep -qwE 'PASS|BLOCK|CHANGES' "$f" && ! grep -q 'handoff.sh record' "$f" && why+=", gives verdicts without bin/handoff.sh record"
+  if builds_repos "$r"; then
+    grep -qi 'plan' "$f" || why+=", owns a repo but writes no plan"
+    grep -qi 'evidence' "$f" || why+=", owns a repo but attaches no evidence"
+  fi
+  [[ -z "$why" ]] || behind="${behind:+$behind; }$r (${why#, })"
 done
+[[ -z "$behind" ]] && ok roles.workflow "every drafted project role follows the workflow its job touches" \
+  || note roles.workflow "project roles behind the workflow: $behind (redraft each: cabinet role draft <role>, which keeps what you confirmed)"
 out="$("$WS/bin/role.sh" build --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/role.sh build)"
 
 section "Push guardrails"

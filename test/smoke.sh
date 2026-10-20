@@ -1115,6 +1115,20 @@ printf '%s\n' "CABINET_RUNNER_CMD='perl -i -pe \"s/^description: TBD.*/descripti
 (cd "$RW" && "$F" role draft brand-strategist) | grep -q 'Drafted roles/brand-strategist.md' || fail "a finished draft was not reported"
 grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist role is not drafted' || fail "the drafted role was not rebuilt, or still noted"
 (cd "$RW" && "$F" role draft qa) >/dev/null 2>&1 && fail "role draft took a kit role"
+# A drafted role follows the workflow its job touches: the doctor notes what one written before it misses.
+bs="$RW/roles/brand-strategist.md"; cp "$bs" "$T/bs.keep"; cp "$RW/AGENTS.md" "$T/bs-agents.keep"; cp "$RW/repos.tsv" "$T/bs-repos.keep"
+"$RW/bin/doctor.sh" 2>&1 | grep -q 'every drafted project role follows the workflow its job touches' || fail "doctor: a fresh draft is behind the workflow"
+echo "Record PASS or BLOCK on the handoff." >> "$bs"
+printf 'site\t-\t-\tno\n' >> "$RW/repos.tsv"; perl -0pi -e 's/(\| Repo or area \| What it is \| Owning agent \|\n\|---\|---\|---\|\n)/$1| `site` | The website | brand-strategist |\n/' "$RW/AGENTS.md"
+grep -q '^| `site` |' "$RW/AGENTS.md" || fail "test setup: the site row"
+perl -pi -e 's/^Read `CABINET.md`, then `AGENTS.md`.*\n//' "$bs"
+out="$("$RW/bin/doctor.sh" 2>&1 || true)"
+echo "$out" | grep -q 'project roles behind the workflow: brand-strategist (never sends it to CABINET.md, gives verdicts without bin/handoff.sh record, owns a repo but writes no plan, owns a repo but attaches no evidence) (redraft each' \
+  || { echo "$out" | grep -i 'project role\|brand'; fail "doctor: roles.workflow"; }
+printf '%s\n' 'Read `CABINET.md`, then `AGENTS.md`.' 'Record each verdict with bin/handoff.sh record.' 'Write your plan in the spec; attach evidence.' >> "$bs"
+"$RW/bin/doctor.sh" 2>&1 | grep -q 'every drafted project role follows the workflow its job touches' || fail "doctor: a role that follows the workflow is still noted"
+grep -q '^4\. \*\*Fits the workflow its job touches' "$KIT/core/CABINET.md" || fail "the drafting rule for the workflow left CABINET.md"
+cp "$T/bs.keep" "$bs"; cp "$T/bs-agents.keep" "$RW/AGENTS.md"; cp "$T/bs-repos.keep" "$RW/repos.tsv"
 cp "$T/optroles-env.bak" "$RW/cabinet.env"; rm -f "$RW/prompt.out"
   return 0   # a last "check && fail" line must not end the run
 }
