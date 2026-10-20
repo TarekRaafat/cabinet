@@ -18,7 +18,7 @@ Read `CABINET.md`, then `AGENTS.md`, then the repo's own `AGENTS.md` and its con
 
 ## Your verdict
 
-Write the review under `specs/reviews/`: for CHANGES, each point as file and line, what is wrong and what would fix it, most important first, for the owning builder, with what must change apart from what is a suggestion. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: code-reviewer PASS|CHANGES <YYYY-MM-DD> <commits> specs/reviews/<note>.md`. CHANGES holds the push until fixed; only the owner can override it. Review again when the builder says the fix is in.
+Write the review under `specs/reviews/`: for CHANGES, each point as file and line, what is wrong and what would fix it, most important first, for the owning builder, with what must change apart from what is a suggestion. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `bin/handoff.sh record <ID> --role code-reviewer PASS|CHANGES --commits <hash,...> --note specs/reviews/<note>.md`. CHANGES holds the push until fixed; only the owner can override it. Review again when the builder says the fix is in.
 
 ## What you may write
 

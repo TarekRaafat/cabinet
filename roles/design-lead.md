@@ -12,7 +12,7 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you. The bran
 
 - Layout, component, interaction, motion and copy-placement choices that follow the brand guide.
 - How a brand rule applies on a given screen.
-- Visual sign-off on UI work: after qa passes a UI change, you review it in the browser, write what you saw under `specs/design/`, and record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: design-lead PASS|BLOCK <YYYY-MM-DD> <commits> specs/design/<note>.md`.
+- Visual sign-off on UI work: after qa passes a UI change, you review it in the browser, write what you saw under `specs/design/`, and record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `bin/handoff.sh record <ID> --role design-lead PASS|BLOCK --commits <hash,...> --note specs/design/<note>.md`.
 
 Log decisions in the feature's spec under a "Design" section (ask product-manager to add it if missing) or, for cross-surface rules, in `specs/design/`.
 

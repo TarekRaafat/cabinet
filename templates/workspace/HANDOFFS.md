@@ -15,8 +15,8 @@ Status values: `open`, `acknowledged`, `done`, `rejected`. The addressee edits o
 - Changed: <exactly what changed: endpoint, field, limit, status code, default, version, file>
 - Needed: <what the addressee has to do>
 - Depends on: <commit or branch on the sender's side, or "none">
-- Evidence: <links to what shows the work, from the workspace root; omit the line when there is none>
-- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note under specs/>   (one per reviewer, added by the reviewer)
+- Evidence: <links to what shows the work, from the workspace root (--evidence, later bin/handoff.sh attach); omit the line when there is none>
+- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note under specs/>   (one per reviewer: bin/handoff.sh record)
 ```
 
 ## Open

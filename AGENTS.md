@@ -54,6 +54,8 @@ Every command follows these, so a person or an agent who knows one command can g
    | `draft` | Have an agent write it. |
    | `archive` | Move finished ones out of the working file. |
    | `snapshot` | Copy files that live only on this machine into the workspace. |
+   | `attach` | Add a file or link to one that exists. |
+   | `record` | Write a result onto one that exists. |
 
    A new verb is added to this list, with its meaning, in the same change.
 4. **A noun alone shows its verbs** (`cabinet role` is `cabinet role --help`).

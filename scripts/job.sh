@@ -100,8 +100,10 @@ started="$(date +%s)"
 SPEND_LABEL="$job"
 # The run's cost and the week's, when the tool reported it.
 cost() {
-  [[ "$(spend_since "$started" "$job")" != 0.00 ]] || return 0
-  echo "cost \$$(spend_since "$started" "$job"), $(spend_source); this week \$$(spend_since "$(week_start)")${CABINET_BUDGET:+ of the \$$CABINET_BUDGET budget}"
+  # Any recorded run counts: one under half a cent rounds to 0.00 and still cost something.
+  awk -F'\t' -v s="$started" -v l="$job" '$1 >= s && $2 == l { f = 1 } END { exit !f }' "$SPEND" 2>/dev/null || return 0
+  local c; c="\$$(spend_since "$started" "$job")"; [[ "$c" != '$0.00' ]] || c='under $0.01'
+  echo "cost $c, $(spend_source); this week \$$(spend_since "$(week_start)")${CABINET_BUDGET:+ of the \$$CABINET_BUDGET budget}"
 }
 if [[ ! -t 1 ]] && quiet; then
   # Touched, so the digest and cabinet next see it as current, not late.

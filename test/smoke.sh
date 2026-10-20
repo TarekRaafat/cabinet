@@ -325,6 +325,29 @@ echo "$out" | grep -q "verdicts not in the format, or naming a note that does no
 verdict "$e1" "- Verdict: qa passed it"
 "$W/bin/doctor.sh" 2>&1 | grep -q "verdicts not in the format.*$e1" || fail "doctor: a verdict in another shape"
 git -C "$W" reset -q --hard "$base" && rm -rf "$W/specs/qa"
+# record writes the verdict and attach adds evidence, each committed; both refuse what the rules forbid.
+v="$(cd "$W/specs" && "$F" handoff add --from web --to qa --changed x --needed y "Recorded")"; v="${v%% *}"
+mkdir -p "$W/specs/qa" && echo "ran it" > "$W/specs/qa/r.md"
+rc=0; "$W/bin/handoff.sh" record "$v" --role qa pass --commits a1b2c3d --note specs/qa/r.md >/dev/null 2>&1 || rc=$?
+[[ $rc == 1 ]] || fail "record took a note that is not committed"
+git -C "$W" add specs/qa/r.md && git -C "$W" commit -qm "qa: note"
+out="$(cd "$W/specs/qa" && "$F" handoff record "$v" --role qa pass --commits a1b2c3d --note r.md 2>&1)" && fail "record let qa pass work with no evidence"
+echo "$out" | grep -q "bin/handoff.sh attach $v <file or URL> --from web" || fail "the no-evidence refusal does not say how to add it: $out"
+out="$("$W/bin/handoff.sh" record "$v" --role qa block --commits "A1B2C3D, e4f5a6b" --note specs/qa/r.md)" && [[ "$out" == "$v: qa BLOCK recorded and committed" ]] || fail "record BLOCK: $out"
+grep -qxF -- "- Verdict: qa BLOCK $(date +%F) a1b2c3d,e4f5a6b specs/qa/r.md" "$W/HANDOFFS.md" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "the recorded verdict line, or its commit"
+"$W/bin/handoff.sh" attach "$v" "$T/run.txt" --from qa >/dev/null 2>&1 && fail "attach let someone other than the sender add evidence"
+(cd "$T" && "$F" -C "$W" handoff attach "$v" "$T/run.txt" https://example.com/v --from Web) | grep -q "$v: evidence attached and committed" || fail "attach"
+"$W/bin/handoff.sh" list qa --json | jq -e --arg id "$v" '[.[] | select(.id == $id)][0].text | test("- Evidence: \\[run.txt\\]\\(specs/evidence/" + $id + "/run.txt\\), <https://example.com/v>\n- Verdict: qa BLOCK")' >/dev/null \
+  && [[ -f "$W/specs/evidence/$v/run.txt" && -z "$(git -C "$W" status --porcelain)" ]] || fail "attached evidence: not before the verdicts, or not committed"
+"$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null || fail "record PASS once there is evidence"
+[[ "$(grep -c '^- Verdict: qa ' "$W/HANDOFFS.md")" == 1 ]] && grep -q "^- Verdict: qa PASS " "$W/HANDOFFS.md" || fail "a new verdict did not replace the role's earlier one"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'every qa PASS has evidence' || fail "doctor disagrees with record"
+"$W/bin/handoff.sh" record "$v" --role web PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null 2>&1 && fail "record let the builder verify its own work"
+rc=0; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits xyz --note specs/qa/r.md >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "record took commits that are not hashes"
+"$W/bin/handoff.sh" record H-20200101-01 --role qa PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null 2>&1 && fail "record wrote on an entry that does not exist"
+echo n > "$W/README-note.md"; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note README-note.md >/dev/null 2>&1 && fail "record took a note outside specs/"
+rm "$W/README-note.md"; [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused record or attach changed a file"
+git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -1356,6 +1379,10 @@ for want in grok:0.015 opencode:0.003000 codex:0.005500 cursor:0.003500 qwen:0.0
   tail -1 "$HOME/$LOGS/spend/spend.tsv" | awk -F'\t' -v r="$rn" -v d="${want#*:}" '$3 == r && $4 == d { ok = 1 } END { exit !ok }' || { tail -1 "$HOME/$LOGS/spend/spend.tsv"; fail "the $rn run was not recorded as \$${want#*:}"; }
 done
 grep -q 'priced from antigravity.s token counts' "$HOME/$LOGS/spend/brief.log" || fail "the log does not say the cost was priced from tokens"
+# A run alone that costs under half a cent still says what it cost.
+: > "$HOME/$LOGS/spend/brief.log"; mv "$HOME/$LOGS/spend/spend.tsv" "$T/spend.keep"
+PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; cat "$HOME/$LOGS/spend/spend.tsv" >> "$T/spend.keep"; mv "$T/spend.keep" "$HOME/$LOGS/spend/spend.tsv"
+grep -q 'cost under \$0.01, priced from' "$HOME/$LOGS/spend/brief.log" || { cat "$HOME/$LOGS/spend/brief.log"; fail "a run under half a cent logged no cost"; }
 printf '#!/bin/sh\necho "$*" > "%s"\n' "$T/agy.args" > "$T/fakes/agy"; PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1
 grep -q '^-p Act as the chief-of-staff role: read agents/chief-of-staff.md.* --output-format json --dangerously-skip-permissions$' "$T/agy.args" || { cat "$T/agy.args"; fail "the antigravity runner's arguments"; }
 # gemini was a runner: it says what to use instead.

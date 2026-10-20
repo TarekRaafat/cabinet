@@ -25,7 +25,7 @@ Once you know one command, you can guess the next:
 
 - **One word** acts on the workspace as a whole, or on this machine: `cabinet doctor`, `cabinet update`.
 - **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `repo`, `job`, `secret` and `backup`, always singular.
-- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
+- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
 - **The same options everywhere:** `--json` on every command that reports, `--dry-run` on every command that changes the setup or deletes anything, `--yes` (`-y`) on every command that asks.
 - **Any workspace, from anywhere:** every command finds the workspace from the folder you are in, upward, so it works anywhere inside the workspace or the project around a `cabinet/` workspace. `cabinet -C <dir> <command>` runs it as if started in `<dir>`, as git does.
 - **Exit codes:** 0 done (or nothing found), 1 failed or found a problem, 2 wrong usage (an unknown command or option, a missing value).
@@ -179,19 +179,27 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 
 ```sh
 cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
+cabinet handoff attach <ID> <file or URL>... --from <name>
+cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
 cabinet handoff list [name] [--json]
 cabinet handoff archive
 ```
 
 **`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs.
 
-`--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in.
+`--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in, else from the workspace.
+
+**`attach`** adds evidence to an open handoff after it was filed (after a BLOCK, a fix, a missed screen), the same way `--evidence` does: files copied to `specs/evidence/<ID>/`, every link added to the entry's `Evidence:` line, committed. Only the entry's sender may: `--from` must match its `From:`.
+
+**`record`** writes a reviewer's verdict on an open handoff as one line, `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>`, with today's date, replacing that role's earlier verdict, and commits it (`handoffs: <ID> <role> <verdict>`). The verdict may be in any case; commits may be joined by commas or spaces. It refuses when the note is not a committed `.md` file under `specs/` (read from the folder you run it in, else from the workspace), when the role is the entry's sender (the builder never verifies its own work), and a qa PASS on an entry with no evidence: qa records BLOCK instead, and the sender runs `attach`.
 
 **`list`**, without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full; this is the start-of-session read.
 
 **`archive`** moves every committed `done` or `rejected` handoff to `handoffs/archive-YYYY-MM.md` and commits the move; chief-of-staff runs it daily. It refuses while `HANDOFFS.md` has uncommitted lines.
 
-Exit 0; 1 when `add` could not commit (the entry is written) or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, or evidence that is neither a file nor an `http(s)` link.
+`add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
+
+Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet repo
 
@@ -377,7 +385,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet move` | `bin/move.sh` |
 | `cabinet brief` | `bin/job.sh run brief` |
 | `cabinet job run`, `job list` | `bin/job.sh run <job>`, `bin/job.sh list` |
-| `cabinet handoff add`, `list`, `archive` | `bin/handoff.sh add`, `list`, `archive` |
+| `cabinet handoff add`, `attach`, `record`, `list`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `archive` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
 | `cabinet secret check` | `bin/secret.sh check` |

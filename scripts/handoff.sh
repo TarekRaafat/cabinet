@@ -8,6 +8,13 @@
 #       from the workspace root, so it opens from HANDOFFS.md and BRIEF.md; a URL is linked as it is.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
+#   bin/handoff.sh attach <ID> <file or URL>... --from <name>
+#       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
+#       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.
+#   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
+#       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
+#       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
+#       sender, and a qa PASS on an entry with no evidence.
 #   bin/handoff.sh list [name] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
 #       A repo or role name (api, qa, owner, ...): every entry addressed to it that is not done or
@@ -20,6 +27,95 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
+lc() { printf %s "$1" | tr '[:upper:]' '[:lower:]'; }
+# ev_arg <value>: a link as it is, or a file as an absolute path. Read before the script moves to
+# the workspace: a path is from the caller's folder, else from the workspace.
+ev_arg() {
+  if [[ "$1" =~ ^https?://[^[:space:]\<\>]+$ ]]; then printf '%s\n' "$1"
+  elif [[ -f "$1" ]]; then printf '%s/%s\n' "$(cd "$(dirname "$1")" && pwd -P)" "$(basename "$1")"
+  elif [[ "$1" != /* && -f "$WS/$1" ]]; then printf '%s/%s\n' "$(cd "$(dirname "$WS/$1")" && pwd -P)" "$(basename "$1")"
+  else echo "evidence $1: no such file, and not an http(s) link. $usage" >&2; exit 2; fi
+}
+# ev_link <ID> <link or file>: a file is copied to specs/evidence/<ID>/ under a name safe in a
+# Markdown link; prints the link, from the workspace root. Run in the workspace.
+ev_link() {
+  local dir="specs/evidence/$1" name
+  [[ "$2" == http* ]] && { printf '<%s>' "$2"; return; }
+  name="$(basename "$2")"; name="$(printf %s "$name" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^[.-]*//')"
+  while [[ -e "$dir/$name" ]]; do name="1-$name"; done
+  mkdir -p "$dir" && cp "$2" "$dir/$name" || { echo "could not copy $2 to $dir" >&2; exit 1; }
+  printf '[%s](%s/%s)' "$name" "$dir" "$name"
+}
+# One writer at a time, or two agents filing at once could take the same number or lose a line.
+lock_handoffs() {
+  cd "$WS"
+  grep -q '^## Open$' HANDOFFS.md || { echo "no '## Open' heading in HANDOFFS.md" >&2; exit 1; }
+  lock="$K/handoff.lock"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do mkdir "$lock" 2>/dev/null && break; sleep 1; done
+  [[ -d "$lock" ]] || { echo "another handoff is being written ($lock); try again, or remove the folder if none is" >&2; exit 1; }
+  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
+}
+# save <what was done> <commit message> <path>...: commit, or with someone else's uncommitted lines
+# in HANDOFFS.md, leave it written but uncommitted so their lines never go into this commit.
+save() {
+  local did=$1 msg=$2; shift 2
+  if [[ -n "$dirty" ]]; then
+    echo "$did, not committed: HANDOFFS.md had other uncommitted lines. Commit only yours (git add -p HANDOFFS.md$( (($# > 1)) && echo ", and ${2}"))."
+    exit 0
+  fi
+  git add -- "$@"
+  git commit -q -m "$msg" -- "$@" || { echo "$did, but the commit failed (see above): commit $* yourself" >&2; exit 1; }
+  echo "$did and committed"
+}
+# entry <ID> info|evidence <links>|verdict <role> <line>: read or change one open entry in place.
+# info prints "<sender>\t<1 when it has evidence>". Exit 3 when the entry is not under "## Open".
+entry() {
+  python3 -I - "$WS/HANDOFFS.md" "$@" <<'PY'
+import re, sys
+path, hid, mode, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+lines = open(path, encoding="utf-8").read().split("\n")
+if "## Open" not in lines:
+    sys.exit(3)
+start = None
+for i in range(lines.index("## Open") + 1, len(lines)):
+    if lines[i].startswith("## "):
+        break
+    if lines[i].startswith("### " + hid + ":"):
+        start = i
+        break
+if start is None:
+    sys.exit(3)
+end = start + 1
+while end < len(lines) and not lines[end].startswith(("### ", "## ")):
+    end += 1
+last = end - 1
+while last > start and not lines[last].strip():
+    last -= 1
+body = lines[start + 1:last + 1]
+has_ev = lambda l: l.startswith("- Evidence:") and re.search(r"\]\(|<https?:", l)
+if mode == "info":
+    sender = next((m.group(1).strip() for m in (re.match(r"- From: (.*?) ->", l) for l in body) if m), "")
+    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else ""))
+    sys.exit(0)
+if mode == "evidence":
+    links = args[0]
+    at = next((i for i, l in enumerate(body) if l.startswith("- Evidence:")), None)
+    if at is None:
+        v = next((i for i, l in enumerate(body) if l.startswith("- Verdict:")), len(body))
+        body.insert(v, "- Evidence: " + links)
+    elif has_ev(body[at]):
+        body[at] = body[at].rstrip() + ", " + links
+    else:
+        body[at] = "- Evidence: " + links
+elif mode == "verdict":
+    role, line = args
+    body = [l for l in body if not l.startswith("- Verdict: " + role + " ")] + [line]
+lines[start + 1:last + 1] = body
+open(path, "w", encoding="utf-8").write("\n".join(lines))
+PY
+}
+
 h_add() {
 usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--evidence <file or URL>]... \"<title>\""
 from="" to="" changed="" needed="" depends="none" title=""
@@ -29,10 +125,7 @@ while (($#)); do
   case "$1" in
     --evidence)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
-      # Read now: a file's path is from the caller's folder, and the script moves to the workspace.
-      if [[ "$2" =~ ^https?://[^[:space:]\<\>]+$ ]]; then ev+=("$2")
-      elif [[ -f "$2" ]]; then ev+=("$(cd "$(dirname "$2")" && pwd)/$(basename "$2")")
-      else echo "--evidence $2: no such file, and not an http(s) link. $usage" >&2; exit 2; fi
+      ev+=("$(ev_arg "$2")") || exit 2
       shift 2 ;;
     --from|--to|--changed|--needed|--depends-on)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
@@ -55,33 +148,15 @@ missing=""
 for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing ${v/title/a title}"; done
 [[ -z "$missing" ]] || { echo "missing:$missing. $usage" >&2; exit 2; }
 
-cd "$WS"
-grep -q '^## Open$' HANDOFFS.md || { echo "no '## Open' heading in HANDOFFS.md" >&2; exit 1; }
-# One writer at a time, or two agents filing at once could take the same number.
-lock="$K/handoff.lock"
-for _ in 1 2 3 4 5 6 7 8 9 10; do mkdir "$lock" 2>/dev/null && break; sleep 1; done
-[[ -d "$lock" ]] || { echo "another handoff is being filed ($lock); try again, or remove the folder if none is" >&2; exit 1; }
-trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+lock_handoffs
 
 day="$(date +%Y%m%d)"
 files=(HANDOFFS.md); for f in handoffs/archive-*.md; do [[ -f "$f" ]] && files+=("$f"); done
 last="$(grep -ho "^### H-$day-[0-9]*" "${files[@]}" | sed 's/.*-0*//' | sort -n | tail -1 || true)"
 id="$(printf 'H-%s-%02d' "$day" $((${last:-0} + 1)))"
-dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
 
-# Evidence: files copied under this ID with names safe in a Markdown link, then one line of links.
-evline="" n=0
-for e in ${ev[@]+"${ev[@]}"}; do
-  if [[ "$e" == http* ]]; then link="<$e>"
-  else
-    n=$((n + 1)) dir="specs/evidence/$id"
-    name="$(basename "$e")"; name="$(printf %s "$name" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^[.-]*//')"
-    [[ ! -e "$dir/$name" ]] || name="$n-$name"
-    mkdir -p "$dir" && cp "$e" "$dir/$name" || { echo "could not copy $e to $dir" >&2; exit 1; }
-    link="[$name]($dir/$name)"
-  fi
-  evline="${evline:+$evline, }$link"
-done
+evline=""
+for e in ${ev[@]+"${ev[@]}"}; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
 
 # Newest at the bottom of "## Open": before the next "## " heading, or at the end.
 entry="### $id: $title
@@ -101,14 +176,70 @@ ENTRY="$entry" awk '
 ' HANDOFFS.md > "$K/handoffs.new"
 mv "$K/handoffs.new" HANDOFFS.md
 
-paths=(HANDOFFS.md); ((n)) && paths+=("specs/evidence/$id")
-if [[ -n "$dirty" ]]; then
-  echo "$id filed for $to, not committed: HANDOFFS.md had other uncommitted lines. Commit only yours (git add -p HANDOFFS.md$( ((n)) && echo ", and specs/evidence/$id"))."
-  exit 0
+paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
+save "$id filed for $to" "handoffs: $id $title" "${paths[@]}"
+}
+
+h_attach() {
+usage="usage: bin/handoff.sh attach <ID> <file or URL>... --from <name>"
+local id="" from="" evline="" e
+local -a ev
+ev=()
+while (($#)); do
+  case "$1" in
+    --from) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; from="$2"; shift 2 ;;
+    -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
+    *) if [[ -z "$id" ]]; then id="$1"; else ev+=("$(ev_arg "$1")") || exit 2; fi; shift ;;
+  esac
+done
+[[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ && -n "$from" && ${#ev[@]} -gt 0 ]] || { echo "an entry ID, --from and at least one file or URL. $usage" >&2; exit 2; }
+lock_handoffs
+info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
+sender="${info%%$'\t'*}"
+[[ "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds evidence (a reviewer links its own in its note)" >&2; exit 1; }
+for e in "${ev[@]}"; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
+entry "$id" evidence "$evline"
+paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
+save "$id: evidence attached" "handoffs: $id evidence" "${paths[@]}"
+}
+
+h_record() {
+usage="usage: bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>"
+local id="" role="" verdict="" commits="" note="" rel
+while (($#)); do
+  case "$1" in
+    --role|--commits|--note)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      case "$1" in --role) role="$(lc "$2")" ;; --commits) commits="$2" ;; --note) note="$2" ;; esac
+      shift 2 ;;
+    -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
+    *) if [[ -z "$id" ]]; then id="$1"; elif [[ -z "$verdict" ]]; then verdict="$(printf %s "$1" | tr '[:lower:]' '[:upper:]')"; else echo "one verdict only. $usage" >&2; exit 2; fi; shift ;;
+  esac
+done
+# Commits as one token: "a1b2c3d, e4f5a6b" is read as "a1b2c3d,e4f5a6b".
+commits="$(lc "$commits" | tr -s ' ,' ',,' | sed 's/^,//; s/,$//')"
+[[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ ]] || { echo "an entry ID first (H-YYYYMMDD-NN). $usage" >&2; exit 2; }
+[[ "$role" =~ ^[a-z0-9-]+$ ]] || { echo "--role needs a role name. $usage" >&2; exit 2; }
+[[ "$verdict" =~ ^(PASS|BLOCK|CHANGES)$ ]] || { echo "the verdict is PASS, BLOCK or CHANGES. $usage" >&2; exit 2; }
+[[ "$commits" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40})*$ ]] || { echo "--commits needs commit hashes (7 to 40 hex digits, joined by commas). $usage" >&2; exit 2; }
+[[ -n "$note" ]] || { echo "--note needs the file that holds the details. $usage" >&2; exit 2; }
+# The note from the caller's folder, else from the workspace; it must sit under specs/.
+if [[ -f "$note" ]]; then note="$(cd "$(dirname "$note")" && pwd -P)/$(basename "$note")"
+elif [[ "$note" != /* && -f "$WS/$note" ]]; then note="$(cd "$(dirname "$WS/$note")" && pwd -P)/$(basename "$note")"
+else echo "--note $note: no such file. Write the note first. $usage" >&2; exit 1; fi
+rel="${note#"$WS"/}"
+[[ "$rel" =~ ^specs/[A-Za-z0-9._/-]+\.md$ ]] || { echo "--note must be a .md file under specs/ in the workspace, named with letters, digits, . _ - and / only" >&2; exit 1; }
+lock_handoffs
+git ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 && [[ -z "$(git status --porcelain -- "$rel")" ]] \
+  || { echo "$rel is not committed: commit the note first, then record the verdict" >&2; exit 1; }
+info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
+sender="${info%%$'\t'*}" hasev="${info#*$'\t'}"
+[[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }
+if [[ "$role" == qa && "$verdict" == PASS && -z "$hasev" ]]; then
+  echo "$id has no evidence, so qa cannot pass it: record BLOCK naming what is missing; its sender adds it with bin/handoff.sh attach $id <file or URL> --from $sender" >&2; exit 1
 fi
-((n)) && git add -- "specs/evidence/$id"
-git commit -q -m "handoffs: $id $title" -- "${paths[@]}" || { echo "$id filed for $to, but the commit failed (see above): commit HANDOFFS.md yourself" >&2; exit 1; }
-echo "$id filed for $to and committed"
+entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel"
+save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" HANDOFFS.md
 }
 
 h_list() {
@@ -234,7 +365,9 @@ echo "archived $n closed entries"
 verb="${1:-}"; (($#)) && shift
 case "$verb" in
   add) h_add "$@" ;;
+  attach) h_attach "$@" ;;
+  record) h_record "$@" ;;
   list) h_list "$@" ;;
   archive) h_archive "$@" ;;
-  *) echo "usage: bin/handoff.sh add|list|archive (see the top of this file)" >&2; exit 2 ;;
+  *) echo "usage: bin/handoff.sh add|attach|record|list|archive (see the top of this file)" >&2; exit 2 ;;
 esac

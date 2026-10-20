@@ -205,7 +205,7 @@ vcheck="$(cd "$WS" && awk '
   /^## / { end(); open = ($0 == "## Open"); next }
   /^### H-/ { end(); if (open) { id = $2; sub(/:$/, "", id) }; next }
   id == "" { next }
-  /^- Evidence: *[^ <]/ { ev = 1 }
+  /^- Evidence:.*(\]\(|<https?:)/ { ev = 1 }
   /^- Verdict:/ {
     if ($0 !~ /^- Verdict: [a-z0-9-]+ (PASS|BLOCK|CHANGES) [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9a-f]+(,[0-9a-f]+)* specs\/[A-Za-z0-9._\/-]+\.md$/ \
         || (system("test -f \"" $NF "\"") != 0)) bad = bad " " id
