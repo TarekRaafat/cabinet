@@ -156,7 +156,7 @@ Checks everything: repos, kit files, roles, guardrails for every installed tool,
 ## cabinet role
 
 ```sh
-cabinet role add <name> [--does "..."] [--owns "..."] [--decides "..."] [--escalates "..."] [--reports-to <role> [--covers "<builders or repos>"]] [--draft] [--dry-run] [--yes]
+cabinet role add <name> [--does "..."] [--owns "..."] [--decides "..."] [--escalates "..."] [--reports-to <role> [--covers "<builders or repos>"]] [--title "..."] [--name "..."] [--function "..."] [--draft] [--dry-run] [--yes]
 cabinet role remove <name> [--dry-run]
 cabinet role list [--json]
 cabinet role draft <name>
@@ -169,11 +169,13 @@ cabinet role build [--check]
 
 **Sub-teams.** `--reports-to <lead>` adds a role to a lead's sub-team ([concepts](concepts.md#sub-teams)): its lead, on the team, owns its onboarding and settles its disagreements. `--covers "<builders or repos>"` names whose work it reviews for its lead: on a handoff from one of them, its verdict counts for its lead's, and `cabinet handoff run` runs it instead of the lead. It starts with a 30-day trial, during which the lead's PASS is needed too. Both go into a "## Team" section of `roles/<name>.md` (`- Reports to:`, `- Covers:`, `- Trial until:`), kept when the role is drafted; edit it there later. Refused (exit 1): a lead not on the team, the role itself as its lead, `--covers` without `--reports-to`, or a name in `--covers` that is no builder or repo.
 
-**`list`** shows every role on the team (kit, optional, builder or project; a project role not yet drafted is marked; for a sub-team role, its lead, what it covers and its trial) and the optional kit roles that are off.
+**Titles.** `--title "Head of Product"` and `--name "Product Agent"` give a role the title and display name decisions name it by (the sign-off format names each expert by its title where it has one) and the org page shows; `--function "Growth"` places a role in a function of its own on the org page (by default, its lead's, or a kit role's own, or Other). They go into the role's "## Team" section, and they work when turning on a kit role too, written to its notes in `roles/<name>.md`. Plain words only. Edit them there later, then `cabinet role build`.
+
+**`list`** shows every role on the team (kit, optional, builder or project; a project role not yet drafted is marked; its title and display name; for a sub-team role, its lead, what it covers and its trial) and the optional kit roles that are off.
 
 **`draft`** has an agent write the whole role for this project, as `.cabinet/rules/seats.md`, "Drafting a role", says: it keeps your brief, learns the rest from the project, writes the role, lists what it assumed for you to confirm, fills the team table rows and commits. It runs the configured agent tool as chief-of-staff (a few minutes; it may cost money), logging to `~/Library/Logs/cabinet/<slug>/role-<name>.log`. In an agent session, asking the agent to draft the role does the same. Add to the brief at any time and draft again.
 
-**`build`** builds `agents/<role>.md` and `.claude/agents/<role>.md` for every role (and, inside a project, the project's `.claude/agents/` and pointer files); `--check` only reports. Setup, config, update and bootstrap run it for you.
+**`build`** writes `ORG.md`, the org page (each function with its lead and members; each role's title, what it does, what it owns in the team table, who it reports to, what it covers and its trial), and builds `agents/<role>.md` and `.claude/agents/<role>.md` for every role (and, inside a project, the project's `.claude/agents/` and pointer files); `--check` only reports. Setup, config, update and bootstrap run it for you.
 
 Exit 0; 1 when the role could not be added, removed or drafted, or `build --check` finds a role missing or out of date; 2 for a name that is not valid.
 
@@ -447,7 +449,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `cabinet status --json` | `{workspace, version, kit_version, kit, edited}` |
 | `cabinet digest --json` | `[{slug, project, path, exists, brief_written, brief_stale, sign_off_queue, queue_heading_found, actions_for_owner, waiting_on_owner, spend_this_week_usd, budget_usd}]`. The two parts are the Markdown under their headings, or `null`; `queue_heading_found` is `null` with no brief; `spend_this_week_usd` is `null` when the runner does not report cost, `budget_usd` when no budget is set. |
 | `cabinet list --json` | `[{slug, project, path, exists, version, update_available, waiting_on_owner, doctor_problems, brief_written}]`. `brief_written` is ISO 8601 UTC, or `null`; the counts are `null` for a workspace whose folder is gone. |
-| `cabinet role list --json` | `[{name, kind, on, drafted, reports_to, covers, trial_until}]`; `reports_to` and `trial_until` are `null`, and `covers` empty, for a role in no sub-team. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
+| `cabinet role list --json` | `[{name, kind, on, drafted, reports_to, covers, trial_until, title, display_name, function}]`; `title` and `display_name` are `null` when not set; `reports_to` and `trial_until` are `null`, and `covers` empty, for a role in no sub-team. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
 | `cabinet repo list --json` | `[{name, path, present, owner, url}]`. `owner` is `null` while the team table says `TBD`; `url` is `null` for a repo with no clone URL. |
 | `cabinet job list --json` | `[{name, role, when, timeout_minutes, cost_this_week_usd}]`. `when` is the schedule as people read it, or `by hand only`. `cost_this_week_usd` is `null` when the runner's runs are not counted in dollars (a token-only runner with no price, or `custom`). |
 | `cabinet secret check --json` | `[{file, line, kind}]`, never the value. Exit 1 when the list is not empty. |

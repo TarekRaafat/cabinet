@@ -1146,7 +1146,7 @@ for bad in qa web Bad_Name brand-strategist; do (cd "$RW" && "$F" role add "$bad
 cp "$RW/cabinet.env" "$T/optroles-env.bak"
 printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"
 (cd "$RW" && "$F" role draft brand-strategist) >/dev/null 2>&1 && fail "a draft that left the role TBD passed"
-grep -q 'Act as the chief-of-staff role' "$RW/prompt.out" && grep -q 'as CABINET.md, "Drafting a role", says' "$RW/prompt.out" && grep -q 'roles/brand-strategist.md' "$RW/prompt.out" || fail "the draft prompt: $(cat "$RW/prompt.out")"
+grep -q 'Act as the chief-of-staff role' "$RW/prompt.out" && grep -q 'as .cabinet/rules/seats.md, "Drafting a role", says' "$RW/prompt.out" && grep -q 'roles/brand-strategist.md' "$RW/prompt.out" || fail "the draft prompt: $(cat "$RW/prompt.out")"
 printf '%s\n' "CABINET_RUNNER_CMD='perl -i -pe \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md'" >> "$RW/cabinet.env"
 (cd "$RW" && "$F" role draft brand-strategist) | grep -q 'Drafted roles/brand-strategist.md' || fail "a finished draft was not reported"
 grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist role is not drafted' || fail "the drafted role was not rebuilt, or still noted"
@@ -1806,6 +1806,24 @@ grep -qx -- '- Reports to: qa' "$SW/roles/qa-mobile.md" && grep -qx -- '- Covers
 "$F" -C "$SW" role list | grep -q "^qa-mobile  *project  *on, not drafted, reports to qa, covers mobile, on trial until $t$" || fail "role list: $("$F" -C "$SW" role list | grep qa-mobile)"
 "$F" -C "$SW" role list --json | jq -e '.[] | select(.name == "qa-mobile") | .reports_to == "qa" and .covers == ["mobile"]' >/dev/null || fail "role list --json: the sub-team"
 "$SW/bin/doctor.sh" 2>&1 | grep -q 'ok    every sub-team role reports to a lead on the team' || fail "doctor: a sound sub-team"
+# Titles, names and functions, for any role, and the org page built from them.
+ra growth --title 'Head of $(x)' >/dev/null && fail "a title with shell characters was taken"
+out="$(ra growth --title "Head of Growth" --name "Growth Agent" --function Business)" || fail "role add --title: $out"
+grep -qx -- '- Title: Head of Growth' "$SW/roles/growth.md" && grep -qx -- '- Function: Business' "$SW/roles/growth.md" || fail "the title in the Team section"
+out="$(ra brand-designer --title "Brand Designer")" || fail "a kit role turned on with a title: $out"
+grep -qx -- '- Title: Brand Designer' "$SW/roles/brand-designer.md" && grep -q '^- Title: Brand Designer$' "$SW/agents/brand-designer.md" || fail "a kit role's title"
+"$F" -C "$SW" role list | grep -q '^growth  *project  *on, not drafted, Head of Growth, Growth Agent$' && "$F" -C "$SW" role list --json | jq -e '.[] | select(.name == "growth") | .title == "Head of Growth" and .display_name == "Growth Agent" and .function == "Business"' >/dev/null || fail "role list: titles"
+o="$SW/ORG.md"
+[[ -f "$o" ]] && git -C "$SW" check-ignore -q ORG.md && fail "ORG.md is ignored by git"
+grep -q '^| Quality and trust | `qa` | `security`, `qa-mobile` |$' "$o" && grep -q '^| Business | `finance` | Head of Growth, Growth Agent (`growth`) |$' "$o" \
+  && grep -q '^| Product | `product-manager` | `design-lead`, Brand Designer (`brand-designer`) |$' "$o" || fail "the org page's table: $(sed -n '1,14p' "$o")"
+awk '/^### `qa-mobile`$/ { f = 1 } f && /^- Reports to: `qa`$/ { r = 1 } f && /^- Covers, for its lead: mobile$/ { c = 1 } END { exit !(r && c) }' "$o" \
+  && grep -q '^### Head of Growth, Growth Agent (`growth`)$' "$o" && awk '/^## Business$/ { b = 1 } b && /^### Head of Growth/ { g = 1 } END { exit !g }' "$o" || fail "the org page's roles: $(cat "$o")"
+"$SW/bin/role.sh" build --check >/dev/null || fail "a fresh org page is out of date"
+perl -pi -e 's/^- Title: Head of Growth$/- Title: Growth Lead/' "$SW/roles/growth.md"
+"$SW/bin/role.sh" build --check 2>&1 | grep -q 'ORG.md is out of date' || fail "build --check missed a stale org page"
+"$SW/bin/role.sh" build >/dev/null && grep -q '^### Growth Lead, Growth Agent (`growth`)$' "$o" || fail "build did not rebuild the org page"
+grep -q 'named by its title where it has one' "$KIT/core/CABINET.md" || fail "the sign-off rule on titles left CABINET.md"
 # Its verdict counts for its lead's on the work it covers; during its trial, the lead's too.
 mkdir -p "$SW/specs/qa"; echo ok > "$SW/specs/qa/n.md"; git -C "$SW" add -A; git -C "$SW" commit -qm note
 sj() { "$SW/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }

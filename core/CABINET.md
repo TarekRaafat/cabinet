@@ -92,7 +92,7 @@ A lead may move a tier 2 question up to the owner when unsure. Nobody moves a ti
 
 - a plain-language question that stands on its own: what it is and why it matters now, with no unexplained item numbers, file names or jargon;
 - lettered options, each with its consequence in one line;
-- the recommendation of each relevant expert role, each with a one-line reason;
+- the recommendation of each relevant expert role, each with a one-line reason, the role named by its title where it has one (`bin/role.sh list`);
 - one overall recommendation;
 - whether the decision can be undone;
 - for work to approve, its evidence links, copied from the handoff as they are.
