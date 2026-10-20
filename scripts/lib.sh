@@ -95,6 +95,20 @@ week_start() {
   read -r now w h m sec <<<"$(date '+%s %w %H %M %S')"
   echo $(( now - 10#$h * 3600 - 10#$m * 60 - 10#$sec - (w - s + 7) % 7 * 86400 ))
 }
+# ws_md <what> <file>: a committed .md file under specs/ (a verdict's note, a spec), read from the
+# caller's folder or else the workspace; printed from the workspace root. Safe characters only: the
+# path is written into files a shell later reads.
+ws_md() {
+  local f=$2 abs
+  if [[ -f "$f" ]]; then abs="$(cd "$(dirname "$f")" && pwd -P)/$(basename "$f")"
+  elif [[ "$f" != /* && -f "$WS/$f" ]]; then abs="$(cd "$(dirname "$WS/$f")" && pwd -P)/$(basename "$f")"
+  else echo "$1 $f: no such file" >&2; return 1; fi
+  f="${abs#"$WS"/}"
+  [[ "$f" =~ ^specs/[A-Za-z0-9._/-]+\.md$ ]] || { echo "$1 must be a .md file under specs/ in the workspace, named with letters, digits, . _ - and / only" >&2; return 1; }
+  git -C "$WS" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && [[ -z "$(git -C "$WS" status --porcelain -- "$f")" ]] \
+    || { echo "$f is not committed: commit it first" >&2; return 1; }
+  printf '%s\n' "$f"
+}
 # spend_since <seconds> [<label>]: dollars spent since then, by every run or one label's, as "1.25".
 spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
 

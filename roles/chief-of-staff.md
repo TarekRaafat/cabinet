@@ -24,7 +24,7 @@ Never write to a product repo, never change a branch in one, never push.
 
 When the owner hands you a task, you do not do the work. You turn it into handoffs for the agents that own it.
 
-1. If `specs/` has a spec for the feature, it is the source of truth: route from it and name it in every entry. Read the code the task touches. Find the owning repo in the team table, and every other repo that has to move with it in the contracts table.
+1. Small task or not (`CABINET.md`, "Ready to build")? A small task goes straight to handoffs, each `Needed:` saying what done looks like in terms qa can test. Anything else needs a ready spec: with none, or one that `bin/spec.sh check` faults, file a handoff to product-manager for it, tell the owner, and route nothing from the owner's words. Route from a ready spec with `--spec specs/<feature>.md` on every entry. Read the code the task touches. Find the owning repo in the team table, and every other repo that has to move with it in the contracts table.
 2. Check `HANDOFFS.md` for an entry that already covers it. If one does, say so and file nothing, or file a follow-up that names it.
 3. Write one entry per owning agent, ordered by dependency (the side that defines a contract first). Each later entry names the earlier IDs in `Depends on`.
 4. In each entry, `Changed: Nothing yet.` plus the task as the owner stated it. `Needed:` is what that agent must deliver, in terms of that repo's real files, endpoints and fields. Only specifics the owner gave or the code shows.

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file>] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
 #       from the workspace root, so it opens from HANDOFFS.md and BRIEF.md; a URL is linked as it is.
+#       --spec names the spec it builds, on a "- Spec:" line, and refuses unless bin/spec.sh check
+#       finds the spec ready or building with nothing missing (CABINET.md, "Ready to build").
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
 #   bin/handoff.sh attach <ID> <file or URL>... --from <name>
@@ -126,8 +128,8 @@ PY
 }
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--evidence <file or URL>]... \"<title>\""
-from="" to="" changed="" needed="" depends="none" title=""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file>] [--evidence <file or URL>]... \"<title>\""
+from="" to="" changed="" needed="" depends="none" title="" spec=""
 local -a ev
 ev=()
 while (($#)); do
@@ -135,6 +137,10 @@ while (($#)); do
     --evidence)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       ev+=("$(ev_arg "$2")") || exit 2
+      shift 2 ;;
+    --spec)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      spec="$(ws_md --spec "$2")" || exit 1
       shift 2 ;;
     --from|--to|--changed|--needed|--depends-on)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
@@ -156,6 +162,13 @@ from="$(one "$from")" to="$(one "$to")" changed="$(one "$changed")" needed="$(on
 missing=""
 for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing ${v/title/a title}"; done
 [[ -z "$missing" ]] || { echo "missing:$missing. $usage" >&2; exit 2; }
+# Only a spec ready to build is routed (CABINET.md, "Ready to build").
+if [[ -n "$spec" ]]; then
+  sc="$("$(dirname "$0")/spec.sh" check "$spec" --json 2>/dev/null || true)"
+  st="$(jq -r '.[0].status // ""' <<<"$sc" 2>/dev/null || true)" sp="$(jq -r '.[0].problems // [] | join("; ")' <<<"$sc" 2>/dev/null || true)"
+  [[ "$st" =~ ^(ready|building)$ ]] || { echo "$spec is ${st:-without a status}, not ready: product-manager sets it ready once bin/spec.sh check $spec passes" >&2; exit 1; }
+  [[ -z "$sp" ]] || { echo "$spec is not ready to build: $sp (bin/spec.sh check $spec)" >&2; exit 1; }
+fi
 
 lock_handoffs
 
@@ -173,7 +186,8 @@ entry="### $id: $title
 - Status: open ($(date +%F))
 - Changed: $changed
 - Needed: $needed
-- Depends on: $depends${evline:+
+- Depends on: $depends${spec:+
+- Spec: $spec}${evline:+
 - Evidence: $evline}"
 ENTRY="$entry" awk '
   function put() { if (!done) { sub(/\n+$/, "", buf); printf "%s\n\n%s\n", buf, ENVIRON["ENTRY"]; buf = ""; done = 1 } }
@@ -232,15 +246,8 @@ commits="$(lc "$commits" | tr -s ' ,' ',,' | sed 's/^,//; s/,$//')"
 [[ "$verdict" =~ ^(PASS|BLOCK|CHANGES)$ ]] || { echo "the verdict is PASS, BLOCK or CHANGES. $usage" >&2; exit 2; }
 [[ "$commits" =~ ^[0-9a-f]{7,40}(,[0-9a-f]{7,40})*$ ]] || { echo "--commits needs commit hashes (7 to 40 hex digits, joined by commas). $usage" >&2; exit 2; }
 [[ -n "$note" ]] || { echo "--note needs the file that holds the details. $usage" >&2; exit 2; }
-# The note from the caller's folder, else from the workspace; it must sit under specs/.
-if [[ -f "$note" ]]; then note="$(cd "$(dirname "$note")" && pwd -P)/$(basename "$note")"
-elif [[ "$note" != /* && -f "$WS/$note" ]]; then note="$(cd "$(dirname "$WS/$note")" && pwd -P)/$(basename "$note")"
-else echo "--note $note: no such file. Write the note first. $usage" >&2; exit 1; fi
-rel="${note#"$WS"/}"
-[[ "$rel" =~ ^specs/[A-Za-z0-9._/-]+\.md$ ]] || { echo "--note must be a .md file under specs/ in the workspace, named with letters, digits, . _ - and / only" >&2; exit 1; }
+rel="$(ws_md --note "$note")" || exit 1
 lock_handoffs
-git ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 && [[ -z "$(git status --porcelain -- "$rel")" ]] \
-  || { echo "$rel is not committed: commit the note first, then record the verdict" >&2; exit 1; }
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 sender="${info%%$'\t'*}" hasev="${info#*$'\t'}"
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }

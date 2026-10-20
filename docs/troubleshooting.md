@@ -79,6 +79,12 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX verdicts not in the format, or naming a note that does not exist: <...> (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)` | `handoffs.verdicts` | An open entry has a `- Verdict:` line in another shape (the verdict is `PASS`, `BLOCK` or `CHANGES`), or its note is not in the workspace. Each entry is named by its ID. | Have the reviewer commit the note and record the verdict again with `cabinet handoff record`, which writes the [verdict format](concepts.md#the-builder-never-verifies). |
 | `FIX qa PASS on handoffs with no evidence: <...> (the builder adds an Evidence line, or qa changes its verdict to BLOCK)` | `handoffs.evidence` | qa passed work whose entry has no `- Evidence:` line, so you would approve it without seeing it. | The builder adds evidence with `cabinet handoff attach <ID> <file or URL> --from <builder>`, or qa records BLOCK. |
 
+## Specs
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `FIX specs not ready for their status: <...> (fix each, or set it back to draft; cabinet spec check)` | `specs.ready` | A spec marked `ready` or `building` lacks what that status needs: testable criteria with a qa PASS, no `TBD` in "Rules", every decision answered, its repos, and for `building` a plan (with an architect PASS for more than one repo). A PASS no longer counts when the part it reviewed changed. Each spec is named with its problems. | Fix what is named and ask for the review again, or set the spec's `status` back to `draft` (or `ready`) until it is. See [ready to build](concepts.md#ready-to-build). |
+
 ## Secrets
 
 | Message | ID | Cause | Fix |

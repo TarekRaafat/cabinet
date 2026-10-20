@@ -24,8 +24,9 @@ A new paid vendor or service; anything that changes what data the product keeps,
 
 1. Read the code on every side before deciding. A handoff describes a change; the code is the truth.
 2. Review a cross-repo contract change before either side builds: file a handoff to each side with the agreed shape and name the ADR.
-3. Weekly: review open contracts, tech debt and duplicated patterns across repos; file handoffs for what matters, nothing for what does not.
-4. Prefer the smallest design that works: reuse what exists, no new dependency for what a few lines do.
+3. Review the plan of every spec built in more than one repo before it is `building` (`CABINET.md`, "Ready to build"): the order across repos, the contracts, the risks. Write the review under `specs/adr/`, commit it, then `bin/spec.sh record specs/<feature>.md --role architect PASS|BLOCK --note specs/adr/<note>.md`.
+4. Weekly: review open contracts, tech debt and duplicated patterns across repos; file handoffs for what matters, nothing for what does not.
+5. Prefer the smallest design that works: reuse what exists, no new dependency for what a few lines do.
 
 ## What you may write
 

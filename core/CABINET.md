@@ -43,12 +43,26 @@ Each agent owns its repos end to end, documentation included, as the team table 
 Product repos are built by builder roles: `backend` (servers, APIs, workers, libraries), `web` (what runs in a browser), `mobile` (iOS and Android apps) and `infrastructure` (CI, deploys, infrastructure as code). The team table in `AGENTS.md` names each repo's owning agent; a repo whose owner is `TBD` gets a builder from `bin/bootstrap.sh` when it first arrives on a machine, guessed from what the repo holds, and the owner may change the row to another builder, a project role, or `owner`. A builder:
 
 1. **Learns the repo before its first change, and follows it.** The repo's own `AGENTS.md` (or `CLAUDE.md`), `README`, `CONTRIBUTING`, and how it is really built: the package scripts or `Makefile`, the test, lint, type and build commands, the CI configuration, the formatter and lint settings, the folder layout, the dependencies already chosen, and the message style of recent commits. What the repo does wins over the builder's habits and over any default. Never replace its stack, tools or conventions; propose a change as a tier 2 or 3 decision instead. Only a new, empty repo gets defaults: a test command, a linter, a `README` and an `AGENTS.md` that records them, set up first.
-2. **Works from a spec or a handoff addressed to it,** and takes nothing else on beyond tier 1 (see "Decision rights and sign-off").
+2. **Works from a spec or a handoff addressed to it that is ready to build** (see "Ready to build"), and takes nothing else on beyond tier 1 (see "Decision rights and sign-off").
 3. **Changes with a test.** A fix starts with a test that fails without it; a feature comes with the tests the repo's style calls for.
 4. **Runs the repo's own checks** (tests, lint, types, build) and hands nothing on until they pass. A check that was already failing is named, not hidden.
 5. **Commits locally,** in the repo's message style and branch flow, and never pushes, merges, deploys or publishes.
 6. **Hands finished work to qa** (and security, and design-lead for anything people see) with `bin/handoff.sh add`: what changed, the commits, how to run it, what to look at, and what shows it working (`--evidence`, see "Handoffs"). It never verifies its own work. A BLOCK comes back to it as a fix.
 7. **Keeps to its repos.** A change another repo needs goes to that repo's owner as a handoff; a contract change follows the contracts table in `AGENTS.md`.
+
+## Ready to build
+
+Nothing is built before it is defined, and nothing bigger than a small task before it is planned.
+
+- **A small task:** one repo, no contract change, no decision for the owner, and easy to undo (a bug fix, a copy change, a small internal improvement). It goes straight to a handoff whose `Needed:` says what done looks like, in terms qa can test.
+- **Everything else** is built from a spec, `specs/<feature>.md`, which product-manager writes from `specs/_template.md`. Unsure whether a task is small? It is not.
+
+A spec moves `draft`, `ready`, `building`, `shipped` (or `dropped`), and `bin/spec.sh check` holds each status to what it needs (the doctor runs it: `specs.ready`):
+
+1. **ready**, set by product-manager: acceptance criteria an agent can test, nothing `TBD` in "Rules", every decision in the table answered by the owner, every repo that builds it in `repos`, and a qa PASS on the acceptance criteria. product-manager asks for that review with a handoff to qa; qa records `bin/spec.sh record specs/<feature>.md --role qa PASS|BLOCK --note specs/qa/<note>.md`: PASS when each criterion can be tested as written, BLOCK naming each one that cannot. The PASS is for the criteria as they were: change them and qa reviews again.
+2. **Routed:** chief-of-staff routes only a ready spec, with `bin/handoff.sh add ... --spec specs/<feature>.md`, which refuses a spec that fails the check.
+3. **building**, set by a builder before the first change: each owning builder writes its part of the plan under "## Plan", as `### <repo>`: the files it changes, the tests it adds, the order across repos and the risks. With more than one repo, architect reviews the whole plan first (`bin/spec.sh record specs/<feature>.md --role architect PASS|BLOCK --note specs/adr/<note>.md`); a changed plan needs a new review. Set `building`, run `bin/spec.sh check specs/<feature>.md`, and if it reports a problem, set `ready` back and wait. In a spec, builders write only their plan and this status.
+4. **Not ready? Send it back.** A builder given work that misses this section (a small task with no testable `Needed:`, a bigger one with no spec, a spec that fails the check) does not guess: it sets the entry to `rejected` with what is missing, and the sender files it again once it is ready.
 
 ## Handoffs
 

@@ -22,6 +22,10 @@ Write a note under `specs/qa/`: for a PASS, what you ran; for a BLOCK, each fail
 
 **No evidence, no PASS.** Before a PASS, the handoff (or a follow-up from its builder) must carry evidence of what was built (`CABINET.md`, "Handoffs"): a screenshot of each screen and state the change touches, a short recording, a link to try it, or the command output for work with no screen. Check that it shows what you saw when you ran it. Missing, partial, or not matching what you saw: BLOCK, addressed to the owning agent, naming what is missing; it adds it with `bin/handoff.sh attach`. `record` refuses a qa PASS on an entry with no evidence.
 
+## Reviewing a spec
+
+Before a spec can be `ready`, you review its acceptance criteria (`CABINET.md`, "Ready to build"): can each be tested as written, with a clear expected result? Do they cover the edge cases the spec lists? Write a note under `specs/qa/`, commit it, then `bin/spec.sh record specs/<feature>.md --role qa PASS|BLOCK --note specs/qa/<note>.md`. A BLOCK names each criterion that cannot be tested and what would make it testable, for product-manager. A change to the criteria needs your review again.
+
 ## What you may write
 
 `specs/qa/` and `HANDOFFS.md` entries (From: `qa`). You write no product repo; a missing test goes to the owning agent as a handoff. Commit your own files only, `qa: ...`. Never push. Never point tests at production.

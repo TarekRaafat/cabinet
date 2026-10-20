@@ -219,6 +219,15 @@ vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
 [[ -z "$vnev" ]] && ok handoffs.evidence "every qa PASS has evidence" \
   || bad handoffs.evidence "qa PASS on handoffs with no evidence: $vnev (the builder adds an Evidence line, or qa changes its verdict to BLOCK)"
 
+section "Specs"
+# A spec marked ready or building has what that status needs (bin/spec.sh check).
+if [[ -x "$WS/bin/spec.sh" ]]; then
+  sc="$("$WS/bin/spec.sh" check --json 2>/dev/null || true)"
+  notready="$(jq -r '[.[] | select(.problems | length > 0) | "\(.spec) (\(.problems | join(", ")))"] | join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
+  [[ -z "$notready" ]] && ok specs.ready "every spec marked ready or building has what its status needs" \
+    || bad specs.ready "specs not ready for their status: $notready (fix each, or set it back to draft; cabinet spec check)"
+fi
+
 section "Secrets"
 # Keys, tokens and passwords in the workspace's files (bin/secret.sh names the file and line,
 # never the value), and the pre-commit hook that refuses new ones.

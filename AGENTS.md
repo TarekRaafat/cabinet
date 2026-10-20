@@ -36,7 +36,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 
 Every command follows these, so a person or an agent who knows one command can guess the next. `test/docs_check.py` enforces the parts a script can check.
 
-1. **Two shapes.** A one-word command acts on the workspace as a whole or on this machine: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the machine as a whole.
+1. **Two shapes.** A one-word command acts on the workspace as a whole or on this machine: `new`, `init`, `next`, `brief`, `digest`, `list`, `doctor`, `bootstrap`, `config`, `update`, `status`, `outdated`, `changelog`, `move`, `remove`, `completion`, `version`, `help`. Anything a workspace holds is a noun, then a verb: `cabinet <noun> <verb>`, with the nouns `role`, `repo`, `handoff`, `spec`, `job`, `backup` and `secret`. A new command is a new verb on an existing noun when one fits, a new noun only for a new kind of thing, and a new one-word command only for the workspace or the machine as a whole.
 2. **Nouns are singular,** and no two commands differ only by a plural.
 3. **Verbs come from one list, each with one meaning:**
 

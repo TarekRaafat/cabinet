@@ -53,6 +53,7 @@ New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 | Slug | The workspace's short name (`acme`). It names its schedules, logs, backups and backup key, so projects on one machine never collide. |
 | Guide | A standing document the agents follow, such as a brand guide, style guide, policy or business document. It lives in `guides/`, with a row in `AGENTS.md`. |
 | Role | An agent's job description: what it owns, decides, escalates and may write. Kit roles live in `.cabinet/roles/`; a project adds notes in `roles/`. |
+| Spec | One file per feature in `specs/`: the problem, the rules, testable acceptance criteria, your decisions, and the builders' plan. Work bigger than a small task is built only from a spec that is ready. |
 | Handoff | One entry in `HANDOFFS.md`: who it is for, what changed, what they need to do. The only channel between agents. |
 | Sign-off queue | The top of `BRIEF.md`: every decision waiting on you. |
 | Tiers | Who decides what: the agent (reversible, in its own files), its lead (reversible, across repos), or you (irreversible, public, or costs money). |

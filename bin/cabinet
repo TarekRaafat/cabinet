@@ -89,6 +89,8 @@ C	Team	role build		Build the role definitions from the kit's roles and roles/.
 C	Team	handoff add	--from <name> --to <name> --changed "..." --needed "..." "title"	File a handoff with the next free ID and today's date, and commit it.
 C	Team	handoff attach	<ID> <file or URL>... --from <name>	Add evidence to your own handoff: files copied to specs/evidence/<ID>/, linked, committed.
 C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
+C	Team	spec check	[spec]	Check each spec against its status: ready needs criteria qa passed, no TBD, every decision answered.
+C	Team	spec record	<spec> --role <qa|architect> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, or architect's of its plan, and commit it.
 C	Team	handoff list	[name]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full.
 C	Team	handoff archive		Move closed handoffs to handoffs/archive-YYYY-MM.md and commit the move.
 C	Work	repo add	<git url>	Add a product repo; bootstrap clones it and gives it a builder.
@@ -149,11 +151,14 @@ O	handoff add	--to	<repo, role or owner>	Who it is for.
 O	handoff add	--changed	"..."	Exactly what changed: endpoint, field, limit, status code, default, version, file.
 O	handoff add	--needed	"..."	What the addressee has to do.
 O	handoff add	--depends-on	"..."	The commit or branch it depends on (default: none).
+O	handoff add	--spec	<file>	The spec it builds; refused unless the spec is ready to build (cabinet spec check).
 O	handoff add	--evidence	<file or URL>	What shows the work: a file (copied into specs/evidence/<ID>/) or a link. Once for each.
 O	handoff attach	--from	<repo or role>	Who adds it: the handoff's sender, and no one else.
 O	handoff record	--role	<role>	The reviewer recording it (qa, security, code-reviewer, ...).
 O	handoff record	--commits	<hash,...>	The commits reviewed, joined by commas.
 O	handoff record	--note	<file>	The reviewer's committed note under specs/, with the details.
+O	spec record	--role	<qa|architect>	qa reviews the acceptance criteria; architect reviews the plan.
+O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
@@ -164,11 +169,11 @@ O	remove	--force		Remove even with uncommitted changes or commits on no remote.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
-O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,handoff list,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
+O	next,digest,list,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE
 }
 is_cmd() { commands_table | awk -F'\t' -v c="$1" '$1 == "C" && $3 == c {f = 1} END {exit !f}'; }
-# A noun: the first word of two-word commands (role, repo, handoff, job, backup, secret).
+# A noun: the first word of two-word commands (role, repo, handoff, spec, job, backup, secret).
 is_noun() { commands_table | awk -F'\t' -v n="$1" '$1 == "C" && index($3, n " ") == 1 {f = 1} END {exit !f}'; }
 
 cmd_help() {
@@ -1818,6 +1823,7 @@ case "${1:-}" in
   doctor) shift; ws_script doctor.sh "$@" ;;
   role) shift; cmd_role "$@" ;;
   handoff) shift; noun_script handoff "$@" ;;
+  spec) shift; noun_script spec "$@" ;;
   repo) shift; cmd_repo "$@" ;;
   job) shift; noun_script job "$@" ;;
   secret) shift; noun_script secret "$@" ;;

@@ -24,8 +24,8 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 Once you know one command, you can guess the next:
 
 - **One word** acts on the workspace as a whole, or on this machine: `cabinet doctor`, `cabinet update`.
-- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `repo`, `job`, `secret` and `backup`, always singular.
-- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
+- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `spec`, `repo`, `job`, `secret` and `backup`, always singular.
+- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `spec record`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
 - **The same options everywhere:** `--json` on every command that reports, `--dry-run` on every command that changes the setup or deletes anything, `--yes` (`-y`) on every command that asks.
 - **Any workspace, from anywhere:** every command finds the workspace from the folder you are in, upward, so it works anywhere inside the workspace or the project around a `cabinet/` workspace. `cabinet -C <dir> <command>` runs it as if started in `<dir>`, as git does.
 - **Exit codes:** 0 done (or nothing found), 1 failed or found a problem, 2 wrong usage (an unknown command or option, a missing value).
@@ -178,7 +178,7 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 ## cabinet handoff
 
 ```sh
-cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--evidence <file or URL>]... "<title>"
+cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file>] [--evidence <file or URL>]... "<title>"
 cabinet handoff attach <ID> <file or URL>... --from <name>
 cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
 cabinet handoff list [name] [--json]
@@ -186,6 +186,8 @@ cabinet handoff archive
 ```
 
 **`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs: each write takes a lock (`.cabinet/handoff.lock`), and a lock left for more than a minute by a writer that was stopped is taken over. Entries are filed only this way, never by hand, so no two take the same ID. Two copies of a workspace (a teammate's clone) do not share the lock; `cabinet doctor` flags an ID used twice after they are merged (`handoffs.unique-ids`).
+
+`--spec specs/<feature>.md` names the spec the handoff builds, on a `Spec:` line, and refuses (exit 1) unless the spec is committed, `ready` or `building`, and passes `cabinet spec check`: work bigger than a small task is routed only from a spec that is ready to build ([concepts](concepts.md#ready-to-build)).
 
 `--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in, else from the workspace.
 
@@ -200,6 +202,19 @@ cabinet handoff archive
 `add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
 
 Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
+
+## cabinet spec
+
+```sh
+cabinet spec check [spec] [--json]
+cabinet spec record <spec> --role <qa|architect> <PASS|BLOCK> --note <file>
+```
+
+**`check`** holds every spec in `specs/` (or the one named) to what its status needs ([concepts](concepts.md#ready-to-build)). `draft`, `shipped` and `dropped` need nothing. `ready` needs acceptance criteria, no `TBD` in "Rules", every row of the Decisions table answered, at least one repo in `repos`, and a qa PASS on the acceptance criteria as they are now. `building` also needs a plan for each repo (a `### <repo>` part under "## Plan" with something in it) and, for more than one repo, an architect PASS on the plan as it is now. It prints each spec, its status and its problems (or `ok`). `--json`: `[{spec, status, problems}]`. The doctor runs it (`specs.ready`).
+
+**`record`** records a review of a spec under its "## Reviews" heading: qa's of the acceptance criteria (can each be tested as written?), or architect's of the plan. It writes `- Verdict: <role> <PASS|BLOCK> <YYYY-MM-DD> <fingerprint> <note>`, replacing that role's earlier review, and commits the spec (`specs: <feature>.md <role> <verdict>`). The fingerprint is of the part reviewed, so a later change to it shows as unreviewed in `check`. The spec and the note must be committed, the note a `.md` file under `specs/`; both are read from the folder you run it in, else from the workspace.
+
+Exit 0; 1 when `check` finds a spec not ready for its status, or `record` refuses (a file not committed, not a spec, or the spec given as its own note); 2 for a missing value, an unknown option, a role other than qa or architect, or a verdict other than PASS or BLOCK.
 
 ## cabinet repo
 
@@ -386,6 +401,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet brief` | `bin/job.sh run brief` |
 | `cabinet job run`, `job list` | `bin/job.sh run <job>`, `bin/job.sh list` |
 | `cabinet handoff add`, `attach`, `record`, `list`, `archive` | `bin/handoff.sh add`, `attach`, `record`, `list`, `archive` |
+| `cabinet spec check`, `record` | `bin/spec.sh check`, `record` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
 | `cabinet secret check` | `bin/secret.sh check` |

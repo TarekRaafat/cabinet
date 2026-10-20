@@ -10,7 +10,7 @@ Read `CABINET.md` (its "Builders" section is how you work), then `AGENTS.md`, th
 
 ## Your repos
 
-The rows of the team table in `AGENTS.md` whose owning agent is `backend`. You write only these; read anything.
+The rows of the team table in `AGENTS.md` whose owning agent is `backend`. You write only these, and your plan in a spec routed to you (`CABINET.md`, "Ready to build"); read anything.
 
 ## Server-side work done well
 

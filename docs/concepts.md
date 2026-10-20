@@ -41,6 +41,17 @@ On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's 
 
 Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agent writes to a repo it does not own. When a change affects another repo, the agent files a handoff instead of editing it.
 
+## Ready to build
+
+Nothing is built before it is defined. A small task (one repo, no contract change, no decision for you, easy to undo) goes straight to a handoff that says what done looks like. Anything bigger is built from a spec in `specs/`, which the product-manager writes, and a spec moves through statuses that `cabinet spec check` holds to what each needs:
+
+- **draft** while it is written and its decisions wait on you.
+- **ready** once it has testable acceptance criteria, nothing `TBD` in its rules, every decision answered, and the repos that build it, and qa has passed the criteria as testable (`cabinet spec record`). Only a ready spec is routed to builders (`cabinet handoff add --spec`).
+- **building** once each builder has written its part of the plan (files, tests, order, risks) and, for work in more than one repo, the architect has passed the plan.
+- **shipped** or **dropped** at the end.
+
+A review counts only for what it reviewed: a change to the criteria or the plan after a PASS needs a new one. A builder given work that is not ready sends it back instead of guessing. The doctor flags a spec marked ready or building that lacks what its status needs (`specs.ready`).
+
 ## Handoffs
 
 `HANDOFFS.md` is the one channel between agents. Each entry has an ID (`H-20261018-01`), who it is from and to, a status (`open`, `acknowledged`, `done`, `rejected`), what changed, what is needed, what it depends on, and its evidence: links to screenshots, recordings or output that show the work, which the brief carries to you. The addressee edits only the status line; everyone else adds a follow-up entry. Closed entries move to `handoffs/archive-YYYY-MM.md` daily. `bin/handoff.sh add` files an entry with the next free ID and commits it; `bin/handoff.sh list <name>` shows an agent its open entries.

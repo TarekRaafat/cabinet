@@ -1424,6 +1424,53 @@ grep -q 'Write `BRIEF.md` as "Writing to the owner" in `AGENTS.md` sets' "$KIT/r
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "ready to build: specs checked against their status, reviewed, and routed only when ready" "0"
+s48() {
+local sp="$W/specs/login.md" c out rc base
+base="$(git -C "$W" rev-parse HEAD)"
+spc() { "$W/bin/spec.sh" check specs/login.md --json | jq -r '.[0].problems | join("; ")'; }
+put() { perl -0pi -e "$1" "$sp"; git -C "$W" commit -qm "spec" -- specs/login.md; }
+# A fresh copy of the template, as draft: nothing needed, and the template's own "TBD" guidance is no TBD.
+sed 's/^status: draft.*/status: draft/' "$W/specs/_template.md" > "$sp"; git -C "$W" add specs/login.md; git -C "$W" commit -qm "spec: login"
+"$F" -C "$W" spec check >/dev/null || fail "a draft spec failed the check"
+put 's/(?m)^status: draft/status: ready/'
+c="$(spc)"; [[ "$c" == "no acceptance criteria; no repos named; no qa review of the acceptance criteria" ]] || fail "an empty ready spec: $c"
+put 's/(?m)^repos: \[\]/repos: [api]/; s/(## Acceptance criteria\n\n)/$1- GET \/login returns 200 with a session for a valid password\n/; s/(## Rules\n\n)/$1Sessions last TBD days.\n/; s/(\|---\|---\|---\|---\|---\|\n)/$1| 1 | Session length? | A. 7 days. B. 30 days. | A | A (20 Oct 2026) |\n| 2 | Remember me? | A. yes. B. no. | B | |\n/'
+c="$(spc)"; [[ "$c" == "TBD left in Rules; 1 decision(s) not answered; no qa review of the acceptance criteria" ]] || fail "a ready spec with open questions: $c"
+rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed y --spec specs/login.md "Login" >/dev/null 2>&1 || rc=$?
+[[ $rc == 1 ]] || fail "handoff add routed a spec that is not ready"
+put 's/Sessions last TBD days/Sessions last 7 days/; s/\| B \| \|/| B | B (20 Oct 2026) |/'
+mkdir -p "$W/specs/qa" "$W/specs/adr" && echo "testable" > "$W/specs/qa/login.md" && echo "plan ok" > "$W/specs/adr/login.md"
+git -C "$W" add specs/qa specs/adr && git -C "$W" commit -qm "notes"
+"$W/bin/spec.sh" record specs/login.md --role web PASS --note specs/qa/login.md >/dev/null 2>&1 && fail "spec record took a role other than qa or architect"
+out="$(cd "$W/specs" && "$F" spec record login.md --role qa block --note qa/login.md)" && [[ "$out" == "specs/login.md: qa BLOCK recorded and committed" ]] || fail "spec record BLOCK: $out"
+c="$(spc)"; [[ "$c" == "qa BLOCK on the acceptance criteria" ]] || fail "a qa BLOCK: $c"
+"$W/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null || fail "spec record PASS"
+[[ "$(grep -c '^- Verdict: qa ' "$sp")" == 1 && -z "$(spc)" && -z "$(git -C "$W" status --porcelain -- specs/login.md)" ]] || fail "the qa review did not replace the BLOCK, pass the check and commit: $(spc)"
+grep -Eq '^- Verdict: qa PASS [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9a-f]{8} specs/qa/login.md$' "$sp" || fail "the spec review line"
+out="$("$W/bin/handoff.sh" add --from chief-of-staff --to api --changed "Nothing yet." --needed "Build login" --spec specs/login.md "Login")" || fail "a ready spec was not routed: $out"
+grep -qx -- "- Spec: specs/login.md" "$W/HANDOFFS.md" || fail "the routed handoff does not name its spec"
+# A change to the criteria after the PASS needs a new review; a spec not committed is not reviewed.
+put 's/(valid password\n)/$1- A wrong password returns 401\n/'
+c="$(spc)"; [[ "$c" == "the acceptance criteria changed since qa passed it" ]] || fail "a changed criterion kept its review: $c"
+echo "- draft line" >> "$sp"
+"$W/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null 2>&1 && fail "spec record reviewed a spec that is not committed"
+git -C "$W" checkout -q -- specs/login.md
+"$W/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "a new review did not clear the change"
+# building: each repo's plan, and for more than one repo an architect PASS on the plan as it is.
+put 's/(?m)^status: ready/status: building/; s/(?m)^repos: \[api\]/repos: [api, app]/; s/(## Plan\n\n.*\n)/$1\n### api\n\n- routes\/login.ts, with tests\n/'
+c="$(spc)"; [[ "$c" == "no plan for app; no architect review of the plan" ]] || fail "building without every plan: $c"
+"$W/bin/doctor.sh" 2>&1 | grep -q "specs not ready for their status: specs/login.md (no plan for app, no architect review of the plan)" || fail "doctor: specs.ready"
+put 's/(### api\n\n.*\n)/$1\n### app\n\n- the login screen, after api\n/'
+"$W/bin/spec.sh" record specs/login.md --role architect PASS --note specs/adr/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "building with every plan and the architect: $(spc)"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'every spec marked ready or building has what its status needs' || fail "doctor after the plan"
+"$F" -C "$W" spec check | grep -q '^specs/login.md (building): ok$' || fail "spec check text"
+grep -q '^## Ready to build' "$KIT/core/CABINET.md" && grep -q 'route nothing from the owner.s words' "$KIT/roles/chief-of-staff.md" && grep -q '^## Reviewing a spec' "$KIT/roles/qa.md" \
+  && grep -q 'Review the plan of every spec built in more than one repo' "$KIT/roles/architect.md" && grep -q 'your plan in a spec routed to you' "$KIT/roles/web.md" || fail "a ready-to-build rule left CABINET.md or a role"
+git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

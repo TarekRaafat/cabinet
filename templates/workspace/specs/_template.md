@@ -1,6 +1,6 @@
 ---
 feature: short name
-status: draft # draft | ready | building | shipped | dropped
+status: draft # draft | ready | building | shipped | dropped (CABINET.md, "Ready to build"; check: bin/spec.sh check)
 owner_decisions_open: 0
 repos: [] # repos that build it, e.g. [api, app]
 handoffs: [] # entry IDs that route or track it
@@ -37,3 +37,11 @@ Testable statements, one per line.
 
 | # | Question | Options | Recommendation | Owner answer (date) |
 |---|---|---|---|---|
+
+## Plan
+
+How it will be built, written by each owning builder before its first change: one `### <repo>` part per repo in `repos`, with the files it changes, the tests it adds, the order across repos, and the risks. For more than one repo, architect reviews the plan before building starts.
+
+## Reviews
+
+Written only by `bin/spec.sh record`: qa on the acceptance criteria, architect on the plan.
