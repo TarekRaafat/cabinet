@@ -1117,15 +1117,15 @@ grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "
 (cd "$RW" && "$F" role draft qa) >/dev/null 2>&1 && fail "role draft took a kit role"
 # A drafted role follows the workflow its job touches: the doctor notes what one written before it misses.
 bs="$RW/roles/brand-strategist.md"; cp "$bs" "$T/bs.keep"; cp "$RW/AGENTS.md" "$T/bs-agents.keep"; cp "$RW/repos.tsv" "$T/bs-repos.keep"
-"$RW/bin/doctor.sh" 2>&1 | grep -q 'every drafted project role follows the workflow its job touches' || fail "doctor: a fresh draft is behind the workflow"
+"$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist (says nothing of settling a disagreement with a neighbouring role)' || fail "doctor: a fresh draft without a tie-break"
 echo "Record PASS or BLOCK on the handoff." >> "$bs"
 printf 'site\t-\t-\tno\n' >> "$RW/repos.tsv"; perl -0pi -e 's/(\| Repo or area \| What it is \| Owning agent \|\n\|---\|---\|---\|\n)/$1| `site` | The website | brand-strategist |\n/' "$RW/AGENTS.md"
 grep -q '^| `site` |' "$RW/AGENTS.md" || fail "test setup: the site row"
 perl -pi -e 's/^Read `CABINET.md`, then `AGENTS.md`.*\n//' "$bs"
 out="$("$RW/bin/doctor.sh" 2>&1 || true)"
-echo "$out" | grep -q 'project roles behind the workflow: brand-strategist (never sends it to CABINET.md, gives verdicts without bin/handoff.sh record, owns a repo but writes no plan, owns a repo but attaches no evidence) (redraft each' \
+echo "$out" | grep -q 'project roles behind the workflow: brand-strategist (never sends it to CABINET.md, gives verdicts without bin/handoff.sh record, says nothing of settling a disagreement with a neighbouring role, owns a repo but writes no plan, owns a repo but attaches no evidence) (redraft each' \
   || { echo "$out" | grep -i 'project role\|brand'; fail "doctor: roles.workflow"; }
-printf '%s\n' 'Read `CABINET.md`, then `AGENTS.md`.' 'Record each verdict with bin/handoff.sh record.' 'Write your plan in the spec; attach evidence.' >> "$bs"
+printf '%s\n' 'Read `CABINET.md`, then `AGENTS.md`.' 'Record each verdict with bin/handoff.sh record.' 'Write your plan in the spec; attach evidence.' 'A disagreement with design-lead goes to the owner.' >> "$bs"
 "$RW/bin/doctor.sh" 2>&1 | grep -q 'every drafted project role follows the workflow its job touches' || fail "doctor: a role that follows the workflow is still noted"
 grep -q '^4\. \*\*Fits the workflow its job touches' "$KIT/core/CABINET.md" || fail "the drafting rule for the workflow left CABINET.md"
 cp "$T/bs.keep" "$bs"; cp "$T/bs-agents.keep" "$RW/AGENTS.md"; cp "$T/bs-repos.keep" "$RW/repos.tsv"
@@ -1150,6 +1150,26 @@ dr | grep -q 'ok    each repo and area in the team table has one owner' || fail 
 X='| `specs/` | Specs, again | architect |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
 dr | grep -q "FIX   more than one owner in the team table of AGENTS.md: \`specs/\` (.*architect.*)" || fail "two owners of specs/ not flagged: $(dr | grep -i owner)"
 git -C "$TW" checkout -q -- AGENTS.md
+# A part of a product repo given to another role than the repo's owner: allowed, noted.
+printf 'api\t-\t-\tno\n' >> "$TW/repos.tsv"
+X='| `api` | The API | backend |' Y='| `api/docs/` | API docs | tech-writer |' perl -i -pe 'print "$ENV{X}\n$ENV{Y}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+dr | grep -q 'note  parts of a repo owned by another role than the repo.s: api/docs (tech-writer) inside api (backend)' || fail "a nested owner in a repo was not noted: $(dr | grep -i nested)"
+dr | grep -q 'ok    each repo and area in the team table has one owner' || fail "a nested owner was taken for two owners"
+# role add --owns: an area another role holds is refused, the most specific row deciding.
+for o in 'api' '`specs/`' 'the api/docs/ pages' 'specs/qa'; do
+  out="$(cd "$TW" && "$F" role add seo --owns "$o" --dry-run 2>&1)" && fail "role add took --owns '$o'"
+  echo "$out" | grep -q 'the team table of AGENTS.md gives .* to another role' || fail "role add --owns '$o': $out"
+done
+out="$(cd "$TW" && "$F" role add seo --owns "search ranking, specs/seo/, specs/qa/seo" --dry-run 2>&1)" || fail "role add refused a path inside another role's area: $out"
+echo "$out" | grep -q 'Note: specs/seo (inside specs, product-manager); specs/qa/seo (inside specs/qa, qa): drafting gives seo its own row' || fail "role add did not say a path sits inside another's area, by the most specific row: $out"
+# What a project role may write, against the team table.
+printf -- '---\nname: seo\ndescription: Search.\ntools: Read\n---\n\nRead `CABINET.md`.\n\n## What you may write\n\n`specs/seo/`, `HANDOFFS.md` entries, and `specs/qa/` notes.\n\n## Next\n\n`api/x`\n' > "$TW/roles/seo.md"
+X='| `specs/seo/` | Search notes | seo |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+dr | grep -q 'note  project roles that may write another role.s area: seo may write specs/qa/, which the team table gives to qa (narrow' || fail "roles.writes: $(dr | grep -i 'may write')"
+perl -i -pe 's/, and `specs\/qa\/` notes//' "$TW/roles/seo.md"
+dr | grep -q 'ok    every project role writes only what the team table gives it' || fail "roles.writes flagged a role writing its own area or HANDOFFS.md"
+rm "$TW/roles/seo.md"; git -C "$TW" checkout -q -- AGENTS.md repos.tsv
+grep -q '^\*\*When roles disagree,\*\*' "$KIT/core/CABINET.md" && grep -q 'the most specific row wins' "$KIT/core/CABINET.md" || fail "the ownership or disagreement rule left CABINET.md"
 # A handoff to a role that is turned off, or to no one on the team, is noted with its ID.
 id="$("$TW/bin/handoff.sh" add --from qa --to finance --changed x --needed y "Price check" | cut -d' ' -f1)"
 "$TW/bin/handoff.sh" add --from qa --to "owner (via chief-of-staff)" --changed x --needed y "For the owner" >/dev/null

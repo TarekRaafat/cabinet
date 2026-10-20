@@ -36,7 +36,7 @@ A workspace can also be a `cabinet/` folder inside a project (`cabinet init --in
 
 ## Ownership
 
-Each agent owns its repos end to end, documentation included, as the team table in `AGENTS.md` assigns them. No agent writes to a repo it does not own; reading any repo is always fine. A repo with no owning agent is changed only when the owner asks. When your change affects another repo, you file a handoff; you never edit that repo.
+Each agent owns its repos end to end, documentation included, as the team table in `AGENTS.md` assigns them, one owner for each repo or area. An area inside another (`specs/qa/` inside `specs/`) belongs to its own row's owner: the most specific row wins. A part of a product repo given to a role other than the repo's owner is the owner's call, and `bin/doctor.sh` notes it (`team.nested`). No agent writes to a repo it does not own; reading any repo is always fine. A repo with no owning agent is changed only when the owner asks. When your change affects another repo, you file a handoff; you never edit that repo.
 
 ## Builders
 
@@ -94,6 +94,8 @@ The aim: an organization that runs itself and brings the owner only what needs t
 | 3 | Owner sign-off | Irreversible, public, or costs money: push, merge, deploy, publish, release; prices, quotas, plans, coupons, any spend or paid service; the brand guide, logo, positioning, public copy; legal, privacy policy, data retention; adding, changing or removing an agent or its authority | The owner's sign-off queue |
 
 A lead may move a tier 2 question up to the owner when unsure. Nobody moves a tier 3 question down. An agent unsure of the tier treats it as the higher one.
+
+**When roles disagree,** or two roles each think a decision is theirs: within one function, its lead decides, as a tier 2 decision logged where that tier logs. Across functions, or when it is unclear whose call it is, it goes to the owner as one sign-off queue item with each role's view and recommendation. Neither role acts on the disputed point until it is settled.
 
 **The sign-off queue.** One place: the top of `BRIEF.md`, kept by chief-of-staff. The owner answers in batches; chief-of-staff applies the answers into the right specs, ADRs and handoffs. Every decision put to the owner, by any agent, has:
 
@@ -162,7 +164,7 @@ A role the owner adds (`cabinet role add <role>`) starts as `roles/<role>.md` wi
 
 1. **Starts from the owner's brief,** the "The owner's brief" section, and keeps it word for word. What it says wins over everything below.
 2. **Learns the project first:** `AGENTS.md` (what the project is, its product rules, the team table, the guides), `specs/ROADMAP.md` and the specs, `notes/`, each repo's `README` and `AGENTS.md`, and the roles already on the team in `agents/`.
-3. **Writes the role a strong specialist in it would hold on this product,** in the format of the kit's roles (`.cabinet/roles/`): frontmatter (`name`; `description` saying what it does and when to use it; `tools`), "Read `CABINET.md`, then `AGENTS.md`", then what it owns (paths, repos, areas), what it decides alone (tiers 1 and 2), what it brings to the owner (tier 3), how its work is checked and by whom, what it may write, where its work ends and each neighbouring role's begins, and the line every reply ends with.
+3. **Writes the role a strong specialist in it would hold on this product,** in the format of the kit's roles (`.cabinet/roles/`): frontmatter (`name`; `description` saying what it does and when to use it; `tools`), "Read `CABINET.md`, then `AGENTS.md`", then what it owns (paths, repos, areas), what it decides alone (tiers 1 and 2), what it brings to the owner (tier 3), how its work is checked and by whom, what it may write (only what the team table gives it, or areas no row holds), where its work ends and each neighbouring role's begins, naming them, with how a disagreement with each is settled ("When roles disagree"), and the line every reply ends with.
 4. **Fits the workflow its job touches,** in the role's own words, so they never contradict this file: every role files handoffs only with `bin/handoff.sh add`. A role that reviews others' work records each verdict with `bin/handoff.sh record <ID> --role <role> ...`, its notes in its own folder under `specs/` (a row in the team table), and qa's evidence rule where it passes what the owner will see. A role that owns a repo is a builder ("Builders"): it works only from work that is ready ("Ready to build"), writes its plan in a spec routed to it, attaches evidence (`--evidence`, `bin/handoff.sh attach`), sends back what is not ready, and files work for other builders with `--small` or `--spec`. The kit's roles show each in practice. `bin/doctor.sh` notes a drafted role that misses one (`roles.workflow`).
 5. **Never widens the kit's limits:** no push, merge, deploy, publish or spend, tier 3 to the owner, and the builder never verifies its own work.
 6. **Lists every choice the brief did not make** under "## Assumed, for the owner to confirm", one plain line each. chief-of-staff carries them in the sign-off queue; once the owner answers, each line moves into the role (or out of it).

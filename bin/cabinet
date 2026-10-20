@@ -867,6 +867,32 @@ cmd_role() {
     return 0
   fi
   [[ -e "$ws/roles/$name.md" ]] && die "roles/$name.md exists: turn it on with cabinet config --roles, or redraft it with cabinet role draft $name"
+  # What it owns, against the team table (CABINET.md, "Ownership"): a path, or a repo's name, that is
+  # another role's row is refused; one inside another role's area becomes the new role's own row when
+  # it is drafted (the most specific row wins), so it is only said. Read with the workspace's own
+  # scripts; an older kit skips it.
+  owns_check() {
+    [[ -n "$owns" ]] || return 0
+    local found taken inside
+    found="$(bash -c 'set -f; source "$1/bin/lib.sh" 2>/dev/null && declare -F team_rows >/dev/null || exit 0
+      names=" $(repos 2>/dev/null | cut -f1 | tr "\n" " ") "
+      for t in $(printf "%s" "$2" | tr ",;()" "    "); do
+        t="${t//\`/}"; t="${t%[.:]}"
+        [[ "$t" == */* || "$names" == *" $t "* ]] || continue
+        t="${t%/}"
+        best="" who=""
+        while IFS=$(printf "\t") read -r a o; do
+          if [[ "$t" == "$a" || "$t" == "$a/"* ]] && (( ${#a} > ${#best} )); then best="$a" who="$o"; fi
+        done < <(team_rows)
+        [[ -n "$who" && "$who" != "$3" ]] || continue
+        [[ "$best" == "$t" ]] && printf "taken %s (%s)\n" "$t" "$who" || printf "inside %s (inside %s, %s)\n" "$t" "$best" "$who"
+      done; exit 0' _ "$ws" "$owns" "$name")"
+    taken="$(sed -n 's/^taken //p' <<<"$found" | paste -sd ';' - | sed 's/;/; /g')"
+    inside="$(sed -n 's/^inside //p' <<<"$found" | paste -sd ';' - | sed 's/;/; /g')"
+    [[ -z "$taken" ]] || die "the team table of AGENTS.md gives $taken to another role: own a narrower path, or change that row first (one owner for each area)"
+    [[ -z "$inside" ]] || echo "Note: $inside: drafting gives $name its own row there, and the most specific row wins (CABINET.md, \"Ownership\")." >&2
+  }
+  owns_check
   if ((dry)); then echo "would write roles/$name.md from your brief and turn $name on, with rows in the team tables"; return 0; fi
   local tty=0
   if ((yes == 0)) && [[ -z "$does$owns$decides$escalates" ]] && { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null; then tty=1; fi
@@ -874,6 +900,7 @@ cmd_role() {
     echo "A new role: $name. Say what you know; Enter leaves it to the agent that drafts the role from what the project shows."
     does="$(ask_free "What should it do")"; owns="$(ask_free "What does it own (repos, folders, areas)")"
     decides="$(ask_free "What may it decide on its own")"; escalates="$(ask_free "What must it bring to you")"
+    owns_check
   fi
   # The owner's words, one line each, kept as data in the role file.
   said() { local v; v="$(printf '%s' "$1" | tr '\r\n\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; printf '%s' "${v:-not said yet}"; }

@@ -201,6 +201,22 @@ builders() {
     | while IFS= read -r o; do has "$BUILDERS" "$o" && ! has "$CABINET_ROLES" "$o" && echo "$o"; done | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'
 }
 team_roles() { echo $CABINET_ROLES $(builders); }
+# team_rows: "<area>\t<owner>" for each row of the team table in AGENTS.md whose area is in backticks
+# (a repo or a path), without the backticks or a trailing /.
+team_rows() {
+  awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 && $2 ~ /`/ {
+      a = $2; o = $4; gsub(/[ `]/, "", a); sub(/\/$/, "", a); gsub(/^ +| +$/, "", o); if (a != "" && o != "") print a "\t" o
+    }' "$WS/AGENTS.md" 2>/dev/null
+}
+# owner_of <path>: the owner of the most specific area in the team table that holds the path, or
+# nothing (CABINET.md, "Ownership": the most specific row wins).
+owner_of() {
+  local p="${1%/}" a o best="" who=""
+  while IFS=$'\t' read -r a o; do
+    if [[ "$p" == "$a" || "$p" == "$a/"* ]] && (( ${#a} > ${#best} )); then best="$a" who="$o"; fi
+  done < <(team_rows)
+  printf '%s' "$who"
+}
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
 # a repo in the team table: whoever it is, work sent to it is built (CABINET.md, "Ready to build").
 builds_repos() {

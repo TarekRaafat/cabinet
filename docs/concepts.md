@@ -39,7 +39,7 @@ On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's 
 
 ## Repo ownership
 
-Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agent writes to a repo it does not own. When a change affects another repo, the agent files a handoff instead of editing it.
+Each repo has one owning agent, listed in the team table in `AGENTS.md`, and so does each workspace area (`specs/`, `specs/qa/`, ...). An area inside another belongs to its own row: the most specific row wins. No agent writes to a repo it does not own. When a change affects another repo, the agent files a handoff instead of editing it. The doctor flags an area with two owners (`team.single-owner`), notes a part of a repo given to another role than the repo's (`team.nested`) and a project role whose "What you may write" reaches another role's area (`roles.writes`), and `cabinet role add --owns` refuses an area that is already another role's.
 
 ## Ready to build
 
@@ -64,7 +64,7 @@ Every decision belongs to exactly one tier:
 2. **The function's lead:** reversible, crosses repos or sets direction, costs nothing.
 3. **You:** irreversible, public, or costs money. Pushes, deploys, publishing, prices, spend, brand, legal, and adding or changing an agent.
 
-An agent unsure of the tier treats it as the higher one. A reversible tier 3 item marked "default" may go ahead as local commits after 72 hours without an objection, but nothing is ever pushed, published or spent on silence.
+An agent unsure of the tier treats it as the higher one. When two roles disagree, or both think a decision is theirs, the function's lead settles it; across functions, or when whose call it is is unclear, it comes to you as one sign-off item with both views, and neither acts on it meanwhile. A reversible tier 3 item marked "default" may go ahead as local commits after 72 hours without an objection, but nothing is ever pushed, published or spent on silence.
 
 ## The brief and the sign-off queue
 

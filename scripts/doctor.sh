@@ -74,7 +74,7 @@ done < "$K/manifest"
 # of the project's own with a kit role's name is used instead of the kit's: say so. A drafted one
 # follows the workflow its job touches (CABINET.md, "Drafting a role"): text checks for the gaps a
 # role written before the workflow has, not a judgment of the role.
-behind=""
+behind="" clash=""
 for f in "$WS"/roles/*.md; do
   [[ -f "$f" ]] && head -1 "$f" | grep -qx -- '---' || continue
   r="$(basename "$f" .md)"
@@ -83,12 +83,21 @@ for f in "$WS"/roles/*.md; do
   why=""
   grep -q 'CABINET\.md' "$f" || why+=", never sends it to CABINET.md"
   grep -qwE 'PASS|BLOCK|CHANGES' "$f" && ! grep -q 'handoff.sh record' "$f" && why+=", gives verdicts without bin/handoff.sh record"
+  grep -qi 'disagree' "$f" || why+=", says nothing of settling a disagreement with a neighbouring role"
   if builds_repos "$r"; then
     grep -qi 'plan' "$f" || why+=", owns a repo but writes no plan"
     grep -qi 'evidence' "$f" || why+=", owns a repo but attaches no evidence"
   fi
   [[ -z "$why" ]] || behind="${behind:+$behind; }$r (${why#, })"
+  # What it may write, against the team table: an area another role owns is not its to write.
+  while IFS= read -r p; do
+    case "$p" in HANDOFFS.md|specs/evidence|specs/evidence/*) continue ;; esac
+    o="$(owner_of "$p")"
+    [[ -z "$o" || "$o" == "$r" ]] || clash="${clash:+$clash; }$r may write $p, which the team table gives to $o"
+  done < <(awk '/^## / {w = ($0 ~ /^## What you may write/); next} w' "$f" | grep -o '`[^`[:space:]]*`' | tr -d '`' | sort -u)
 done
+[[ -z "${clash:-}" ]] && ok roles.writes "every project role writes only what the team table gives it" \
+  || note roles.writes "project roles that may write another role's area: $clash (narrow the role's \"What you may write\", or change the team table)"
 [[ -z "$behind" ]] && ok roles.workflow "every drafted project role follows the workflow its job touches" \
   || note roles.workflow "project roles behind the workflow: $behind (redraft each: cabinet role draft <role>, which keeps what you confirmed)"
 out="$("$WS/bin/role.sh" build --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/role.sh build)"
@@ -275,6 +284,17 @@ elif [[ -x "$sh_hook" ]] && grep -q 'bin/secret.sh' "$sh_hook"; then ok secrets.
 else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secret.sh (run bin/bootstrap.sh; a hook of your own can call bin/secret.sh check --staged)"; fi
 
 section "Team"
+# A part of a product repo given to another role than the repo's owner: allowed (the most specific
+# row wins), but the owner's call, so say so.
+nested=""
+while IFS=$'\t' read -r a o; do
+  rn="${a%%/*}"; [[ "$a" == */* ]] || continue
+  has " $(repos 2>/dev/null | cut -f1 | tr '\n' ' ') " "$rn" || continue
+  ro="$(team_rows | awk -F'\t' -v n="$rn" '$1 == n { print $2; exit }')"
+  [[ -n "$ro" && "$ro" != "$o" ]] && nested="${nested:+$nested; }$a ($o) inside $rn ($ro)"
+done < <(team_rows)
+[[ -z "$nested" ]] && ok team.nested "no part of a repo is given to another role than the repo's owner" \
+  || note team.nested "parts of a repo owned by another role than the repo's: $nested (the most specific row wins; if that is not meant, change the team table)"
 # Each repo or area has one owner in the team table, or two roles would act on it.
 dup="$(awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
     a = $2; o = $4; gsub(/^ +| +$/, "", a); gsub(/^ +| +$/, "", o)
