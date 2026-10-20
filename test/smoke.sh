@@ -1471,6 +1471,45 @@ git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "small tasks: marked when filed, checked against their commits" "0"
+s49() {
+local base id out rc c1 c2 c3 c4 r
+base="$(git -C "$W" rev-parse HEAD)"
+for r in api app; do
+  git init -q "$W/$r" && echo x > "$W/$r/a.js" && git -C "$W/$r" add -A && git -C "$W/$r" commit -qm init
+  printf '%s\t-\t-\tno\n' "$r" >> "$W/repos.tsv"
+done
+perl -0pi -e 's/(\| Contract \| Repos that move together \| Source of truth \|\n\|---\|---\|---\|\n)/$1| Items API | api, app | `api\/openapi.yaml` |\n/; s/(## Hard to undo\n\n.*\n\n)- none yet/$1- `api\/migrations\/`/' "$W/AGENTS.md"
+git -C "$W" commit -qam "repos and guarded paths"
+grep -q '`api/migrations/`' "$W/AGENTS.md" && grep -q '`api/openapi.yaml` |' "$W/AGENTS.md" || fail "test setup: guarded paths"
+# Work for a repo or a builder says what it is: --small or --spec, not neither, not both.
+for to in api backend "qa, app"; do
+  rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to "$to" --changed x --needed y "Unsized" >/dev/null 2>&1 || rc=$?
+  [[ $rc == 2 ]] || fail "a handoff to $to was filed without --small or --spec"
+done
+"$W/bin/handoff.sh" add --from api --to qa --changed x --needed y "For qa" >/dev/null || fail "a handoff to qa needed a size"
+rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed y --small --spec specs/x.md "Both" >/dev/null 2>&1 || rc=$?; [[ $rc != 0 ]] || fail "--small with --spec was accepted"
+id="$("$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed "Fix the label" --small --evidence https://example.com/s "Label")"; id="${id%% *}"
+grep -qx -- "- Size: small" "$W/HANDOFFS.md" || fail "the small handoff has no Size line"
+mkdir -p "$W/specs/qa" && echo ran > "$W/specs/qa/s.md" && git -C "$W" add specs/qa && git -C "$W" commit -qm note
+c() { mkdir -p "$(dirname "$W/$1/$3")"; echo "$2" > "$W/$1/$3"; git -C "$W/$1" add -A; git -C "$W/$1" commit -qm "$2"; git -C "$W/$1" rev-parse --short HEAD; }
+c1="$(c api one src/label.js)" c2="$(c app two src/label.js)" c3="$(c api three migrations/001.sql)" c4="$(c api four openapi.yaml)"
+rec() { "$W/bin/handoff.sh" record "$id" --role qa PASS --commits "$1" --note specs/qa/s.md 2>&1; }
+out="$(rec "$c1,$c2")" && fail "a small task spanning two repos passed"; echo "$out" | grep -q 'span more than one repo (api app): it needs a spec' || fail "two repos: $out"
+out="$(rec "$c3")" && fail "a small task changing a migration passed"; echo "$out" | grep -q 'changes api/migrations/001.sql' || fail "hard to undo: $out"
+out="$(rec "$c4")" && fail "a small task changing a contract file passed"; echo "$out" | grep -q 'changes api/openapi.yaml' || fail "contract: $out"
+out="$(rec deadbee)" && fail "a small task with an unknown commit passed"; echo "$out" | grep -q 'commit deadbee is in no repo on this machine' || fail "unknown commit: $out"
+"$W/bin/handoff.sh" record "$id" --role qa BLOCK --commits "$c3" --note specs/qa/s.md >/dev/null || fail "a BLOCK on a small task that grew was refused"
+out="$(rec "$c1")" || fail "a small task that stayed small did not pass: $out"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'every small task that passed stayed small' || fail "doctor: a small task that stayed small"
+# A PASS written by hand on work that grew: the doctor flags it.
+perl -pi -e "s/^- Verdict: qa PASS (\\S+) \\S+ /- Verdict: qa PASS \$1 $c3 /" "$W/HANDOFFS.md"
+"$W/bin/doctor.sh" 2>&1 | grep -q "handoffs marked small that were not: $id (it changes api/migrations/001.sql" || { "$W/bin/doctor.sh" 2>&1 | grep -i small; fail "doctor: handoffs.small"; }
+grep -q '^## Hard to undo' "$KIT/templates/workspace/AGENTS.md" && grep -q '^\*\*Small means small\.\*\*' "$KIT/roles/qa.md" && grep -q 'filed with `--small`' "$KIT/roles/chief-of-staff.md" || fail "a small-task rule left the AGENTS.md template, qa or chief-of-staff"
+git -C "$W" reset -q --hard "$base"; rm -rf "$W/api" "$W/app" "$W/specs/qa"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

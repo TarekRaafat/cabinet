@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file>] [--evidence <file or URL>]... "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
 #       from the workspace root, so it opens from HANDOFFS.md and BRIEF.md; a URL is linked as it is.
 #       --spec names the spec it builds, on a "- Spec:" line, and refuses unless bin/spec.sh check
-#       finds the spec ready or building with nothing missing (CABINET.md, "Ready to build").
+#       finds the spec ready or building with nothing missing (CABINET.md, "Ready to build"). --small
+#       marks it a small task ("- Size: small"). Work for a repo, or for a role that builds one, needs
+#       one of the two.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
 #   bin/handoff.sh attach <ID> <file or URL>... --from <name>
@@ -16,7 +18,8 @@
 #   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
 #       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
 #       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
-#       sender, and a qa PASS on an entry with no evidence.
+#       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
+#       span repos or change a path AGENTS.md guards (small_problems in lib.sh).
 #   bin/handoff.sh list [name] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
 #       A repo or role name (api, qa, owner, ...): every entry addressed to it that is not done or
@@ -80,7 +83,7 @@ save() {
   echo "$did and committed"
 }
 # entry <ID> info|evidence <links>|verdict <role> <line>: read or change one open entry in place.
-# info prints "<sender>\t<1 when it has evidence>". Exit 3 when the entry is not under "## Open".
+# info prints "<sender>\t<1 when it has evidence>\t<small when it is a small task>". Exit 3 when the entry is not under "## Open".
 entry() {
   python3 -I - "$WS/HANDOFFS.md" "$@" <<'PY'
 import re, sys
@@ -107,7 +110,8 @@ body = lines[start + 1:last + 1]
 has_ev = lambda l: l.startswith("- Evidence:") and re.search(r"\]\(|<https?:", l)
 if mode == "info":
     sender = next((m.group(1).strip() for m in (re.match(r"- From: (.*?) ->", l) for l in body) if m), "")
-    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else ""))
+    small = "small" if any(re.match(r"- Size: small\s*$", l) for l in body) else ""
+    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else "") + "\t" + small)
     sys.exit(0)
 if mode == "evidence":
     links = args[0]
@@ -128,8 +132,8 @@ PY
 }
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file>] [--evidence <file or URL>]... \"<title>\""
-from="" to="" changed="" needed="" depends="none" title="" spec=""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file> | --small] [--evidence <file or URL>]... \"<title>\""
+from="" to="" changed="" needed="" depends="none" title="" spec="" small=""
 local -a ev
 ev=()
 while (($#)); do
@@ -138,6 +142,7 @@ while (($#)); do
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       ev+=("$(ev_arg "$2")") || exit 2
       shift 2 ;;
+    --small) small=1; shift ;;
     --spec)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       spec="$(ws_md --spec "$2")" || exit 1
@@ -162,7 +167,14 @@ from="$(one "$from")" to="$(one "$to")" changed="$(one "$changed")" needed="$(on
 missing=""
 for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing ${v/title/a title}"; done
 [[ -z "$missing" ]] || { echo "missing:$missing. $usage" >&2; exit 2; }
-# Only a spec ready to build is routed (CABINET.md, "Ready to build").
+# Work that gets built is either a small task or from a spec ready to build (CABINET.md, "Ready to build").
+[[ -z "$spec" || -z "$small" ]] || { echo "--spec or --small, not both: a task with a spec is not small. $usage" >&2; exit 2; }
+if [[ -z "$spec$small" ]]; then
+  while IFS= read -r n; do
+    n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
+    [[ -n "$n" ]] && builds_repos "$n" && { echo "$n builds: say what this is, --spec specs/<feature>.md for work from a ready spec, or --small for a small task (one repo, no contract change, no decision for the owner, easy to undo). $usage" >&2; exit 2; }
+  done < <(printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n')
+fi
 if [[ -n "$spec" ]]; then
   sc="$("$(dirname "$0")/spec.sh" check "$spec" --json 2>/dev/null || true)"
   st="$(jq -r '.[0].status // ""' <<<"$sc" 2>/dev/null || true)" sp="$(jq -r '.[0].problems // [] | join("; ")' <<<"$sc" 2>/dev/null || true)"
@@ -187,7 +199,8 @@ entry="### $id: $title
 - Changed: $changed
 - Needed: $needed
 - Depends on: $depends${spec:+
-- Spec: $spec}${evline:+
+- Spec: $spec}${small:+
+- Size: small}${evline:+
 - Evidence: $evline}"
 ENTRY="$entry" awk '
   function put() { if (!done) { sub(/\n+$/, "", buf); printf "%s\n\n%s\n", buf, ENVIRON["ENTRY"]; buf = ""; done = 1 } }
@@ -249,10 +262,15 @@ commits="$(lc "$commits" | tr -s ' ,' ',,' | sed 's/^,//; s/,$//')"
 rel="$(ws_md --note "$note")" || exit 1
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
-sender="${info%%$'\t'*}" hasev="${info#*$'\t'}"
+# Split by hand: read would merge the two tabs around an empty field.
+sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" size="${rest#*$'\t'}"
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }
 if [[ "$role" == qa && "$verdict" == PASS && -z "$hasev" ]]; then
   echo "$id has no evidence, so qa cannot pass it: record BLOCK naming what is missing; its sender adds it with bin/handoff.sh attach $id <file or URL> --from $sender" >&2; exit 1
+fi
+if [[ "$size" == small && "$verdict" == PASS ]]; then
+  why="$(small_problems "$commits")"
+  [[ -z "$why" ]] || { echo "$id is marked small, but $why: it needs a spec. Record BLOCK; chief-of-staff routes it again from a spec (CABINET.md, \"Ready to build\")" >&2; exit 1; }
 fi
 entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel"
 save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" HANDOFFS.md

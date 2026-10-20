@@ -43,7 +43,7 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`. No agen
 
 ## Ready to build
 
-Nothing is built before it is defined. A small task (one repo, no contract change, no decision for you, easy to undo) goes straight to a handoff that says what done looks like. Anything bigger is built from a spec in `specs/`, which the product-manager writes, and a spec moves through statuses that `cabinet spec check` holds to what each needs:
+Nothing is built before it is defined. A small task (one repo, no contract change, no decision for you, easy to undo) goes straight to a handoff that says what done looks like, marked small (`cabinet handoff add --small`). The claim is checked against what was built: a PASS is refused when the commits span repos or change a file a contract lives in or a path listed as hard to undo in `AGENTS.md`, and the doctor flags one already passed (`handoffs.small`). Whether a decision should have been yours, no script can tell: qa blocks that. Anything bigger is built from a spec in `specs/`, which the product-manager writes, and a spec moves through statuses that `cabinet spec check` holds to what each needs:
 
 - **draft** while it is written and its decisions wait on you.
 - **ready** once it has testable acceptance criteria, nothing `TBD` in its rules, every decision answered, and the repos that build it, and qa has passed the criteria as testable (`cabinet spec record`). Only a ready spec is routed to builders (`cabinet handoff add --spec`).

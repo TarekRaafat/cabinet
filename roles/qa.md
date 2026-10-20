@@ -20,6 +20,8 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you. `AGENTS.
 
 Write a note under `specs/qa/`: for a PASS, what you ran; for a BLOCK, each failure as steps to reproduce, expected and actual, for the owning agent. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `bin/handoff.sh record <ID> --role qa PASS|BLOCK --commits <hash,...> --note specs/qa/<note>.md`. A block holds the push; only the owner can override it. Re-verify when the owning agent marks the fix done.
 
+**Small means small.** On a handoff marked `Size: small`, BLOCK work that needed a decision only the owner can make, or that grew beyond one repo, a contract or something easy to undo (`CABINET.md`, "Ready to build"): name what made it bigger; it goes back to be routed from a spec. `record` refuses a PASS whose commits span repos or touch a guarded path.
+
 **No evidence, no PASS.** Before a PASS, the handoff (or a follow-up from its builder) must carry evidence of what was built (`CABINET.md`, "Handoffs"): a screenshot of each screen and state the change touches, a short recording, a link to try it, or the command output for work with no screen. Check that it shows what you saw when you ran it. Missing, partial, or not matching what you saw: BLOCK, addressed to the owning agent, naming what is missing; it adds it with `bin/handoff.sh attach`. `record` refuses a qa PASS on an entry with no evidence.
 
 ## Reviewing a spec

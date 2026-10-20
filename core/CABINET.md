@@ -54,7 +54,7 @@ Product repos are built by builder roles: `backend` (servers, APIs, workers, lib
 
 Nothing is built before it is defined, and nothing bigger than a small task before it is planned.
 
-- **A small task:** one repo, no contract change, no decision for the owner, and easy to undo (a bug fix, a copy change, a small internal improvement). It goes straight to a handoff whose `Needed:` says what done looks like, in terms qa can test.
+- **A small task:** one repo, no contract change, no decision for the owner, and easy to undo (a bug fix, a copy change, a small internal improvement). It goes straight to a handoff filed with `--small` (a `Size: small` line), whose `Needed:` says what done looks like, in terms qa can test. Work for a repo, or a role that builds one, is filed with `--small` or `--spec`; `bin/handoff.sh add` refuses it with neither. The claim is checked against the result: `bin/handoff.sh record` refuses a PASS on a small task whose commits span more than one repo or change a path `AGENTS.md` guards (a contract's files, "Hard to undo"), and the doctor flags one already passed (`handoffs.small`). What no script can see, a decision the owner should have made, qa and code-reviewer BLOCK.
 - **Everything else** is built from a spec, `specs/<feature>.md`, which product-manager writes from `specs/_template.md`. Unsure whether a task is small? It is not.
 
 A spec moves `draft`, `ready`, `building`, `shipped` (or `dropped`), and `bin/spec.sh check` holds each status to what it needs (the doctor runs it: `specs.ready`):

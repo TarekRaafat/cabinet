@@ -178,7 +178,7 @@ Exit 0; 1 when the role could not be added, removed or drafted, or `build --chec
 ## cabinet handoff
 
 ```sh
-cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file>] [--evidence <file or URL>]... "<title>"
+cabinet handoff add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--evidence <file or URL>]... "<title>"
 cabinet handoff attach <ID> <file or URL>... --from <name>
 cabinet handoff record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...> --note <file>
 cabinet handoff list [name] [--json]
@@ -187,13 +187,13 @@ cabinet handoff archive
 
 **`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs: each write takes a lock (`.cabinet/handoff.lock`), and a lock left for more than a minute by a writer that was stopped is taken over. Entries are filed only this way, never by hand, so no two take the same ID. Two copies of a workspace (a teammate's clone) do not share the lock; `cabinet doctor` flags an ID used twice after they are merged (`handoffs.unique-ids`).
 
-`--spec specs/<feature>.md` names the spec the handoff builds, on a `Spec:` line, and refuses (exit 1) unless the spec is committed, `ready` or `building`, and passes `cabinet spec check`: work bigger than a small task is routed only from a spec that is ready to build ([concepts](concepts.md#ready-to-build)).
+`--spec specs/<feature>.md` names the spec the handoff builds, on a `Spec:` line, and refuses (exit 1) unless the spec is committed, `ready` or `building`, and passes `cabinet spec check`: work bigger than a small task is routed only from a spec that is ready to build ([concepts](concepts.md#ready-to-build)). `--small` instead marks a small task (one repo, no contract change, no decision for you, easy to undo) with a `Size: small` line. A handoff to a repo, a kit builder, or a role that owns a repo in the team table needs one of the two (exit 2 with neither, or both).
 
 `--evidence`, once for each, attaches what shows the work, so you can check it without reading code: a file (a screenshot, a short recording, saved command output) is copied to `specs/evidence/<ID>/` with a name safe in a link and committed with the entry; an `http` or `https` link is kept as it is. The entry gets an `Evidence:` line of links from the workspace root, which open with a click from `HANDOFFS.md` and `BRIEF.md` in an editor or on GitHub. `archive` rewrites them to open from `handoffs/`, and `cabinet digest` to full paths. A file path is read from the folder you run it in, else from the workspace.
 
 **`attach`** adds evidence to an open handoff after it was filed (after a BLOCK, a fix, a missed screen), the same way `--evidence` does: files copied to `specs/evidence/<ID>/`, every link added to the entry's `Evidence:` line, committed. Only the entry's sender may: `--from` must match its `From:`.
 
-**`record`** writes a reviewer's verdict on an open handoff as one line, `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>`, with today's date, replacing that role's earlier verdict, and commits it (`handoffs: <ID> <role> <verdict>`). The verdict may be in any case; commits may be joined by commas or spaces. It refuses when the note is not a committed `.md` file under `specs/` (read from the folder you run it in, else from the workspace), when the role is the entry's sender (the builder never verifies its own work), and a qa PASS on an entry with no evidence: qa records BLOCK instead, and the sender runs `attach`.
+**`record`** writes a reviewer's verdict on an open handoff as one line, `- Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note>`, with today's date, replacing that role's earlier verdict, and commits it (`handoffs: <ID> <role> <verdict>`). The verdict may be in any case; commits may be joined by commas or spaces. It refuses when the note is not a committed `.md` file under `specs/` (read from the folder you run it in, else from the workspace), when the role is the entry's sender (the builder never verifies its own work), and a qa PASS on an entry with no evidence: qa records BLOCK instead, and the sender runs `attach`. On a small task, it refuses a PASS whose commits are in more than one repo (or in none on this machine), or change a path `AGENTS.md` guards: a contract's files, written as `` `<repo>/<path>` `` under "Source of truth" in the contracts table, or a path under "Hard to undo". The work goes back to be routed from a spec.
 
 **`list`**, without a name: every open handoff with its age in days, oldest first (`?` when it has no date). With a repo or role name (`qa`, `owner`): every entry addressed to it, in full; this is the start-of-session read.
 
@@ -201,7 +201,7 @@ cabinet handoff archive
 
 `add`, `attach` and `record` write one at a time, and with someone else's uncommitted lines in `HANDOFFS.md` they write but do not commit.
 
-Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
+Exit 0; 1 when `add` could not commit (the entry is written), `attach` or `record` refuses (no such open entry, not its sender, a note not committed, the builder's own verdict, a qa PASS with no evidence, a PASS on a small task that was not), or `archive` meets uncommitted lines; 2 for a missing value, an unknown option, a value in the wrong form, or evidence that is neither a file nor an `http(s)` link.
 
 ## cabinet spec
 

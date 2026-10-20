@@ -28,11 +28,17 @@ Add one row per product repo (and list it in `repos.tsv`). A repo whose owning a
 
 ## Contracts that cross repo lines
 
-A change on one side is not done until every side agrees. The side that changes files the handoff.
+A change on one side is not done until every side agrees. The side that changes files the handoff. Name the files a contract lives in as `` `<repo>/<path>` `` under "Source of truth" (a path ending in `/` covers its folder): a small task never changes them, and `bin/handoff.sh record` refuses a PASS on one that does.
 
 | Contract | Repos that move together | Source of truth |
 |---|---|---|
 | TBD | | |
+
+## Hard to undo
+
+Paths where a change is hard to undo (migrations, public files, anything released): a small task never touches them (`CABINET.md`, "Ready to build"), and `bin/handoff.sh record` refuses a PASS on one that does. One per line, as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.
+
+- none yet
 
 ## House rules
 

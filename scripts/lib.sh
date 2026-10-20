@@ -201,6 +201,51 @@ builders() {
     | while IFS= read -r o; do has "$BUILDERS" "$o" && ! has "$CABINET_ROLES" "$o" && echo "$o"; done | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'
 }
 team_roles() { echo $CABINET_ROLES $(builders); }
+# builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
+# a repo in the team table: whoever it is, work sent to it is built (CABINET.md, "Ready to build").
+builds_repos() {
+  local n=$1 names
+  names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
+  has "$names $BUILDERS" "$n" && return 0
+  awk -F'|' -v names=" $names " '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
+      a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (index(names, " " a " ")) print o
+    }' "$WS/AGENTS.md" 2>/dev/null | grep -qxF "$n"
+}
+# guarded_paths: "<repo>\t<path>" for every path a small task must not touch: the files contracts live
+# in ("Source of truth" in the contracts table of AGENTS.md) and the paths under "Hard to undo", each
+# written as `<repo>/<path>`.
+guarded_paths() {
+  awk -F'|' '/^## / {c = ($0 ~ /^## Contracts/); h = ($0 ~ /^## Hard to undo/); next}
+    c && NF >= 5 {print $4} h {print}' "$WS/AGENTS.md" 2>/dev/null \
+    | grep -o '`[A-Za-z0-9._-]*/[^`[:space:]]*`' | tr -d '`' | sed 's#/#\t#' || true
+}
+# small_problems <hash,...>: why commits are not a small task, or nothing: they must sit in one repo on
+# this machine (the workspace counts as "workspace") and touch no guarded path.
+small_problems() {
+  local c name url files link path d found in="" touched="" gr gp f t=$'\t'
+  local -a dirs
+  dirs=("workspace$t$WS")
+  while IFS=$'\t' read -r name url files link path; do dirs+=("$name$t$(repo_dir "$path")"); done < <(repos 2>/dev/null)
+  for c in ${1//,/ }; do
+    found=""
+    for d in "${dirs[@]}"; do
+      git -C "${d#*$t}" cat-file -e "$c^{commit}" 2>/dev/null || continue
+      found="${d%%$t*}"
+      has "$in" "$found" || in="${in:+$in }$found"
+      touched+="$(git -C "${d#*$t}" diff-tree --root --no-commit-id --name-only -r "$c" | sed "s#^#$found$t#")"$'\n'
+      break
+    done
+    [[ -n "$found" ]] || { echo "commit $c is in no repo on this machine"; return 0; }
+  done
+  [[ "$in" != *" "* ]] || { echo "its commits span more than one repo ($in)"; return 0; }
+  while IFS=$'\t' read -r gr gp; do
+    [[ -n "$gr" && "$gr" == "$in" ]] || continue
+    while IFS=$'\t' read -r name f; do
+      [[ "$f" == "$gp" || "$f" == "${gp%/}/"* ]] && { echo "it changes $gr/$f, which a contract or the \"Hard to undo\" list in AGENTS.md names"; return 0; }
+    done <<<"$touched"
+  done < <(guarded_paths)
+  return 0
+}
 # The builder a repo most looks like, from the files at its top (package.json is read as data only).
 builder_for() {
   local d=$1 deps=""

@@ -152,6 +152,7 @@ O	handoff add	--changed	"..."	Exactly what changed: endpoint, field, limit, stat
 O	handoff add	--needed	"..."	What the addressee has to do.
 O	handoff add	--depends-on	"..."	The commit or branch it depends on (default: none).
 O	handoff add	--spec	<file>	The spec it builds; refused unless the spec is ready to build (cabinet spec check).
+O	handoff add	--small		A small task: one repo, no contract change, no owner decision, easy to undo. Work for a builder needs this or --spec.
 O	handoff add	--evidence	<file or URL>	What shows the work: a file (copied into specs/evidence/<ID>/) or a link. Once for each.
 O	handoff attach	--from	<repo or role>	Who adds it: the handoff's sender, and no one else.
 O	handoff record	--role	<role>	The reviewer recording it (qa, security, code-reviewer, ...).
