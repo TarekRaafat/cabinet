@@ -245,6 +245,21 @@ owner_of() {
   done < <(team_rows)
   printf '%s' "$who"
 }
+# role_team <role> <Field>: a line of the "## Team" section of roles/<role>.md ("- Reports to: qa"),
+# the value only, or nothing (.cabinet/rules/seats.md, "Sub-teams").
+role_team() {
+  awk -v f="- $2:" '/^## / {t = ($0 == "## Team"); next} t && index($0, f) == 1 { sub(/^- [^:]*: */, ""); gsub(/`/, ""); print; exit }' "$WS/roles/$1.md" 2>/dev/null || true
+}
+# delegates: "<role>\t<lead>\t<covers, comma separated>\t<trial until>" for each role on the team that
+# reports to a lead and covers work for it: its verdicts count for its lead's on that work.
+delegates() {
+  local r lead cov
+  for r in $(team_roles); do
+    lead="$(role_team "$r" "Reports to")"; cov="$(role_team "$r" "Covers")"
+    [[ -n "$lead" && -n "$cov" ]] || continue
+    printf '%s\t%s\t%s\t%s\n' "$r" "$lead" "$(printf '%s' "$cov" | tr -d ' ' | tr '[:upper:]' '[:lower:]')" "$(role_team "$r" "Trial until")"
+  done
+}
 # readiness: {"<ID>": {verdicts, needs, missing, blocking, stale, ready, unread_verdicts}} for every
 # entry. Needed: each reviewer the entry is addressed to, and for code (from a builder, or a verdict
 # that names commits) qa, security and code-reviewer, with design-lead for a web or mobile builder,
@@ -260,9 +275,13 @@ readiness() {
   done < <(team_rows)
   local -a arch
   arch=(); for n in "$WS"/handoffs/archive-*.md; do [[ -f "$n" ]] && arch+=("$n"); done
-  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" python3 -I - "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"} <<'PY'
-import json, os, re, sys
+  TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" python3 -I - "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"} <<'PY'
+import datetime, json, os, re, sys
 cost = {}
+today = datetime.date.today().isoformat()
+# A role that reports to a lead and covers some work reviews it for the lead (its verdict counts),
+# with the lead's PASS needed too until its trial ends.
+dl = [l.split("\t") for l in os.environ.get("DELEGATES", "").split("\n") if l.count("\t") == 3]
 try:
     for row in open(sys.argv[1], encoding="utf-8"):
         f = row.rstrip("\n").split("\t")
@@ -315,8 +334,24 @@ for e in entries:
             work.append(c)
     last = {v["role"]: v for v in vs}
     blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
-    stale = [r for r, v in last.items() if v["verdict"] == "PASS" and not covers(v["commits"], work)]
-    missing = [r for r in needs if r not in last]
+    # Who does each review: the role that covers this sender's work for the lead, else the lead; the
+    # lead's own PASS always counts.
+    who = []
+    for r in needs:
+        d = next((d for d in dl if d[1] == r and frm in d[2].split(",")), None)
+        if d:
+            who.append((d[0], [d[0], r]))
+            if d[3] and d[3] >= today:
+                who.append((r, [r]))
+        else:
+            who.append((r, [r]))
+    needs, stale, missing = [], [], []
+    for w, ok in who:
+        needs.append(w)
+        passed = [last[o] for o in ok if o in last and last[o]["verdict"] == "PASS"]
+        if any(covers(p["commits"], work) for p in passed) or any(o in blocking for o in ok):
+            continue   # passed, or blocking (and listed there)
+        (stale if passed else missing).append(w)
     dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
     st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
     out[e["id"]] = {"archived": e["archived"], "depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),

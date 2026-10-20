@@ -16,8 +16,8 @@
 #       writes the whole role as .cabinet/rules/seats.md, "Drafting a role", says. It may cost money; asking an
 #       agent in a session to draft the role does the same.
 #   bin/role.sh list [--json]
-#       Every role on the team (name, kind: kit, optional, builder or project; drafted or not) and the
-#       optional kit roles that are off.
+#       Every role on the team (name, kind: kit, optional, builder or project; drafted or not; the lead
+#       it reports to and what it covers, for a sub-team role) and the optional kit roles that are off.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -140,14 +140,16 @@ r_list() {
       elif has "$BUILDERS" "$r"; then kind=builder; state=on
       elif has "$ROLES_OPTIONAL" "$r"; then kind=optional; state=on
       else kind=kit; state=on; fi
-      printf '%s\t%s\t%s\n' "$r" "$kind" "$state"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$r" "$kind" "$state" "$(role_team "$r" "Reports to")" "$(role_team "$r" "Covers")" "$(role_team "$r" "Trial until")"
     done
-    for r in $ROLES_OPTIONAL; do has "$(team_roles)" "$r" || printf '%s\toptional\toff\n' "$r"; done
+    for r in $ROLES_OPTIONAL; do has "$(team_roles)" "$r" || printf '%s\toptional\toff\t\t\t\n' "$r"; done
   } > "$K/roles.list"
   if ((json)); then
-    jq -Rn '[inputs | split("\t") | {name: .[0], kind: .[1], on: (.[2] | startswith("on")), drafted: (.[2] != "on, not drafted")}]' < "$K/roles.list"
+    jq -Rn '[inputs | split("\t") | {name: .[0], kind: .[1], on: (.[2] | startswith("on")), drafted: (.[2] != "on, not drafted"),
+      reports_to: (.[3] | if . == "" then null else . end), covers: (.[4] | if . == "" then [] else split(", *"; null) end),
+      trial_until: (.[5] | if . == "" then null else . end)}]' < "$K/roles.list"
   else
-    awk -F'\t' '{printf "%-20s %-9s %s\n", $1, $2, $3}' "$K/roles.list"
+    awk -F'\t' '{printf "%-20s %-9s %s%s\n", $1, $2, $3, ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' "$K/roles.list"
   fi
   rm -f "$K/roles.list"
 }

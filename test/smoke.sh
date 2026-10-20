@@ -1791,6 +1791,46 @@ srun specs/login.md >/dev/null && fail "spec run took a draft spec"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "sub-teams: roles that report to a lead and cover part of its work" ""
+s52() {
+SW="$T/sub"; "$F" new "$SW" --yes >/dev/null || fail "new for sub-teams"
+ra() { "$F" -C "$SW" role add "$@" --yes 2>&1; }
+# role add --reports-to and --covers: the lead on the team, covers builders or repos, a 30-day trial.
+ra qa-web --covers web >/dev/null && fail "--covers without --reports-to was taken"
+ra qa-web --reports-to nobody >/dev/null && fail "a lead not on the team was taken"
+ra qa-web --reports-to qa --covers copy >/dev/null && fail "--covers took something that is no builder or repo"
+ra qa-web --reports-to qa-web >/dev/null && fail "a role reporting to itself was taken"
+out="$(ra qa-mobile --reports-to qa --covers mobile)" || fail "role add --reports-to: $out"
+t="$(sed -n 's/^- Trial until: //p' "$SW/roles/qa-mobile.md")"
+grep -qx -- '- Reports to: qa' "$SW/roles/qa-mobile.md" && grep -qx -- '- Covers: mobile' "$SW/roles/qa-mobile.md" && [[ "$t" > "$(date +%F)" ]] || fail "the Team section: $(cat "$SW/roles/qa-mobile.md")"
+"$F" -C "$SW" role list | grep -q "^qa-mobile  *project  *on, not drafted, reports to qa, covers mobile, on trial until $t$" || fail "role list: $("$F" -C "$SW" role list | grep qa-mobile)"
+"$F" -C "$SW" role list --json | jq -e '.[] | select(.name == "qa-mobile") | .reports_to == "qa" and .covers == ["mobile"]' >/dev/null || fail "role list --json: the sub-team"
+"$SW/bin/doctor.sh" 2>&1 | grep -q 'ok    every sub-team role reports to a lead on the team' || fail "doctor: a sound sub-team"
+# Its verdict counts for its lead's on the work it covers; during its trial, the lead's too.
+mkdir -p "$SW/specs/qa"; echo ok > "$SW/specs/qa/n.md"; git -C "$SW" add -A; git -C "$SW" commit -qm note
+sj() { "$SW/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+rec() { "$SW/bin/handoff.sh" record "$1" --role "$2" PASS --commits a1b2c3d --note specs/qa/n.md >/dev/null || fail "record $2 on $1"; }
+m="$("$SW/bin/handoff.sh" add --from mobile --to "qa, security" --changed x --needed y --evidence https://example.com/m "App screen")"; m="${m%% *}"
+w="$("$SW/bin/handoff.sh" add --from web --to "qa, security" --changed x --needed y --evidence https://example.com/w "Web screen")"; w="${w%% *}"
+[[ "$(sj "$m" .needs)" == '["qa-mobile","qa","security","design-lead"]' && "$(sj "$w" .needs)" == '["qa","security","design-lead"]' ]] || fail "who reviews: $(sj "$m" .needs) $(sj "$w" .needs)"
+for r in qa-mobile security design-lead; do rec "$m" "$r"; done
+[[ "$(sj "$m" '[.missing, .ready]')" == '[["qa"],false]' ]] || fail "a sub-team role on trial passed without its lead: $(sj "$m" .)"
+perl -pi -e 's/^- Trial until: .*/- Trial until: 2020-01-01/' "$SW/roles/qa-mobile.md"
+[[ "$(sj "$m" '[.needs, .ready]')" == '[["qa-mobile","security","design-lead"],true]' ]] || fail "after its trial, the sub-team role's PASS did not count for its lead's: $(sj "$m" .)"
+for r in qa security design-lead; do rec "$w" "$r"; done; [[ "$(sj "$w" .ready)" == true ]] || fail "the lead's own review of work its sub-team does not cover"
+n="$("$SW/bin/handoff.sh" add --from mobile --to "qa, security" --changed x --needed y --evidence https://example.com/n "App menu")"; n="${n%% *}"
+for r in qa security design-lead; do rec "$n" "$r"; done; [[ "$(sj "$n" .ready)" == true ]] || fail "the lead's own PASS did not count for work its sub-team covers"
+# The doctor: a lead not on the team, and a loop.
+perl -pi -e 's/^- Reports to: qa$/- Reports to: nobody/' "$SW/roles/qa-mobile.md"
+"$SW/bin/doctor.sh" 2>&1 | grep -q 'sub-team roles that do not fit the team: qa-mobile reports to nobody, who is not on the team' || fail "doctor: a lead not on the team"
+ra qa-lead --reports-to qa-mobile >/dev/null || fail "role add for a loop"
+perl -pi -e 's/^- Reports to: nobody$/- Reports to: qa-lead/' "$SW/roles/qa-mobile.md"
+"$SW/bin/doctor.sh" 2>&1 | grep -q 'qa-mobile reports to itself through qa-lead' || fail "doctor: a loop"
+grep -q '^## Sub-teams$' "$KIT/core/rules/seats.md" && grep -q 'A lead can grow a sub-team' "$KIT/core/CABINET.md" || fail "the sub-team rules left seats.md or CABINET.md"
+"$F" -C "$SW" remove --yes --force >/dev/null
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

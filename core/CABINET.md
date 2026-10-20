@@ -74,7 +74,7 @@ Nothing is built before it is defined, and nothing bigger than a small task befo
 
 The aim: an organization that runs itself and brings the owner only what needs the owner.
 
-**Functions and leads.** Operations: chief-of-staff. Product: product-manager, with design-lead. Engineering: architect, with the repo agents. Quality and trust: qa, with security. Business: finance. A project enables the roles it needs in `cabinet.env`; a function whose lead is not enabled falls to the owner.
+**Functions and leads.** Operations: chief-of-staff. Product: product-manager, with design-lead. Engineering: architect, with the repo agents. Quality and trust: qa, with security. Business: finance. A project enables the roles it needs in `cabinet.env`; a function whose lead is not enabled falls to the owner. A lead can grow a sub-team: roles that report to it and cover part of its work (`.cabinet/rules/seats.md`, "Sub-teams").
 
 **Three tiers. Every decision belongs to exactly one.**
 

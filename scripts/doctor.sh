@@ -288,6 +288,18 @@ elif [[ -x "$sh_hook" ]] && grep -q 'bin/secret.sh' "$sh_hook"; then ok secrets.
 else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secret.sh (run bin/bootstrap.sh; a hook of your own can call bin/secret.sh check --staged)"; fi
 
 section "Team"
+# Sub-teams: each lead is on the team, no role leads itself round a loop, and a role covers builders
+# or repos (.cabinet/rules/seats.md, "Sub-teams").
+subteam=""
+for r in $(team_roles); do
+  lead="$(role_team "$r" "Reports to")"; [[ -n "$lead" ]] || continue
+  has "$(team_roles)" "$lead" || { subteam+="; $r reports to $lead, who is not on the team"; continue; }
+  x="$lead" n=0; while [[ -n "$x" && "$x" != "$r" && $n -lt 20 ]]; do x="$(role_team "$x" "Reports to")"; n=$((n + 1)); done
+  [[ "$x" != "$r" ]] || subteam+="; $r reports to itself through $lead"
+  for c in $(role_team "$r" "Covers" | tr ',' ' '); do builds_repos "$c" || subteam+="; $r covers $c, which is no builder or repo"; done
+done
+[[ -z "$subteam" ]] && ok team.reports-to "every sub-team role reports to a lead on the team" \
+  || bad team.reports-to "sub-team roles that do not fit the team: ${subteam#; } (fix the Team section of each in roles/<role>.md)"
 # A part of a product repo given to another role than the repo's owner: allowed (the most specific
 # row wins), but the owner's call, so say so.
 nested=""

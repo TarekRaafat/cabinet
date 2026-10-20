@@ -150,6 +150,8 @@ O	role add	--does	"..."	What it should do, in your words (asked in a terminal wh
 O	role add	--owns	"..."	The repos, folders or areas it owns.
 O	role add	--decides	"..."	What it may decide on its own.
 O	role add	--escalates	"..."	What it must bring to you.
+O	role add	--reports-to	<role>	The lead this role reports to: a sub-team role in that lead's function.
+O	role add	--covers	"<builders or repos>"	With --reports-to: whose work it reviews for its lead; its verdicts count for the lead's there, the lead's PASS too for its first 30 days.
 O	role add	--draft		Draft it now with the configured agent tool (it may cost money).
 O	role build	--check		Only report what is missing or out of date.
 O	handoff add	--from	<repo or role>	Who files it.
@@ -841,12 +843,12 @@ cmd_role() {
     "") cmd_help role; exit 0 ;;
     *) echo "cabinet: unknown command 'role $sub'" >&2; cmd_help role >&2; exit 2 ;;
   esac
-  local name="" does="" owns="" decides="" escalates="" draft=0 yes=0 dry=0
+  local name="" does="" owns="" decides="" escalates="" lead="" covers="" draft=0 yes=0 dry=0
   while (($#)); do
     case "$1" in
-      --does|--owns|--decides|--escalates)
+      --does|--owns|--decides|--escalates|--reports-to|--covers)
         (($# >= 2)) || die "$1 needs a value"
-        case "$1" in --does) does="$2" ;; --owns) owns="$2" ;; --decides) decides="$2" ;; *) escalates="$2" ;; esac
+        case "$1" in --does) does="$2" ;; --owns) owns="$2" ;; --decides) decides="$2" ;; --escalates) escalates="$2" ;; --reports-to) lead="$2" ;; *) covers="$2" ;; esac
         shift 2 ;;
       --draft) draft=1; shift ;;
       --dry-run) dry=1; shift ;;
@@ -862,7 +864,7 @@ cmd_role() {
   runner="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_RUNNER:-claude}" ) )"
   local dryflag=(); ((dry)) && dryflag=(--dry-run)
   if [[ "$sub" == remove ]]; then
-    [[ -z "$does$owns$decides$escalates" ]] && ((draft == 0)) || bad_usage "role remove takes only a name (and --dry-run)"
+    [[ -z "$does$owns$decides$escalates$lead$covers" ]] && ((draft == 0)) || bad_usage "role remove takes only a name (and --dry-run)"
     [[ "$name" == chief-of-staff ]] && die "chief-of-staff is always on: it writes the brief and routes work"
     has "$cur" "$name" || die "$name is not on the team (cabinet role list)"
     "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$(printf '%s\n' $cur | grep -vxF "$name" | tr '\n' ' ')" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name off (see above)"
@@ -874,7 +876,7 @@ cmd_role() {
   has "$cur" "$name" && die "$name is already on the team (cabinet role list)"
   if has "$ROLES_ALL $ROLES_OPT" "$name"; then
     # A kit role: turn it on, with its rows in the team tables.
-    [[ -z "$does$owns$decides$escalates" ]] && ((draft == 0)) || bad_usage "$name is a kit role: it needs no brief (add project notes in roles/$name.md, without frontmatter)"
+    [[ -z "$does$owns$decides$escalates$lead$covers" ]] && ((draft == 0)) || bad_usage "$name is a kit role: it needs no brief (add project notes in roles/$name.md, without frontmatter)"
     "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name on (see above)"
     ((dry)) && { echo "would turn on the kit role $name, with its rows in the team tables"; return 0; }
     echo "Turned on the kit role $name, with its rows in the team tables of AGENTS.md and OPERATIONS.md."
@@ -907,6 +909,17 @@ cmd_role() {
     [[ -z "$inside" ]] || echo "Note: $inside: drafting gives $name its own row there, and the most specific row wins (CABINET.md, \"Ownership\")." >&2
   }
   owns_check
+  # A sub-team role: its lead is on the team, and what it covers is builders or repos (seats.md, "Sub-teams").
+  [[ -n "$lead" || -z "$covers" ]] || die "--covers goes with --reports-to: a role covers work for its lead"
+  if [[ -n "$lead" ]]; then
+    [[ "$lead" =~ ^[a-z][a-z0-9-]*$ && "$lead" != "$name" ]] || die "--reports-to needs another role's name"
+    has "$cur backend web mobile infrastructure" "$lead" || die "$lead is not on the team (cabinet role list)"
+    covers="$(printf '%s' "$covers" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+    local bad
+    bad="$(bash -c 'source "$1/bin/lib.sh" 2>/dev/null && declare -F builds_repos >/dev/null || exit 0
+      for c in $2; do [[ "$c" =~ ^[a-z0-9._-]+$ ]] && builds_repos "$c" || printf "%s " "$c"; done' _ "$ws" "$covers")"
+    [[ -z "$bad" ]] || die "--covers takes builders or repos whose work the role reviews for $lead: ${bad% } is neither (cabinet repo list, cabinet role list)"
+  fi
   if ((dry)); then echo "would write roles/$name.md from your brief and turn $name on, with rows in the team tables"; return 0; fi
   local tty=0
   if ((yes == 0)) && [[ -z "$does$owns$decides$escalates" ]] && { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null; then tty=1; fi
@@ -939,6 +952,11 @@ What the owner said this role is for, kept word for word. It wins over anything 
 - What it may decide on its own: $(said "$decides")
 - What it must bring to the owner: $(said "$escalates")
 ROLE
+  if [[ -n "$lead" ]]; then
+    printf '\n## Team\n\n- Reports to: %s\n' "$lead"
+    [[ -z "$covers" ]] || printf -- '- Covers: %s\n' "${covers// /, }"
+    printf -- '- Trial until: %s\n' "$(epoch_date $(( $(date +%s) + 30 * 86400 )) +%F)"
+  fi >> "$ws/roles/$name.md"
   "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" >/dev/null || { rm -f "$ws/roles/$name.md"; die "could not add $name to the team (see above)"; }
   echo "Added the $name role: roles/$name.md, and its rows in AGENTS.md and OPERATIONS.md."
   if ((draft == 0 && tty)); then confirm "Draft it now with $runner? It runs your agent tool for a few minutes, which may cost money" n && draft=1; fi
