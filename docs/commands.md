@@ -282,7 +282,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -298,9 +298,12 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Brief | `WHEN` in `jobs/brief.job` |
 | Week start | the house rule in `AGENTS.md` |
 | Writing | the "Writing to the owner" house rule in `AGENTS.md` (added after the week start when an older `AGENTS.md` lacks it) |
+| Hard to undo | the list under "Hard to undo" in `AGENTS.md`, keeping the section's other text (the section is added before "House rules" when an older `AGENTS.md` lacks it); `off` writes `- none` |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
 | Budget and price | `CABINET_BUDGET`, `CABINET_PRICE` |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
+
+**Hard to undo** is the list of paths where a change is hard to undo, such as migrations and public API files: a handoff marked small never touches them ([ready to build](concepts.md#ready-to-build)). Each is `<repo>/<path>`, for a repo in `repos.tsv`; a path ending in `/` covers its folder. It is refused when the repo is unknown, the path has characters other than letters, digits, `.`, `_`, `-` and `/`, or the repo is on this machine and the path is not in it. In a terminal, the question shows what the repos on this machine hold that looks hard to undo (`migrations/`, `db/migrate/`, `prisma/migrations/`, `supabase/migrations/`, `alembic/versions/`, an `openapi` file), as the default when nothing is set yet; nothing is written until you answer, and `--yes` keeps the current list. Editing the section by hand works too.
 
 Roles the project defines itself (`roles/<role>.md` with frontmatter) are accepted and asked about. Layout and visibility (inside, beside, private, shared) are not changed by `config`. When nothing changes, it prints `Nothing to change.` and writes nothing.
 

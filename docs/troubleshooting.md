@@ -84,6 +84,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
+| `note AGENTS.md lists no paths that are hard to undo, so a small task is checked only for staying in one repo (cabinet config --hard-to-undo "<repo>/<path> ...", or off when there are none; cabinet config suggests some)` | `agents.hard-to-undo` | The workspace has repos, and the "Hard to undo" section of `AGENTS.md` is missing or still says `none yet`. | `cabinet config` asks, with suggestions from the repos; or `cabinet config --hard-to-undo "api/migrations/"`, or `off` when nothing is. |
 | `FIX specs not ready for their status: <...> (fix each, or set it back to draft; cabinet spec check)` | `specs.ready` | A spec marked `ready` or `building` lacks what that status needs: testable criteria with a qa PASS, no `TBD` in "Rules", every decision answered, its repos, and for `building` a plan (with an architect PASS for more than one repo). A PASS no longer counts when the part it reviewed changed. Each spec is named with its problems. | Fix what is named and ask for the review again, or set the spec's `status` back to `draft` (or `ready`) until it is. See [ready to build](concepts.md#ready-to-build). |
 
 ## Secrets

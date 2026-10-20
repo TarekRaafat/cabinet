@@ -234,6 +234,13 @@ done < <(cd "$WS" && awk '
 [[ -z "$vnev" ]] && ok handoffs.evidence "every qa PASS has evidence" \
   || bad handoffs.evidence "qa PASS on handoffs with no evidence: $vnev (the builder adds an Evidence line, or qa changes its verdict to BLOCK)"
 
+# With repos, say what is hard to undo, or a small task is checked only for staying in one repo.
+if [[ -n "$(repos 2>/dev/null)" ]]; then
+  hl="$(awk '/^## / {h = ($0 == "## Hard to undo"); next} h && /^- /' "$WS/AGENTS.md" 2>/dev/null)"
+  if grep -q '`' <<<"$hl" || grep -qx -- '- none' <<<"$hl"; then ok agents.hard-to-undo "AGENTS.md says which paths are hard to undo"
+  else note agents.hard-to-undo "AGENTS.md lists no paths that are hard to undo, so a small task is checked only for staying in one repo (cabinet config --hard-to-undo \"<repo>/<path> ...\", or off when there are none; cabinet config suggests some)"; fi
+fi
+
 section "Specs"
 # A spec marked ready or building has what that status needs (bin/spec.sh check).
 if [[ -x "$WS/bin/spec.sh" ]]; then

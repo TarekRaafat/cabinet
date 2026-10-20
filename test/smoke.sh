@@ -505,8 +505,8 @@ cfg --yes | grep -qx 'Nothing to change.' || fail "no-op config changed somethin
 cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail "a bad slug was accepted"
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
 # Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), budget, brief, week, writing,
-# backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 off "" short off "" y n > "$T/answers"
+# hard to undo (Enter: not set, no repos), backup, no repos, apply, no bootstrap.
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 off "" short "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" && grep -qx 'CABINET_BUDGET="25"' "$C/cabinet.env" || fail "prompted writing or budget not written by config"
@@ -1505,6 +1505,22 @@ out="$(rec "$c1")" || fail "a small task that stayed small did not pass: $out"
 # A PASS written by hand on work that grew: the doctor flags it.
 perl -pi -e "s/^- Verdict: qa PASS (\\S+) \\S+ /- Verdict: qa PASS \$1 $c3 /" "$W/HANDOFFS.md"
 "$W/bin/doctor.sh" 2>&1 | grep -q "handoffs marked small that were not: $id (it changes api/migrations/001.sql" || { "$W/bin/doctor.sh" 2>&1 | grep -i small; fail "doctor: handoffs.small"; }
+# cabinet config --hard-to-undo: checked against the repos, written into AGENTS.md (the section added to an older one).
+perl -0pi -e 's/## Hard to undo\n.*?(?=## )//s' "$W/AGENTS.md"; git -C "$W" commit -qam "an AGENTS.md from before the section"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'AGENTS.md lists no paths that are hard to undo' || fail "doctor: agents.hard-to-undo"
+cp "$W/AGENTS.md" "$T/agents.keep"
+out="$(printf '\n%.0s' $(seq 60) | CABINET_TTY=/dev/stdin "$F" -C "$W" config --dry-run 2>&1)" || true
+echo "$out" | grep -q 'Found in the repos: api/migrations/ api/openapi.yaml' && echo "$out" | grep -q 'hard to undo: not set -> api/migrations/ api/openapi.yaml' || { echo "$out" | tail -8; fail "config: suggestions from the repos"; }
+for bad in api/nope/ web/x "api/../etc" 'api/$(x)'; do "$F" -C "$W" config --yes --hard-to-undo "$bad" >/dev/null 2>&1 && fail "config took the hard-to-undo path $bad"; done
+cmp -s "$W/AGENTS.md" "$T/agents.keep" || fail "a dry run or a refused hard-to-undo path changed AGENTS.md"
+"$F" -C "$W" config --yes --hard-to-undo "api/migrations/" >/dev/null || fail "config --hard-to-undo"
+awk '/^## Hard to undo/ {h = NR} /^## House rules/ {r = NR} END {exit !(h && r && h < r)}' "$W/AGENTS.md" && grep -qx -- '- `api/migrations/`' "$W/AGENTS.md" || fail "the Hard to undo section was not added before House rules"
+perl -pi -e 's/^(- `api\/migrations\/`)$/Our own note.\n\n$1/' "$W/AGENTS.md"
+"$F" -C "$W" config --yes --hard-to-undo "api/migrations/  api/openapi.yaml" >/dev/null || fail "config --hard-to-undo, changed"
+[[ "$(grep -c '^## Hard to undo' "$W/AGENTS.md")" == 1 ]] && grep -qx 'Our own note.' "$W/AGENTS.md" && grep -qx -- '- `api/openapi.yaml`' "$W/AGENTS.md" || fail "changing the list lost the section's text or doubled it"
+"$F" -C "$W" config --yes --hard-to-undo OFF >/dev/null && grep -qx -- '- none' "$W/AGENTS.md" && ! grep -q -- '- `api/' "$W/AGENTS.md" || fail "config --hard-to-undo off"
+"$F" -C "$W" config --yes --hard-to-undo off | grep -qx 'Nothing to change.' || fail "the same list again changed something"
+"$W/bin/doctor.sh" 2>&1 | grep -q 'AGENTS.md says which paths are hard to undo' || fail "doctor after config --hard-to-undo off"
 grep -q '^## Hard to undo' "$KIT/templates/workspace/AGENTS.md" && grep -q '^\*\*Small means small\.\*\*' "$KIT/roles/qa.md" && grep -q 'filed with `--small`' "$KIT/roles/chief-of-staff.md" || fail "a small-task rule left the AGENTS.md template, qa or chief-of-staff"
 git -C "$W" reset -q --hard "$base"; rm -rf "$W/api" "$W/app" "$W/specs/qa"
   return 0   # a last "check && fail" line must not end the run

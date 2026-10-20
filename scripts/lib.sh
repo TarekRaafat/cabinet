@@ -216,7 +216,7 @@ builds_repos() {
 # written as `<repo>/<path>`.
 guarded_paths() {
   awk -F'|' '/^## / {c = ($0 ~ /^## Contracts/); h = ($0 ~ /^## Hard to undo/); next}
-    c && NF >= 5 {print $4} h {print}' "$WS/AGENTS.md" 2>/dev/null \
+    c && NF >= 5 {print $4} h && /^- / {print}' "$WS/AGENTS.md" 2>/dev/null \
     | grep -o '`[A-Za-z0-9._-]*/[^`[:space:]]*`' | tr -d '`' | sed 's#/#\t#' || true
 }
 # small_problems <hash,...>: why commits are not a small task, or nothing: they must sit in one repo on

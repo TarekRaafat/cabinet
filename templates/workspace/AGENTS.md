@@ -36,7 +36,7 @@ A change on one side is not done until every side agrees. The side that changes 
 
 ## Hard to undo
 
-Paths where a change is hard to undo (migrations, public files, anything released): a small task never touches them (`CABINET.md`, "Ready to build"), and `bin/handoff.sh record` refuses a PASS on one that does. One per line, as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.
+Paths where a change is hard to undo (migrations, public files, anything released): a small task never touches them (`CABINET.md`, "Ready to build"), and `bin/handoff.sh record` refuses a PASS on one that does. Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.
 
 - none yet
 
