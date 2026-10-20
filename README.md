@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+  <img src="docs/logo.svg" width="96" height="96" alt="The cabinet mark: seven seats around a table, one place left open for the owner">
+</picture>
+
 # cabinet
 
 Run a product with a team of AI agents and one owner who signs off.

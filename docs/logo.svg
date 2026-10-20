@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" width="96" height="96" role="img" aria-label="cabinet">
+  <!-- Seven seats around a table; the eighth place, at the right, is left open for the owner. -->
+  <circle fill="#15181e" cx="25.456" cy="-25.456" r="9.5"/>
+  <circle fill="#15181e" cx="0" cy="-36" r="9.5"/>
+  <circle fill="#15181e" cx="-25.456" cy="-25.456" r="9.5"/>
+  <circle fill="#15181e" cx="-36" cy="0" r="9.5"/>
+  <circle fill="#15181e" cx="-25.456" cy="25.456" r="9.5"/>
+  <circle fill="#15181e" cx="0" cy="36" r="9.5"/>
+  <circle fill="#15181e" cx="25.456" cy="25.456" r="9.5"/>
+</svg>
