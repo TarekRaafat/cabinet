@@ -18,10 +18,10 @@ Read `CABINET.md`, then `AGENTS.md`, then the repo's own `AGENTS.md` and its con
 
 ## Your verdict
 
-Record one line on the handoff: PASS, or CHANGES with each point as file and line, what is wrong and what would fix it, most important first, addressed to the owning builder. Separate what must change from what is a suggestion. CHANGES holds the push until fixed; only the owner can override it. Review again when the builder says the fix is in.
+Write the review under `specs/reviews/`: for CHANGES, each point as file and line, what is wrong and what would fix it, most important first, for the owning builder, with what must change apart from what is a suggestion. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: code-reviewer PASS|CHANGES <YYYY-MM-DD> <commits> specs/reviews/<note>.md`. CHANGES holds the push until fixed; only the owner can override it. Review again when the builder says the fix is in.
 
 ## What you may write
 
-`specs/reviews/` for longer reviews, and `HANDOFFS.md` entries (From: `code-reviewer`). You write no product repo. Commit your own files only, `review: ...`. Never push.
+`specs/reviews/`, and `HANDOFFS.md` entries (From: `code-reviewer`). You write no product repo. Commit your own files only, `review: ...`. Never push.
 
 End every reply with each verdict (entry, PASS or CHANGES) and anything that needs the owner.

@@ -197,6 +197,27 @@ hfiles=("$WS/HANDOFFS.md"); for f in "$WS"/handoffs/archive-*.md; do [[ -f "$f" 
 dups="$(awk '/^### H-/ {n++; id[n]=$2} /^- Note: duplicate ID/ {skip[n]=1}
   END {for (i=1;i<=n;i++) if (!skip[i]) c[id[i]]++; for (k in c) if (c[k]>1) print k}' "${hfiles[@]}" | sed 's/:$//' | sort | tr '\n' ' ')"
 [[ -z "$dups" ]] && ok handoffs.unique-ids "every handoff ID is unique" || bad handoffs.unique-ids "these handoff IDs are used more than once: $dups(file the next free number)"
+# Verdicts in the one format (CABINET.md, "Handoffs"), each with its note; a qa PASS needs evidence.
+# Open entries only: the archives are history, written before the format. The note's path is
+# checked by the shell only after the pattern limits it to safe characters.
+vcheck="$(cd "$WS" && awk '
+  function end() { if (id != "" && pass && !ev) nev = nev " " id; id = ""; pass = 0; ev = 0 }
+  /^## / { end(); open = ($0 == "## Open"); next }
+  /^### H-/ { end(); if (open) { id = $2; sub(/:$/, "", id) }; next }
+  id == "" { next }
+  /^- Evidence: *[^ <]/ { ev = 1 }
+  /^- Verdict:/ {
+    if ($0 !~ /^- Verdict: [a-z0-9-]+ (PASS|BLOCK|CHANGES) [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9a-f]+(,[0-9a-f]+)* specs\/[A-Za-z0-9._\/-]+\.md$/ \
+        || (system("test -f \"" $NF "\"") != 0)) bad = bad " " id
+    else if ($3 == "qa" && $4 == "PASS") pass = 1
+  }
+  END { end(); print substr(bad, 2) "|" substr(nev, 2) }
+' HANDOFFS.md 2>/dev/null)"
+vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
+[[ -z "$vbad" ]] && ok handoffs.verdicts "every verdict is in the verdict format, with its note" \
+  || bad handoffs.verdicts "verdicts not in the format, or naming a note that does not exist: $vbad (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)"
+[[ -z "$vnev" ]] && ok handoffs.evidence "every qa PASS has evidence" \
+  || bad handoffs.evidence "qa PASS on handoffs with no evidence: $vnev (the builder adds an Evidence line, or qa changes its verdict to BLOCK)"
 
 section "Secrets"
 # Keys, tokens and passwords in the workspace's files (bin/secret.sh names the file and line,

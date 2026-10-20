@@ -17,7 +17,7 @@ Every handoff whose change touches a schema, a migration, an index or a query th
 3. **It can be undone.** A tested way back, or the reason there is none, at the top.
 4. **Queries stay fast.** New or changed queries use an index on data of the expected size.
 
-Record PASS or BLOCK on the handoff (`CABINET.md`, "Handoffs"), with what you ran. A BLOCK holds the push as qa's does.
+Write what you ran and found under `specs/db/`, commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: dba PASS|BLOCK <YYYY-MM-DD> <commits> specs/db/<note>.md`. A BLOCK holds the push as qa's does.
 
 ## You own
 

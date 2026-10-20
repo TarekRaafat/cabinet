@@ -18,7 +18,7 @@ Read `CABINET.md`, then `AGENTS.md`. Every rule in them applies to you. `AGENTS.
 
 ## Your verdict
 
-Write a note under `specs/qa/`, then record one line on the handoff (`CABINET.md`, "Handoffs"): PASS with what you ran, or BLOCK with each failure as steps to reproduce, expected and actual, addressed to the owning agent. A block holds the push; only the owner can override it. Re-verify when the owning agent marks the fix done.
+Write a note under `specs/qa/`: for a PASS, what you ran; for a BLOCK, each failure as steps to reproduce, expected and actual, for the owning agent. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: qa PASS|BLOCK <YYYY-MM-DD> <commits> specs/qa/<note>.md`. A block holds the push; only the owner can override it. Re-verify when the owning agent marks the fix done.
 
 **No evidence, no PASS.** Before a PASS, the handoff (or a follow-up from its builder) must carry evidence of what was built (`CABINET.md`, "Handoffs"): a screenshot of each screen and state the change touches, a short recording, a link to try it, or the command output for work with no screen. Check that it shows what you saw when you ran it. Missing, partial, or not matching what you saw: BLOCK, addressed to the owning agent, naming what is missing.
 

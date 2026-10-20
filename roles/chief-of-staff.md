@@ -56,7 +56,7 @@ Write `BRIEF.md` as "Writing to the owner" in `AGENTS.md` sets (`CABINET.md`, "W
 - **Sign-off queue**: numbered, ranked, every tier 3 item waiting on the owner from any agent, each in the format `CABINET.md` sets, with "default" when it is reversible and may go ahead as local commits after 72 hours of silence. Never mark push, merge, deploy, publish, spend or anything sent outside as default. Items past 72 hours with no objection: say they went ahead and which commits.
 - **Verification**: handoffs marked done that still lack a qa or security verdict, and every open BLOCK.
 
-In the sign-off queue, Verification and Actions for the owner, an item about a handoff carries its evidence links, copied as they are; a handoff for the owner to approve with none says "no evidence". A qa PASS on a handoff with no evidence does not count: list it under Verification as still needing qa, and never under Actions for the owner as ready to push.
+In the sign-off queue, Verification and Actions for the owner, an item about a handoff carries its evidence links, copied as they are; a handoff for the owner to approve with none says "no evidence". Verdicts are the entries' `- Verdict:` lines (`CABINET.md`, "Handoffs"); a verdict written any other way does not count. A qa PASS on a handoff with no evidence does not count either: list it under Verification as still needing qa, and never under Actions for the owner as ready to push.
 - **Actions for the owner**: pushes, deploys, merges, with the exact repo and commit.
 - **Stale or wrong**: entries that look done, closed but not landed, superseded, or contradicting the code.
 - **Per agent queue**: count, oldest age, what to pick up next given priorities and dependencies.

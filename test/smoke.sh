@@ -309,6 +309,22 @@ sed -i.bak "/^### $id:/,/^- Status:/s/^- Status: open/- Status: done/" "$W/HANDO
 grep -q '^\*\*No evidence, no PASS\.\*\*' "$KIT/roles/qa.md" && grep -q 'qa never records PASS on a handoff without evidence' "$KIT/core/CABINET.md" \
   && grep -q 'A qa PASS on a handoff with no evidence does not count' "$KIT/roles/chief-of-staff.md" || fail "the no-evidence-no-PASS rule left qa, CABINET.md or the brief"
 grep -qF "[run.txt](../specs/evidence/$id/run.txt)" "$W/handoffs/archive-${id:2:4}-${id:6:2}.md" || fail "archived evidence links do not open from handoffs/"
+# Verdicts: one format the doctor reads; its note must exist; a qa PASS needs evidence; a crafted note path never runs.
+base="$(git -C "$W" rev-parse HEAD)"
+verdict() { awk -v id="$1" -v l="$2" '{print} index($0, "### " id ":") == 1 {on = 1} on && /^- Status:/ {print l; on = 0}' "$W/HANDOFFS.md" > "$T/hv" && mv "$T/hv" "$W/HANDOFFS.md"; }
+e1="$("$W/bin/handoff.sh" add --from web --to qa --changed x --needed y --evidence "$T/run.txt" "With evidence")"; e1="${e1%% *}"
+e2="$("$W/bin/handoff.sh" add --from web --to qa --changed x --needed y "Without evidence")"; e2="${e2%% *}"
+mkdir -p "$W/specs/qa" && echo "ran it" > "$W/specs/qa/n.md"
+verdict "$e1" "- Verdict: qa PASS $(date +%F) a1b2c3d,e4f5a6b specs/qa/n.md"; verdict "$e2" "- Verdict: qa PASS $(date +%F) a1b2c3d specs/qa/n.md"
+out="$("$W/bin/doctor.sh" 2>&1 || true)"
+echo "$out" | grep -q 'every verdict is in the verdict format' && echo "$out" | grep -q "qa PASS on handoffs with no evidence: $e2 (" || { echo "$out" | grep -i 'verdict\|evidence'; fail "doctor: a qa PASS without evidence"; }
+verdict "$e1" "- Verdict: security PASS $(date +%F) a1b2c3d specs/security/none.md"
+verdict "$e2" '- Verdict: qa PASS 2026-10-20 a1b2c3d specs/qa/$(touch${IFS}pwned).md'
+out="$("$W/bin/doctor.sh" 2>&1 || true)"
+echo "$out" | grep -q "verdicts not in the format, or naming a note that does not exist: $e1 $e2 (" && [[ ! -e "$W/pwned" ]] || { echo "$out" | grep -i 'verdict'; fail "doctor: a missing note, or a crafted path"; }
+verdict "$e1" "- Verdict: qa passed it"
+"$W/bin/doctor.sh" 2>&1 | grep -q "verdicts not in the format.*$e1" || fail "doctor: a verdict in another shape"
+git -C "$W" reset -q --hard "$base" && rm -rf "$W/specs/qa"
   return 0   # a last "check && fail" line must not end the run
 }
 

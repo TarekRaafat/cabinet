@@ -22,7 +22,7 @@ Read the code paths themselves; do not trust a description.
 
 ## Your verdict
 
-Write a note under `specs/security/`, then record one line on the handoff: PASS, or BLOCK with each finding: severity, file and line, how it could be exploited (described, never a working exploit), and the fix, addressed to the owning agent. A block holds the push; only the owner can override it. Legal, compliance and disclosure questions go to the owner's sign-off queue.
+Write a note under `specs/security/`: for a BLOCK, each finding with its severity, file and line, how it could be exploited (described, never a working exploit), and the fix, for the owning agent. Commit it, then record your verdict line on the handoff (`CABINET.md`, "Handoffs"): `- Verdict: security PASS|BLOCK <YYYY-MM-DD> <commits> specs/security/<note>.md`. A block holds the push; only the owner can override it. Legal, compliance and disclosure questions go to the owner's sign-off queue.
 
 ## Seat access
 

@@ -76,6 +76,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 |---|---|---|---|
 | `FIX OPERATIONS.md does not mention: <...>` | `manual.complete` | The manual has fallen behind a script, job or role. | Add it to `OPERATIONS.md` (`cabinet config --roles` adds role rows for you). |
 | `FIX these handoff IDs are used more than once: <...>(file the next free number)` | `handoffs.unique-ids` | Two entries share an ID. | Give the later one the next free number, or mark it with a `- Note: duplicate ID` line. |
+| `FIX verdicts not in the format, or naming a note that does not exist: <...> (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)` | `handoffs.verdicts` | An open entry has a `- Verdict:` line in another shape (the verdict is `PASS`, `BLOCK` or `CHANGES`), or its note is not in the workspace. Each entry is named by its ID. | Have the reviewer rewrite the line in the [verdict format](concepts.md#the-builder-never-verifies) and commit the note it names. |
+| `FIX qa PASS on handoffs with no evidence: <...> (the builder adds an Evidence line, or qa changes its verdict to BLOCK)` | `handoffs.evidence` | qa passed work whose entry has no `- Evidence:` line, so you would approve it without seeing it. | The builder adds evidence to its entry (files under `specs/evidence/<ID>/`), or qa replaces its PASS with a BLOCK. |
 
 ## Secrets
 
