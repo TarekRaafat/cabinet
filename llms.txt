@@ -1,6 +1,6 @@
-# cabinet
+# Cabinet
 
-> A kit for running a product with a team of AI agents and one owner who signs off. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
+> A kit for building anything with a team of AI agents while the owner stays in charge and signs off, for one person or a team of any size. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
 
 Requirements: git, jq, perl, python3, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
@@ -10,9 +10,9 @@ Every page below in one file, for reading in one go: [llms-full.txt](llms-full.t
 
 ## Docs
 
-- [README](README.md): what cabinet is, quick start, the daily loop, a glossary, install, new and existing projects, settings, updates, removal
+- [README](README.md): what Cabinet is, quick start, the daily loop, a glossary, install, new and existing projects, settings, updates, removal
 - [Tutorial](docs/tutorial.md): the first day, step by step: create a workspace, set up the machine, give the team a task, read the brief
-- [Recipes](docs/recipes.md): add your own rules, guides and business documents, add a role or job, change the brief or agent tool, add a repo, turn on backups, move to a new machine, add a teammate, update the kit, use cabinet from a script or agent
+- [Recipes](docs/recipes.md): add your own rules, guides and business documents, add a role or job, change the brief or agent tool, add a repo, turn on backups, move to a new machine, add a teammate, update the kit, use Cabinet from a script or agent
 - [Commands](docs/commands.md): every `cabinet` command (new, init, next, list, digest, config, remove, doctor, bootstrap, brief, run, handoffs, backup, restore, update, status, outdated, completion) and workspace script, all options and defaults, files changed, exit codes, `cabinet.env` keys, job and `repos.tsv` formats, environment variables, removing a workspace
 - [Layouts](docs/layouts.md): new, around, inside (private or shared) and beside; what each changes in a project; which files are kit, project or built
 - [Concepts](docs/concepts.md): roles, repo ownership, handoffs, decision tiers, the brief and sign-off queue, verification, seats, slugs, agent tools and the scheduled runners

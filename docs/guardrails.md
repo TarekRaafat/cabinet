@@ -1,6 +1,6 @@
 # Guardrails
 
-How cabinet keeps every push, merge, release and publish with you, what each agent tool's rules can and cannot block, and how to undo them.
+How Cabinet keeps every push, merge, release and publish with you, what each agent tool's rules can and cannot block, and how to undo them.
 
 ## The two layers
 
@@ -30,7 +30,7 @@ Two more machine-wide settings come with the push gate:
 
 - **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
 - **The workspace's secrets check,** a `pre-commit` hook in the workspace's own `.git/hooks` (bootstrap runs it through the pass-through stub). It runs `bin/secret.sh check --staged` and refuses a commit that adds a likely key, token or password, naming the file and line, never the value. A false alarm passes once its line has `not-a-secret` on it. An existing `pre-commit` hook is left as it is (the doctor notes it; your hook can call `bin/secret.sh check --staged` itself). A shared `cabinet/` inside a project gets none, since the project's own hooks run there; `bin/doctor.sh` still scans its files. It is a safety net, not a guarantee: it knows common key formats, not every secret.
-- **Gemini CLI's `context.fileName`** is set to read `AGENTS.md` everywhere, so Gemini also loads `AGENTS.md` in folders that are not cabinet workspaces.
+- **Gemini CLI's `context.fileName`** is set to read `AGENTS.md` everywhere, so Gemini also loads `AGENTS.md` in folders that are not Cabinet workspaces.
 
 ## What each tool's rules block
 

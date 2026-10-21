@@ -1,6 +1,6 @@
-# Tutorial: your first day with cabinet
+# Tutorial: your first day with Cabinet
 
-About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what cabinet prints, shortened where it says `...`.
+About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what Cabinet prints, shortened where it says `...`.
 
 You need macOS or Linux, git, jq, perl, python3, Node.js and at least one agent tool (Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
 
@@ -133,4 +133,4 @@ When qa and security have recorded PASS on a piece of work, you push it from you
 
 - [Recipes](recipes.md): add a role or a job, switch agent tools, move to a new machine, add a teammate.
 - [Commands](commands.md): every command and option. `cabinet <command> --help` shows them too.
-- [Layouts](layouts.md): add cabinet to an existing project instead.
+- [Layouts](layouts.md): add Cabinet to an existing project instead.

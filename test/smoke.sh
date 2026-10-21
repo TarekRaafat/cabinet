@@ -1273,7 +1273,7 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(jq -r .version "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(jq -r .version "$KIT/package.json")"
-[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                a team of AI agents and one owner who signs off\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
+[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                Build anything with a team of AI agents. You sign off.\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
 LC_ALL=en_US.UTF-8 in_tty "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
 "$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"

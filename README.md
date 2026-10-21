@@ -1,10 +1,12 @@
-<img src="docs/logo.svg" width="96" height="96" alt="The cabinet mark: seven seats around a table, one place left open for the owner">
+<img src="docs/logo.svg" width="96" height="96" alt="The Cabinet mark: seven seats around a table, one place left open for the owner">
 
-# cabinet
+# Cabinet
 
-Run a product with a team of AI agents and one owner who signs off.
+Build anything with a team of AI agents. You stay in charge and sign off.
 
-cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+Cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+
+Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
 - **Status:** version 0.1.0, not yet published to npm. Until it is, install from a clone (see [Install](#install)).
@@ -12,18 +14,30 @@ cabinet gives a project a small company: roles with clear authority (chief of st
 
 ## Contents
 
+- [Why Cabinet](#why-cabinet)
 - [Quick start](#quick-start)
-- [A day with cabinet](#a-day-with-cabinet)
+- [A day with Cabinet](#a-day-with-cabinet)
 - [Words you will see](#words-you-will-see)
 - [Install](#install)
 - [Start a new project](#start-a-new-project)
-- [Add cabinet to an existing project](#add-cabinet-to-an-existing-project)
+- [Add Cabinet to an existing project](#add-cabinet-to-an-existing-project)
 - [Change settings later](#change-settings-later)
 - [Update the kit](#update-the-kit)
-- [Remove cabinet](#remove-cabinet)
+- [Remove Cabinet](#remove-cabinet)
 - [Develop the kit](#develop-the-kit)
 - Learn: [tutorial](docs/tutorial.md) (your first day, about 15 minutes), [recipes](docs/recipes.md) (common tasks)
 - Reference: [commands](docs/commands.md), [layouts](docs/layouts.md), [concepts](docs/concepts.md), [guardrails](docs/guardrails.md), [backups](docs/backups.md), [troubleshooting](docs/troubleshooting.md)
+
+## Why Cabinet
+
+Cabinet started as one builder's own setup. Working alone, it filled the skills one person does not have, from development to writing. Working with a team of five on a project that needed three times as many people, it gave each person two more teammates, all following the same guidelines, design system, workflow and process toward one goal. After a year and a half on small, medium and large products in production, it became this kit, so a project can start with it instead of rebuilding it. It is open source.
+
+What it believes:
+
+- **More output per person, not more headcount.**
+- **A small company, not a corporate org chart.** Every repo and area has exactly one owner, and nothing is done twice.
+- **People decide, agents do the work.** Agents recommend; you sign off on anything irreversible, public or costly, and you always know what is happening.
+- **For anyone.** One person or a team of any size, building anything, working their own way.
 
 ## Quick start
 
@@ -37,9 +51,9 @@ cabinet bootstrap                 # guardrails for your agent tools, and the dai
 cabinet doctor                    # everything that needs attention; --fix runs the fixes it knows
 ```
 
-New to cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Then fill the `TBD` lines in `AGENTS.md`: what the product is, its rules, and how to test it. Every command works from any folder inside the workspace or its project, and all of them follow one pattern: one word for the workspace as a whole (`cabinet doctor`), a noun then a verb for what it holds (`cabinet role add`, `cabinet repo list`); `cabinet help` lists them ([how commands are named](docs/commands.md#how-commands-are-named)). Several projects? One workspace each; `cabinet list` shows them all, and `cabinet digest` gathers every sign-off queue into one morning read.
+New to Cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Then fill the `TBD` lines in `AGENTS.md`: what the product is, its rules, and how to test it. Every command works from any folder inside the workspace or its project, and all of them follow one pattern: one word for the workspace as a whole (`cabinet doctor`), a noun then a verb for what it holds (`cabinet role add`, `cabinet repo list`); `cabinet help` lists them ([how commands are named](docs/commands.md#how-commands-are-named)). Several projects? One workspace each; `cabinet list` shows them all, and `cabinet digest` gathers every sign-off queue into one morning read.
 
-## A day with cabinet
+## A day with Cabinet
 
 1. **Morning.** At the time you chose, the chief-of-staff agent writes `BRIEF.md`. It starts with the sign-off queue: every decision only you can make, each as a plain question with lettered options, the experts' recommendations and whether it can be undone.
 2. **You answer in one message**, for example "approve 1 and 3; 2: no; 4: wait until Friday". The agents write your answers into the right specs and handoffs.
@@ -70,7 +84,7 @@ You need macOS or Linux, and:
 | Required | For |
 |---|---|
 | git, jq, perl, python3 | Every command, handoffs and the guardrails |
-| Node.js and npm | Installing cabinet and pinning its version in each workspace |
+| Node.js and npm | Installing Cabinet and pinning its version in each workspace |
 | At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, or your own command (Gemini CLI for interactive sessions only) |
 | A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
 
@@ -127,7 +141,7 @@ cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
 
 All options: [commands](docs/commands.md#cabinet-new).
 
-## Add cabinet to an existing project
+## Add Cabinet to an existing project
 
 ```sh
 cd ~/dev/acme-app
@@ -155,7 +169,7 @@ Details: [layouts](docs/layouts.md).
 cabinet config        # in the workspace, or the project's top folder when cabinet/ is inside it
 ```
 
-It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`; `cabinet config --budget 20` sets a weekly budget for the agent runs cabinet starts ([what they cost](docs/concepts.md#what-agent-runs-cost)). `cabinet config --writing short` makes every brief, question and answer as short as it can be, for when you have little time to read ([writing to the owner](docs/concepts.md#writing-to-the-owner)). `cabinet config --hard-to-undo "api/migrations/"` names what a small task must never touch ([ready to build](docs/concepts.md#ready-to-build)). Details: [commands](docs/commands.md#cabinet-config).
+It asks the setup questions again with your current answers as defaults, lists the changes, writes them (settings, team tables, roles), and offers to update schedules and clone new repos. Options, `--dry-run` and `--yes` work as in `new`; `cabinet config --budget 20` sets a weekly budget for the agent runs Cabinet starts ([what they cost](docs/concepts.md#what-agent-runs-cost)). `cabinet config --writing short` makes every brief, question and answer as short as it can be, for when you have little time to read ([writing to the owner](docs/concepts.md#writing-to-the-owner)). `cabinet config --hard-to-undo "api/migrations/"` names what a small task must never touch ([ready to build](docs/concepts.md#ready-to-build)). Details: [commands](docs/commands.md#cabinet-config).
 
 ## Update the kit
 
@@ -171,7 +185,7 @@ git diff              # review, then commit
 
 An update never overwrites a kit file you edited in the workspace: it stops and names it. Without a global install, use `npx cabinet` in place of `cabinet`.
 
-## Remove cabinet
+## Remove Cabinet
 
 - **A workspace:** `cabinet remove` (`--dry-run` shows the plan first). It stops the workspace's schedules, deletes its folder, and inside a project removes what setup added there. It refuses work that exists nowhere else unless `--force`. Details: [commands](docs/commands.md#cabinet-remove).
 - **The guardrails:** they stay in your agent tools' settings, since other workspaces may rely on them. Bootstrap saved a `.bak` copy of every file it changed; see [guardrails](docs/guardrails.md#undoing-the-guardrails).

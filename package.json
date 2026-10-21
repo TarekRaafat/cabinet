@@ -1,7 +1,7 @@
 {
   "name": "@tarekraafat/cabinet",
   "version": "0.1.0",
-  "description": "A kit for running a product with a team of AI agents and one owner who signs off: roles with clear authority, handoffs, a daily brief and sign-off queue, independent review, push guardrails, schedules and encrypted backups. Works with any agent tool.",
+  "description": "A kit for building anything with a team of AI agents while you stay in charge and sign off: roles with clear authority, handoffs, a daily brief and sign-off queue, independent review, push guardrails, schedules and encrypted backups. Works with any agent tool.",
   "keywords": [
     "ai",
     "ai-agents",

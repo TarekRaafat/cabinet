@@ -17,7 +17,7 @@ Short answers to common tasks. Every command runs from anywhere inside the works
 - [Add a teammate to a shared workspace](#add-a-teammate-to-a-shared-workspace)
 - [Run several projects](#run-several-projects)
 - [Update the kit](#update-the-kit)
-- [Use cabinet from a script or an agent](#use-cabinet-from-a-script-or-an-agent)
+- [Use Cabinet from a script or an agent](#use-cabinet-from-a-script-or-an-agent)
 
 ## Add your own rules, guidelines and business documents
 
@@ -136,7 +136,7 @@ Remove a job by deleting its file and running `cabinet bootstrap`.
 
 ## Move to a new machine
 
-1. Install cabinet and its needs ([Install](../README.md#install)).
+1. Install Cabinet and its needs ([Install](../README.md#install)).
 2. Put the backup passphrase in the keychain or secret store, as in step 2 of [Turn on backups](#turn-on-backups).
 3. `cabinet backup restore <newest archive> ~/dev/acme`. It works before the workspace exists, and never loses a file ([backups](backups.md#restoring)).
 4. `cd ~/dev/acme`, then `cabinet bootstrap` and `cabinet doctor`.
@@ -173,7 +173,7 @@ git diff              # review, then commit
 
 An update never overwrites a kit file you edited: it stops and names it.
 
-## Use cabinet from a script or an agent
+## Use Cabinet from a script or an agent
 
 Read JSON, never the text output, which may be reworded:
 

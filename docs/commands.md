@@ -1,6 +1,6 @@
 # Commands
 
-Every command cabinet has, its options and defaults, what it changes, and its exit codes. `cabinet help` (or `cabinet` alone) lists them; `cabinet <command> --help` (or `cabinet help <command>`) shows one command's usage and options, and a noun alone (`cabinet role`) shows its verbs. Agents and scripts: `cabinet help --json` gives every command and option, and every command that reports prints JSON (see [Output for agents and scripts](#output-for-agents-and-scripts)).
+Every command Cabinet has, its options and defaults, what it changes, and its exit codes. `cabinet help` (or `cabinet` alone) lists them; `cabinet <command> --help` (or `cabinet help <command>`) shows one command's usage and options, and a noun alone (`cabinet role`) shows its verbs. Agents and scripts: `cabinet help --json` gives every command and option, and every command that reports prints JSON (see [Output for agents and scripts](#output-for-agents-and-scripts)).
 
 ## Contents
 
@@ -12,7 +12,7 @@ Every command cabinet has, its options and defaults, what it changes, and its ex
 - Safety: [cabinet secret](#cabinet-secret), [cabinet backup](#cabinet-backup)
 - Setup: [cabinet bootstrap](#cabinet-bootstrap), [cabinet config](#cabinet-config), [cabinet move](#cabinet-move), [cabinet remove](#cabinet-remove)
 - Kit: [cabinet update](#cabinet-update), [cabinet status](#cabinet-status), [cabinet outdated](#cabinet-outdated), [cabinet changelog](#cabinet-changelog), [cabinet completion](#cabinet-completion), [cabinet version](#cabinet-version)
-- [Which copy of cabinet runs](#which-copy-of-cabinet-runs)
+- [Which copy of Cabinet runs](#which-copy-of-cabinet-runs)
 - [Workspace scripts](#workspace-scripts): the same commands without the `cabinet` command
 - [Output for agents and scripts](#output-for-agents-and-scripts): `--json`
 - [Files you can edit](#files-you-can-edit): `cabinet.env`, `jobs/<job>.job`, `cabinet.local.env`, `repos.tsv`
@@ -39,7 +39,7 @@ cabinet new [dir] [options]
 
 Creates a workspace in an empty or missing folder. In a terminal it asks a question for each setting; options set the defaults, and `--yes` skips the questions.
 
-**Tools first.** `new`, `init` and `bootstrap` first check for the tools cabinet needs (git, jq, perl, python3, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
+**Tools first.** `new`, `init` and `bootstrap` first check for the tools Cabinet needs (git, jq, perl, python3, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
 
 | Option | Default | Notes |
 |---|---|---|
@@ -52,7 +52,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
 | `--brief-time <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
 | `--week-start <day>` | `sunday` | Written into `AGENTS.md` house rules. |
-| `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
+| `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs Cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
 | `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `antigravity`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
@@ -74,7 +74,7 @@ Values written into `cabinet.env` (name, owner, email, backup folder) cannot con
 cabinet init [dir] [options]
 ```
 
-Adds cabinet to an existing folder (default: the current one). It takes every option of `cabinet new`, and these:
+Adds Cabinet to an existing folder (default: the current one). It takes every option of `cabinet new`, and these:
 
 | Option | Notes |
 |---|---|
@@ -107,7 +107,7 @@ In every case, existing files are kept and reported, never replaced. Around a fo
 cabinet next [--json]
 ```
 
-Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a machine without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
+Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools Cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a machine without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
 
 ## cabinet brief
 
@@ -132,7 +132,7 @@ One morning read for every workspace on this machine: from each one's latest `BR
 | `--write <file>` | Write the digest to that file (replaced each time) instead of the screen. |
 | `--notify` | Also show a desktop notification with the counts line (`notify-send` on Linux). |
 | `--schedule [<when>]` | Write it on a schedule. With no time: every day at 10:00 AM. Or any [schedule time](#schedule-times): `"8 AM"`, `"fri 10 AM"`, `"sun,mon,tue,wed,thu 8 AM"`. Run again to change it. `--schedule off` stops it and keeps the last file. |
-| `--file <file>` | With `--schedule`: where it is written. Default `digest.md` in the log folder (`~/Library/Logs/cabinet/` on macOS, `~/.local/state/cabinet/` on Linux), which a scheduled job can always write. macOS may block a scheduled job from writing to Documents, Desktop, Downloads or iCloud Drive until you allow it (System Settings > Privacy & Security > Files and Folders); cabinet says so when you choose one. |
+| `--file <file>` | With `--schedule`: where it is written. Default `digest.md` in the log folder (`~/Library/Logs/cabinet/` on macOS, `~/.local/state/cabinet/` on Linux), which a scheduled job can always write. macOS may block a scheduled job from writing to Documents, Desktop, Downloads or iCloud Drive until you allow it (System Settings > Privacy & Security > Files and Folders); Cabinet says so when you choose one. |
 | `--json` | The digest as JSON (below). |
 
 The schedule is one job for the whole machine, `ai.cabinet-digest` ([launchd, systemd or cron](concepts.md#macos-and-linux)), apart from every workspace's `ai.cabinet.<slug>.*` jobs; it runs this `cabinet` (so install it globally, not only through npx, whose cache can be cleared) and logs to `digest.log` in the log folder. On macOS the first notification may need you to allow notifications for Script Editor, which macOS uses to show them. Exit 0, or 1 for a bad time, no scheduler, or a schedule the scheduler would not load.
@@ -312,7 +312,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
@@ -334,7 +334,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Scheduled runner | `CABINET_PIPELINE`, `CABINET_PIPELINE_LIMIT`, and `WHEN` in `jobs/pipeline.job` (made the first time it is turned on; turning it off leaves it, doing nothing) |
 | Repos | new rows in `repos.tsv` and the team table in `AGENTS.md` |
 
-**The scheduled runner** moves ready work through build and review while no one watches: each run is `bin/handoff.sh run --scheduled`, from `jobs/pipeline.job`. It is off until you turn it on. `small` lets it move handoffs filed `--small`; `all` adds every spec that `cabinet spec check` finds ready or building. Turning it on needs `--pipeline-limit`, what one run may spend, and a runner whose cost cabinet counts (claude, grok or opencode, or a token runner with `--price`), or the limit could not hold. `--pipeline-time` sets when it runs (default `10:00 PM`; `off` runs it only by hand: `cabinet job run pipeline`). In a terminal, `config` asks for all three.
+**The scheduled runner** moves ready work through build and review while no one watches: each run is `bin/handoff.sh run --scheduled`, from `jobs/pipeline.job`. It is off until you turn it on. `small` lets it move handoffs filed `--small`; `all` adds every spec that `cabinet spec check` finds ready or building. Turning it on needs `--pipeline-limit`, what one run may spend, and a runner whose cost Cabinet counts (claude, grok or opencode, or a token runner with `--price`), or the limit could not hold. `--pipeline-time` sets when it runs (default `10:00 PM`; `off` runs it only by hand: `cabinet job run pipeline`). In a terminal, `config` asks for all three.
 
 **Hard to undo** is the list of paths where a change is hard to undo, such as migrations and public API files: a handoff marked small never touches them ([ready to build](concepts.md#ready-to-build)). Each is `<repo>/<path>`, for a repo in `repos.tsv`; a path ending in `/` covers its folder. It is refused when the repo is unknown, the path has characters other than letters, digits, `.`, `_`, `-` and `/`, or the repo is on this machine and the path is not in it. In a terminal, the question shows what the repos on this machine hold that looks hard to undo (`migrations/`, `db/migrate/`, `prisma/migrations/`, `supabase/migrations/`, `alembic/versions/`, an `openapi` file), as the default when nothing is set yet; nothing is written until you answer, and `--yes` keeps the current list. Editing the section by hand works too.
 
@@ -419,11 +419,11 @@ Tab completion for commands, their verbs and options, and the job names of the n
 cabinet version [--json]
 ```
 
-Prints the installed kit's version. In a terminal it prints the cabinet mark beside it: seven seats around a table, with the eighth left open for the owner. It draws the seats as dots when the terminal's locale is UTF-8, and as the letter `o` otherwise. When the output goes to a script or a file, it prints only `cabinet <version>`.
+Prints the installed kit's version. In a terminal it prints the Cabinet mark beside it: seven seats around a table, with the eighth left open for the owner. It draws the seats as dots when the terminal's locale is UTF-8, and as the letter `o` otherwise. When the output goes to a script or a file, it prints only `cabinet <version>`.
 
-## Which copy of cabinet runs
+## Which copy of Cabinet runs
 
-`cabinet update`, `status` and `config` hand off to the workspace's own pinned copy when it exists (`<workspace>/node_modules/@tarekraafat/cabinet`, or the project's `node_modules` above a shared `cabinet/`), so they always act with the project's version. They do this only in a cabinet workspace: the nearest from the current folder upward (after `-C`). `new`, `init`, `changelog` and `version` always run the copy you called.
+`cabinet update`, `status` and `config` hand off to the workspace's own pinned copy when it exists (`<workspace>/node_modules/@tarekraafat/cabinet`, or the project's `node_modules` above a shared `cabinet/`), so they always act with the project's version. They do this only in a Cabinet workspace: the nearest from the current folder upward (after `-C`). `new`, `init`, `changelog` and `version` always run the copy you called.
 
 ## Workspace scripts
 
@@ -484,7 +484,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_BACKUP_TIME` | Time of the daily backup, like `1:00 PM` (default). |
 | `CABINET_BACKUP_KEEP` | How many of this workspace's archives to keep (default 14, at least 1). |
 | `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
-| `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
+| `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs Cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
 | `CABINET_PRICE` | Dollars per million tokens, `"<input> <output> [<cached input>]"`, to count runs of a runner that reports only tokens; empty for none. |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
@@ -528,7 +528,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | Variable | Used by | Meaning |
 |---|---|---|
 | `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain, the secret store or the passphrase file. Never put it in `cabinet.env`, which git tracks. |
-| `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
+| `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one Cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
 | `CABINET_PROMPT`, `CABINET_AGENT` | the `custom` runner | The prompt and role, for `CABINET_RUNNER_CMD`. |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
@@ -537,7 +537,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 
 `cabinet remove` does all of this (see [cabinet remove](#cabinet-remove)). By hand:
 
-1. Stop its schedules. On macOS: `launchctl bootout gui/$(id -u)/ai.cabinet.<slug>.<job>` for each, then delete `~/Library/LaunchAgents/ai.cabinet.<slug>.*.plist`. With systemd: `systemctl --user disable --now ai.cabinet.<slug>.<job>.timer` for each, then delete `~/.config/systemd/user/ai.cabinet.<slug>.*.service` and `.timer`. With cron: delete `~/.config/cabinet/cron/ai.cabinet.<slug>.*.cron`, then run `cabinet bootstrap` in any other workspace, which rewrites cabinet's block of the crontab (or delete its lines from `crontab -e` by hand).
+1. Stop its schedules. On macOS: `launchctl bootout gui/$(id -u)/ai.cabinet.<slug>.<job>` for each, then delete `~/Library/LaunchAgents/ai.cabinet.<slug>.*.plist`. With systemd: `systemctl --user disable --now ai.cabinet.<slug>.<job>.timer` for each, then delete `~/.config/systemd/user/ai.cabinet.<slug>.*.service` and `.timer`. With cron: delete `~/.config/cabinet/cron/ai.cabinet.<slug>.*.cron`, then run `cabinet bootstrap` in any other workspace, which rewrites Cabinet's block of the crontab (or delete its lines from `crontab -e` by hand).
 2. Delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which also frees the slug.
 3. If it had backups: `security delete-generic-password -a "$USER" -s cabinet.<slug>.backup` (on Linux: `secret-tool clear service cabinet.<slug>.backup account "$USER"`, or delete `~/.config/cabinet/passphrases/cabinet.<slug>.backup`), and delete its archives if you no longer want them.
 4. Delete the workspace folder.

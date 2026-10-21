@@ -123,7 +123,7 @@ def social_svg(note):
     body += text(t, "wordmark", ws, x - wb[0], top + wb[3], C["ink"])
     body += text(t, "tagline1", ts, x, top + wb[3] + between + lh * 0.8, C["slate"])
     body += text(t, "tagline2", ts, x, top + wb[3] + between + lh * 1.8, C["slate"])
-    return svg(body, "0 0 %d %d" % (W, H), W, H, "cabinet: a team of AI agents and one owner who signs off", note)
+    return svg(body, "0 0 %d %d" % (W, H), W, H, "Cabinet: build anything with a team of AI agents. You stay in charge and sign off.", note)
 
 
 def favicon_svg():
@@ -204,8 +204,8 @@ def outline_font(font_path):
 
     fd = TOKENS["font"]
     upm, wm = shape(TOKENS["name"], fd["display"]["weight"], fd["display"]["tracking_em"])
-    _, t1 = shape("A team of AI agents and one owner", fd["body"]["weight"], 0)
-    _, t2 = shape("who signs off.", fd["body"]["weight"], 0)
+    _, t1 = shape("Build anything with a team of AI agents.", fd["body"]["weight"], 0)
+    _, t2 = shape("You stay in charge and sign off.", fd["body"]["weight"], 0)
     out = {"upm": upm, "font": "Schibsted Grotesk (SIL Open Font License 1.1)", "wordmark": wm, "tagline1": t1, "tagline2": t2}
     with open(os.path.join(BRAND, "text-paths.json"), "w") as f:
         json.dump(out, f, indent=1); f.write("\n")

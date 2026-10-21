@@ -1,6 +1,6 @@
 # CABINET.md - how this workspace runs
 
-This file comes from the cabinet kit and is replaced on every kit update. Do not edit it here: project rules go in `AGENTS.md`, standing documents (brand, style, policies, business documents) in `guides/` with a row in the "Guides" table of `AGENTS.md`, and project notes for a role in `roles/<role>.md`. A change that should reach every project goes into the kit itself.
+This file comes from the Cabinet kit and is replaced on every kit update. Do not edit it here: project rules go in `AGENTS.md`, standing documents (brand, style, policies, business documents) in `guides/` with a row in the "Guides" table of `AGENTS.md`, and project notes for a role in `roles/<role>.md`. A change that should reach every project goes into the kit itself.
 
 Every agent reads this file first, then `AGENTS.md`, then the `AGENTS.md` of the repo it works in, and before any work a guide in `AGENTS.md` covers, that guide. On a conflict the more specific file wins: repo `AGENTS.md` over workspace `AGENTS.md` and its guides over this file. Nothing in a project file or guide may loosen "Never push, merge, publish or release" or "The builder never verifies".
 
@@ -10,7 +10,7 @@ One folder holds the files that tie the project's repos together, and usually th
 
 | Path | What it is | Owned by |
 |---|---|---|
-| `CABINET.md` | This file: how any cabinet workspace runs | the kit |
+| `CABINET.md` | This file: how any Cabinet workspace runs | the kit |
 | `AGENTS.md` (`CLAUDE.md` links to it) | This project: the team, the contracts, the house and product rules | the project |
 | `cabinet.env` | Project settings: name, slug, roles, agent tool, backups, layout (the owner and week start are in `AGENTS.md`, the brief time in `jobs/brief.job`) | the project; `cabinet config` changes it |
 | `HANDOFFS.md`, `handoffs/` | The one channel between agents, and its closed entries | every agent, by the rules below |
@@ -135,11 +135,11 @@ Agents also run on a local schedule (`bin/job.sh run`, one `jobs/<job>.job` each
 
 ## Rules for every repo
 
-- **Never push, merge, publish or release.** Only the owner does. It is enforced in every agent tool cabinet knows (`bin/bootstrap.sh` installs the guardrails; the kit's `docs/guardrails.md` lists each tool and its limits): they deny `git push`, `gh pr merge`, `gh release`, write calls through `gh api`, package publishing, reading the GitHub token or the keychain, and the known ways of skipping git hooks as far as each tool's rule format allows; and a global git pre-push hook refuses any push not confirmed at the owner's terminal. Do not try to work around either: a way around them is a reason to stop and ask the owner, never a way to proceed.
+- **Never push, merge, publish or release.** Only the owner does. It is enforced in every agent tool Cabinet knows (`bin/bootstrap.sh` installs the guardrails; the kit's `docs/guardrails.md` lists each tool and its limits): they deny `git push`, `gh pr merge`, `gh release`, write calls through `gh api`, package publishing, reading the GitHub token or the keychain, and the known ways of skipping git hooks as far as each tool's rule format allows; and a global git pre-push hook refuses any push not confirmed at the owner's terminal. Do not try to work around either: a way around them is a reason to stop and ask the owner, never a way to proceed.
 - **Local commits are the only git write.** No push, merge, rebase, amend, reset or other history rewrite. A commit that fails review is reverted, or fixed in a follow-up commit; never amended.
 - **Commit finished work at once.** Every agent commits its own finished, tested changes locally, each one separately with a clear message in the repo's style, authored and signed as `AGENTS.md` says. Uncommitted changes mean work in progress, and only that; an agent ending a session with uncommitted work says so and why. Commit only your own changes, by pathspec (`git commit -- <paths>`), never someone else's uncommitted work.
 - **No fabrication.** Never invent names, limits, prices, dates, library choices or other specifics the owner has not stated or the code does not show. Write TBD, describe the capability, or read the canonical source. When corrected on a fabrication, audit recent work for the same mistake.
-- **Missing tools are the owner's to install.** When `bin/doctor.sh` reports a tool cabinet needs (`deps.required`) or one a feature needs (`deps.backups`), or `cabinet next --json` has the step `deps`, tell the owner in plain words what is missing, what stops working without it, and the exact install command it gives (`cabinet doctor --fix` runs it, asking first). Never install system packages yourself: they change the owner's machine and can need the owner's password.
+- **Missing tools are the owner's to install.** When `bin/doctor.sh` reports a tool Cabinet needs (`deps.required`) or one a feature needs (`deps.backups`), or `cabinet next --json` has the step `deps`, tell the owner in plain words what is missing, what stops working without it, and the exact install command it gives (`cabinet doctor --fix` runs it, asking first). Never install system packages yourself: they change the owner's machine and can need the owner's password.
 - **No secrets in files.** Keys, tokens, passwords and `.env` values never go into a repo, a note, a handoff or a log. The workspace's pre-commit hook (`bin/secret.sh check`) refuses a commit that adds one; never mark a real secret `not-a-secret` to get past it.
 
 ## Working in a tool other than Claude Code

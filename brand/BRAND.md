@@ -1,6 +1,6 @@
-# cabinet brand
+# Cabinet brand
 
-The rules for the cabinet mark, name, color, type and words, written for people and for agents. This file is the source of truth; when it and anything else disagree, this file wins.
+The rules for the Cabinet mark, name, color, type and words, written for people and for agents. This file is the source of truth; when it and anything else disagree, this file wins.
 
 | File | What it is |
 |---|---|
@@ -15,6 +15,17 @@ To give a project's agents these rules, copy this file to the workspace's `guide
 
 - **Approved:** the owner decided it. Follow it.
 - **Draft:** proposed, not reviewed yet. Follow it too, but before anything public relies on a draft rule, ask the owner.
+
+## What Cabinet believes (Approved)
+
+Every rule below follows from these.
+
+- **More output per person, not more headcount.**
+- **A small company, not a corporate org chart.** Every piece of work has exactly one owner, and nothing is done twice.
+- **People decide, agents do the work.** Agents recommend; you sign off on anything irreversible, public or costly, and you always know what is happening.
+- **For anyone.** One person or a team of any size, building anything (code, apps and websites, design, writing, marketing, music, finance), working their own way.
+
+The tagline: **Build anything with a team of AI agents. You stay in charge and sign off.** (Approved)
 
 ## 1. The idea (Approved)
 
@@ -52,11 +63,12 @@ To give a project's agents these rules, copy this file to the workspace's `guide
 - For pictures that explain the idea (the guide's first picture, onboarding, an explainer video, a slide about the team, the chairs), never in the mark itself: not the logo, favicon, app icon, README, wordmark or terminal.
 - Always faint: the seats' color at 12%, never brass, well inside the ring.
 
-## 6. The name (Draft)
+## 6. The name
 
-- Always `cabinet`, in lowercase, also at the start of a sentence, the way the command is typed. Never "Cabinet", "CABINET" or "the Cabinet kit".
-- The wordmark is the name in Schibsted Grotesk Bold, tracked -0.035em, as outlines (`wordmark.svg`), so it never depends on the font.
-- Side by side (`lockup.svg`): the mark 1.1 times the type size, 0.32 of the type size from the name, centered on the name's height. Stacked (`lockup-stacked.svg`): the mark 2.25 times the type size over the name, for square spaces.
+- **(Approved)** **Cabinet** in sentences and headings, with a capital C. `cabinet` in lowercase only where it is the command, a file or the package (`cabinet init`, `cabinet.env`, `@tarekraafat/cabinet`). Never "CABINET" or "the Cabinet kit".
+- **(Approved)** The wordmark stays lowercase: it is the logo, not a sentence.
+- **(Draft)** The wordmark is the name in Schibsted Grotesk Bold, tracked -0.035em, as outlines (`wordmark.svg`), so it never depends on the font.
+- **(Draft)** Side by side (`lockup.svg`): the mark 1.1 times the type size, 0.32 of the type size from the name, centered on the name's height. Stacked (`lockup-stacked.svg`): the mark 2.25 times the type size over the name, for square spaces.
 
 ## 7. Color
 
@@ -91,7 +103,7 @@ To give a project's agents these rules, copy this file to the workspace's `guide
 
 ## 9. Writing (Approved)
 
-cabinet sounds like a capable chief of staff: plain, short, specific, and always clear about who decides.
+Cabinet sounds like a capable chief of staff: plain, short, specific, and always clear about who decides.
 
 - Plain words. Say what happens and who does it. Name things the way the owner sees them.
 - A message that reports a problem ends with the command that fixes it.

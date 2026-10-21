@@ -1,4 +1,4 @@
-# AGENTS.md - working on the cabinet kit
+# AGENTS.md - working on the Cabinet kit
 
 Read this before changing anything in this repository. It is for agents (and people) improving the kit itself. The rules agents follow inside a workspace made by the kit are in `core/CABINET.md`, which becomes each workspace's `CABINET.md`.
 

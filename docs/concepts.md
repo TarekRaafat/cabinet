@@ -1,6 +1,6 @@
 # Concepts
 
-The ideas cabinet is built on. The rules themselves are in `CABINET.md`, which every workspace gets and every agent reads first; this page explains them for people.
+The ideas Cabinet is built on. The rules themselves are in `CABINET.md`, which every workspace gets and every agent reads first; this page explains them for people.
 
 ## The team
 
@@ -29,7 +29,7 @@ Each role's file says what it owns, decides, escalates and may write. A project 
 
 What the agents follow, from the most general to the most specific:
 
-1. `CABINET.md`: how every cabinet workspace runs. From the kit; never edited in a workspace. It holds what every agent needs on every session; the detail only some roles or tasks need is in `.cabinet/rules/` (`builders.md`, `ready-to-build.md`, `reviews.md`, `seats.md`), which `CABINET.md` names with when to read each, and each role names the ones its job needs. Every session reads less, and nothing is lost.
+1. `CABINET.md`: how every Cabinet workspace runs. From the kit; never edited in a workspace. It holds what every agent needs on every session; the detail only some roles or tasks need is in `.cabinet/rules/` (`builders.md`, `ready-to-build.md`, `reviews.md`, `seats.md`), which `CABINET.md` names with when to read each, and each role names the ones its job needs. Every session reads less, and nothing is lost.
 2. `AGENTS.md` in the workspace: this project's team, contracts, house rules and product rules, and the "Guides" table.
 3. `guides/`: standing documents, such as a brand guide, style guide, policy or business document. Agents read a guide before any work its row in `AGENTS.md` covers. A guide ranks with `AGENTS.md`.
 4. `roles/<role>.md`: what this project adds for one role, built into that role's definition.
@@ -145,11 +145,11 @@ Every workspace has a slug. Everything it puts on the machine is named by it: sc
 
 ## macOS and Linux
 
-cabinet works the same on both. Only where it keeps things on the machine differs, and one file, `bin/platform.sh`, decides it:
+Cabinet works the same on both. Only where it keeps things on the machine differs, and one file, `bin/platform.sh`, decides it:
 
 | | macOS | Linux |
 |---|---|---|
-| Schedules | launchd: `~/Library/LaunchAgents/ai.cabinet.<slug>.<job>.plist` | systemd user timers: `~/.config/systemd/user/ai.cabinet.<slug>.<job>.service` and `.timer`. On a machine that did not boot with systemd (many containers, older WSL): cron, as one block cabinet writes into your crontab from `~/.config/cabinet/cron/`, keeping every line of your own. |
+| Schedules | launchd: `~/Library/LaunchAgents/ai.cabinet.<slug>.<job>.plist` | systemd user timers: `~/.config/systemd/user/ai.cabinet.<slug>.<job>.service` and `.timer`. On a machine that did not boot with systemd (many containers, older WSL): cron, as one block Cabinet writes into your crontab from `~/.config/cabinet/cron/`, keeping every line of your own. |
 | Log folder | `~/Library/Logs/cabinet/<slug>/` | `~/.local/state/cabinet/<slug>/` (under `$XDG_STATE_HOME` when set) |
 | Backup passphrase | the login keychain | the secret store, through `secret-tool` (`libsecret-tools` on Debian and Ubuntu); with cron, a file only you can read: `~/.config/cabinet/passphrases/cabinet.<slug>.backup` |
 | Notifications | Notification Center | `notify-send` |
@@ -162,7 +162,7 @@ cabinet works the same on both. Only where it keeps things on the machine differ
 
 ## Agent tools and models
 
-cabinet works through agent tools, so it works with any model they offer. Everything is plain files: any tool that reads `AGENTS.md` can run the team, and acting as a role means reading `agents/<role>.md`. Scheduled jobs run with the tool in `CABINET_RUNNER`. Which tools have guardrails, and their limits: [guardrails](guardrails.md).
+Cabinet works through agent tools, so it works with any model they offer. Everything is plain files: any tool that reads `AGENTS.md` can run the team, and acting as a role means reading `agents/<role>.md`. Scheduled jobs run with the tool in `CABINET_RUNNER`. Which tools have guardrails, and their limits: [guardrails](guardrails.md).
 
 | Runner | Runs a job as |
 |---|---|
