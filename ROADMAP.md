@@ -14,6 +14,14 @@ Windows runs Cabinet through WSL (Windows Subsystem for Linux), which gives it C
 
 Done when: the full test suite passes under WSL, and the README walks a Windows user from nothing to a working workspace.
 
+## Toward a single download
+
+The goal: a person installs one thing, and Cabinet needs nothing else but git and an agent tool. Today it needs git, jq, perl, python3, Node.js and npm (openssl for backups). New logic is JavaScript run with Node, using only Node's own modules, so it can be compiled later (`AGENTS.md`, rule 3). In order, each step useful on its own:
+
+- **No python3 or perl.** Their work (the owner's manual page, spec checks, handoff readiness, the secret scanner, setup and settings edits, the job time limit) moves to `scripts/lib.js`, and the doctor checks that scheduled jobs find Node. Done when: no kit script calls python3 or perl, and the requirements are git, jq and Node.js.
+- **No jq.** About a hundred jq calls in the scripts move to `scripts/lib.js`. jq ships with macOS 15 and later but is often missing on Linux. Done when: no kit script calls jq, and the requirements are git and Node.js.
+- **One file, no runtime.** When the shell scripts are thin wrappers, Cabinet is compiled with Bun into one file per platform (macOS on Apple and Intel chips, Linux on x64 and ARM), with Bun's built-in encryption in place of openssl. It is installed with a one-line installer, Homebrew or a GitHub release; npm stays as a wrapper that fetches the right file. The workspace scripts (`bin/*.sh`) become one-line wrappers that call it, so agents and schedules work as before. This also opens native Windows, not only WSL. Done when: a machine with only git and an agent tool installs Cabinet with one download and the full test suite passes against the compiled file.
+
 ## For founders without every skill
 
 The goal: Cabinet is equally useful to a founder with no technical or business background and to one who is expert in one area (engineering, design, sales) and lacks the rest, and equally useful for a project that is only an idea and for an established one with code, users, a team and its own ways of working. The team fills what the founder lacks, explains what the founder must decide in the founder's terms, and stays out of the way where the founder is the expert. Today the kit is strong at governance (who decides, independent review, guardrails, the daily sign-off) but assumes the founder knows how to build and run a product. Items marked **pick first** come before the rest. Every item works for both kinds of project: for an established one it learns what is there and follows it, and it never replaces the project's stack, conventions or rules with defaults.
