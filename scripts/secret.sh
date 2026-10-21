@@ -21,42 +21,12 @@ done
 cd "$WS"
 found="$(mktemp)"; trap 'rm -f "$found"' EXIT
 
-# Reads "file<TAB>line<TAB>text" and prints "file:line: kind" for each likely secret.
-scan() {
-  perl -ne '
-    BEGIN { @p = (
-      ["a private key", qr/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/],
-      ["an AWS access key", qr/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
-      ["a GitHub token", qr/\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})/],
-      ["a Slack token", qr/\bxox[abposr]-[A-Za-z0-9-]{10,}/],
-      ["a Stripe live key", qr/\b[rs]k_live_[A-Za-z0-9]{16,}/],
-      ["an Anthropic key", qr/\bsk-ant-[A-Za-z0-9_-]{20,}/],
-      ["an OpenAI key", qr/\bsk-(?:proj-)?[A-Za-z0-9]{20,}/],
-      ["a Google API key", qr/\bAIza[0-9A-Za-z_-]{35}/],
-      ["an npm token", qr/\bnpm_[A-Za-z0-9]{36}\b/],
-      # A line that sets one: a name like password or api_key, then : or =, then a value of
-      # 8 or more characters that is not a placeholder (<...>), a variable ($X, ${X}) or a template.
-      ["a password or token", qr/(?i)(?<![a-z])(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)(?:_\w*)?(?![a-z])["\x27]?\s*[:=]\s*["\x27]?(?![\$<{%(\[])[^\s"\x27<>`,;]{8,}/],
-    ) }
-    chomp; my ($f, $n, $t) = split /\t/, $_, 3;
-    next if !defined $t || $t =~ /not-a-secret/;
-    for (@p) { if ($t =~ $_->[1]) { print "$f:$n: $_->[0]\n"; last } }
-  '
-}
-
 if ((staged)); then
-  # The added lines of the staged diff, with their file and line number.
-  git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR -- . | perl -ne '
-    if (/^\+\+\+ b\/(.*)$/) { $f = $1; next }
-    if (/^\@\@ -\S+ \+(\d+)/) { $n = $1; next }
-    if (/^\+/ && defined $f) { s/^\+//; s/\t/ /g; print "$f\t$n\t$_"; $n++ }
-  ' | scan > "$found" || true
+  # The added lines of the staged diff (bin/lib.js secret-scan: the patterns, and how a file is read).
+  git diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR -- . | node "$LIBJS" secret-scan --staged > "$found" || true
 else
-  git ls-files -z -co --exclude-standard -- . | perl -0 -ne '
-    chomp; my $f = $_; next if !-f $f || -B $f || -s $f > 2_000_000;
-    open my $h, "<", $f or next; local $/ = "\n";
-    while (my $l = <$h>) { $l =~ s/\t/ /g; print "$f\t$.\t$l" }
-  ' | scan > "$found" || true
+  # Every file git tracks or would add: text files up to 2 MB.
+  git ls-files -z -co --exclude-standard -- . | node "$LIBJS" secret-scan > "$found" || true
 fi
 
 if ((json)); then

@@ -73,7 +73,7 @@ cx="$HOME/.codex/config.toml"
 # Exactly the workspace's path or paths inside it ("OLD" or "OLD/..."), never a sibling like "OLD-old".
 if [[ -f "$cx" ]] && grep -qF "\"$OLD" "$cx"; then
   backup "$cx"
-  ((DRY)) && echo "  would update $cx" || { out="$(O="$OLD" N="$NEW" perl -pe 's/"\Q$ENV{O}\E(?=["\/])/"$ENV{N}/g' "$cx")" && printf '%s\n' "$out" > "$cx"; }
+  ((DRY)) && echo "  would update $cx" || O="$OLD" N="$NEW" node "$LIBJS" sub "$cx" -- '/"${O}(?=["\/])/g' '"${N}'
 fi
 
 echo "== Schedules: reinstall at the new path"

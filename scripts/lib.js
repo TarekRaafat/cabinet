@@ -515,9 +515,188 @@ li.task{list-style:none;margin-left:-1.2rem}li.task input{margin-right:.4rem}
 `);
 }
 
+// ---- Editing files line by line (what perl -i -pe did) ----------------------------------------
+// A pattern is "/source/flags". In the source, ${NAME} is the environment variable NAME as literal
+// text (perl's \Q$ENV{NAME}\E). In a replacement, $1..$9 are the groups, ${NAME} is the variable's
+// value as it is, and $$ is a $. Each rule applies to each line without its newline, so ^ and $ are
+// the line's start and end.
+// Like perl, the edits work on bytes (latin1 text, one character per byte), so nothing in a file is
+// ever re-encoded; the environment's values and the arguments are turned into the same bytes.
+const envBytes = (k) => Buffer.from(env(k), "utf8").toString("latin1");
+const bytes = (s) => Buffer.from(s, "utf8").toString("latin1");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+function pattern(p) {
+  const at = p.lastIndexOf("/");
+  if (p[0] !== "/" || at < 1) die("lib.js: a pattern is /source/flags, not " + p, 2);
+  return new RegExp(p.slice(1, at).replace(/\$\{([A-Z_][A-Z0-9_]*)\}/g, (m, k) => escapeRe(envBytes(k))), p.slice(at + 1));
+}
+const fill = (tpl, groups) => tpl.replace(/\$(\$|\d|\{([A-Z_][A-Z0-9_]*)\})/g, (m, x, k) =>
+  x === "$" ? "$" : k ? envBytes(k) : (groups[Number(x)] !== undefined ? groups[Number(x)] : ""));
+// The file's lines, and whether it ended with a newline; written back the same way, through a
+// temporary file renamed over it, so a failed write never leaves half a file.
+function lines(file) {
+  const t = fs.readFileSync(file, "latin1");
+  const end = t.endsWith("\n");
+  return { list: (end ? t.slice(0, -1) : t).split("\n"), end };
+}
+function replaceFile(file, text) {  // with the file's own permissions, as perl -i kept them
+  const mode = fs.statSync(file).mode & 0o7777;
+  fs.writeFileSync(file + ".tmp", text, { encoding: "latin1", mode });
+  fs.chmodSync(file + ".tmp", mode);
+  fs.renameSync(file + ".tmp", file);
+}
+function save(file, list, end) { replaceFile(file, list.join("\n") + (end && list.length ? "\n" : "")); }
+function eachFile(files, fn) {
+  for (const f of files) { const l = lines(f); save(f, fn(l.list), l.end); }
+}
+
+// sub <file>... -- </pattern/flags> <replacement> [...]: replace in every line, rule by rule.
+function sub(...args) {
+  const cut = args.indexOf("--");
+  if (cut < 0 || (args.length - cut - 1) % 2) die("usage: node lib.js sub <file>... -- </pattern/flags> <replacement>...", 2);
+  const rules = [];
+  for (let i = cut + 1; i < args.length; i += 2) rules.push([pattern(args[i]), args[i + 1]]);
+  eachFile(args.slice(0, cut), (list) => list.map((l) => rules.reduce((s, [re, tpl]) => s.replace(re, (...g) => fill(tpl, g)), l)));
+}
+// sub-all <file> </pattern/flags> <replacement>: replace in the whole text at once (perl -0777).
+function subAll(file, p, tpl) { replaceFile(file, fs.readFileSync(file, "latin1").replace(pattern(p), (...g) => fill(tpl, g))); }
+// has <file> </pattern/flags>: exit 0 when a line matches, 1 when none does (or there is no file).
+function has(file, p) {
+  const re = pattern(p);
+  let l;
+  try { l = lines(file).list; } catch (e) { process.exit(1); }
+  process.exit(l.some((x) => re.test(x)) ? 0 : 1);
+}
+// drop <file> </pattern/flags>: remove every line that matches.
+function drop(file, p) { const re = pattern(p); eachFile([file], (list) => list.filter((l) => !re.test(l))); }
+// drop-text <file> <text>: remove every line that contains the text. drop-line: every line that is it.
+function dropText(file, text) { text = bytes(text); eachFile([file], (list) => list.filter((l) => !l.includes(text))); }
+function dropLine(file, text) { text = bytes(text); eachFile([file], (list) => list.filter((l) => l !== text)); }
+// before <file> </pattern/flags> <line>: put the line before every line that matches. after: after it.
+function before(file, p, add) { const re = pattern(p); add = bytes(add); eachFile([file], (list) => list.flatMap((l) => (re.test(l) ? [add, l] : [l]))); }
+function after(file, p, add) { const re = pattern(p); add = bytes(add); eachFile([file], (list) => list.flatMap((l) => (re.test(l) ? [l, add] : [l]))); }
+// replace-line <file> <start> <text>: every line that starts with <start> becomes <text> (which may
+// hold several lines). Nothing changes when <text> is empty.
+function replaceLine(file, start, text) {
+  if (!text) return;
+  start = bytes(start); text = bytes(text);
+  eachFile([file], (list) => list.flatMap((l) => (l.startsWith(start) ? text.split("\n") : [l])));
+}
+// after-last <file> <line> <name>...: put the line after the last line that holds "| <name> |" for
+// any of the names (a team table's last role row); nothing changes when none does.
+function afterLast(file, add, ...names) {
+  add = bytes(add); names = names.map(bytes);
+  eachFile([file], (list) => {
+    let last = -1;
+    list.forEach((l, i) => { if (names.some((n) => n && l.includes("| " + n + " |"))) last = i; });
+    if (last >= 0) list.splice(last + 1, 0, add);
+    return list;
+  });
+}
+// fill-template <file>: the template with its markers (PROJECT, SLUG, OWNER_NAME, OWNER_EMAIL and
+// KIT_VERSION, each between two pairs of at signs) replaced by P, S, O, E and V from the environment,
+// on stdout. The marker is built, not written out, so a workspace's copy of this file holds none.
+function fillTemplate(file) {
+  let t = fs.readFileSync(file, "latin1");
+  const at = "@".repeat(2);
+  for (const [k, v] of [["PROJECT", "P"], ["SLUG", "S"], ["OWNER_NAME", "O"], ["OWNER_EMAIL", "E"], ["KIT_VERSION", "V"]]) {
+    t = t.split(at + k + at).join(envBytes(v));
+  }
+  process.stdout.write(Buffer.from(t, "latin1"));
+}
+// slug <text>: one "-" for each character that is not a letter or digit (Claude Code's folder names).
+function slug(text) { process.stdout.write(text.replace(/[^A-Za-z0-9]/gu, "-")); }
+
+// ---- Time limits ----------------------------------------------------------------------------
+// watchdog <seconds> <pid>: after the seconds, TERM the process group of <pid>, then KILL it 10
+// seconds later. Stopping this process stops the watch.
+function watchdog(secs, pid) {
+  const group = -Number(pid);
+  setTimeout(() => {
+    try { process.kill(group, "SIGTERM"); } catch (e) { /* already gone */ }
+    setTimeout(() => { try { process.kill(group, "SIGKILL"); } catch (e) { /* gone */ } }, 10000);
+  }, Number(secs) * 1000);
+}
+// run-limited <seconds, 0 for none> <command> [<word>...]: run it with no shell; at the limit it gets
+// SIGALRM. Exits with its status, or 128 plus the signal that stopped it.
+function runLimited(secs, cmd, ...words_) {
+  const ms = Number(secs) * 1000;
+  const r = spawnSync(cmd, words_, { stdio: "inherit", timeout: ms > 0 ? ms : undefined, killSignal: "SIGALRM" });
+  if (r.error && r.error.code !== "ETIMEDOUT") die("cannot run " + cmd + ": " + r.error.message);
+  if (r.signal) process.exit(128 + (require("node:os").constants.signals[r.signal] || 0));
+  process.exit(r.status === null ? 1 : r.status);
+}
+
+// ---- Secrets (bin/secret.sh) ----------------------------------------------------------------
+// Files and diffs are read byte by byte (latin1), as the scan always has, so a pattern counts bytes.
+const SP = "[\\t\\n\\v\\f\\r ]";
+const SECRETS = [
+  ["a private key", /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/],
+  ["an AWS access key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ["a GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})/],
+  ["a Slack token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
+  ["a Stripe live key", /\b[rs]k_live_[A-Za-z0-9]{16,}/],
+  ["an Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{20,}/],
+  ["an OpenAI key", /\bsk-(?:proj-)?[A-Za-z0-9]{20,}/],
+  ["a Google API key", /\bAIza[0-9A-Za-z_-]{35}/],
+  ["an npm token", /\bnpm_[A-Za-z0-9]{36}\b/],
+  // A line that sets one: a name like password or api_key, then : or =, then a value of 8 or more
+  // characters that is not a placeholder (<...>), a variable ($X, ${X}) or a template.
+  ["a password or token", new RegExp("(?<![a-z])(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)(?:_\\w*)?(?![a-z])[\"']?" +
+    SP + "*[:=]" + SP + "*[\"']?(?![$<{%(\\[])[^\\t\\n\\v\\f\\r \"'<>`,;]{8,}", "i")],
+];
+// Like perl's -B: the first 512 bytes hold a NUL, or (when they are not UTF-8 with non-ASCII in
+// them) more than a third are odd: control codes other than tab, newline, CR, BS, FF and ESC, or
+// bytes with the high bit set. An empty file counts as binary; it has no lines anyway.
+function isBinary(buf) {
+  const b = buf.subarray(0, 512);
+  if (!b.length || b.includes(0)) return true;
+  const hi = b.some((x) => x > 127);
+  if (hi) { try { new TextDecoder("utf-8", { fatal: true }).decode(b); return false; } catch (e) { /* not UTF-8 */ } }
+  let odd = 0;
+  for (const x of b) if (x > 127 || (x < 32 && ![8, 9, 10, 12, 13, 27].includes(x))) odd++;
+  return odd * 3 > b.length;
+}
+// secret-scan [--staged]: "<file>:<line>: <kind>" for each likely secret. Reads, on stdin, the staged
+// diff (--staged) or the NUL-separated list of files to scan. A line with not-a-secret is skipped.
+function secretScan(mode) {
+  const input = fs.readFileSync(0).toString("latin1");
+  let out = "";
+  const scan = (f, n, t) => {
+    if (t.includes("not-a-secret")) return;
+    const hit = SECRETS.find(([, re]) => re.test(t));
+    if (hit) out += f + ":" + n + ": " + hit[0] + "\n";
+  };
+  if (mode === "--staged") {
+    let f = null, n = 0;
+    for (const l of input.split("\n")) {
+      let m;
+      if ((m = l.match(/^\+\+\+ b\/(.*)$/))) { f = m[1].replace(/\t$/, ""); continue; }  // git ends a name with a space by a tab
+      if ((m = l.match(/^@{2} -\S+ \+(\d+)/))) { n = Number(m[1]); continue; }  // a hunk header
+      if (l.startsWith("+") && f !== null) { scan(f, n, l.slice(1).replace(/\t/g, " ")); n++; }
+    }
+  } else {
+    for (const f of input.split("\0")) {
+      if (!f) continue;
+      let st, buf;
+      try { st = fs.statSync(f); } catch (e) { continue; }
+      if (!st.isFile() || st.size > 2000000) continue;
+      try { buf = fs.readFileSync(f); } catch (e) { continue; }
+      if (isBinary(buf)) continue;
+      const text = buf.toString("latin1");
+      const ls = text.split("\n");
+      if (text.endsWith("\n")) ls.pop();
+      ls.forEach((l, i) => scan(f, i + 1, l.replace(/\t/g, " ")));
+    }
+  }
+  process.stdout.write(Buffer.from(out, "latin1"));
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
+  sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
+  "after-last": afterLast, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

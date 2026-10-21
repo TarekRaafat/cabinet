@@ -6,7 +6,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, perl, node and npm are all found. | Nothing. |
+| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, node and npm are all found. | Nothing. |
 | `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool Cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
 | `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
 

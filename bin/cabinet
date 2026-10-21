@@ -12,6 +12,7 @@
 set -euo pipefail
 
 KIT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
+LIBJS="$KIT/scripts/lib.js"   # the kit's JavaScript, run with node (AGENTS.md, rule 3)
 VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$KIT/package.json")"   # not jq: a missing jq is reported below
 source "$KIT/scripts/when.sh"   # when_norm, when_calendar, when_human: the same parser the workspace scripts use
 source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase, schedules
@@ -700,22 +701,22 @@ setup() {
     dst="$ws/$rel"
     if [[ -e "$dst" || -L "$dst" ]]; then kept+=("$rel"); continue; fi
     mkdir -p "$(dirname "$dst")"
-    P="$name" S="$slug" O="$owner" E="$email" V="$VERSION" perl -pe '
-      s/\@\@PROJECT\@\@/$ENV{P}/g; s/\@\@SLUG\@\@/$ENV{S}/g; s/\@\@OWNER_NAME\@\@/$ENV{O}/g;
-      s/\@\@OWNER_EMAIL\@\@/$ENV{E}/g; s/\@\@KIT_VERSION\@\@/$ENV{V}/g' "$f" > "$dst"
+    P="$name" S="$slug" O="$owner" E="$email" V="$VERSION" node "$LIBJS" fill-template "$f" > "$dst"
     placed+="$rel "
   done < <(find "$KIT/templates/workspace" -type f | sort)
   is_placed() { [[ "$placed" == *" $1 "* ]]; }
 
   # The answers, written into the files this setup placed (a kept file is the project's own).
   if is_placed cabinet.env; then
-    R="$roles" N="$runner" C="$runner_cmd" B="$backup" U="$budget" P="$price" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" perl -i -pe '
-      s/^CABINET_ROLES=.*/CABINET_ROLES="$ENV{R}"/; s/^CABINET_RUNNER=.*/CABINET_RUNNER="$ENV{N}"/;
-      s/^CABINET_RUNNER_CMD=.*/CABINET_RUNNER_CMD=\x27$ENV{C}\x27/;
-      s/^CABINET_BACKUP_DIR=.*/CABINET_BACKUP_DIR="$ENV{B}"/; s/^CABINET_BUDGET=.*/CABINET_BUDGET="$ENV{U}"/; s/^CABINET_PRICE=.*/CABINET_PRICE="$ENV{P}"/; s/^CABINET_LAYOUT=.*/CABINET_LAYOUT="$ENV{L}"/; s/^CABINET_VISIBILITY=.*/CABINET_VISIBILITY="$ENV{V}"/' "$ws/cabinet.env"
+    R="$roles" N="$runner" C="$runner_cmd" B="$backup" U="$budget" P="$price" L="$layout" V="$([[ "$layout" == inside ]] && echo "$visibility")" node "$LIBJS" sub "$ws/cabinet.env" -- \
+      '/^CABINET_ROLES=.*/' 'CABINET_ROLES="${R}"' '/^CABINET_RUNNER=.*/' 'CABINET_RUNNER="${N}"' \
+      '/^CABINET_RUNNER_CMD=.*/' "CABINET_RUNNER_CMD='\${C}'" \
+      '/^CABINET_BACKUP_DIR=.*/' 'CABINET_BACKUP_DIR="${B}"' '/^CABINET_BUDGET=.*/' 'CABINET_BUDGET="${U}"' '/^CABINET_PRICE=.*/' 'CABINET_PRICE="${P}"' \
+      '/^CABINET_LAYOUT=.*/' 'CABINET_LAYOUT="${L}"' '/^CABINET_VISIBILITY=.*/' 'CABINET_VISIBILITY="${V}"'
   fi
-  is_placed jobs/brief.job && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
-  is_placed AGENTS.md && D="$Week" G="$writing" perl -i -pe 's/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./; s/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
+  is_placed jobs/brief.job && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
+  is_placed AGENTS.md && D="$Week" G="$writing" node "$LIBJS" sub "$ws/AGENTS.md" -- \
+    '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' '/^(- \*\*Writing to the owner:\*\*) \w+\./' '$1 ${G}.'
   # What the project already says, in place of the TBDs it answers. The rest stays TBD.
   if is_placed AGENTS.md && [[ -n "$host" ]]; then
     local hp=".."; [[ "$layout" == beside ]] && hp="$(printf '%s\n' "${rows[0]}" | cut -f5)"
@@ -730,20 +731,19 @@ setup() {
       for r in "${pkg_scripts[@]}"; do t+=$'\n'"- \`$r\`"; done
       t+=$'\n\n'"TBD: what else qa needs to run it locally (services, local database, test account), and what must never be touched (production, shared databases)."
     fi
-    A="$about" B="$t" perl -i -pe '
-      $_ = "$ENV{A}\n" if index($_, "TBD: one paragraph, written by the owner.") == 0;
-      $_ = "$ENV{B}\n" if length($ENV{B}) && index($_, "TBD: how qa runs the product locally") == 0' "$ws/AGENTS.md"
+    node "$LIBJS" replace-line "$ws/AGENTS.md" "TBD: one paragraph, written by the owner." "$about"
+    node "$LIBJS" replace-line "$ws/AGENTS.md" "TBD: how qa runs the product locally" "$t"
   fi
   for r in $ROLES_ALL $ROLES_OPT; do
     has "$roles" "$r" && continue
     # A disabled role leaves the team tables.
-    for f in AGENTS.md OPERATIONS.md; do is_placed "$f" && X="| $r |" perl -i -ne 'print unless index($_, $ENV{X}) >= 0' "$ws/$f"; done
+    for f in AGENTS.md OPERATIONS.md; do is_placed "$f" && node "$LIBJS" drop-text "$ws/$f" "| $r |"; done
   done
   local row
   for row in ${rows[@]+"${rows[@]}"}; do
     rn="${row%%$'\t'*}"
     if [[ -f "$ws/repos.tsv" ]] && ! cut -f1 "$ws/repos.tsv" | grep -qxF "$rn"; then printf '%s\n' "$row" >> "$ws/repos.tsv"; fi
-    is_placed AGENTS.md && X="| \`$rn\` | TBD | TBD |" perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$ws/AGENTS.md"
+    is_placed AGENTS.md && node "$LIBJS" before "$ws/AGENTS.md" '/^\| workspace \(this folder\)/' "| \`$rn\` | TBD | TBD |"
   done
   echo "  placed: $(echo $placed | wc -w | tr -d ' ') files"
   ((${#kept[@]})) && echo "  kept your own (not replaced; merge by hand if you want the kit's): ${kept[*]}"
@@ -1250,19 +1250,19 @@ cmd_config() {
   # Write them.
   setenv() {  # setenv <key> <value> [single]: set a cabinet.env line, or add it
     local q='"'; [[ "${3:-}" == single ]] && q="'"
-    if grep -q "^$1=" "$ws/cabinet.env"; then K="$1" V="$2" Q="$q" perl -i -pe 's/^\Q$ENV{K}\E=.*/$ENV{K}=$ENV{Q}$ENV{V}$ENV{Q}/' "$ws/cabinet.env"
+    if grep -q "^$1=" "$ws/cabinet.env"; then K="$1" V="$2" Q="$q" node "$LIBJS" sub "$ws/cabinet.env" -- '/^${K}=.*/' '${K}=${Q}${V}${Q}'
     else printf '%s=%s%s%s\n' "$1" "$q" "$2" "$q" >> "$ws/cabinet.env"; fi
   }
   setenv CABINET_PROJECT "$name"; setenv CABINET_ROLES "$roles"; setenv CABINET_RUNNER "$runner"
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
-  [[ -f "$ws/jobs/brief.job" ]] && W="$brief" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/brief.job"
+  [[ -f "$ws/jobs/brief.job" ]] && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
   # An AGENTS.md from before the setting gets its line after the week start.
   if [[ "$writing" != "${o_writing:-standard}" ]]; then
-    if [[ -n "$o_writing" ]]; then G="$writing" perl -i -pe 's/^(- \*\*Writing to the owner:\*\*) \w+\./$1 $ENV{G}./' "$ws/AGENTS.md"
-    else G="$writing" perl -i -pe '$_ .= "- **Writing to the owner:** $ENV{G}. `short` gives the shortest briefs, questions and answers (`cabinet config --writing short`; `CABINET.md`, \"Writing to the owner\").\n" if /^- \*\*Week starts on:\*\*/' "$ws/AGENTS.md"; fi
+    if [[ -n "$o_writing" ]]; then G="$writing" node "$LIBJS" sub "$ws/AGENTS.md" -- '/^(- \*\*Writing to the owner:\*\*) \w+\./' '$1 ${G}.'
+    else node "$LIBJS" after "$ws/AGENTS.md" '/^- \*\*Week starts on:\*\*/' "- **Writing to the owner:** $writing. \`short\` gives the shortest briefs, questions and answers (\`cabinet config --writing short\`; \`CABINET.md\`, \"Writing to the owner\")."; fi
   fi
   [[ "$pipe" == "$o_pipe" ]] || setenv CABINET_PIPELINE "$pipe"
   [[ "$plimit" == "$o_plimit" ]] || setenv CABINET_PIPELINE_LIMIT "$plimit"
@@ -1279,11 +1279,11 @@ RESULT="PIPELINE.md"
 TIMEOUT="0"
 JOB
   fi
-  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" perl -i -pe 's/^WHEN=.*/WHEN="$ENV{W}"/' "$ws/jobs/pipeline.job"
+  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" node "$LIBJS" sub "$ws/jobs/pipeline.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   if [[ -n "$hard" && "$hard" != "$o_hard" ]]; then hard_write "$ws" "$hard" || die "AGENTS.md: could not write the Hard to undo section"; fi
-  D="$Week" O="$owner" E="$email" perl -i -pe '
-    s/^(- \*\*Week starts on:\*\*) \w+\./$1 $ENV{D}./;
-    s/^(- \*\*Commits\.\*\* Authored as ).*? <[^>]*>\./$1$ENV{O} <$ENV{E}>./' "$ws/AGENTS.md"
+  D="$Week" O="$owner" E="$email" node "$LIBJS" sub "$ws/AGENTS.md" -- \
+    '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' \
+    '/^(- \*\*Commits\.\*\* Authored as ).*? <[^>]*>\./' '$1${O} <${E}>.'
   local files=() f
   for f in AGENTS.md HANDOFFS.md OPERATIONS.md README.md specs/ROADMAP.md cabinet.env; do [[ -f "$ws/$f" ]] && files+=("$ws/$f"); done
   # The workspace's own package.json names the workspace (not a project's, which is never touched).
@@ -1293,12 +1293,11 @@ JOB
   fi
   if [[ "$name" != "$o_name" ]]; then
     # The titles setup wrote; other mentions are the project's own text.
-    O="$o_name" N="$name" perl -i -pe '
-      s/^(# AGENTS\.md - )\Q$ENV{O}\E$/$1$ENV{N}/; s/^(## What )\Q$ENV{O}\E( is)$/$1$ENV{N}$2/; s/(specific to )\Q$ENV{O}\E( and wins)/$1$ENV{N}$2/;
-      s/^(# HANDOFFS\.md - )\Q$ENV{O}\E$/$1$ENV{N}/; s/^# \Q$ENV{O}\E( operations manual)$/# $ENV{N}$1/; s/(how to run )\Q$ENV{O}\E( day to day)/$1$ENV{N}$2/;
-      s/^# \Q$ENV{O}\E( workspace)$/# $ENV{N}$1/; s/^(# Roadmap - )\Q$ENV{O}\E$/$1$ENV{N}/; s/^# \Q$ENV{O}\E( settings for)/# $ENV{N}$1/;
-      s/(tie the )\Q$ENV{O}\E( repos together)/$1$ENV{N}$2/; s/(What is specific to )\Q$ENV{O}\E( \|)/$1$ENV{N}$2/' \
-      "${files[@]}"
+    O="$o_name" N="$name" node "$LIBJS" sub "${files[@]}" -- \
+      '/^(# AGENTS\.md - )${O}$/' '$1${N}' '/^(## What )${O}( is)$/' '$1${N}$2' '/(specific to )${O}( and wins)/' '$1${N}$2' \
+      '/^(# HANDOFFS\.md - )${O}$/' '$1${N}' '/^# ${O}( operations manual)$/' '# ${N}$1' '/(how to run )${O}( day to day)/' '$1${N}$2' \
+      '/^# ${O}( workspace)$/' '# ${N}$1' '/^(# Roadmap - )${O}$/' '$1${N}' '/^# ${O}( settings for)/' '# ${N}$1' \
+      '/(tie the )${O}( repos together)/' '$1${N}$2' '/(What is specific to )${O}( \|)/' '$1${N}$2'
   fi
   if [[ "$slug" != "$o_slug" ]]; then
     # Stop this workspace's schedules under the old name; bootstrap installs them under the new one.
@@ -1314,8 +1313,9 @@ JOB
     [[ -f "$oc" && "$(abspath "$(cat "$oc")")" == "$ws" ]] && rm -f "$oc"
     local sfiles=()
     for f in "$ws/OPERATIONS.md" "$ws/README.md" "$ws"/jobs/*.job; do [[ -f "$f" ]] && sfiles+=("$f"); done
-    ((${#sfiles[@]})) && O="$o_slug" N="$slug" perl -i -pe 's/ai\.cabinet\.\Q$ENV{O}\E\b/ai.cabinet.$ENV{N}/g; s#(Logs|state)/cabinet/\Q$ENV{O}\E/#$1/cabinet/$ENV{N}/#g; s/cabinet\.\Q$ENV{O}\E\.backup/cabinet.$ENV{N}.backup/g; s/^(git clone <this repo> )\Q$ENV{O}\E( && cd )\Q$ENV{O}\E$/$1$ENV{N}$2$ENV{N}/' \
-      "${sfiles[@]}"
+    ((${#sfiles[@]})) && O="$o_slug" N="$slug" node "$LIBJS" sub "${sfiles[@]}" -- \
+      '/ai\.cabinet\.${O}\b/g' 'ai.cabinet.${N}' '/(Logs|state)\/cabinet\/${O}\//g' '$1/cabinet/${N}/' \
+      '/cabinet\.${O}\.backup/g' 'cabinet.${N}.backup' '/^(git clone <this repo> )${O}( && cd )${O}$/' '$1${N}$2${N}'
   fi
   # Team tables follow the roles: a dropped role's row leaves, a returning one comes back from the kit's template.
   local f row
@@ -1325,12 +1325,9 @@ JOB
       if has "$roles" "$r"; then
         grep -qF "| $r |" "$ws/$f" && continue
         row="$(grep -F "| $r |" "$KIT/templates/workspace/$f" | head -1)"; [[ -n "$row" ]] || continue
-        X="$row" RS="$ROLES_ALL $ROLES_OPT" perl -0777 -i -pe '
-          my @l = split /(?<=\n)/; my $last = -1;
-          for my $i (0 .. $#l) { for my $r (split / /, $ENV{RS}) { $last = $i if index($l[$i], "| $r |") >= 0 } }
-          splice @l, $last + 1, 0, "$ENV{X}\n" if $last >= 0; $_ = join "", @l' "$ws/$f"
+        node "$LIBJS" after-last "$ws/$f" "$row" $ROLES_ALL $ROLES_OPT
       else
-        X="| $r |" perl -i -ne 'print unless index($_, $ENV{X}) >= 0' "$ws/$f"
+        node "$LIBJS" drop-text "$ws/$f" "| $r |"
       fi
     done
     # A role the project defines itself gets a row to fill in, so the manual names it.
@@ -1338,16 +1335,13 @@ JOB
       has "$ROLES_ALL $ROLES_OPT" "$r" && continue
       grep -qF "| $r |" "$ws/$f" && continue
       if [[ "$f" == OPERATIONS.md ]]; then row="| $r | TBD: what it does |"; else row="| TBD | TBD | $r |"; fi
-      X="$row" RS="$ROLES_ALL $ROLES_OPT $extra_roles" perl -0777 -i -pe '
-        my @l = split /(?<=\n)/; my $last = -1;
-        for my $i (0 .. $#l) { for my $r (split / /, $ENV{RS}) { $last = $i if length($r) && index($l[$i], "| $r |") >= 0 } }
-        splice @l, $last + 1, 0, "$ENV{X}\n" if $last >= 0; $_ = join "", @l' "$ws/$f"
+      node "$LIBJS" after-last "$ws/$f" "$row" $ROLES_ALL $ROLES_OPT $extra_roles
     done
   done
   for row in ${newrows[@]+"${newrows[@]}"}; do
     printf '%s\n' "$row" >> "$ws/repos.tsv"
     rn="${row%%$'\t'*}"
-    grep -qF "| \`$rn\` |" "$ws/AGENTS.md" || X="| \`$rn\` | TBD | TBD |" perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$ws/AGENTS.md"
+    grep -qF "| \`$rn\` |" "$ws/AGENTS.md" || node "$LIBJS" before "$ws/AGENTS.md" '/^\| workspace \(this folder\)/' "| \`$rn\` | TBD | TBD |"
   done
   [[ "$roles" != "$o_roles" ]] && "$ws/bin/role.sh" build
 
@@ -1814,13 +1808,13 @@ cmd_remove() {
     # Only what setup wrote: the section that names cabinet/CABINET.md, and generated role files.
     drop_section() {  # drop_section <file>: remove the "## Agent team" section that points at cabinet/
       [[ -f "$1" ]] && grep -qF 'cabinet/CABINET.md' "$1" || return 1
-      perl -0777 -i -pe 's/\n*## Agent team\n\n[^\n]*cabinet\/CABINET\.md[^\n]*\n?//' "$1"
+      node "$LIBJS" sub-all "$1" '/\n*## Agent team\n\n[^\n]*cabinet\/CABINET\.md[^\n]*\n?/' ''
       return 0
     }
     local ex; ex="$(git -C "$host" rev-parse --git-path info/exclude 2>/dev/null)"; [[ "$ex" == /* ]] || ex="$host/$ex"
     for f in "$host"/.claude/agents/*.md; do
       [[ -f "$f" ]] && grep -qxF "<!-- Generated by bin/role.sh build. Edit roles/$(basename "$f" .md).md, never this file. -->" "$f" || continue
-      rm -f "$f"; [[ -f "$ex" ]] && X="/.claude/agents/$(basename "$f")" perl -i -ne 'print unless $_ eq "$ENV{X}\n"' "$ex"
+      rm -f "$f"; [[ -f "$ex" ]] && node "$LIBJS" drop-line "$ex" "/.claude/agents/$(basename "$f")"
     done
     rmdir "$host/.claude/agents" "$host/.claude" 2>/dev/null || true
     if [[ "$vis" == private ]]; then
@@ -1828,10 +1822,10 @@ cmd_remove() {
         git -C "$host" ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue   # a tracked file is the project's own
         drop_section "$host/$f" || continue
         if [[ -z "$(tr -d '[:space:]' < "$host/$f")" ]]; then
-          rm -f "$host/$f"; [[ -f "$ex" ]] && X="/$f" perl -i -ne 'print unless $_ eq "$ENV{X}\n"' "$ex"
+          rm -f "$host/$f"; [[ -f "$ex" ]] && node "$LIBJS" drop-line "$ex" "/$f"
         fi
       done
-      [[ -f "$ex" ]] && perl -i -ne 'print unless $_ eq "/cabinet/\n"' "$ex"
+      [[ -f "$ex" ]] && node "$LIBJS" drop-line "$ex" "/cabinet/"
       echo "  removed the pointers and exclude lines setup added in the project"
     else
       for f in AGENTS.md CLAUDE.md; do drop_section "$host/$f" && echo "  removed the Agent team section from $f (commit it)"; done

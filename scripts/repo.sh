@@ -36,8 +36,8 @@ p_remove() {
   [[ -n "$name" ]] || { echo "usage: bin/repo.sh remove <name> [--dry-run]" >&2; exit 2; }
   repos | cut -f1 | grep -qxF "$name" || { echo "no repo named $name in repos.tsv (bin/repo.sh list)" >&2; exit 1; }
   if ((dry)); then echo "would remove $name from repos.tsv and the team table of AGENTS.md; its folder is left as is"; return 0; fi
-  N="$name" perl -i -ne 'print unless /^\Q$ENV{N}\E\t/' "$WS/repos.tsv"
-  N="$name" perl -i -ne 'print unless /^\| `\Q$ENV{N}\E` \|/' "$WS/AGENTS.md"
+  N="$name" node "$LIBJS" drop "$WS/repos.tsv" '/^${N}\t/'
+  N="$name" node "$LIBJS" drop "$WS/AGENTS.md" '/^\| `${N}` \|/'
   echo "Removed $name from repos.tsv and the team table of AGENTS.md. Its folder, history and local/$name/ are left as they are."
   echo "Open handoffs addressed to it are reported by bin/doctor.sh. Commit: git -C \"$WS\" commit -am \"repos: remove $name\""
 }

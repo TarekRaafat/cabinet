@@ -159,7 +159,7 @@ done
 
 # Claude Code memory and settings, only where missing.
 if [[ -d "$src/claude" ]]; then
-  cslug="$(perl -CSA -e '$_ = shift; s/[^A-Za-z0-9]/-/g; print' "$(cd "$target" && pwd)")"
+  cslug="$(node "$(dirname "$0")/lib.js" slug "$(cd "$target" && pwd)")"
   mem="$HOME/.claude/projects/$cslug/memory"
   if [[ -d "$src/claude/memory" && ! -d "$mem" ]]; then mkdir -p "$(dirname "$mem")"; cp -Rp "$src/claude/memory" "$mem"; echo "  Claude memory restored"; fi
   if [[ -f "$src/claude/settings.json" && ! -f "$HOME/.claude/settings.json" ]]; then mkdir -p "$HOME/.claude"; cp -p "$src/claude/settings.json" "$HOME/.claude/settings.json"; echo "  Claude settings restored"; fi

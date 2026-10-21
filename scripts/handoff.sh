@@ -253,7 +253,7 @@ run_check() {  # run_check <area> <command>
   mkdir -p "$WS/specs/evidence/$id"
   # No shell: the command and its words as they are, in the workspace, within the run's time limit.
   (cd "$WS" && CABINET_AREA="$a" CABINET_HANDOFF="$id" CABINET_COMMITS="${commits/none/}" \
-    perl -e 'alarm shift; exec @ARGV or die "cannot run $ARGV[0]: $!\n"' "$((CABINET_JOB_TIMEOUT * 60))" "$WS/${w[0]}" "${w[@]:1}") > "$WS/$out" 2>&1 || st=$?
+    node "$LIBJS" run-limited "$((CABINET_JOB_TIMEOUT * 60))" "$WS/${w[0]}" "${w[@]:1}") > "$WS/$out" 2>&1 || st=$?
   if ((st)); then
     echo "the $a check failed (exit $st), so $role cannot pass $id; its last lines:" >&2; tail -5 "$WS/$out" >&2; rm -f "$WS/$out"; return 1
   fi

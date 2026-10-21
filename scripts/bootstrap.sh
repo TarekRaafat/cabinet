@@ -120,10 +120,10 @@ assigned=0
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
   [[ -e "$repo/.git" ]] || continue
-  N="$name" perl -ne 'exit 1 if /^\| `\Q$ENV{N}\E` \|[^|]*\|\s*TBD\s*\|\s*$/' "$WS/AGENTS.md" 2>/dev/null && continue
+  N="$name" node "$LIBJS" has "$WS/AGENTS.md" '/^\| `${N}` \|[^|]*\|\s*TBD\s*\|\s*$/' 2>/dev/null || continue
   b="$(builder_for "$repo")"
   if ((DRY)); then echo "  would make $b the owner of $name"; continue; fi
-  N="$name" B="$b" perl -i -pe 's/^(\| `\Q$ENV{N}\E` \|[^|]*\|)\s*TBD\s*\|\s*$/$1 $ENV{B} |\n/' "$WS/AGENTS.md"
+  N="$name" B="$b" node "$LIBJS" sub "$WS/AGENTS.md" -- '/^(\| `${N}` \|[^|]*\|)\s*TBD\s*\|\s*$/' '$1 ${B} |'
   echo "  $name: owned by the $b builder, from what the repo holds (change its row in AGENTS.md to choose another)"
   assigned=1
 done < <(repos)

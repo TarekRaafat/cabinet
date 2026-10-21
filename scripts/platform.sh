@@ -238,7 +238,7 @@ cron_sync() {
 # Tools cabinet needs, and how this machine installs them (brew, apt, dnf or pacman).
 # Optional tools are checked where their feature is turned on: openssl and secret-tool for
 # backups, notify-send for digest notifications.
-DEPS_REQUIRED="git jq perl node npm"
+DEPS_REQUIRED="git jq node npm"
 # deps_missing [<tools>]: the ones not found (CABINET_TEST_MISSING makes the tests miss some).
 deps_missing() {
   local t out=""

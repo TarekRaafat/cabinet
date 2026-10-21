@@ -130,7 +130,7 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_a
   ((limit)) || { run_agent; return; }
   local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
   set -m; run_agent </dev/null & pid=$!; set +m
-  perl -e 'sleep shift; kill "TERM", -$ARGV[0]; sleep 10; kill "KILL", -$ARGV[0]' "$secs" "$pid" & dog=$!
+  node "$LIBJS" watchdog "$secs" "$pid" & dog=$!
   trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; exit 130' INT TERM
   local start=$SECONDS
   wait "$pid" || st=$?
@@ -174,7 +174,9 @@ run_agent() {
 
 # Claude Code keeps per-folder memory under the folder's path with every non-alphanumeric as "-".
 # One dash per character, whatever the locale (launchd runs without one).
-claude_slug() { perl -CSA -e '$_ = shift; s/[^A-Za-z0-9]/-/g; print' "$1"; }
+claude_slug() {   # plain ASCII in bash; anything else through node, one character at a time
+  if [[ "$1" =~ ^[\ -~]*$ ]]; then printf '%s' "${1//[^A-Za-z0-9]/-}"; else node "$LIBJS" slug "$1"; fi
+}
 CLAUDE_SLUG="$(claude_slug "$WS")"
 
 # A workspace inside a project (cabinet init --inside) has the project as the folder above.
@@ -398,7 +400,7 @@ job_path() {
   local runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
   [[ "$runner" == cursor ]] && runner="$(cursor_bin || echo cursor-agent)"
   [[ "$runner" == antigravity ]] && runner=agy
-  for t in "$runner" node git jq perl openssl; do
+  for t in "$runner" node git jq openssl; do
     d="$(command -v "$t" 2>/dev/null)" || continue
     [[ "$d" == /* ]] || continue
     d="$(dirname "$d")"; [[ ":$p:" == *":$d:"* ]] || p="$d:$p"

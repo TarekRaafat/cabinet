@@ -766,7 +766,7 @@ s23() {
 python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the code (see above)"
 python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
 # The kit's scripts need no python3 (AGENTS.md, rule 3); their JavaScript parses.
-! grep -rlw python3 "$KIT/bin" "$KIT/scripts" || fail "a kit script calls python3; move it to scripts/lib.js"
+! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=lib.js "$KIT/bin" "$KIT/scripts" || fail "a kit script runs python3 or perl; move it to scripts/lib.js"
 node --check "$KIT/scripts/lib.js" || fail "scripts/lib.js does not parse"
 python3 -I "$KIT/tools/build-brand.py" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
@@ -1078,6 +1078,13 @@ sedi 's/$/ not-a-secret/' "$W/guides/keys.md"; git -C "$W" add guides/keys.md
 git -C "$W" commit -qm "a marked false alarm" >/dev/null 2>&1 || fail "a marked false alarm was refused"
 "$W/bin/secret.sh" check >/dev/null 2>&1 || fail "a marked false alarm is still reported"
 git -C "$W" rm -q guides/keys.md && git -C "$W" commit -qm "drop keys" || fail "cleanup"
+# A file with no newline at its end does not hide the next file's key, and a name with a space keeps its line number.
+printf 'last line with no newline' > "$W/guides/a-nonl.md"; printf 'x\n%s\n' "$key" > "$W/guides/b key.md"
+out="$("$W/bin/secret.sh" check 2>&1)" && fail "the key after a file with no last newline was missed"
+echo "$out" | grep -qF 'guides/b key.md:2: an AWS access key' && ! echo "$out" | grep -q 'a-nonl.md' || fail "the wrong file or line was named: $out"
+git -C "$W" add guides; out="$(git -C "$W" commit -qm "keys" 2>&1)" && fail "a staged key in a file named with a space was not refused"
+echo "$out" | grep -qF 'guides/b key.md:2: an AWS access key' || fail "the staged scan lost the line number of a file named with a space: $out"
+git -C "$W" rm -qf "guides/a-nonl.md" "guides/b key.md" >/dev/null || fail "cleanup"
 # A shared cabinet/ is committed with the project: no hook of its own, its files still scanned.
 "$S/cabinet/bin/doctor.sh" 2>&1 | grep -q 'ok    the workspace is committed with the project, whose own hooks run' || fail "shared layout: secrets hook check"
 [[ ! -e "$S/.git/hooks/pre-commit" ]] || fail "a hook was placed in the project's own git"
