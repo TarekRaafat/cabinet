@@ -195,6 +195,8 @@ button:hover { border-color: var(--muted); }
 /* terminal */
 .term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 20px 22px; font-family: var(--font-mono); font-size: 13px; line-height: 1.45; overflow-x: auto; border: 1px solid var(--line); }
 .term pre { margin: 0; font: inherit; }
+/* A line exactly twice as tall as a character is wide (JetBrains Mono is 0.6em wide), as in a terminal, so the mark is round. */
+.term pre { line-height: 1.2; }
 .term .dim { color: var(--term-dim); }
 
 /* use cases */
