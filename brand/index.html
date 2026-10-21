@@ -71,6 +71,10 @@ a { color: inherit; }
 .cover { padding-block: 56px 48px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 40px; align-items: center; border-bottom: 1px solid var(--line); }
 .cover-mark { width: 168px; height: 168px; }
 .cover-mark svg { width: 100%; height: 100%; display: block; }
+.cover-mark .open { opacity: 0; transition: opacity 400ms ease; }
+.cover-mark:hover .open, .cover-mark:focus-visible .open { opacity: 1; }
+.cover-mark:focus-visible { border-radius: 22%; }
+@media (prefers-reduced-motion: reduce) { .cover-mark .open { transition: none; } }
 .cover h1 { font-size: clamp(56px, 9vw, 96px); font-weight: 700; letter-spacing: -0.045em; line-height: 0.95; }
 .cover-text { display: grid; gap: 14px; min-width: 0; }
 .cover-text p { font-size: 18px; }
@@ -252,7 +256,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
 
 <div class="wrap">
   <header class="cover">
-    <div class="cover-mark" data-mark='{"tile":"#F3F4F6","fill":"#15181E"}'></div>
+    <div class="cover-mark" tabindex="0" aria-label="The cabinet mark: hover or focus to see the owner's open seat" data-mark='{"tile":"#F3F4F6","fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open"}'></div>
     <div class="cover-text">
       <span class="eyebrow">Brand guide, 21 Oct 2026</span>
       <h1>cabinet</h1>
@@ -680,7 +684,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     for (var i = 0; i < n; i++) {
       var a = i * 2 * Math.PI / n, x = +(r * Math.cos(a)).toFixed(3), y = +(-r * Math.sin(a)).toFixed(3), deg = i * 360 / n;
       if (i === 0) {
-        var ghost = ' fill="none" stroke="' + (o.accent || "#A06F17") + '" stroke-width="2.2"';
+        var ghost = (o.openClass ? ' class="' + o.openClass + '"' : "") + ' fill="none" stroke="' + (o.accent || "#A06F17") + '" stroke-width="2.2"';
         if (o.open === "ghost") parts.push(o.seat === "chair" ? chair(x, y, 0, ghost) : '<circle cx="' + x + '" cy="' + y + '" r="8.4"' + ghost + "/>");
         continue;
       }
