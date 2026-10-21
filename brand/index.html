@@ -71,10 +71,10 @@ a { color: inherit; }
 .cover { padding-block: 56px 48px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 40px; align-items: center; border-bottom: 1px solid var(--line); }
 .cover-mark { width: 168px; height: 168px; }
 .cover-mark svg { width: 100%; height: 100%; display: block; }
-.cover-mark .open { opacity: 0; transition: opacity 400ms ease; }
-.cover-mark:hover .open, .cover-mark:focus-visible .open { opacity: 1; }
+.reveal .open { opacity: 0; transition: opacity 400ms ease; }
+.reveal:hover .open, .reveal:focus-visible .open { opacity: 1; }
 .cover-mark:focus-visible { border-radius: 22%; }
-@media (prefers-reduced-motion: reduce) { .cover-mark .open { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .reveal .open { transition: none; } }
 .cover h1 { font-size: clamp(56px, 9vw, 96px); font-weight: 700; letter-spacing: -0.045em; line-height: 0.95; }
 .cover-text { display: grid; gap: 14px; min-width: 0; }
 .cover-text p { font-size: 18px; }
@@ -256,7 +256,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
 
 <div class="wrap">
   <header class="cover">
-    <div class="cover-mark" tabindex="0" aria-label="The cabinet mark: hover or focus to see the owner's open seat" data-mark='{"tile":"#F3F4F6","fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open"}'></div>
+    <div class="cover-mark reveal" tabindex="0" aria-label="The cabinet mark: hover or focus to see the owner's open seat" data-mark='{"tile":"#F3F4F6","fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open"}'></div>
     <div class="cover-text">
       <span class="eyebrow">Brand guide, 21 Oct 2026</span>
       <h1>cabinet</h1>
@@ -380,6 +380,30 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
             <li>One color: the terminal, one-color print, stickers, embossing.</li>
             <li>Next to the name: the README, the npm page and the wordmark, where the job is to be recognized.</li>
           </ul>
+        </div>
+      </div>
+      <div class="block" id="hover">
+        <h3>On hover: the seat appears when the owner reaches for it</h3>
+        <p class="muted">Where the mark can be pointed at or clicked, the brass outline may fade in on hover and keyboard focus, and fade out after. It is the outline rule in motion: the owner's place shows when a person engages. Try it on the mark below or on the cover.</p>
+        <div class="grid2">
+          <div class="card">
+            <div class="tile on-white reveal" tabindex="0" aria-label="The mark: hover or focus to see the owner's open seat"><span data-mark='{"fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open","size":110}'></span></div>
+            <span class="tag">Use it</span>
+            <ul class="rules">
+              <li><b>The logo in a website or docs header,</b> where it links home: the hover shows it can be clicked.</li>
+              <li><b>Pages only the owner opens,</b> such as the owner's manual page (<code>OPERATIONS.html</code> has no logo yet).</li>
+              <li><b>Onboarding and welcome screens,</b> played once when the owner arrives instead of on hover, like frame 3 of the chairs.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="tile on-white"><span data-mark='{"fill":"#15181E","size":110}'></span></div>
+            <span class="tag bad">Not</span>
+            <ul class="rules">
+              <li><b>Where nothing can respond:</b> the README, npm, social previews, slides, print.</li>
+              <li><b>On every mark on a page.</b> One logo with the hover, at most; more wears out its meaning.</li>
+              <li><b>With anything else moving.</b> Only the outline's opacity changes, over 400 ms. With reduced motion it appears without the fade. Touch screens have no hover, so the mark stays plain there.</li>
+            </ul>
+          </div>
         </div>
       </div>
       <p class="muted">Brass on a light background is <code>#A06F17</code>; on a dark one it is <code>#D7A54B</code>. The outline is never filled, and never any other color.</p>
