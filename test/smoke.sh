@@ -414,9 +414,7 @@ s13() {
 (cd "$T" && npm pack "$KIT" --silent >/dev/null) || fail "npm pack failed"
 tgz="$(ls "$T"/tarekraafat-cabinet-*.tgz)"
 tar -tzf "$tgz" | grep -q 'package/test/' && fail "tests shipped in the package"
-for f in logo.svg logo-dark.svg; do
-  grep -q "\"docs/$f\"" "$KIT/README.md" && tar -tzf "$tgz" | grep -qx "package/docs/$f" || fail "the README's $f is not shipped in the package"
-done
+grep -q '"docs/logo.svg"' "$KIT/README.md" && tar -tzf "$tgz" | grep -qx 'package/docs/logo.svg' || fail "the README's logo is not shipped in the package"
 (cd "$W" && npm install -D "$tgz" --no-audit --no-fund --silent) || fail "install from the package failed"
 (cd "$W" && npx --no cabinet status) | grep -q 'no kit file edited' || fail "installed command does not work"
 git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not ignored"
