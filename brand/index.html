@@ -315,6 +315,15 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
           <div><dt>One place is left open</dt><dd>The eighth place belongs to the owner, who signs off on what is irreversible, public or costs money. The gap is also what turns the ring into a C.</dd></div>
         </dl>
       </div>
+      <div class="card" id="table-rule">
+        <span class="tag">The table</span>
+        <h3>For explaining, never for the logo</h3>
+        <ul class="rules">
+          <li><b>Use it</b> in pictures that explain the idea: this one, onboarding, an explainer video, a slide about how the team works, and with the chairs, where it makes the meeting obvious.</li>
+          <li><b>Never</b> in the mark itself: the logo, favicon, app icon, README, wordmark or terminal. A filled center competes with the open place, and at 16 to 32px it reads as a blob.</li>
+          <li><b>Always faint:</b> the seats' color at 12%, never brass, and well inside the ring.</li>
+        </ul>
+      </div>
     </section>
 
     <!-- 02 -->
@@ -477,6 +486,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
             <li>Animation and video: intros, explainers, the end card.</li>
             <li>Onboarding, welcome pages and empty states.</li>
             <li>Docs and slides that explain the team; a chair can carry a role's name beside it.</li>
+            <li>With the table in the middle when it helps the story, faint as in "The idea".</li>
             <li>A website's opening picture, posters and other large print.</li>
           </ul>
         </div>
@@ -798,7 +808,9 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     ["Don't add seats", "Eight places, always. Ten or twelve blur at small sizes and weaken the C.", '<div class="tile on-white">' + mark({ fill: "#15181E", size: 96 }).replace(/<g fill="#15181E">.*<\/g>/, function () {
       var s = ""; for (var i = 1; i < 12; i++) { var a = i * Math.PI / 6; s += '<circle cx="' + (40 * Math.cos(a)).toFixed(2) + '" cy="' + (-40 * Math.sin(a)).toFixed(2) + '" r="5.5"/>'; } return '<g fill="#15181E">' + s + "</g>"; }) + "</div>"],
     ["Don't use brass anywhere else", "Not for the seats, the name, buttons or links. Brass only means the owner.", '<div class="tile on-white">' + mark({ fill: "#A06F17", size: 96 }) + "</div>"],
-    ["Don't put it on a busy background", "Use paper, white, night, or the tile.", '<div class="tile busy">' + mark({ fill: "#15181E", size: 96 }) + "</div>"]
+    ["Don't put it on a busy background", "Use paper, white, night, or the tile.", '<div class="tile busy">' + mark({ fill: "#15181E", size: 96 }) + "</div>"],
+    ["Don't put a table in the logo", "The table is for pictures that explain the idea. In the mark it competes with the open place.", '<div class="tile on-white">' + mark({ fill: "#15181E", table: true, size: 96 }) + "</div>"],
+    ["Don't use the chairs as the logo", "Not next to the name, and not small. The chairs are an illustration, at 96px or more.", '<div class="tile on-white"><div class="lockup-h" style="color:#15181E;font-size:34px">' + mark({ fill: "#15181E", seat: "chair" }) + '<span class="wordmark">cabinet</span></div></div>']
   ];
   document.getElementById("donts-grid").innerHTML = donts.map(function (d) {
     return '<div class="card dont">' + d[2] + '<span class="tag bad">Don\'t</span><h3>' + d[0].replace("Don't ", "") + "</h3><p>" + d[1] + "</p></div>";
