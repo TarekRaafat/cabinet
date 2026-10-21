@@ -14,6 +14,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `guardrails/` | Deny rules for each agent tool, the push gate, the hook pass-through stub | `.cabinet/guardrails/`, installed machine-wide by bootstrap |
 | `templates/workspace/` | Project files placed once by `new` and `init` | the workspace's own files |
 | `docs/`, `README.md`, `llms.txt`, `llms-full.txt` | Documentation, shipped in the npm package. `llms-full.txt` is built from the pages `llms.txt` lists | (not copied) |
+| `brand/index.html` | The brand guide: the mark, name, color, type, writing, where each form goes, and every logo file as SVG (not shipped) | |
 | `tools/build-llms-full.py` | Builds `llms-full.txt` (`npm run docs`; not shipped) | |
 | `test/smoke.sh` | The whole test suite (not shipped) | |
 

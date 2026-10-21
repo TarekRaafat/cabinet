@@ -415,6 +415,7 @@ s13() {
 tgz="$(ls "$T"/tarekraafat-cabinet-*.tgz)"
 tar -tzf "$tgz" | grep -q 'package/test/' && fail "tests shipped in the package"
 grep -q '"docs/logo.svg"' "$KIT/README.md" && tar -tzf "$tgz" | grep -qx 'package/docs/logo.svg' || fail "the README's logo is not shipped in the package"
+[[ -f "$KIT/brand/index.html" ]] && ! tar -tzf "$tgz" | grep -q 'package/brand/' || fail "the brand guide should be in the repository and not shipped in the package"
 (cd "$W" && npm install -D "$tgz" --no-audit --no-fund --silent) || fail "install from the package failed"
 (cd "$W" && npx --no cabinet status) | grep -q 'no kit file edited' || fail "installed command does not work"
 git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not ignored"

@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cabinet brand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a brand book in one column of numbered chapters, each a specimen sheet. */
+:root {
+  --paper: #F3F4F6;
+  --surface: #FFFFFF;
+  --ink: #15181E;
+  --muted: #5C6370;
+  --line: #D9DCE2;
+  --brass: #A06F17;
+  --bad: #B3261E;
+  /* Brand colors, fixed: specimens show them as they are, whatever the page theme. */
+  --b-ink: #15181E;
+  --b-paper: #F3F4F6;
+  --b-white: #FFFFFF;
+  --b-night: #101216;
+  --b-mist: #E8EAEE;
+  --b-slate: #5C6370;
+  --b-line: #D9DCE2;
+  --b-brass: #A06F17;
+  --b-brass-light: #D7A54B;
+  --term-bg: #0E1014;
+  --term-fg: #D5D9E0;
+  --term-dim: #7A8290;
+  --font-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #0F1115; --surface: #171A20; --ink: #E8EAEE; --muted: #9AA1AD; --line: #2A2E36; --brass: #D7A54B; --bad: #F2867D; color-scheme: dark; }
+}
+
+* { box-sizing: border-box; }
+svg:not([width]) { width: 100%; height: auto; display: block; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(26px, 3.4vw, 34px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+h3 { font-size: 16px; font-weight: 700; }
+p { margin: 0; max-width: 64ch; }
+code { font-family: var(--font-mono); font-size: 0.88em; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+/* cover */
+.cover { padding-block: 56px 48px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 40px; align-items: center; border-bottom: 1px solid var(--line); }
+.cover-mark { width: 168px; height: 168px; }
+.cover-mark svg { width: 100%; height: 100%; display: block; }
+.cover h1 { font-size: clamp(56px, 9vw, 96px); font-weight: 700; letter-spacing: -0.045em; line-height: 0.95; }
+.cover-text { display: grid; gap: 14px; min-width: 0; }
+.cover-text p { font-size: 18px; }
+
+/* nav */
+nav.toc { padding-block: 18px; border-bottom: 1px solid var(--line); }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; }
+nav.toc a { text-decoration: none; color: var(--muted); }
+nav.toc a:hover { color: var(--ink); }
+nav.toc span { font-family: var(--font-mono); font-size: 11px; margin-right: 6px; color: var(--brass); }
+
+/* chapters */
+main { display: grid; gap: 0; }
+.chapter { padding-block: 64px; border-bottom: 1px solid var(--line); display: grid; gap: 28px; }
+.chapter-head { display: grid; gap: 10px; }
+.chapter-head .num { font-family: var(--font-mono); font-size: 12px; color: var(--brass); letter-spacing: 0.06em; }
+.chapter-head p { font-size: 16px; }
+.block { display: grid; gap: 14px; }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card p { font-size: 14px; color: var(--muted); }
+.tag { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brass); }
+.tag.bad { color: var(--bad); }
+
+/* specimen tiles: brand colors, fixed */
+.tile { border-radius: 10px; display: grid; place-items: center; padding: 28px; min-height: 180px; }
+.tile svg { display: block; }
+.on-paper { background: var(--b-paper); color: var(--b-ink); border: 1px solid var(--line); }
+.on-white { background: var(--b-white); color: var(--b-ink); border: 1px solid var(--line); }
+.on-night { background: var(--b-night); color: var(--b-mist); border: 1px solid var(--line); }
+.on-brass { background: var(--b-brass-light); color: var(--b-night); }
+
+/* the idea */
+.idea { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: center; }
+.idea-art { max-width: 380px; width: 100%; justify-self: center; color: var(--ink); }
+.idea-art svg { width: 100%; height: auto; display: block; }
+.idea dl { margin: 0; display: grid; gap: 16px; }
+.idea dt { font-weight: 700; }
+.idea dd { margin: 4px 0 0; color: var(--muted); max-width: 52ch; }
+
+/* sizes */
+.sizes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px; padding: 28px; }
+.size { display: grid; gap: 8px; justify-items: center; }
+.size span { font-family: var(--font-mono); font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; }
+
+/* clear space */
+.clear { position: relative; padding: 34px; border: 1px dashed var(--brass); border-radius: 4px; display: inline-block; }
+.clear svg { display: block; }
+.clear-label { position: absolute; top: 6px; left: 8px; font-family: var(--font-mono); font-size: 10.5px; color: var(--brass); }
+
+/* wordmark */
+.wordmark { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+.lockup-h { display: flex; align-items: center; gap: 0.32em; font-size: 44px; }
+.lockup-h svg { width: 1.1em; height: 1.1em; flex: none; }
+.lockup-v { display: grid; justify-items: center; gap: 14px; font-size: 32px; }
+.lockup-v svg { width: 72px; height: 72px; }
+
+/* color */
+.swatches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.swatch { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); display: grid; }
+.swatch .chip { height: 92px; }
+.swatch .info { padding: 12px 14px; display: grid; gap: 2px; font-size: 13px; }
+.swatch .info b { font-size: 14px; }
+.swatch .info code { color: var(--muted); }
+.ratio { display: flex; height: 18px; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
+.ratio div { height: 100%; }
+
+/* type */
+.type-row { display: grid; grid-template-columns: 11em minmax(0, 1fr); gap: 20px; padding-block: 18px; border-top: 1px solid var(--line); align-items: baseline; }
+.type-row:last-child { border-bottom: 1px solid var(--line); }
+.type-row .meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+
+/* writing */
+.dodont { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.say { font-size: 15px; padding: 12px 14px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line); }
+.say.no { text-decoration: line-through; text-decoration-color: var(--bad); color: var(--muted); }
+.rules { margin: 0; padding-left: 20px; display: grid; gap: 10px; max-width: 72ch; }
+table.words { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.words th, table.words td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.words th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+.scroll-x { overflow-x: auto; }
+
+/* assets */
+.asset { display: grid; gap: 12px; }
+.asset .tile { min-height: 150px; }
+.asset .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.asset code { font-size: 12.5px; }
+.btns { display: flex; gap: 6px; }
+button {
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+button:hover { border-color: var(--muted); }
+
+/* terminal */
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 20px 22px; font-family: var(--font-mono); font-size: 13px; line-height: 1.45; overflow-x: auto; border: 1px solid var(--line); }
+.term pre { margin: 0; font: inherit; }
+.term .dim { color: var(--term-dim); }
+
+/* use cases */
+.use { display: grid; gap: 12px; }
+.use .stage { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.mock-gh { background: var(--b-white); color: #1F2328; padding: 22px 24px; display: grid; gap: 12px; }
+.mock-gh.dark { background: #0D1117; color: #E6EDF3; }
+.mock-gh .h { font-size: 26px; font-weight: 700; border-bottom: 1px solid currentColor; border-color: rgba(127,127,127,0.3); padding-bottom: 6px; }
+.mock-gh p { font-size: 13px; opacity: 0.85; }
+.mock-social { aspect-ratio: 2 / 1; max-width: 100%; background: var(--b-paper); color: var(--b-ink); display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 6%; padding: 0 8%; }
+.mock-social svg { width: clamp(64px, 16vw, 132px); height: auto; }
+.mock-social .wordmark { font-size: clamp(30px, 6vw, 58px); }
+.mock-social p { font-size: clamp(11px, 1.6vw, 15px); color: var(--b-slate); margin-top: 8px; }
+.mock-tabbar { background: #DEE1E6; padding: 10px 12px 0; display: flex; }
+.mock-tab { background: var(--b-white); color: #1F2328; border-radius: 8px 8px 0 0; padding: 8px 14px; display: flex; align-items: center; gap: 8px; font-size: 13px; max-width: 100%; }
+.mock-tab svg { width: 16px; height: 16px; flex: none; }
+.mock-page { background: var(--b-white); height: 64px; }
+.mock-brief { background: var(--b-white); color: var(--b-ink); padding: 20px 22px; display: grid; gap: 14px; }
+.mock-brief .top { display: flex; align-items: center; gap: 12px; }
+.mock-brief .top svg { width: 40px; height: 40px; flex: none; }
+.mock-brief .top b { font-size: 17px; }
+.mock-brief .top span { font-size: 12.5px; color: var(--b-slate); display: block; }
+.mock-brief ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; }
+.mock-brief .q { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--b-brass); }
+.mock-icons { background: linear-gradient(160deg, #3B4252, #1D2129); padding: 28px; display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
+.app { display: grid; gap: 6px; justify-items: center; color: #fff; font-size: 11.5px; }
+.app svg { width: 72px; height: 72px; display: block; border-radius: 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.35); }
+.mock-slide { aspect-ratio: 16 / 9; max-width: 100%; background: var(--b-night); color: var(--b-mist); padding: 7% 8%; display: grid; align-content: space-between; }
+.mock-slide .t { font-family: var(--font-display); font-weight: 700; font-size: clamp(18px, 3.2vw, 30px); letter-spacing: -0.02em; line-height: 1.1; max-width: 16ch; }
+.mock-slide .foot { display: flex; align-items: center; gap: 8px; font-size: 12px; opacity: 0.8; }
+.mock-slide .foot svg { width: 18px; height: 18px; }
+.mock-slide .big { width: clamp(56px, 12vw, 96px); }
+.mock-sticker { background: var(--b-paper); padding: 28px; display: grid; place-items: center; }
+.sticker { width: 150px; height: 150px; border-radius: 50%; background: var(--b-ink); display: grid; place-items: center; box-shadow: 0 0 0 6px var(--b-white), 0 6px 18px rgba(0,0,0,0.18); }
+.sticker svg { width: 62%; height: 62%; }
+
+/* don'ts */
+.dont .tile { min-height: 150px; position: relative; overflow: hidden; }
+.busy { background: repeating-linear-gradient(45deg, #C9A86A 0 10px, #6F8FAF 10px 20px, #E0E3E8 20px 30px); }
+
+footer { padding-block: 40px 64px; color: var(--muted); font-size: 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+footer svg { width: 22px; height: 22px; color: var(--ink); }
+
+@media (max-width: 860px) {
+  .grid4, .swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .idea, .dodont { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .cover { grid-template-columns: 1fr; gap: 24px; padding-block: 36px; }
+  .cover-mark { width: 120px; height: 120px; }
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .type-row { grid-template-columns: 1fr; gap: 6px; }
+  .lockup-h { font-size: 34px; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="cover">
+    <div class="cover-mark" data-mark='{"tile":"#F3F4F6","fill":"#15181E"}'></div>
+    <div class="cover-text">
+      <span class="eyebrow">Brand guide, 21 Oct 2026</span>
+      <h1>cabinet</h1>
+      <p>Run a product with a team of AI agents and one owner who signs off.</p>
+      <p class="muted">How the cabinet mark, name, colors, type and words are used, with every file you need.</p>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Chapters">
+    <ol>
+      <li><a href="#idea"><span>01</span>The idea</a></li>
+      <li><a href="#mark"><span>02</span>The mark</a></li>
+      <li><a href="#outline"><span>03</span>The open seat in brass</a></li>
+      <li><a href="#name"><span>04</span>The name</a></li>
+      <li><a href="#color"><span>05</span>Color</a></li>
+      <li><a href="#type"><span>06</span>Type</a></li>
+      <li><a href="#writing"><span>07</span>Writing</a></li>
+      <li><a href="#uses"><span>08</span>Where it goes</a></li>
+      <li><a href="#donts"><span>09</span>Don'ts</a></li>
+      <li><a href="#assets"><span>10</span>Files</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 01 -->
+    <section class="chapter" id="idea">
+      <div class="chapter-head">
+        <span class="num">01</span>
+        <h2>The idea</h2>
+      </div>
+      <div class="idea">
+        <div class="idea-art" data-mark='{"open":"ghost","fill":"currentColor","accent":"var(--brass)","table":true}'></div>
+        <dl>
+          <div><dt>A table seen from above</dt><dd>Eight places around a table. A cabinet is a small group that runs something together, and the kit gives a project exactly that: roles with clear authority.</dd></div>
+          <div><dt>Seven seats are filled</dt><dd>The agents hold the seats. Each decides within its own authority and hands work to the next.</dd></div>
+          <div><dt>One place is left open</dt><dd>The eighth place belongs to the owner, who signs off on what is irreversible, public or costs money. The gap is also what turns the ring into a C.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section class="chapter" id="mark">
+      <div class="chapter-head">
+        <span class="num">02</span>
+        <h2>The mark</h2>
+        <p class="muted">Seven dots on a ring, the open place on the right. One mark at every size, in one color.</p>
+      </div>
+
+      <div class="block">
+        <h3>Three forms</h3>
+        <div class="grid3">
+          <div class="card">
+            <div class="tile on-white"><span data-mark='{"fill":"#15181E","size":96}'></span></div>
+            <span class="tag">Primary</span><h3>Dark seats</h3>
+            <p>On white and light backgrounds. The default everywhere the background is known to be light.</p>
+          </div>
+          <div class="card">
+            <div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","size":96}'></span></div>
+            <span class="tag">Reversed</span><h3>Light seats</h3>
+            <p>On dark backgrounds: slides, the app icon, dark pages.</p>
+          </div>
+          <div class="card">
+            <div class="tile on-night"><span data-mark='{"fill":"#15181E","tile":"#F3F4F6","size":96}'></span></div>
+            <span class="tag">Tile</span><h3>On its own tile</h3>
+            <p>Where the page can be light or dark and you cannot choose the file, such as a README. It reads the same on both.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="block">
+        <h3>Sizes</h3>
+        <p class="muted">The same drawing from 16px up. There is no simplified small version, and none is needed.</p>
+        <div class="grid2">
+          <div class="tile on-white sizes" data-sizes="#15181E"></div>
+          <div class="tile on-night sizes" data-sizes="#E8EAEE"></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="block">
+          <h3>Clear space</h3>
+          <p class="muted">Keep one seat's width clear on every side. Nothing else enters that space, including the name.</p>
+          <div class="card" style="justify-items:center">
+            <div class="clear"><span class="clear-label">1 seat</span><span data-mark='{"fill":"currentColor","size":120}'></span></div>
+          </div>
+        </div>
+        <div class="block">
+          <h3>Construction</h3>
+          <p class="muted">On a 100 unit grid: eight places every 45 degrees on a ring of radius 36, seats 19 units wide, the place at 0 degrees left open.</p>
+          <div class="card" style="justify-items:center"><div data-construct style="width:220px;color:var(--ink)"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 -->
+    <section class="chapter" id="outline">
+      <div class="chapter-head">
+        <span class="num">03</span>
+        <h2>The open seat in brass</h2>
+        <p class="muted">A brass outline in the gap marks the place kept for the owner. It is an accent, not a second logo: use it where the owner is the subject and the color will show.</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="tile on-white"><span data-mark='{"fill":"#15181E","open":"ghost","accent":"#A06F17","size":110}'></span></div>
+          <span class="tag">Use the outline</span>
+          <h3>Where the owner acts</h3>
+          <ul class="rules">
+            <li>The daily brief and the sign-off queue, where the owner decides.</li>
+            <li>Onboarding and welcome pages, and slides about how the owner signs off.</li>
+            <li>The app icon and large headers, at 48px or more, in full color.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="tile on-white"><span data-mark='{"fill":"#15181E","size":110}'></span></div>
+          <span class="tag">Use the plain mark</span>
+          <h3>Everywhere else (the default)</h3>
+          <ul class="rules">
+            <li>Small sizes: favicons and anything under 48px, where a thin outline blurs.</li>
+            <li>One color: the terminal, one-color print, stickers, embossing.</li>
+            <li>Next to the name: the README, the npm page and the wordmark, where the job is to be recognized.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="muted">Brass on a light background is <code>#A06F17</code>; on a dark one it is <code>#D7A54B</code>. The outline is never filled, and never any other color.</p>
+    </section>
+
+    <!-- 04 -->
+    <section class="chapter" id="name">
+      <div class="chapter-head">
+        <span class="num">04</span>
+        <h2>The name</h2>
+        <p class="muted">Always <b>cabinet</b>, in lowercase, also at the start of a sentence, the way the command is typed. Never "Cabinet", "CABINET" or "the Cabinet kit".</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <span class="tag">Horizontal lockup</span>
+          <div class="tile on-white" style="min-height:150px"><div class="lockup-h" style="color:#15181E"><span data-mark='{"fill":"#15181E"}' style="display:contents"></span><span class="wordmark">cabinet</span></div></div>
+          <p>The mark sits on the text's line, as tall as the name's capital height plus a little. The gap between them is one third of the type size.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Stacked lockup</span>
+          <div class="tile on-night" style="min-height:150px"><div class="lockup-v" style="color:#E8EAEE"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span><span class="wordmark">cabinet</span></div></div>
+          <p>For square spaces: a profile picture, a sticker, a title slide.</p>
+        </div>
+      </div>
+      <div class="dodont">
+        <div class="block"><span class="tag">Write</span><p class="say">cabinet gives a project a small company.</p><p class="say">Install cabinet as a dev dependency.</p></div>
+        <div class="block"><span class="tag bad">Not</span><p class="say no">Cabinet gives a project a small company.</p><p class="say no">Install the CABINET kit.</p></div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section class="chapter" id="color">
+      <div class="chapter-head">
+        <span class="num">05</span>
+        <h2>Color</h2>
+        <p class="muted">Mostly ink and paper. Brass is rare on purpose: it only ever means the owner.</p>
+      </div>
+      <div class="swatches" id="swatches"></div>
+      <div class="block">
+        <h3>How much of each</h3>
+        <div class="ratio" aria-label="Paper and white 60 percent, ink 30, slate and line 9, brass 1">
+          <div style="width:60%;background:var(--b-paper)"></div>
+          <div style="width:30%;background:var(--b-ink)"></div>
+          <div style="width:9%;background:var(--b-slate)"></div>
+          <div style="width:1%;background:var(--b-brass)"></div>
+        </div>
+        <p class="muted" style="font-size:13px">Paper and white about 60%, ink 30%, slate and line 9%, brass at most 1%.</p>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section class="chapter" id="type">
+      <div class="chapter-head">
+        <span class="num">06</span>
+        <h2>Type</h2>
+        <p class="muted">Two families, both free on Google Fonts. On GitHub and npm the site's own fonts apply, and that is fine.</p>
+      </div>
+      <div>
+        <div class="type-row"><span class="meta">Schibsted Grotesk 700<br>name, headings</span><span class="wordmark" style="font-size:clamp(34px,5vw,52px)">cabinet</span></div>
+        <div class="type-row"><span class="meta">Schibsted Grotesk 700<br>headings, -0.02em</span><span style="font-family:var(--font-display);font-weight:700;font-size:28px;letter-spacing:-0.02em;line-height:1.15">Every decision you must make, in one queue</span></div>
+        <div class="type-row"><span class="meta">Schibsted Grotesk 400<br>body, 15 to 17px</span><span style="font-size:16px;max-width:60ch">The builder never verifies its own work. qa reviews each change before it can be pushed, and the push itself stays with you.</span></div>
+        <div class="type-row"><span class="meta">JetBrains Mono 400<br>commands, files, labels</span><span style="font-family:var(--font-mono);font-size:14px">cabinet handoff list --ready</span></div>
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section class="chapter" id="writing">
+      <div class="chapter-head">
+        <span class="num">07</span>
+        <h2>Writing</h2>
+        <p class="muted">cabinet sounds like a capable chief of staff: plain, short, specific, and always clear about who decides.</p>
+      </div>
+      <ul class="rules">
+        <li><b>Plain words.</b> Say what happens and who does it. Name things the way the owner sees them, not how they are built.</li>
+        <li><b>The fix comes with the problem.</b> A message that reports a problem ends with the command that fixes it.</li>
+        <li><b>ASCII punctuation.</b> No em or en dashes, no curly quotes.</li>
+        <li><b>Dates and times people read</b> as <code>18 Oct 2026</code> and <code>2:30 PM</code>. Machine formats stay ISO.</li>
+        <li><b>No comparisons with other products.</b> Name other tools only as facts, such as which agent tools have guardrails.</li>
+        <li><b>The owner decides.</b> Agents recommend; the owner signs off. Never write as if an agent shipped, merged or published.</li>
+      </ul>
+      <div class="dodont">
+        <div class="block"><span class="tag">Write</span>
+          <p class="say">cabinet: no workspace here. Start one with: cabinet new</p>
+          <p class="say">3 items wait on you. The first is due 22 Oct 2026.</p>
+        </div>
+        <div class="block"><span class="tag bad">Not</span>
+          <p class="say no">Oops! Something went wrong &#8212; please try again later.</p>
+          <p class="say no">Your AI team shipped 3 features today!</p>
+        </div>
+      </div>
+      <div class="block">
+        <h3>Words we use</h3>
+        <div class="scroll-x">
+          <table class="words">
+            <thead><tr><th>Word</th><th>Means</th><th>Not</th></tr></thead>
+            <tbody>
+              <tr><td>owner</td><td>The person who signs off.</td><td>user, admin, boss</td></tr>
+              <tr><td>role</td><td>An agent's job: what it owns, decides, escalates and may write.</td><td>bot, persona</td></tr>
+              <tr><td>handoff</td><td>One entry in <code>HANDOFFS.md</code>; the only channel between agents.</td><td>ticket, message</td></tr>
+              <tr><td>sign-off queue</td><td>Every decision waiting on the owner, at the top of the brief.</td><td>inbox, approvals</td></tr>
+              <tr><td>brief</td><td>The daily summary in <code>BRIEF.md</code>.</td><td>report, digest (a digest gathers every queue)</td></tr>
+              <tr><td>guardrails</td><td>Rules that keep push, merge, release and publish with the owner.</td><td>restrictions, blocks</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 -->
+    <section class="chapter" id="uses">
+      <div class="chapter-head">
+        <span class="num">08</span>
+        <h2>Where it goes</h2>
+        <p class="muted">Each place, with the form of the mark it takes.</p>
+      </div>
+      <div class="grid2">
+        <div class="use">
+          <div class="stage grid2" style="gap:0">
+            <div class="mock-gh"><span data-mark='{"fill":"#15181E","tile":"#F3F4F6","size":56}'></span><div class="h">cabinet</div><p>Run a product with a team of AI agents and one owner who signs off.</p></div>
+            <div class="mock-gh dark"><span data-mark='{"fill":"#15181E","tile":"#F3F4F6","size":56}'></span><div class="h">cabinet</div><p>Run a product with a team of AI agents and one owner who signs off.</p></div>
+          </div>
+          <span class="tag">Tile</span><h3>README, on GitHub and npm</h3>
+          <p class="muted">The tile, 96px, above the title. The reader's theme cannot change it. File: <code>docs/logo.svg</code>.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-social"><span data-mark='{"fill":"#15181E"}'></span><div><div class="wordmark">cabinet</div><p>A team of AI agents and one owner who signs off.</p></div></div></div>
+          <span class="tag">Primary</span><h3>Social preview, 1280 x 640</h3>
+          <p class="muted">For the repository's link preview. Paper background, the mark and the name, one line under it.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-tabbar"><div class="mock-tab"><span data-mark='{"fill":"#15181E","size":16}' style="display:contents"></span>cabinet: the daily brief</div></div><div class="mock-page"></div></div>
+          <span class="tag">Primary</span><h3>Favicon</h3>
+          <p class="muted">The plain mark at 16 and 32px. Never the outline.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-brief">
+            <div class="top"><span data-mark='{"fill":"#15181E","open":"ghost","accent":"#A06F17"}' style="display:contents"></span><div><b>Brief, Wed 21 Oct 2026</b><span>acme, 8:00 AM</span></div></div>
+            <span class="q">Sign-off queue, 2 items</span>
+            <ol><li>Publish 0.2.0 to npm (qa and security passed)</li><li>Raise the weekly budget to $40</li></ol>
+          </div></div>
+          <span class="tag">Outlined</span><h3>Brief and sign-off queue</h3>
+          <p class="muted">The outlined mark, because this is where the owner takes the open seat.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-icons">
+            <div class="app"><span data-icon="night" style="display:contents"></span>dark</div>
+            <div class="app"><span data-icon="paper" style="display:contents"></span>light</div>
+          </div></div>
+          <span class="tag">Outlined, reversed</span><h3>App icon and avatar</h3>
+          <p class="muted">The mark at 62% of a rounded square. The dark icon may carry the brass outline; the light one stays plain.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-slide">
+            <span class="big" data-mark='{"fill":"#E8EAEE","open":"ghost","accent":"#D7A54B"}'></span>
+            <div class="t">The owner signs off. The team does the rest.</div>
+            <div class="foot"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span>cabinet</div>
+          </div></div>
+          <span class="tag">Reversed</span><h3>Slides</h3>
+          <p class="muted">Night background, light seats. The outline on a title slide about the owner; the plain mark in the footer.</p>
+        </div>
+        <div class="use">
+          <div class="term"><pre><span class="dim">$</span> cabinet version
+
+      ●
+  ●       ●
+
+●               cabinet 0.1.0
+                a team of AI agents and one owner who signs off
+  ●       ●
+      ●</pre></div>
+          <span class="tag">Text</span><h3>Terminal</h3>
+          <p class="muted"><code>cabinet version</code> prints the mark in a terminal: seven lines, because a terminal cell is about twice as tall as it is wide. Without a UTF-8 locale the seats are the letter o.</p>
+        </div>
+        <div class="use">
+          <div class="stage"><div class="mock-sticker"><div class="sticker"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div></div></div>
+          <span class="tag">Reversed, one color</span><h3>Sticker and print</h3>
+          <p class="muted">One color only, on ink or on paper. No brass: it does not reproduce reliably.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 -->
+    <section class="chapter" id="donts">
+      <div class="chapter-head">
+        <span class="num">09</span>
+        <h2>Don'ts</h2>
+        <p class="muted">The mark only works while the open place reads as open.</p>
+      </div>
+      <div class="grid3" id="donts-grid"></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="chapter" id="assets">
+      <div class="chapter-head">
+        <span class="num">10</span>
+        <h2>Files</h2>
+        <p class="muted">Every form as an SVG. Download it, or copy its code. <code>logo.svg</code> is the file in the kit's <code>docs/</code> folder.</p>
+      </div>
+      <div class="grid3" id="assets-grid"></div>
+    </section>
+
+  </main>
+
+  <footer><span data-mark='{"fill":"currentColor"}' style="display:contents"></span><span>cabinet brand guide. Brand colors and the mark are fixed; this page follows your light or dark setting.</span></footer>
+</div>
+
+<script>
+(function () {
+  // One drawing for every mark on the page: eight places on a ring, the place at 0 degrees (right) left open.
+  function mark(o) {
+    o = o || {};
+    var fill = o.fill || "#15181E", n = 8, r = 36, d = 19, parts = [];
+    for (var i = 0; i < n; i++) {
+      var a = i * 2 * Math.PI / n, x = +(r * Math.cos(a)).toFixed(3), y = +(-r * Math.sin(a)).toFixed(3);
+      if (i === 0) {
+        if (o.open === "ghost") parts.push('<circle cx="' + x + '" cy="' + y + '" r="8.4" fill="none" stroke="' + (o.accent || "#A06F17") + '" stroke-width="2.2"/>');
+        continue;
+      }
+      parts.push('<circle cx="' + x + '" cy="' + y + '" r="' + d / 2 + '"/>');
+    }
+    var body = '<g fill="' + fill + '">' + parts.join("") + "</g>";
+    if (o.open === "ghost") body = '<g fill="' + fill + '">' + parts.slice(1).join("") + "</g>" + parts[0];
+    if (o.table) body = '<circle r="17" fill="' + fill + '" opacity="0.12"/>' + body;
+    if (o.tile) body = '<rect x="-50" y="-50" width="100" height="100" rx="22" fill="' + o.tile + '"/><g transform="scale(0.66)">' + body + "</g>";
+    var size = o.size ? ' width="' + o.size + '" height="' + o.size + '"' : "";
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100"' + size + ' role="img" aria-label="cabinet">' + body + "</svg>";
+  }
+  function icon(kind) {
+    return kind === "night"
+      ? mark({ tile: "#101216", fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" })
+      : mark({ tile: "#F3F4F6", fill: "#15181E" });
+  }
+
+  document.querySelectorAll("[data-mark]").forEach(function (el) { el.innerHTML = mark(JSON.parse(el.getAttribute("data-mark"))); });
+  document.querySelectorAll("[data-icon]").forEach(function (el) { el.innerHTML = icon(el.getAttribute("data-icon")); });
+  document.querySelectorAll("[data-sizes]").forEach(function (el) {
+    var fill = el.getAttribute("data-sizes");
+    el.innerHTML = [128, 64, 32, 24, 16].map(function (s) {
+      return '<div class="size">' + mark({ fill: fill, size: s }) + "<span>" + s + "px</span></div>";
+    }).join("");
+  });
+
+  // Construction drawing: the mark with its guide ring, center and the 45 degree step.
+  var c = document.querySelector("[data-construct]");
+  var a1 = Math.PI / 4, ex = 36 * Math.cos(a1), ey = -36 * Math.sin(a1);
+  c.innerHTML = mark({ fill: "currentColor", open: "ghost", accent: "var(--brass)" })
+    .replace('viewBox="-50 -50 100 100"', 'viewBox="-60 -56 120 112"')
+    .replace("</svg>",
+      '<circle r="36" fill="none" stroke="var(--muted)" stroke-width="0.4" stroke-dasharray="1.6 1.6"/>' +
+      '<line x1="0" y1="0" x2="36" y2="0" stroke="var(--brass)" stroke-width="0.5"/>' +
+      '<line x1="0" y1="0" x2="' + ex + '" y2="' + ey + '" stroke="var(--muted)" stroke-width="0.5"/>' +
+      '<path d="M 14 0 A 14 14 0 0 0 ' + 14 * Math.cos(a1) + " " + -14 * Math.sin(a1) + '" fill="none" stroke="var(--muted)" stroke-width="0.5"/>' +
+      '<text x="16" y="-4" font-size="4.6" fill="var(--muted)" font-family="JetBrains Mono, monospace">45°</text>' +
+      '<text x="15" y="6" font-size="4.6" fill="var(--brass)" font-family="JetBrains Mono, monospace">R 36</text>' +
+      '<text x="-58" y="53" font-size="4.6" fill="var(--muted)" font-family="JetBrains Mono, monospace">seat 19</text></svg>');
+
+  // Colors
+  var colors = [
+    ["Ink", "#15181E", "Seats, text, the name."],
+    ["Paper", "#F3F4F6", "Backgrounds and the logo tile."],
+    ["White", "#FFFFFF", "Cards and documents on paper."],
+    ["Night", "#101216", "Dark backgrounds, slides, the app icon."],
+    ["Mist", "#E8EAEE", "Seats and text on night."],
+    ["Slate", "#5C6370", "Secondary text and captions."],
+    ["Brass", "#A06F17", "The open seat, on light. Nothing else."],
+    ["Brass light", "#D7A54B", "The open seat, on dark. Nothing else."]
+  ];
+  document.getElementById("swatches").innerHTML = colors.map(function (c) {
+    return '<div class="swatch"><div class="chip" style="background:' + c[1] + '"></div><div class="info"><b>' + c[0] + "</b><code>" + c[1] + "</code><span class=\"muted\">" + c[2] + "</span></div></div>";
+  }).join("");
+
+  // Don'ts: each drawn wrong on purpose.
+  var donts = [
+    ["Don't turn it", "The open place is always on the right, so the ring reads as a C.", '<div class="tile on-white" style="color:#15181E"><span style="display:block;transform:rotate(-90deg)">' + mark({ fill: "#15181E", size: 96 }) + "</span></div>"],
+    ["Don't fill the open place", "With another seat, a dot or a symbol. The gap is the point.", '<div class="tile on-white">' + mark({ fill: "#15181E", size: 96 }).replace("</g>", '<circle cx="36" cy="0" r="9.5" fill="#B3261E"/></g>') + "</div>"],
+    ["Don't stretch it", "Scale it evenly. A squashed ring is the shape the terminal version had to avoid.", '<div class="tile on-white"><span style="display:block;transform:scaleX(1.5)">' + mark({ fill: "#15181E", size: 80 }) + "</span></div>"],
+    ["Don't add seats", "Eight places, always. Ten or twelve blur at small sizes and weaken the C.", '<div class="tile on-white">' + mark({ fill: "#15181E", size: 96 }).replace(/<g fill="#15181E">.*<\/g>/, function () {
+      var s = ""; for (var i = 1; i < 12; i++) { var a = i * Math.PI / 6; s += '<circle cx="' + (40 * Math.cos(a)).toFixed(2) + '" cy="' + (-40 * Math.sin(a)).toFixed(2) + '" r="5.5"/>'; } return '<g fill="#15181E">' + s + "</g>"; }) + "</div>"],
+    ["Don't use brass anywhere else", "Not for the seats, the name, buttons or links. Brass only means the owner.", '<div class="tile on-white">' + mark({ fill: "#A06F17", size: 96 }) + "</div>"],
+    ["Don't put it on a busy background", "Use paper, white, night, or the tile.", '<div class="tile busy">' + mark({ fill: "#15181E", size: 96 }) + "</div>"]
+  ];
+  document.getElementById("donts-grid").innerHTML = donts.map(function (d) {
+    return '<div class="card dont">' + d[2] + '<span class="tag bad">Don\'t</span><h3>' + d[0].replace("Don't ", "") + "</h3><p>" + d[1] + "</p></div>";
+  }).join("");
+
+  // Files: download or copy each form.
+  var assets = [
+    ["logo.svg", "Tile. The README logo; any page that may be light or dark.", { tile: "#F3F4F6", fill: "#15181E" }, "on-night"],
+    ["mark.svg", "Dark seats, for light backgrounds. Favicons too.", { fill: "#15181E" }, "on-white"],
+    ["mark-light.svg", "Light seats, for dark backgrounds.", { fill: "#E8EAEE" }, "on-night"],
+    ["mark-outlined.svg", "Dark seats and the brass open seat, on light.", { fill: "#15181E", open: "ghost", accent: "#A06F17" }, "on-white"],
+    ["mark-outlined-light.svg", "Light seats and the brass open seat, on dark.", { fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-night"],
+    ["app-icon.svg", "The dark app icon and avatar, with the outline.", { tile: "#101216", fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-paper"]
+  ];
+  var grid = document.getElementById("assets-grid");
+  grid.innerHTML = assets.map(function (a, i) {
+    return '<div class="card asset"><div class="tile ' + a[3] + '">' + mark(Object.assign({ size: 96 }, a[2])) + '</div><div class="row"><code>' + a[0] +
+      '</code><div class="btns"><button type="button" id="dl-' + i + '" data-i="' + i + '" data-act="dl">Download</button><button type="button" id="cp-' + i + '" data-i="' + i + '" data-act="cp">Copy SVG</button></div></div><p>' + a[1] + "</p></div>";
+  }).join("");
+  grid.addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    var a = assets[+b.getAttribute("data-i")], svg = mark(Object.assign({ size: 96 }, a[2])) + "\n";
+    if (b.getAttribute("data-act") === "dl") {
+      var url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      var link = document.createElement("a"); link.href = url; link.download = a[0];
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      return;
+    }
+    var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy SVG"; }, 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(svg).then(done, function () { window.prompt("Copy the SVG:", svg); });
+    else window.prompt("Copy the SVG:", svg);
+  });
+})();
+</script>
+</body>
+</html>
