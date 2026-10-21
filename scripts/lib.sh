@@ -4,6 +4,7 @@
 
 # The real path, symlinks resolved, so the same workspace always has the same name.
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+LIBJS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js"   # the scripts' JavaScript, run with node
 [[ -f "$WS/cabinet.env" ]] || { echo "no cabinet.env in $WS" >&2; exit 1; }
 # shellcheck disable=SC1091
 source "$WS/cabinet.env"
@@ -289,115 +290,7 @@ readiness() {
       for c in $a; do sareas+="specs/${n##*/}"$'\t'"$(lc "$c")"$'\n'; done
     done
   fi
-  WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" python3 -I - "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"} <<'PY'
-import datetime, json, os, re, subprocess, sys
-in_ws = {}
-def workspace_commit(c):  # the workspace's own files (a guide, a spec) are not code
-    if c not in in_ws:
-        in_ws[c] = subprocess.run(["git", "-C", os.environ["WSDIR"], "cat-file", "-e", c + "^{commit}"],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-    return in_ws[c]
-cost = {}
-today = datetime.date.today().isoformat()
-# A role that reports to a lead and covers some work reviews it for the lead (its verdict counts),
-# with the lead's PASS needed too until its trial ends.
-dl = [l.split("\t") for l in os.environ.get("DELEGATES", "").split("\n") if l.count("\t") == 3]
-def rows(k):
-    return [l.split("\t") for l in os.environ.get(k, "").split("\n") if "\t" in l]
-area_reviewers = {r[0]: r[2].split() for r in rows("AREAS")}
-touch = rows("TOUCH")
-spec_areas = {}
-for s_, a_ in rows("SAREAS"):
-    spec_areas.setdefault(s_, set()).add(a_)
-try:
-    for row in open(sys.argv[1], encoding="utf-8"):
-        f = row.rstrip("\n").split("\t")
-        if len(f) >= 4 and f[3]:
-            cost[f[1]] = cost.get(f[1], 0) + float(f[3])
-except (OSError, ValueError):
-    pass
-team, builds, ui = (set(os.environ.get(k, "").split()) for k in ("TEAM", "BUILDS", "UI"))
-VER = re.compile(r"- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$")
-def names(s):
-    s = re.sub(r"\([^)]*\)", "", s).replace(" and ", ",").replace("&", ",").replace("`", "")
-    return [n.strip().lower() for n in s.split(",") if n.strip()]
-def covers(have, want):  # short and long hashes of one commit match
-    return all(any(w.startswith(h) or h.startswith(w) for h in have) for w in want)
-entries, cur = [], None
-for n, path in enumerate(sys.argv[2:]):  # HANDOFFS.md, then the archives (closed work a run may still need)
-    on = n > 0
-    for l in open(path, encoding="utf-8").read().split("\n"):
-        if l.startswith("## "):
-            on, cur = l.startswith(("## Open", "## Archive")), None
-        elif on and l.startswith("### H-"):
-            cur = {"id": l.split()[1].rstrip(":"), "lines": [], "archived": n > 0}
-            entries.append(cur)
-        elif cur is not None:
-            cur["lines"].append(l)
-out = {}
-spec_of = {e["id"]: next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), "") for e in entries}
-for e in entries:
-    frm, to, vs, unread = "", "", [], []
-    for l in e["lines"]:
-        m = re.match(r"- From: (.*?) -> To: (.*)", l)
-        if m and not frm:
-            frm, to = m.group(1).strip().lower(), m.group(2)
-        v = VER.match(l.strip())
-        if v:
-            vs.append({"role": v.group(1), "verdict": v.group(2), "date": v.group(3),
-                       "commits": [] if v.group(4) == "none" else v.group(4).split(","), "note": v.group(5)})
-        elif re.search(r"\b(PASS|BLOCK|CHANGES)\b", l):
-            unread.append(l.strip())
-    needs = []
-    for n in names(to):
-        if n in team and n not in builds and n != "chief-of-staff" and n not in needs:
-            needs.append(n)
-    if frm in builds or any(not workspace_commit(c) for v in vs for c in v["commits"]):
-        for r in ["qa", "security", "code-reviewer"] + (["design-lead"] if frm in ui else []):
-            if r in team and r not in needs:
-                needs.append(r)
-    work = []
-    for c in (c for v in vs for c in v["commits"]):
-        if not covers(work, [c]):
-            work.append(c)
-    # The critical areas it touches: by its commits, by its spec, or by the spec of the work it reviews.
-    dep_ids = re.findall(r"H-\d{8}-\d+", next((l for l in e["lines"] if l.startswith("- Depends on:")), ""))
-    areas = {a for c, a in touch if covers(work, [c])}
-    for sp in [spec_of.get(e["id"], "")] + [spec_of.get(d, "") for d in dep_ids]:
-        areas |= spec_areas.get(sp, set())
-    areas &= set(area_reviewers)
-    for a in sorted(areas):
-        for r in area_reviewers[a]:   # required even when off the team: the work waits, the doctor says why
-            if r not in needs:
-                needs.append(r)
-    last = {v["role"]: v for v in vs}
-    blocking = [r for r, v in last.items() if v["verdict"] != "PASS"]
-    # Who does each review: the role that covers this sender's work for the lead, else the lead; the
-    # lead's own PASS always counts.
-    who = []
-    for r in needs:
-        d = next((d for d in dl if d[1] == r and frm in d[2].split(",")), None)
-        if d:
-            who.append((d[0], [d[0], r]))
-            if d[3] and d[3] >= today:
-                who.append((r, [r]))
-        else:
-            who.append((r, [r]))
-    needs, stale, missing = [], [], []
-    for w, ok in who:
-        needs.append(w)
-        passed = [last[o] for o in ok if o in last and last[o]["verdict"] == "PASS"]
-        if any(covers(p["commits"], work) for p in passed) or any(o in blocking for o in ok):
-            continue   # passed, or blocking (and listed there)
-        (stale if passed else missing).append(w)
-    dep = next((l[len("- Depends on:"):].strip() for l in e["lines"] if l.startswith("- Depends on:")), "")
-    st = next((l[len("- Status:"):].strip() for l in e["lines"] if l.startswith("- Status:")), "")
-    out[e["id"]] = {"areas": sorted(areas), "archived": e["archived"], "depends_on": dep, "status_now": st.split(" ")[0] if st else "", "small": any(l.strip() == "- Size: small" for l in e["lines"]),
-                    "spec": next((l[len("- Spec:"):].strip() for l in e["lines"] if l.startswith("- Spec:")), ""),
-                    "cost_usd": round(cost[e["id"]], 6) if e["id"] in cost else None, "verdicts": vs, "needs": needs, "missing": missing, "blocking": blocking, "stale": stale,
-                    "ready": (not missing and not blocking and not stale) if needs else None, "unread_verdicts": unread}
-print(json.dumps(out))
-PY
+  WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
 }
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
 # a repo in the team table: whoever it is, work sent to it is built (.cabinet/rules/ready-to-build.md).
@@ -505,7 +398,7 @@ job_path() {
   local runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
   [[ "$runner" == cursor ]] && runner="$(cursor_bin || echo cursor-agent)"
   [[ "$runner" == antigravity ]] && runner=agy
-  for t in "$runner" node git jq perl openssl python3; do
+  for t in "$runner" node git jq perl openssl; do
     d="$(command -v "$t" 2>/dev/null)" || continue
     [[ "$d" == /* ]] || continue
     d="$(dirname "$d")"; [[ ":$p:" == *":$d:"* ]] || p="$d:$p"

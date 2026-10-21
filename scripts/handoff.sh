@@ -107,51 +107,7 @@ save() {
 # entry <ID> info|evidence <links>|verdict <role> <line>: read or change one open entry in place.
 # info prints "<sender>\t<1 when it has evidence>\t<small when it is a small task>\t<addressee>". Exit 3 when the entry is not under "## Open".
 entry() {
-  python3 -I - "$WS/HANDOFFS.md" "$@" <<'PY'
-import re, sys
-path, hid, mode, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
-lines = open(path, encoding="utf-8").read().split("\n")
-if "## Open" not in lines:
-    sys.exit(3)
-start = None
-for i in range(lines.index("## Open") + 1, len(lines)):
-    if lines[i].startswith("## "):
-        break
-    if lines[i].startswith("### " + hid + ":"):
-        start = i
-        break
-if start is None:
-    sys.exit(3)
-end = start + 1
-while end < len(lines) and not lines[end].startswith(("### ", "## ")):
-    end += 1
-last = end - 1
-while last > start and not lines[last].strip():
-    last -= 1
-body = lines[start + 1:last + 1]
-has_ev = lambda l: l.startswith("- Evidence:") and re.search(r"\]\(|<https?:", l)
-if mode == "info":
-    sender = next((m.group(1).strip() for m in (re.match(r"- From: (.*?) ->", l) for l in body) if m), "")
-    small = "small" if any(re.match(r"- Size: small\s*$", l) for l in body) else ""
-    to = next((m.group(1).strip() for m in (re.match(r"- From: .*? -> To: (.*)", l) for l in body) if m), "")
-    print(sender + "\t" + ("1" if any(has_ev(l) for l in body) else "") + "\t" + small + "\t" + to)
-    sys.exit(0)
-if mode == "evidence":
-    links = args[0]
-    at = next((i for i, l in enumerate(body) if l.startswith("- Evidence:")), None)
-    if at is None:
-        v = next((i for i, l in enumerate(body) if l.startswith("- Verdict:")), len(body))
-        body.insert(v, "- Evidence: " + links)
-    elif has_ev(body[at]):
-        body[at] = body[at].rstrip() + ", " + links
-    else:
-        body[at] = "- Evidence: " + links
-elif mode == "verdict":
-    role, line = args
-    body = [l for l in body if not l.startswith("- Verdict: " + role + " ")] + [line]
-lines[start + 1:last + 1] = body
-open(path, "w", encoding="utf-8").write("\n".join(lines))
-PY
+  node "$LIBJS" handoff-entry "$WS/HANDOFFS.md" "$@"
 }
 
 h_add() {
@@ -425,42 +381,7 @@ if [[ -n "$(git status --porcelain -- HANDOFFS.md)" ]]; then
   exit 1
 fi
 
-n="$(python3 -I - "$WS" <<'EOF'
-import os, re, sys
-ws = sys.argv[1]
-path = os.path.join(ws, "HANDOFFS.md")
-text = open(path, encoding="utf-8").read()
-head, sep, body = text.partition("\n## Open\n")
-if not sep:
-    sys.exit("no '## Open' heading in HANDOFFS.md")
-# Entries start at '### H-'; the old '## Archive' heading is dropped and its entries sorted like the rest.
-body = body.replace("\n## Archive\n", "\n")
-parts = re.split(r"\n(?=### H-)", body)
-preamble, entries = parts[0], parts[1:]
-keep, moved = [], {}
-for e in entries:
-    e = e.strip("\n")
-    st = re.search(r"^- Status: (\S+)", e, re.M)
-    m = re.match(r"### H-(\d{4})(\d{2})", e)
-    if st and m and re.match(r"(done|rejected)\b", st.group(1)):
-        moved.setdefault(f"{m.group(1)}-{m.group(2)}", []).append(e)
-    else:
-        keep.append(e)
-os.makedirs(os.path.join(ws, "handoffs"), exist_ok=True)
-for month, es in sorted(moved.items()):
-    p = os.path.join(ws, "handoffs", f"archive-{month}.md")
-    new = not os.path.exists(p)
-    with open(p, "a", encoding="utf-8") as f:
-        if new:
-            f.write(f"# Closed handoffs, IDs from {month}\n\nMoved from HANDOFFS.md by bin/handoff.sh archive. Read only.\n")
-        for e in es:  # links from the workspace root, now read from handoffs/
-            f.write("\n" + e.replace("](specs/", "](../specs/") + "\n")
-if moved:  # untouched otherwise, or the next run refuses on its own rewrite
-    out = head + sep + preamble.rstrip("\n") + "\n\n" + "\n\n".join(keep) + "\n"
-    open(path, "w", encoding="utf-8").write(out)
-print(sum(map(len, moved.values())))
-EOF
-)"
+n="$(node "$LIBJS" handoff-archive "$WS")"
 
 if [[ "$n" == 0 ]]; then echo "nothing to archive"; exit 0; fi
 git add -- HANDOFFS.md handoffs

@@ -6,7 +6,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, perl, python3, node and npm are all found. | Nothing. |
+| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, perl, node and npm are all found. | Nothing. |
 | `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool Cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
 | `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
 
@@ -56,6 +56,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `note <...> is installed and cabinet has no guardrails for it: only the git push gate above applies` | `guardrails.unguarded-tool` | An agent tool the kit does not cover. | Use it for reading and local edits, or add its own deny rules by hand. |
 | `FIX scheduled jobs cannot find the runner '<...>' (install it, or fix CABINET_RUNNER / CABINET_RUNNER_CMD, then run bin/bootstrap.sh)` | `runner.found` | The runner is not on the PATH scheduled jobs get. | Install it, or fix the setting; then `bin/bootstrap.sh` from a shell where it is on your PATH, so the schedule gets its folder. |
 | `FIX scheduled jobs find <...> but not node, which it needs (run bin/bootstrap.sh after installing node)` | `runner.node` | The runner is a Node script and Node is not on the scheduled PATH. | Install Node, then `bin/bootstrap.sh`. |
+| `ok scheduled jobs find node` | `schedules.node` | Node is on the PATH scheduled jobs get, so the workspace scripts' JavaScript (`bin/lib.js`) runs in them. | Nothing. |
+| `FIX scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)` | `schedules.node` | Node is not on the PATH scheduled jobs get (the PATH found when `bin/bootstrap.sh` last ran), so the brief, handoff and spec steps of a job would fail. | Install Node.js where your shell finds it, then `bin/bootstrap.sh` saves the new PATH into the schedules. |
 | `note the custom runner '<...>' has no cabinet guardrails: only the git push gate covers its scheduled runs` | `runner.custom-unguarded` | A custom runner the kit does not know. | Add its own deny rules by hand. |
 
 ## Skills and plugins

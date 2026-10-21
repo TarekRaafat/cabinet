@@ -765,6 +765,9 @@ section "docs match the code" ""
 s23() {
 python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the code (see above)"
 python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
+# The kit's scripts need no python3 (AGENTS.md, rule 3); their JavaScript parses.
+! grep -rlw python3 "$KIT/bin" "$KIT/scripts" || fail "a kit script calls python3; move it to scripts/lib.js"
+node --check "$KIT/scripts/lib.js" || fail "scripts/lib.js does not parse"
 python3 -I "$KIT/tools/build-brand.py" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
 jq -e '.color.ink.value and .status_color.fix.light and .mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
@@ -836,6 +839,7 @@ out="$(cd "$W" && NO_COLOR=1 in_tty "$F" doctor)"
 [[ "$out" != *$'\033['* ]] || fail "doctor colored its output with NO_COLOR set"
 (cd "$W" && "$F" doctor --json) | jq -e '.problems > 0 and (.can_fix | index("roles")) and (.results | length > 3)
   and all(.results[]; .id | test("^[a-z]+\\.[a-z-]+$")) and (.results[] | select(.id == "kit.roles") | .level == "fix")' >/dev/null || fail "doctor --json IDs"
+(cd "$W" && "$F" doctor --json) | jq -e 'any(.results[]; .id == "schedules.node" and .level == "ok")' >/dev/null || fail "doctor: scheduled jobs should find node"
 (cd "$W" && "$F" doctor --fix 2>&1 </dev/null) | grep -q 'run it in a terminal, or add --yes' || fail "doctor --fix ran without asking"
 (cd "$W" && "$F" doctor --fix --yes) >/dev/null 2>&1 || true
 [[ -f "$W/agents/qa.md" ]] || fail "doctor --fix --yes did not rebuild the roles"
@@ -1362,14 +1366,14 @@ rm -f "$T/crontab"
 section "tools: checked first, installed only when the owner says yes" "0"
 s44() {
 # The command for this machine (the fake brew on macOS, the fake apt-get on Linux), and package names per manager.
-c="$(pf deps_cmd "jq python3")"
-case "$c" in "brew install jq python"|"sudo apt-get install -y jq python3") ;; *) fail "the install command: $c" ;; esac
-[[ "$(pf pkg_for apt-get node) $(pf pkg_for brew npm) $(pf pkg_for pacman python3) $(pf pkg_for dnf secret-tool) $(pf pkg_for apt-get notify-send)" == "nodejs node python libsecret libnotify-bin" ]] || fail "package names"
+c="$(pf deps_cmd "jq node")"
+case "$c" in "brew install jq node"|"sudo apt-get install -y jq nodejs") ;; *) fail "the install command: $c" ;; esac
+[[ "$(pf pkg_for apt-get node) $(pf pkg_for brew npm) $(pf pkg_for pacman node) $(pf pkg_for dnf secret-tool) $(pf pkg_for apt-get notify-send)" == "nodejs node nodejs libsecret libnotify-bin" ]] || fail "package names"
 installs() { grep -cE '^(brew install|sudo (apt-get|dnf|pacman) )' "$T/fake.log" || true; }
 # With --yes (scripts, agents): no install, a stop with the command, and nothing made.
 : > "$T/fake.log"
-out="$(CABINET_TEST_MISSING="jq python3" "$F" new "$T/nodeps" --yes 2>&1)" && fail "setup went ahead without its tools"
-echo "$out" | grep -q 'cabinet needs jq, python3, not found' && echo "$out" | grep -qF "run this again: $c" && [[ ! -e "$T/nodeps" && "$(installs)" == 0 ]] || { echo "$out"; fail "--yes with missing tools"; }
+out="$(CABINET_TEST_MISSING="jq node" "$F" new "$T/nodeps" --yes 2>&1)" && fail "setup went ahead without its tools"
+echo "$out" | grep -q 'cabinet needs jq, node, not found' && echo "$out" | grep -qF "run this again: $c" && [[ ! -e "$T/nodeps" && "$(installs)" == 0 ]] || { echo "$out"; fail "--yes with missing tools"; }
 CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" --dry-run >/dev/null 2>&1 && fail "a dry run went ahead without its tools"
 [[ "$(installs)" == 0 ]] || fail "a dry run installed something"
 "$F" new --help >/dev/null || fail "--help needs the tools"

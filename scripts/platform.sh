@@ -238,7 +238,7 @@ cron_sync() {
 # Tools cabinet needs, and how this machine installs them (brew, apt, dnf or pacman).
 # Optional tools are checked where their feature is turned on: openssl and secret-tool for
 # backups, notify-send for digest notifications.
-DEPS_REQUIRED="git jq perl python3 node npm"
+DEPS_REQUIRED="git jq perl node npm"
 # deps_missing [<tools>]: the ones not found (CABINET_TEST_MISSING makes the tests miss some).
 deps_missing() {
   local t out=""
@@ -259,8 +259,8 @@ pkg_manager() {
 }
 pkg_for() {  # pkg_for <manager> <tool>: the package that brings the tool
   case "$1:$2" in
-    brew:python3) echo python ;; brew:node|brew:npm) echo node ;; brew:secret-tool) echo libsecret ;; brew:notify-send) echo libnotify ;;
-    pacman:python3) echo python ;; *:node) echo nodejs ;;
+    brew:node|brew:npm) echo node ;; brew:secret-tool) echo libsecret ;; brew:notify-send) echo libnotify ;;
+    *:node) echo nodejs ;;
     apt-get:secret-tool) echo libsecret-tools ;; *:secret-tool) echo libsecret ;;
     apt-get:notify-send) echo libnotify-bin ;; *:notify-send) echo libnotify ;;
     *) echo "$2" ;;

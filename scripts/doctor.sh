@@ -181,6 +181,9 @@ if [[ -z "$c" || -z "$rp" ]]; then bad runner.found "scheduled jobs cannot find 
 elif head -1 "$rp" 2>/dev/null | grep -q 'node' && ! env -i PATH="$jp" /bin/sh -c 'command -v node' >/dev/null; then
   bad runner.node "scheduled jobs find $c but not node, which it needs (run bin/bootstrap.sh after installing node)"
 else ok runner.found "scheduled jobs run with $c ($rp)"; fi
+# The workspace scripts run JavaScript (bin/lib.js) with node, in scheduled jobs too.
+if env -i PATH="$jp" /bin/sh -c 'command -v node' >/dev/null; then ok schedules.node "scheduled jobs find node"
+else bad schedules.node "scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)"; fi
 if [[ "$CABINET_RUNNER" == custom ]] && ! has "claude codex gemini qwen grok opencode agy cursor-agent agent" "$c"; then
   note runner.custom-unguarded "the custom runner '$c' has no cabinet guardrails: only the git push gate covers its scheduled runs"
 fi

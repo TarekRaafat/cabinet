@@ -1025,31 +1025,7 @@ hard_check() {
 # hard_write <ws> <paths|off>: set the list under "Hard to undo", keeping the section's other lines;
 # a missing section is added before "House rules". Written only when the result is whole.
 hard_write() {
-  python3 -I - "$1/AGENTS.md" $2 <<'PY'
-import os, sys
-path, items = sys.argv[1], [i for i in sys.argv[2:] if i != "off"]
-text = open(path, encoding="utf-8").read()
-lines = text.split("\n")
-new = ["- `%s`" % i for i in items] or ["- none"]
-if "## Hard to undo" in lines:
-    s = lines.index("## Hard to undo") + 1
-    e = next((j for j in range(s, len(lines)) if lines[j].startswith("## ")), len(lines))
-    keep = [l for l in lines[s:e] if not l.startswith("- ")]
-    while keep and not keep[-1].strip():
-        keep.pop()
-    lines[s:e] = keep + [""] + new + ([""] if e < len(lines) else [])
-else:
-    intro = ("Paths where a change is hard to undo (migrations, public files, anything released): a small task never "
-             "touches them (`CABINET.md`, \"Ready to build\"), and `bin/handoff.sh record` refuses a PASS on one that does. "
-             "Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.")
-    at = lines.index("## House rules") if "## House rules" in lines else len(lines)
-    lines[at:at] = ["## Hard to undo", "", intro, ""] + new + [""]
-out = "\n".join(lines).rstrip("\n") + "\n"
-if "## Hard to undo" not in out or len(out) < len(text) // 2:
-    sys.exit("AGENTS.md: the new Hard to undo section did not come out whole; nothing written")
-open(path + ".new", "w", encoding="utf-8").write(out)
-os.replace(path + ".new", path)
-PY
+  node "$KIT/scripts/lib.js" hard-write "$1/AGENTS.md" $2
 }
 
 cmd_config() {
