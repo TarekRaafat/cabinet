@@ -157,6 +157,13 @@ main { display: grid; gap: 0; }
 .frame b { font-family: var(--font-mono); font-size: 11px; color: var(--brass); font-weight: 500; }
 @media (max-width: 860px) { .story { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+/* rule status */
+.state { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; margin-left: 10px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.state.ok { color: var(--ink); }
+.cover-text p.cover-files { font-size: 13px; color: var(--muted); max-width: 72ch; }
+.on-page { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.cover-files a { color: var(--ink); }
+
 /* status colors */
 .status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .status .swatch .chips { display: grid; grid-template-columns: 1fr 1fr; height: 72px; }
@@ -194,6 +201,12 @@ button {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
 }
 button:hover { border-color: var(--muted); }
+
+.asset .tile img { max-width: 88%; max-height: 112px; display: block; }
+.asset.wide { grid-column: span 2; }
+a.btn { font-size: 12.5px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; }
+a.btn:hover { border-color: var(--muted); }
+@media (max-width: 560px) { .asset.wide { grid-column: auto; } }
 
 /* terminal */
 .term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 20px 22px; font-family: var(--font-mono); font-size: 13px; line-height: 1.45; overflow-x: auto; border: 1px solid var(--line); }
@@ -280,6 +293,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       <h1>cabinet</h1>
       <p>Run a product with a team of AI agents and one owner who signs off.</p>
       <p class="muted">How the cabinet mark, name, colors, type and words are used, with every file you need.</p>
+      <p class="cover-files">Every rule in plain text with its status: <a href="BRAND.md">BRAND.md</a>. The same decisions as data: <a href="tokens.json">tokens.json</a>. The files: <a href="assets/">assets/</a>.</p>
     </div>
   </header>
 
@@ -304,7 +318,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 01 -->
     <section class="chapter" id="idea">
       <div class="chapter-head">
-        <span class="num">01</span>
+        <span class="num">01 <span class="state ok">Approved</span></span>
         <h2>The idea</h2>
       </div>
       <div class="idea">
@@ -329,7 +343,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 02 -->
     <section class="chapter" id="mark">
       <div class="chapter-head">
-        <span class="num">02</span>
+        <span class="num">02 <span class="state ok">Approved, clear space draft</span></span>
         <h2>The mark</h2>
         <p class="muted">Seven dots on a ring, the open place on the right. One mark at every size, in one color.</p>
       </div>
@@ -383,7 +397,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 03 -->
     <section class="chapter" id="outline">
       <div class="chapter-head">
-        <span class="num">03</span>
+        <span class="num">03 <span class="state ok">Approved, timing draft</span></span>
         <h2>The open seat in brass</h2>
         <p class="muted">A brass outline in the gap marks the place kept for the owner. It is an accent, not a second logo: use it where the owner is the subject and the color will show.</p>
       </div>
@@ -439,7 +453,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 04 -->
     <section class="chapter" id="chairs">
       <div class="chapter-head">
-        <span class="num">04</span>
+        <span class="num">04 <span class="state ok">Approved, timing draft</span></span>
         <h2>The chairs</h2>
         <p class="muted">An illustration of the mark, not a second logo. The same eight places and the same open place on the right, each seat drawn as a chair with its back to the outside. The places match the dots exactly, so the mark can turn into the chairs and back.</p>
       </div>
@@ -505,7 +519,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 05 -->
     <section class="chapter" id="name">
       <div class="chapter-head">
-        <span class="num">05</span>
+        <span class="num">05 <span class="state draft">Draft</span></span>
         <h2>The name</h2>
         <p class="muted">Always <b>cabinet</b>, in lowercase, also at the start of a sentence, the way the command is typed. Never "Cabinet", "CABINET" or "the Cabinet kit".</p>
       </div>
@@ -530,7 +544,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 06 -->
     <section class="chapter" id="color">
       <div class="chapter-head">
-        <span class="num">06</span>
+        <span class="num">06 <span class="state draft">Status colors and paper approved, the rest draft</span></span>
         <h2>Color</h2>
         <p class="muted">Mostly ink and paper. Brass is rare on purpose: it only ever means the owner.</p>
       </div>
@@ -574,7 +588,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 07 -->
     <section class="chapter" id="type">
       <div class="chapter-head">
-        <span class="num">07</span>
+        <span class="num">07 <span class="state draft">Draft</span></span>
         <h2>Type</h2>
         <p class="muted">Two families, both free on Google Fonts. On GitHub and npm the site's own fonts apply, and that is fine.</p>
       </div>
@@ -589,7 +603,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 08 -->
     <section class="chapter" id="writing">
       <div class="chapter-head">
-        <span class="num">08</span>
+        <span class="num">08 <span class="state ok">Approved</span></span>
         <h2>Writing</h2>
         <p class="muted">cabinet sounds like a capable chief of staff: plain, short, specific, and always clear about who decides.</p>
       </div>
@@ -632,7 +646,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 09 -->
     <section class="chapter" id="uses">
       <div class="chapter-head">
-        <span class="num">09</span>
+        <span class="num">09 <span class="state draft">Partly approved</span></span>
         <h2>Where it goes</h2>
         <p class="muted">Each place, with the form of the mark it takes.</p>
       </div>
@@ -705,7 +719,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 10 -->
     <section class="chapter" id="donts">
       <div class="chapter-head">
-        <span class="num">10</span>
+        <span class="num">10 <span class="state draft">Partly approved</span></span>
         <h2>Don'ts</h2>
         <p class="muted">The mark only works while the open place reads as open.</p>
       </div>
@@ -717,7 +731,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       <div class="chapter-head">
         <span class="num">11</span>
         <h2>Files</h2>
-        <p class="muted">Every form as an SVG. Download it, or copy its code. <code>logo.svg</code> is the file in the kit's <code>docs/</code> folder.</p>
+        <p class="muted">The files in <code>brand/assets/</code>, built from <code>tokens.json</code> by <code>tools/build-brand.py</code>. The name is drawn as outlines, so no file needs the font. <code>logo.svg</code> is also the kit's <code>docs/logo.svg</code>.</p>
       </div>
       <div class="grid3" id="assets-grid"></div>
     </section>
@@ -817,36 +831,35 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     return '<div class="card dont">' + d[2] + '<span class="tag bad">Don\'t</span><h3>' + d[0].replace("Don't ", "") + "</h3><p>" + d[1] + "</p></div>";
   }).join("");
 
-  // Files: download or copy each form.
+  // Files: the real files in assets/, shown and linked.
   var assets = [
-    ["logo.svg", "Tile. The README logo; any page that may be light or dark.", { tile: "#F3F4F6", fill: "#15181E" }, "on-night"],
-    ["mark.svg", "Dark seats, for light backgrounds. Favicons too.", { fill: "#15181E" }, "on-white"],
-    ["mark-light.svg", "Light seats, for dark backgrounds.", { fill: "#E8EAEE" }, "on-night"],
-    ["mark-outlined.svg", "Dark seats and the brass open seat, on light.", { fill: "#15181E", open: "ghost", accent: "#A06F17" }, "on-white"],
-    ["mark-outlined-light.svg", "Light seats and the brass open seat, on dark.", { fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-night"],
-    ["chairs.svg", "The chairs, dark, for light backgrounds. Illustration only, 96px or more.", { fill: "#15181E", seat: "chair" }, "on-white"],
-    ["chairs-light.svg", "The chairs, light, for dark backgrounds and video.", { fill: "#E8EAEE", seat: "chair" }, "on-night"],
-    ["app-icon.svg", "The dark app icon and avatar, with the outline.", { tile: "#101216", fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-paper"]
+    ["mark.svg", "The mark, dark seats, for light backgrounds.", "on-white"],
+    ["mark-light.svg", "The mark, light seats, for dark backgrounds.", "on-night"],
+    ["logo.svg", "The tile: the README logo, any page that may be light or dark.", "on-night"],
+    ["mark-outlined.svg", "The owner's open seat in brass, on light.", "on-white"],
+    ["mark-outlined-light.svg", "The owner's open seat in brass, on dark.", "on-night"],
+    ["favicon.svg", "The favicon: light seats when the browser is dark. This tile follows your light or dark setting, as a tab bar does.", "on-page"],
+    ["wordmark.svg", "The name, as outlines.", "on-white"],
+    ["wordmark-light.svg", "The name, as outlines, for dark backgrounds.", "on-night"],
+    ["lockup.svg", "The mark and the name side by side.", "on-white"],
+    ["lockup-light.svg", "Side by side, for dark backgrounds.", "on-night"],
+    ["lockup-stacked.svg", "The mark over the name.", "on-white"],
+    ["lockup-stacked-light.svg", "Stacked, for dark backgrounds.", "on-night"],
+    ["app-icon.svg", "The dark app icon and avatar, with the outline.", "on-paper"],
+    ["app-icon-light.svg", "The light app icon and avatar, plain.", "on-night"],
+    ["apple-touch-icon.svg", "The dark app icon, square: the system rounds it.", "on-paper"],
+    ["chairs.svg", "The chairs, for light backgrounds. 96px or more.", "on-white"],
+    ["chairs-light.svg", "The chairs, for dark backgrounds and video.", "on-night"],
+    ["chairs-owner-light.svg", "The chairs with the owner's chair in brass.", "on-night"],
+    ["social-preview.svg", "The social preview, 1280 x 640. Also as social-preview.png.", "on-paper wide"]
   ];
-  var grid = document.getElementById("assets-grid");
-  grid.innerHTML = assets.map(function (a, i) {
-    return '<div class="card asset"><div class="tile ' + a[3] + '">' + mark(Object.assign({ size: 96 }, a[2])) + '</div><div class="row"><code>' + a[0] +
-      '</code><div class="btns"><button type="button" id="dl-' + i + '" data-i="' + i + '" data-act="dl">Download</button><button type="button" id="cp-' + i + '" data-i="' + i + '" data-act="cp">Copy SVG</button></div></div><p>' + a[1] + "</p></div>";
-  }).join("");
-  grid.addEventListener("click", function (e) {
-    var b = e.target.closest("button"); if (!b) return;
-    var a = assets[+b.getAttribute("data-i")], svg = mark(Object.assign({ size: 96 }, a[2])) + "\n";
-    if (b.getAttribute("data-act") === "dl") {
-      var url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-      var link = document.createElement("a"); link.href = url; link.download = a[0];
-      document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-      return;
-    }
-    var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy SVG"; }, 1500); };
-    if (navigator.clipboard) navigator.clipboard.writeText(svg).then(done, function () { window.prompt("Copy the SVG:", svg); });
-    else window.prompt("Copy the SVG:", svg);
-  });
+  var pngs = ["favicon-16.png", "favicon-32.png", "favicon-48.png", "apple-touch-icon.png", "app-icon-192.png", "app-icon-512.png", "social-preview.png"];
+  document.getElementById("assets-grid").innerHTML = assets.map(function (a) {
+    return '<div class="card asset' + (a[2].indexOf("wide") >= 0 ? " wide" : "") + '"><div class="tile ' + a[2] + '"><img src="assets/' + a[0] + '" alt="' + a[0] + '"></div><div class="row"><code>' + a[0] +
+      '</code><div class="btns"><a class="btn" href="assets/' + a[0] + '" download>Download</a><a class="btn" href="assets/' + a[0] + '" target="_blank" rel="noopener">Open</a></div></div><p>' + a[1] + "</p></div>";
+  }).join("") + '<div class="card asset"><span class="tag">PNG</span><h3>For places without SVG</h3><ul class="rules">' + pngs.map(function (p) {
+    return '<li><a href="assets/' + p + '" download><code>' + p + "</code></a></li>";
+  }).join("") + "</ul><p>Favicons are the tile, so they read on light and dark tabs.</p></div>";
 })();
 </script>
 </body>

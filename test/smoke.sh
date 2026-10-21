@@ -30,6 +30,31 @@ export PATH="$T/shim:$PATH"
 for t in launchctl systemctl crontab security secret-tool brew apt-get sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
 sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
 perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
+# in_tty <command>...: run it with its output on a terminal and print what it wrote. Not pty.spawn:
+# on macOS that can wait forever after the command exits. This stops when the command has exited
+# and its output is read, or after 60 seconds.
+in_tty() {
+  python3 -I -c '
+import os, select, subprocess, sys, time
+m, s = os.openpty()
+p = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=s, stderr=s)
+os.close(s)
+out, end = b"", time.time() + 60
+while time.time() < end:
+    if select.select([m], [], [], 0.2)[0]:
+        try:
+            d = os.read(m, 65536)
+        except OSError:
+            break
+        if not d:
+            break
+        out += d
+    elif p.poll() is not None:
+        break
+if p.poll() is None:
+    p.kill()
+sys.stdout.write(out.decode(errors="replace"))' "$@"
+}
 # Where this machine keeps logs and schedules, under a HOME (bin/platform.sh): $H/$LOGS, $H/$SD/<label>$SX.
 pf() { bash -c 'source "$0/scripts/when.sh"; source "$0/scripts/platform.sh"; "$@"' "$KIT" "$@"; }
 SCH="$(pf eval 'echo $SCHEDULER')"
@@ -740,6 +765,9 @@ section "docs match the code" ""
 s23() {
 python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the code (see above)"
 python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
+python3 -I "$KIT/tools/build-brand.py" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
+for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
+jq -e '.color.ink.value and .status_color.fix.light and .mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
 repo="$(jq -r .repository.url "$KIT/package.json" | sed 's/^git+//')"
 grep -qF "git clone $repo " "$KIT/README.md" || fail "the README's clone command does not match the repository in package.json"
 # The package installs only where the README says the kit runs: macOS and Linux.
@@ -802,9 +830,9 @@ out="$(cd "$W" && "$F" doctor 2>&1)" && fail "doctor passed with a role missing"
 echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$out" | grep -q 'cabinet doctor --fix can run:.*role build' || { echo "$out"; fail "doctor summary"; }
 # Status colors only in a terminal, and none with NO_COLOR or when the output is not a terminal.
 [[ "$out" != *$'\033['* ]] || fail "doctor colored output that is not a terminal"
-out="$(cd "$W" && python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" doctor)"
+out="$(cd "$W" && in_tty "$F" doctor)"
 [[ "$out" == *$'\033[31mFIX'* && "$out" == *$'\033[32mok'* ]] || fail "doctor in a terminal should color FIX red and ok green"
-out="$(cd "$W" && NO_COLOR=1 python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" doctor)"
+out="$(cd "$W" && NO_COLOR=1 in_tty "$F" doctor)"
 [[ "$out" != *$'\033['* ]] || fail "doctor colored its output with NO_COLOR set"
 (cd "$W" && "$F" doctor --json) | jq -e '.problems > 0 and (.can_fix | index("roles")) and (.results | length > 3)
   and all(.results[]; .id | test("^[a-z]+\\.[a-z-]+$")) and (.results[] | select(.id == "kit.roles") | .level == "fix")' >/dev/null || fail "doctor --json IDs"
@@ -1245,8 +1273,8 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(jq -r .version "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(jq -r .version "$KIT/package.json")"
-[[ "$(LC_ALL=C python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                a team of AI agents and one owner who signs off\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
-LC_ALL=en_US.UTF-8 python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
+[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                a team of AI agents and one owner who signs off\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
+LC_ALL=en_US.UTF-8 in_tty "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
 "$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
 (cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | jq -e '.latest == null and .kit_version' >/dev/null || fail "outdated --json"

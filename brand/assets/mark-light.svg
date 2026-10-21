@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" width="96" height="96" role="img" aria-label="cabinet">
+  <!-- The mark: light seats, for dark backgrounds. Built by tools/build-brand.py from brand/tokens.json; do not edit by hand. -->
+  <g fill="#E8EAEE"><circle cx="25.456" cy="-25.456" r="9.5"/><circle cx="0" cy="-36" r="9.5"/><circle cx="-25.456" cy="-25.456" r="9.5"/><circle cx="-36" cy="-0" r="9.5"/><circle cx="-25.456" cy="25.456" r="9.5"/><circle cx="-0" cy="36" r="9.5"/><circle cx="25.456" cy="25.456" r="9.5"/></g>
+</svg>

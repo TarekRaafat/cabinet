@@ -14,8 +14,9 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `guardrails/` | Deny rules for each agent tool, the push gate, the hook pass-through stub | `.cabinet/guardrails/`, installed machine-wide by bootstrap |
 | `templates/workspace/` | Project files placed once by `new` and `init` | the workspace's own files |
 | `docs/`, `README.md`, `llms.txt`, `llms-full.txt` | Documentation, shipped in the npm package. `llms-full.txt` is built from the pages `llms.txt` lists | (not copied) |
-| `brand/index.html` | The brand guide: the mark, name, color, type, writing, where each form goes, and every logo file as SVG (not shipped) | |
+| `brand/` | The brand: `BRAND.md` (every rule with its status, the source of truth), `tokens.json` (the same as data), `assets/` (every logo file), `index.html` (the visual guide). Not shipped | |
 | `tools/build-llms-full.py` | Builds `llms-full.txt` (`npm run docs`; not shipped) | |
+| `tools/build-brand.py` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
 | `test/smoke.sh` | The whole test suite (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
@@ -81,6 +82,7 @@ npm test -- init config                       # only the sections whose name has
 npm run test:linux                            # the same suite on Linux, in a Debian container (starts and stops Colima if Docker is not running)
 CABINET_PRIVATE_WORDS="word1 word2" npm test  # also fails on any private word in the kit
 npm run docs                                  # rebuild llms-full.txt after changing a doc
+npm run brand                                 # rebuild brand/assets/ and docs/logo.svg after changing brand/tokens.json (macOS)
 npm pack --dry-run                            # what the package ships
 ```
 
