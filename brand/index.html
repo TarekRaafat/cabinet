@@ -141,6 +141,15 @@ main { display: grid; gap: 0; }
 .ratio { display: flex; height: 18px; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
 .ratio div { height: 100%; }
 
+/* chairs */
+.story { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.frame { display: grid; gap: 8px; align-content: start; }
+.frame .tile { min-height: 0; height: 132px; padding: 12px; }
+.frame .tile svg { width: 96px; height: 96px; }
+.frame p { font-size: 13px; color: var(--muted); }
+.frame b { font-family: var(--font-mono); font-size: 11px; color: var(--brass); font-weight: 500; }
+@media (max-width: 860px) { .story { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* status colors */
 .status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .status .swatch .chips { display: grid; grid-template-columns: 1fr 1fr; height: 72px; }
@@ -257,13 +266,14 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       <li><a href="#idea"><span>01</span>The idea</a></li>
       <li><a href="#mark"><span>02</span>The mark</a></li>
       <li><a href="#outline"><span>03</span>The open seat in brass</a></li>
-      <li><a href="#name"><span>04</span>The name</a></li>
-      <li><a href="#color"><span>05</span>Color and status</a></li>
-      <li><a href="#type"><span>06</span>Type</a></li>
-      <li><a href="#writing"><span>07</span>Writing</a></li>
-      <li><a href="#uses"><span>08</span>Where it goes</a></li>
-      <li><a href="#donts"><span>09</span>Don'ts</a></li>
-      <li><a href="#assets"><span>10</span>Files</a></li>
+      <li><a href="#chairs"><span>04</span>The chairs</a></li>
+      <li><a href="#name"><span>05</span>The name</a></li>
+      <li><a href="#color"><span>06</span>Color and status</a></li>
+      <li><a href="#type"><span>07</span>Type</a></li>
+      <li><a href="#writing"><span>08</span>Writing</a></li>
+      <li><a href="#uses"><span>09</span>Where it goes</a></li>
+      <li><a href="#donts"><span>10</span>Don'ts</a></li>
+      <li><a href="#assets"><span>11</span>Files</a></li>
     </ol>
   </nav>
 
@@ -372,9 +382,74 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     </section>
 
     <!-- 04 -->
-    <section class="chapter" id="name">
+    <section class="chapter" id="chairs">
       <div class="chapter-head">
         <span class="num">04</span>
+        <h2>The chairs</h2>
+        <p class="muted">An illustration of the mark, not a second logo. The same eight places and the same open place on the right, each seat drawn as a chair with its back to the outside. The places match the dots exactly, so the mark can turn into the chairs and back.</p>
+      </div>
+      <div class="grid3">
+        <div class="card">
+          <div class="tile on-white"><span data-mark='{"fill":"#15181E","seat":"chair","size":120}'></span></div>
+          <span class="tag">Chairs</span><h3>Dark chairs</h3>
+          <p>On white and light backgrounds.</p>
+        </div>
+        <div class="card">
+          <div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair","size":120}'></span></div>
+          <span class="tag">Chairs, reversed</span><h3>Light chairs</h3>
+          <p>On dark backgrounds, slides and video.</p>
+        </div>
+        <div class="card">
+          <div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B","size":120}'></span></div>
+          <span class="tag">Chairs, owner</span><h3>The owner's chair</h3>
+          <p>The open place drawn as an empty chair outlined in brass, where the owner is the subject, as with the mark.</p>
+        </div>
+      </div>
+
+      <div class="block">
+        <h3>In motion</h3>
+        <p class="muted">A short sequence for an intro or an explainer. Start and end on the mark, so people recognize the brand at both ends.</p>
+        <div class="story">
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div><b>1. The mark</b><p>Seven seats and the open place.</p></div>
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair"}' style="display:contents"></span></div><b>2. The team sits down</b><p>Each dot turns into a chair in place, counterclockwise from the top.</p></div>
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B"}' style="display:contents"></span></div><b>3. A place for the owner</b><p>The brass chair fades in at the open place, last.</p></div>
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div><b>4. Back to the mark</b><p>The chairs turn back into dots; the name may follow.</p></div>
+        </div>
+        <ul class="rules">
+          <li><b>Nothing turns.</b> The open place stays on the right in every frame.</li>
+          <li><b>The open place is never taken by an agent's chair.</b> Only the owner's brass outline appears there.</li>
+          <li><b>Calm timing:</b> each step 400 to 800 ms, eased in and out, no bounce.</li>
+          <li><b>Reduced motion:</b> where people have turned motion off, show the last frame only.</li>
+        </ul>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <span class="tag">Use the chairs</span>
+          <h3>To tell the story, at 96px or more</h3>
+          <ul class="rules">
+            <li>Animation and video: intros, explainers, the end card.</li>
+            <li>Onboarding, welcome pages and empty states.</li>
+            <li>Docs and slides that explain the team; a chair can carry a role's name beside it.</li>
+            <li>A website's opening picture, posters and other large print.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag bad">Never</span>
+          <h3>As the logo, or small</h3>
+          <ul class="rules">
+            <li>As the favicon, app icon, avatar or README logo, or next to the name in a lockup.</li>
+            <li>Under 96px, where the backrests blur.</li>
+            <li>With more or fewer than eight places, or in any color but ink, mist and the owner's brass.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section class="chapter" id="name">
+      <div class="chapter-head">
+        <span class="num">05</span>
         <h2>The name</h2>
         <p class="muted">Always <b>cabinet</b>, in lowercase, also at the start of a sentence, the way the command is typed. Never "Cabinet", "CABINET" or "the Cabinet kit".</p>
       </div>
@@ -396,10 +471,10 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
     </section>
 
-    <!-- 05 -->
+    <!-- 06 -->
     <section class="chapter" id="color">
       <div class="chapter-head">
-        <span class="num">05</span>
+        <span class="num">06</span>
         <h2>Color</h2>
         <p class="muted">Mostly ink and paper. Brass is rare on purpose: it only ever means the owner.</p>
       </div>
@@ -440,10 +515,10 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
     </section>
 
-    <!-- 06 -->
+    <!-- 07 -->
     <section class="chapter" id="type">
       <div class="chapter-head">
-        <span class="num">06</span>
+        <span class="num">07</span>
         <h2>Type</h2>
         <p class="muted">Two families, both free on Google Fonts. On GitHub and npm the site's own fonts apply, and that is fine.</p>
       </div>
@@ -455,10 +530,10 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
     </section>
 
-    <!-- 07 -->
+    <!-- 08 -->
     <section class="chapter" id="writing">
       <div class="chapter-head">
-        <span class="num">07</span>
+        <span class="num">08</span>
         <h2>Writing</h2>
         <p class="muted">cabinet sounds like a capable chief of staff: plain, short, specific, and always clear about who decides.</p>
       </div>
@@ -498,10 +573,10 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
     </section>
 
-    <!-- 08 -->
+    <!-- 09 -->
     <section class="chapter" id="uses">
       <div class="chapter-head">
-        <span class="num">08</span>
+        <span class="num">09</span>
         <h2>Where it goes</h2>
         <p class="muted">Each place, with the form of the mark it takes.</p>
       </div>
@@ -571,20 +646,20 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
     </section>
 
-    <!-- 09 -->
+    <!-- 10 -->
     <section class="chapter" id="donts">
       <div class="chapter-head">
-        <span class="num">09</span>
+        <span class="num">10</span>
         <h2>Don'ts</h2>
         <p class="muted">The mark only works while the open place reads as open.</p>
       </div>
       <div class="grid3" id="donts-grid"></div>
     </section>
 
-    <!-- 10 -->
+    <!-- 11 -->
     <section class="chapter" id="assets">
       <div class="chapter-head">
-        <span class="num">10</span>
+        <span class="num">11</span>
         <h2>Files</h2>
         <p class="muted">Every form as an SVG. Download it, or copy its code. <code>logo.svg</code> is the file in the kit's <code>docs/</code> folder.</p>
       </div>
@@ -603,12 +678,13 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     o = o || {};
     var fill = o.fill || "#15181E", n = 8, r = 36, d = 19, parts = [];
     for (var i = 0; i < n; i++) {
-      var a = i * 2 * Math.PI / n, x = +(r * Math.cos(a)).toFixed(3), y = +(-r * Math.sin(a)).toFixed(3);
+      var a = i * 2 * Math.PI / n, x = +(r * Math.cos(a)).toFixed(3), y = +(-r * Math.sin(a)).toFixed(3), deg = i * 360 / n;
       if (i === 0) {
-        if (o.open === "ghost") parts.push('<circle cx="' + x + '" cy="' + y + '" r="8.4" fill="none" stroke="' + (o.accent || "#A06F17") + '" stroke-width="2.2"/>');
+        var ghost = ' fill="none" stroke="' + (o.accent || "#A06F17") + '" stroke-width="2.2"';
+        if (o.open === "ghost") parts.push(o.seat === "chair" ? chair(x, y, 0, ghost) : '<circle cx="' + x + '" cy="' + y + '" r="8.4"' + ghost + "/>");
         continue;
       }
-      parts.push('<circle cx="' + x + '" cy="' + y + '" r="' + d / 2 + '"/>');
+      parts.push(o.seat === "chair" ? chair(x, y, deg, "") : '<circle cx="' + x + '" cy="' + y + '" r="' + d / 2 + '"/>');
     }
     var body = '<g fill="' + fill + '">' + parts.join("") + "</g>";
     if (o.open === "ghost") body = '<g fill="' + fill + '">' + parts.slice(1).join("") + "</g>" + parts[0];
@@ -616,6 +692,13 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     if (o.tile) body = '<rect x="-50" y="-50" width="100" height="100" rx="22" fill="' + o.tile + '"/><g transform="scale(0.66)">' + body + "</g>";
     var size = o.size ? ' width="' + o.size + '" height="' + o.size + '"' : "";
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100"' + size + ' role="img" aria-label="cabinet">' + body + "</svg>";
+  }
+  // The chairs: the same places as the dots, each seat with its back to the outside.
+  function chair(x, y, deg, attrs) {
+    var w = 14.8;
+    return '<g transform="translate(' + x + " " + y + ") rotate(" + (-deg) + ')"' + attrs + ">" +
+      '<rect x="' + (-w / 2 - 1) + '" y="' + (-w / 2) + '" width="' + w + '" height="' + w + '" rx="' + (w * 0.28) + '"/>' +
+      '<rect x="' + (w / 2 + 0.6) + '" y="' + (-w * 0.62) + '" width="' + (w * 0.26) + '" height="' + (w * 1.24) + '" rx="' + (w * 0.13) + '"/></g>';
   }
   function icon(kind) {
     return kind === "night"
@@ -682,6 +765,8 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     ["mark-light.svg", "Light seats, for dark backgrounds.", { fill: "#E8EAEE" }, "on-night"],
     ["mark-outlined.svg", "Dark seats and the brass open seat, on light.", { fill: "#15181E", open: "ghost", accent: "#A06F17" }, "on-white"],
     ["mark-outlined-light.svg", "Light seats and the brass open seat, on dark.", { fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-night"],
+    ["chairs.svg", "The chairs, dark, for light backgrounds. Illustration only, 96px or more.", { fill: "#15181E", seat: "chair" }, "on-white"],
+    ["chairs-light.svg", "The chairs, light, for dark backgrounds and video.", { fill: "#E8EAEE", seat: "chair" }, "on-night"],
     ["app-icon.svg", "The dark app icon and avatar, with the outline.", { tile: "#101216", fill: "#E8EAEE", open: "ghost", accent: "#D7A54B" }, "on-paper"]
   ];
   var grid = document.getElementById("assets-grid");
