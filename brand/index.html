@@ -429,10 +429,14 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
           <li><b>In a terminal,</b> use the terminal's own red, green and blue, never yellow; color only when the output is a terminal, and none when <code>NO_COLOR</code> is set.</li>
         </ul>
         <div class="status-term"><pre><span class="dim">$</span> cabinet doctor
-<span class="st-ok">ok  </span> guardrails.claude   Guardrails are installed for Claude Code.
-<span class="st-note">note</span> roles.drafted       The role dba is not drafted yet: cabinet role draft dba
-<span class="st-fix">fix </span> deps.required       jq is missing: brew install jq</pre></div>
-        <p class="muted" style="font-size:13px">How the doctor would look with status colors. Today the kit prints no colors; adding them is a separate change to the kit.</p>
+...
+== Kit and roles
+  <span class="st-ok">ok</span>    roles built: chief-of-staff, product-manager, architect, qa, security
+  <span class="st-note">note</span>  the dba role is not drafted yet (cabinet role draft dba, or ask your agent to draft the dba role)
+== Push guardrails
+  <span class="st-ok">ok</span>    Claude Code denies push and publish
+  <span class="st-fix">FIX</span>   Claude Code is missing 2 deny rule(s) (run bin/bootstrap.sh)</pre></div>
+        <p class="muted" style="font-size:13px">Part of what <code>cabinet doctor</code> prints in a terminal. Only the label is colored; the message stays the terminal's own color.</p>
       </div>
     </section>
 

@@ -499,8 +499,12 @@ else
   echo "All good.$( ((n)) && echo " $n note(s) below.")"
 fi
 echo
-awk -F'\t' '$2 != last {print "== " $2; last = $2}
-  {printf "  %-5s %s\n", ($1 == "fix" ? "FIX" : $1), $4}' "$REC"
+# Status colors only in a terminal, and none when NO_COLOR is set: ok green, note blue, FIX red
+# (the brand guide, "Status colors": never yellow, so a warning is never taken for the owner's brass).
+g="" b="" r="" z=""
+[[ -t 1 && -z "${NO_COLOR:-}" ]] && { g=$'\033[32m'; b=$'\033[34m'; r=$'\033[31m'; z=$'\033[0m'; }
+awk -F'\t' -v g="$g" -v b="$b" -v r="$r" -v z="$z" '$2 != last {print "== " $2; last = $2}
+  {printf "  %s%-5s%s %s\n", ($1 == "fix" ? r : $1 == "note" ? b : g), ($1 == "fix" ? "FIX" : $1), z, $4}' "$REC"
 
 if ((FIX)); then
   echo

@@ -800,6 +800,12 @@ s27() {
 rm "$W/agents/qa.md"
 out="$(cd "$W" && "$F" doctor 2>&1)" && fail "doctor passed with a role missing"
 echo "$out" | head -1 | grep -Eq '^[0-9]+ thing\(s\) need attention:' && echo "$out" | grep -q 'cabinet doctor --fix can run:.*role build' || { echo "$out"; fail "doctor summary"; }
+# Status colors only in a terminal, and none with NO_COLOR or when the output is not a terminal.
+[[ "$out" != *$'\033['* ]] || fail "doctor colored output that is not a terminal"
+out="$(cd "$W" && python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" doctor)"
+[[ "$out" == *$'\033[31mFIX'* && "$out" == *$'\033[32mok'* ]] || fail "doctor in a terminal should color FIX red and ok green"
+out="$(cd "$W" && NO_COLOR=1 python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$F" doctor)"
+[[ "$out" != *$'\033['* ]] || fail "doctor colored its output with NO_COLOR set"
 (cd "$W" && "$F" doctor --json) | jq -e '.problems > 0 and (.can_fix | index("roles")) and (.results | length > 3)
   and all(.results[]; .id | test("^[a-z]+\\.[a-z-]+$")) and (.results[] | select(.id == "kit.roles") | .level == "fix")' >/dev/null || fail "doctor --json IDs"
 (cd "$W" && "$F" doctor --fix 2>&1 </dev/null) | grep -q 'run it in a terminal, or add --yes' || fail "doctor --fix ran without asking"
