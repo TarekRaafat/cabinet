@@ -250,7 +250,7 @@ button:hover { border-color: var(--muted); }
 .sticker svg { width: 62%; height: 62%; }
 
 /* don'ts */
-.dont .tile { min-height: 150px; position: relative; overflow: hidden; }
+.dont .tile { height: 152px; min-height: 0; position: relative; overflow: hidden; }
 .busy { background: repeating-linear-gradient(45deg, #C9A86A 0 10px, #6F8FAF 10px 20px, #E0E3E8 20px 30px); }
 
 footer { padding-block: 40px 64px; color: var(--muted); font-size: 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -810,6 +810,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     ["Don't use brass anywhere else", "Not for the seats, the name, buttons or links. Brass only means the owner.", '<div class="tile on-white">' + mark({ fill: "#A06F17", size: 96 }) + "</div>"],
     ["Don't put it on a busy background", "Use paper, white, night, or the tile.", '<div class="tile busy">' + mark({ fill: "#15181E", size: 96 }) + "</div>"],
     ["Don't put a table in the logo", "The table is for pictures that explain the idea. In the mark it competes with the open place.", '<div class="tile on-white">' + mark({ fill: "#15181E", table: true, size: 96 }) + "</div>"],
+    ["Don't add effects", "No gradients, shadows, glows or 3D. The mark is flat and one color.", '<div class="tile on-white"><span style="display:block;filter:drop-shadow(3px 5px 4px rgba(0,0,0,0.45))">' + mark({ fill: "url(#fx)", size: 96 }).replace('aria-label="cabinet">', 'aria-label="cabinet"><defs><linearGradient id="fx" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6F8FAF"/><stop offset="1" stop-color="#3A1F5C"/></linearGradient></defs>') + "</span></div>"],
     ["Don't use the chairs as the logo", "Not next to the name, and not small. The chairs are an illustration, at 96px or more.", '<div class="tile on-white"><div class="lockup-h" style="color:#15181E;font-size:34px">' + mark({ fill: "#15181E", seat: "chair" }) + '<span class="wordmark">cabinet</span></div></div>']
   ];
   document.getElementById("donts-grid").innerHTML = donts.map(function (d) {
