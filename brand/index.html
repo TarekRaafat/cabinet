@@ -141,6 +141,16 @@ main { display: grid; gap: 0; }
 .ratio { display: flex; height: 18px; border-radius: 5px; overflow: hidden; border: 1px solid var(--line); }
 .ratio div { height: 100%; }
 
+/* status colors */
+.status { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.status .swatch .chips { display: grid; grid-template-columns: 1fr 1fr; height: 72px; }
+.status .swatch .chips div { display: grid; place-items: center; font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+.status-term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 18px 20px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; border: 1px solid var(--line); }
+.status-term pre { margin: 0; font: inherit; }
+.status-term .dim { color: var(--term-dim); }
+.st-ok { color: #6CC08B; } .st-note { color: #7FB0E8; } .st-fix { color: #F2867D; }
+@media (max-width: 860px) { .status { grid-template-columns: 1fr; } }
+
 /* type */
 .type-row { display: grid; grid-template-columns: 11em minmax(0, 1fr); gap: 20px; padding-block: 18px; border-top: 1px solid var(--line); align-items: baseline; }
 .type-row:last-child { border-bottom: 1px solid var(--line); }
@@ -248,7 +258,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       <li><a href="#mark"><span>02</span>The mark</a></li>
       <li><a href="#outline"><span>03</span>The open seat in brass</a></li>
       <li><a href="#name"><span>04</span>The name</a></li>
-      <li><a href="#color"><span>05</span>Color</a></li>
+      <li><a href="#color"><span>05</span>Color and status</a></li>
       <li><a href="#type"><span>06</span>Type</a></li>
       <li><a href="#writing"><span>07</span>Writing</a></li>
       <li><a href="#uses"><span>08</span>Where it goes</a></li>
@@ -403,6 +413,26 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
           <div style="width:1%;background:var(--b-brass)"></div>
         </div>
         <p class="muted" style="font-size:13px">Paper and white about 60%, ink 30%, slate and line 9%, brass at most 1%.</p>
+      </div>
+      <div class="block" id="status">
+        <h3>Status colors</h3>
+        <p class="muted">One color for each level <code>cabinet doctor</code> reports: <code>ok</code>, <code>note</code> and <code>fix</code>. The warning is blue, not amber or yellow, so it can never be mistaken for brass, and a note is for your information, not an alarm. Anything urgent is a fix. Status colors are not counted in the shares above: they appear only where there is a status.</p>
+        <div class="status">
+          <div class="swatch"><div class="chips"><div style="background:#FFFFFF;color:#2F7D4F">ok</div><div style="background:#101216;color:#6CC08B">ok</div></div><div class="info"><b>Ok, green</b><code>#2F7D4F on light, #6CC08B on dark</code><span class="muted">Nothing to do. Contrast 5.1:1 and 8.5:1.</span></div></div>
+          <div class="swatch"><div class="chips"><div style="background:#FFFFFF;color:#2F6FB3">note</div><div style="background:#101216;color:#7FB0E8">note</div></div><div class="info"><b>Note, blue (the warning)</b><code>#2F6FB3 on light, #7FB0E8 on dark</code><span class="muted">Worth knowing, nothing broken. Contrast 5.2:1 and 8.4:1.</span></div></div>
+          <div class="swatch"><div class="chips"><div style="background:#FFFFFF;color:#B3261E">fix</div><div style="background:#101216;color:#F2867D">fix</div></div><div class="info"><b>Fix, red</b><code>#B3261E on light, #F2867D on dark</code><span class="muted">A problem; the message names the command that fixes it. Contrast 6.5:1 and 7.6:1.</span></div></div>
+        </div>
+        <ul class="rules">
+          <li><b>The word always comes with the color:</b> <code>ok</code>, <code>note</code>, <code>fix</code>. About 1 in 12 men cannot tell red from green, so color supports the word and never replaces it.</li>
+          <li><b>Status colors only mark status.</b> Never buttons, links, headings or decoration, just as brass only marks the owner.</li>
+          <li><b>One status color per line.</b> A line is one finding.</li>
+          <li><b>In a terminal,</b> use the terminal's own red, green and blue, never yellow; color only when the output is a terminal, and none when <code>NO_COLOR</code> is set.</li>
+        </ul>
+        <div class="status-term"><pre><span class="dim">$</span> cabinet doctor
+<span class="st-ok">ok  </span> guardrails.claude   Guardrails are installed for Claude Code.
+<span class="st-note">note</span> roles.drafted       The role dba is not drafted yet: cabinet role draft dba
+<span class="st-fix">fix </span> deps.required       jq is missing: brew install jq</pre></div>
+        <p class="muted" style="font-size:13px">How the doctor would look with status colors. Today the kit prints no colors; adding them is a separate change to the kit.</p>
       </div>
     </section>
 
@@ -559,7 +589,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
 
   </main>
 
-  <footer><span data-mark='{"fill":"currentColor"}' style="display:contents"></span><span>cabinet brand guide. Brand colors and the mark are fixed; this page follows your light or dark setting.</span></footer>
+  <footer><span data-mark='{"fill":"currentColor","size":22}' style="display:contents"></span><span>cabinet brand guide. Brand colors and the mark are fixed; this page follows your light or dark setting.</span></footer>
 </div>
 
 <script>

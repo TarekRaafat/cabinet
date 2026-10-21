@@ -79,5 +79,5 @@ First version.
 
 - For people: a short README with a quick start, the daily loop and a glossary; a tutorial for the first day and a recipes page for common tasks; `docs/` with the full command reference, layouts, concepts, guardrails, backups and every doctor message.
 - For agents: `llms.txt`, `llms-full.txt` with every page in one file, and `AGENTS.md` for working on the kit.
-- `brand/index.html`, the brand guide: the idea behind the mark, its forms, sizes and clear space, when the open seat is outlined in brass, the name, color, type, writing, where each form goes, and every logo file as SVG. Kept in the repository, not shipped in the package.
+- `brand/index.html`, the brand guide: the idea behind the mark, its forms, sizes and clear space, when the open seat is outlined in brass, the name, color and the status colors for ok, note and fix, type, writing, where each form goes, and every logo file as SVG. Kept in the repository, not shipped in the package.
 - The tests fail when the docs fall behind the code, a link or heading anchor is broken, `llms-full.txt` is stale, or the README's clone command does not match the repository in `package.json`.
