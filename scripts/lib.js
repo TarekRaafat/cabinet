@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual.
+// Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual, json, and the line edits and helpers below.
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -692,11 +692,70 @@ function secretScan(mode) {
   process.stdout.write(Buffer.from(out, "latin1"));
 }
 
+// json [-n] [-R] [-s] [-r] [-c] [-e] [--each] [--arg name text]... [--argjson name json]... <expression> [file]... [--args word...]
+// What jq did for the scripts, with a JavaScript expression in place of a jq program: $ is the input,
+// --arg x and --argjson x are $x, --args words are $args. Input is each JSON value in the files (or on
+// stdin; a file of JSON lines is one value per line), all of them as one array with -s, its lines as
+// an array with -R, nothing with -n. The result is printed as JSON (one line with -c), a string as it
+// is with -r, each item of an array on its own with --each; undefined prints nothing. -e: exit 1 when
+// the last result is null, false or undefined. Exit 2 on input that is not JSON, 5 on an error.
+function json(...argv) {
+  const o = { names: [], vals: [], files: [] };
+  let expr = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--arg" || a === "--argjson") {
+      o.names.push("$" + argv[i + 1]);
+      o.vals.push(a === "--arg" ? argv[i + 2] : JSON.parse(argv[i + 2]));
+      i += 2;
+    } else if (a === "--args") { o.names.push("$args"); o.vals.push(argv.slice(i + 1)); break; }
+    else if (a === "--each") o.each = true;
+    else if (/^-[nRsrce]+$/.test(a)) for (const f of a.slice(1)) o[f] = true;
+    else if (expr === null) expr = a;
+    else o.files.push(a);
+  }
+  const text = () => (o.files.length ? o.files.map((f) => fs.readFileSync(f, "utf8")) : [fs.readFileSync(0, "utf8")]);
+  const values = (t) => {
+    if (!t.trim()) return [];
+    try { return [JSON.parse(t)]; } catch (e) { return t.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l)); }
+  };
+  let inputs;
+  try {
+    if (o.n) inputs = [undefined];
+    else if (o.R) { const t = text().join(""); inputs = [t === "" ? [] : t.replace(/\n$/, "").split("\n")]; }
+    else { inputs = text().flatMap(values); if (o.s) inputs = [inputs]; }
+  } catch (e) { die("json: " + e.message, 2); }
+  let fn, last;
+  // Helpers for the expression: num("12") is 12 and num("") or num("x") null; str("") is null;
+  // sum([1, 2]) is 3 and sum([]) null. list(x) and obj(x) are x, [] or {} for a missing one, and an
+  // error (so nothing is written) for any other kind: a file of another shape is never reshaped.
+  const num = (x) => (String(x).trim() !== "" && isFinite(x) ? Number(x) : null);
+  const str = (x) => (x === "" ? null : x);
+  const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
+  const list = (x) => { if (x == null) return []; if (!Array.isArray(x)) throw new Error("not a list"); return x; };
+  const obj = (x) => { if (x == null) return {}; if (typeof x != "object" || Array.isArray(x)) throw new Error("not an object"); return x; };
+  const helpers = { num, str, sum, list, obj };
+  try { fn = new Function("$", ...Object.keys(helpers), ...o.names, "return (" + expr + ");"); } catch (e) { die("json: " + e.message, 5); }
+  let out = "";
+  const put = (v) => {
+    last = v;
+    if (v !== undefined) out += (o.r && typeof v === "string" ? v : JSON.stringify(v, null, o.c ? 0 : 2)) + "\n";
+  };
+  for (const input of inputs) {
+    let v;
+    try { v = fn(input, ...Object.values(helpers), ...o.vals); }
+ catch (e) { die("json: " + e.message, 5); }
+    if (o.each && Array.isArray(v)) v.forEach(put); else put(v);
+  }
+  process.stdout.write(out);
+  if (o.e && (last === undefined || last === null || last === false)) process.exit(1);
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
-  "after-last": afterLast, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan,
+  "after-last": afterLast, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

@@ -494,7 +494,7 @@ jq -e --argjson n "$(jq '.permissions.deny + .permissions.ask | length' "$KIT/gu
 rm "$oc"; printf '{ // my comment\n}\n' > "${oc}c"; cp "${oc}c" "$T/jsonc.before"
 boot >/dev/null
 cmp -s "${oc}c" "$T/jsonc.before" && jq -e '.permission.bash["git push*"] == "deny"' "$oc" >/dev/null || fail "rules not placed beside a commented opencode.jsonc"
-# A config jq cannot read is never rewritten, and the merge says so instead of claiming success.
+# A config that is not plain JSON is never rewritten, and the merge says so instead of claiming success.
 printf '{"a": 1,}\n' > "$H/.qwen/settings.json"
 out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, left as is' && ! echo "$out" | grep -q 'added .* rule(s) to .*qwen' || fail "an unreadable config was reported as merged"
 [[ "$(cat "$H/.qwen/settings.json")" == '{"a": 1,}' && ! -e "$H/.qwen/settings.json.tmp" ]] || fail "an unreadable config was changed"
@@ -767,7 +767,19 @@ python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the co
 python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
 # The kit's scripts need no python3 (AGENTS.md, rule 3); their JavaScript parses.
 ! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=lib.js "$KIT/bin" "$KIT/scripts" || fail "a kit script runs python3 or perl; move it to scripts/lib.js"
+! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=lib.js "$KIT/bin" "$KIT/scripts" || fail "a kit script runs jq; use json (scripts/platform.sh)"
 node --check "$KIT/scripts/lib.js" || fail "scripts/lib.js does not parse"
+# json: jq's options with a JavaScript expression.
+j() { node "$KIT/scripts/lib.js" json "$@"; }
+[[ "$(printf '{"a":[1,2]}\n' | j -c '$.a')" == "[1,2]" && "$(printf '{"x":1}\n{"x":2}\n' | j -s -c '$.map((v) => v.x)')" == "[1,2]" \
+  && "$(printf 'a\tb\n\n' | j -R -c '$')" == '["a\tb",""]' && "$(j -n -c '$args' --args "a b" "")" == '["a b",""]' \
+  && "$(j -n -r --arg v 'x"y' --argjson n 2 '$v + $n')" == 'x"y2' && "$(j -n -r --each '["a", 1]')" == $'a\n1' \
+  && "$(j -n -c '[num("12"), num(""), str(""), sum([]), sum([1, 2])]')" == "[12,null,null,null,3]" && -z "$(j -n 'undefined')" ]] || fail "json: input and output"
+j -n -e 'false' >/dev/null && fail "json -e: false is a failure"
+j -n -e '0' >/dev/null || fail "json -e: only null, false and nothing fail"
+rc=0; printf 'nope' | j '$' 2>/dev/null || rc=$?; [[ $rc == 2 ]] || fail "json: input that is not JSON exits 2"
+rc=0; j -n 'obj([1])' 2>/dev/null || rc=$?
+[[ $rc == 5 && "$(j -n -c '[obj(null), list(undefined)]')" == "[{},[]]" ]] || fail "json: obj and list refuse another shape"
 python3 -I "$KIT/tools/build-brand.py" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
 jq -e '.color.ink.value and .status_color.fix.light and .mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
@@ -1373,31 +1385,31 @@ rm -f "$T/crontab"
 section "tools: checked first, installed only when the owner says yes" "0"
 s44() {
 # The command for this machine (the fake brew on macOS, the fake apt-get on Linux), and package names per manager.
-c="$(pf deps_cmd "jq node")"
-case "$c" in "brew install jq node"|"sudo apt-get install -y jq nodejs") ;; *) fail "the install command: $c" ;; esac
+c="$(pf deps_cmd "git node")"
+case "$c" in "brew install git node"|"sudo apt-get install -y git nodejs") ;; *) fail "the install command: $c" ;; esac
 [[ "$(pf pkg_for apt-get node) $(pf pkg_for brew npm) $(pf pkg_for pacman node) $(pf pkg_for dnf secret-tool) $(pf pkg_for apt-get notify-send)" == "nodejs node nodejs libsecret libnotify-bin" ]] || fail "package names"
 installs() { grep -cE '^(brew install|sudo (apt-get|dnf|pacman) )' "$T/fake.log" || true; }
 # With --yes (scripts, agents): no install, a stop with the command, and nothing made.
 : > "$T/fake.log"
-out="$(CABINET_TEST_MISSING="jq node" "$F" new "$T/nodeps" --yes 2>&1)" && fail "setup went ahead without its tools"
-echo "$out" | grep -q 'cabinet needs jq, node, not found' && echo "$out" | grep -qF "run this again: $c" && [[ ! -e "$T/nodeps" && "$(installs)" == 0 ]] || { echo "$out"; fail "--yes with missing tools"; }
-CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" --dry-run >/dev/null 2>&1 && fail "a dry run went ahead without its tools"
+out="$(CABINET_TEST_MISSING="git node" "$F" new "$T/nodeps" --yes 2>&1)" && fail "setup went ahead without its tools"
+echo "$out" | grep -q 'cabinet needs git, node, not found' && echo "$out" | grep -qF "run this again: $c" && [[ ! -e "$T/nodeps" && "$(installs)" == 0 ]] || { echo "$out"; fail "--yes with missing tools"; }
+CABINET_TEST_MISSING=git "$F" new "$T/nodeps" --dry-run >/dev/null 2>&1 && fail "a dry run went ahead without its tools"
 [[ "$(installs)" == 0 ]] || fail "a dry run installed something"
 "$F" new --help >/dev/null || fail "--help needs the tools"
-# In a terminal: no installs nothing; yes runs the command (the fakes only log it, so jq stays missing and setup still stops).
-printf 'n\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead after no"
+# In a terminal: no installs nothing; yes runs the command (the fakes only log it, so git stays missing and setup still stops).
+printf 'n\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=git "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead after no"
 [[ "$(installs)" == 0 ]] || fail "no still installed"
-printf 'y\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=jq "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead with jq still missing"
-grep -qxE '(brew install jq|sudo apt-get install -y jq)' "$T/fake.log" && [[ ! -e "$T/nodeps" ]] || fail "yes did not run the install"
+printf 'y\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=git "$F" new "$T/nodeps" >/dev/null 2>&1 && fail "setup went ahead with git still missing"
+grep -qxE '(brew install git|sudo apt-get install -y git)' "$T/fake.log" && [[ ! -e "$T/nodeps" ]] || fail "yes did not run the install"
 # The doctor and next tell the owner, and any agent reading the JSON, what is missing and the command.
 "$F" new "$T/deps-ws" --yes --backup-dir "$T/deps-bk" >/dev/null; D="$T/deps-ws"
-(cd "$D" && CABINET_TEST_MISSING=jq "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd jq)" '([.results[] | select(.id == "deps.required")][0] | .level == "fix" and (.message | contains($c))) and (.can_fix | index("deps"))' >/dev/null || fail "doctor: a missing tool"
+(cd "$D" && CABINET_TEST_MISSING=git "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd git)" '([.results[] | select(.id == "deps.required")][0] | .level == "fix" and (.message | contains($c))) and (.can_fix | index("deps"))' >/dev/null || fail "doctor: a missing tool"
 (cd "$D" && CABINET_TEST_MISSING=openssl "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd openssl)" '[.results[] | select(.id == "deps.backups")][0] | .level == "fix" and (.message | contains($c))' >/dev/null || fail "doctor: a tool backups need"
 (cd "$D" && "$F" doctor --json) | jq -e '([.results[] | select(.id == "deps.required")][0].level == "ok") and ([.results[] | select(.id == "deps.backups")] | length == 0)' >/dev/null || fail "doctor with every tool"
-(cd "$D" && CABINET_TEST_MISSING=jq "$F" next --json) | jq -e --arg c "$(pf deps_cmd jq)" '.steps[0].id == "deps" and .steps[0].command == $c' >/dev/null || fail "next: the deps step first"
+(cd "$D" && CABINET_TEST_MISSING=git "$F" next --json) | jq -e --arg c "$(pf deps_cmd git)" '.steps[0].id == "deps" and .steps[0].command == $c' >/dev/null || fail "next: the deps step first"
 # --fix --yes never installs: it says so and gives the command.
 : > "$T/fake.log"
-out="$(cd "$D" && CABINET_TEST_MISSING=jq "$D/bin/doctor.sh" --fix --yes 2>&1 || true)"
+out="$(cd "$D" && CABINET_TEST_MISSING=git "$D/bin/doctor.sh" --fix --yes 2>&1 || true)"
 echo "$out" | grep -q 'installing tools always asks' && [[ "$(installs)" == 0 ]] || { echo "$out"; fail "doctor --fix --yes installed a tool"; }
   return 0   # a last "check && fail" line must not end the run
 }

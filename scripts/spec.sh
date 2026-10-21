@@ -58,13 +58,13 @@ if has "$(team_roles)" design-lead; then
   for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
 fi
 ((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1 | tr '\n' ' ')" spec_py check "${files[@]}")"
-if ((json)); then jq . <<<"$out"
+if ((json)); then json '$' <<<"$out"
 else
-  jq -r '.[] | "\(.spec) (\(.status | if . == "" then "no status" else . end)): \(if (.problems | length) == 0 then "ok" else (.problems | join("; ")) end)"' <<<"$out"
-  [[ "$(jq '[.[] | select(.problems | length > 0)] | length' <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
+  json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out"
+  [[ "$(json '$.filter((s) => s.problems.length).length' <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
     || echo "Not ready for their status: fix each problem, or set the spec's status back (draft)."
 fi
-[[ "$(jq '[.[] | select(.problems | length > 0)] | length' <<<"$out")" == 0 ]]
+[[ "$(json '$.filter((s) => s.problems.length).length' <<<"$out")" == 0 ]]
 }
 
 s_record() {
@@ -111,10 +111,10 @@ done
 spec="$(ws_md "the spec" "$spec")" || exit 1
 [[ "$spec" =~ ^specs/[^/]+\.md$ && "$spec" != specs/_template.md && "$spec" != specs/ROADMAP.md ]] || { echo "$spec is not a spec (specs/<feature>.md)" >&2; exit 1; }
 cd "$WS"
-sc() { "$WS/bin/spec.sh" check "$spec" --json 2>/dev/null | jq -c '.[0]'; }
+sc() { "$WS/bin/spec.sh" check "$spec" --json 2>/dev/null | json -c '$[0]'; }
 st="$(sc)"
-[[ "$(jq -r .status <<<"$st")" =~ ^(ready|building)$ && "$(jq '.problems | length' <<<"$st")" == 0 ]] \
-  || { echo "$spec is not ready to build: $(jq -r '.status + ": " + (.problems | join("; "))' <<<"$st") (bin/spec.sh check $spec)" >&2; exit 1; }
+[[ "$(json -r '$.status' <<<"$st")" =~ ^(ready|building)$ && "$(json '$.problems.length' <<<"$st")" == 0 ]] \
+  || { echo "$spec is not ready to build: $(json -r '$.status + ": " + $.problems.join("; ")' <<<"$st") (bin/spec.sh check $spec)" >&2; exit 1; }
 
 mkdir -p -m 700 "$LOGDIR"
 local name="${spec#specs/}"; name="${name%.md}"
@@ -136,7 +136,7 @@ agent() {  # agent <role> <what it does> <prompt>
   run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
 # Its work: every handoff filed with --spec for it, not sent back, oldest first (the order routing set).
-work() { readiness | jq -r --arg s "$spec" 'to_entries | map(select(.value.spec == $s and (.value.status_now | test("^rejected") | not))) | map(.key) | sort | .[]'; }
+work() { readiness | json -r --each --arg s "$spec" 'Object.keys($).filter((k) => $[k].spec == $s && !/^rejected/.test($[k].status_now)).sort()'; }
 while :; do
   step=$((step + 1)); ((step <= 20)) || stop "more steps than a spec takes; the owner looks at it"
   works="$(work)"
@@ -146,17 +146,17 @@ while :; do
     routed=1; continue
   fi
   st="$(sc)"
-  x="$(jq -r '.missing_plans[]' <<<"$st" | head -1)"
+  x="$(json -r --each '$.missing_plans' <<<"$st" | head -1)"
   if [[ -n "$x" ]]; then
     o="$(owner_of "$x")"; [[ -n "$o" ]] || stop "$x has no owning role in the team table, so no one plans it"
     agent "$o" "plans $x" "Write your plan for $x in $spec, under \"## Plan\" as \"### $x\" (.cabinet/rules/ready-to-build.md): the files you change, the tests you add, the order across repos, the risks. Commit the spec. Do not build yet."
-    [[ "$(sc | jq -r --arg x "$x" '.missing_plans | index($x)')" == null ]] || stop "$o wrote no plan for $x in $spec"
+    [[ "$(sc | json --arg x "$x" '$.missing_plans.includes($x)')" == false ]] || stop "$o wrote no plan for $x in $spec"
     continue
   fi
-  if [[ "$(jq '.repos | length' <<<"$st")" -gt 1 && "$(jq -r .plan_review <<<"$st")" != PASS ]]; then
-    [[ "$(jq -r .plan_review <<<"$st")" != BLOCK ]] || stop "architect blocked the plan in $spec: the builders revise it (its note says why), then run again"
+  if [[ "$(json '$.repos.length' <<<"$st")" -gt 1 && "$(json -r '$.plan_review' <<<"$st")" != PASS ]]; then
+    [[ "$(json -r '$.plan_review' <<<"$st")" != BLOCK ]] || stop "architect blocked the plan in $spec: the builders revise it (its note says why), then run again"
     agent architect "reviews the plan in $spec" "Review the plan in $spec as your role says, then record bin/spec.sh record $spec --role architect PASS|BLOCK --note specs/adr/<note>.md."
-    [[ "$(sc | jq -r .plan_review)" =~ ^(PASS|BLOCK)$ ]] || stop "architect recorded no review of the plan in $spec"
+    [[ "$(sc | json -r '$.plan_review')" =~ ^(PASS|BLOCK)$ ]] || stop "architect recorded no review of the plan in $spec"
     continue
   fi
   for w in $works; do

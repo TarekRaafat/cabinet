@@ -6,7 +6,7 @@ What Cabinet does next, in order. Each item says what is missing today, what it 
 
 ## 1. Windows support, through WSL
 
-Windows runs Cabinet through WSL (Windows Subsystem for Linux), which gives it Cabinet's Linux support (systemd timers when WSL runs systemd, else cron). Native Windows (PowerShell, or Git Bash, which lacks `jq` and other tools the scripts use) is not a goal.
+Windows runs Cabinet through WSL (Windows Subsystem for Linux), which gives it Cabinet's Linux support (systemd timers when WSL runs systemd, else cron). Native Windows (PowerShell, or Git Bash, which lacks tools the scripts use) is not a goal.
 
 - A README section: installing WSL, where the workspace should live (the WSL file system, not a mounted Windows drive, for git speed and file permissions), and running the agent tools inside WSL.
 - The guardrails for agent tools installed inside WSL; a note on tools installed on the Windows side, which those guardrails do not cover.
@@ -16,9 +16,8 @@ Done when: the full test suite passes under WSL, and the README walks a Windows 
 
 ## Toward a single download
 
-The goal: a person installs one thing, and Cabinet needs nothing else but git and an agent tool. Today it needs git, jq, Node.js and npm (openssl for backups); python3 and perl are gone. New logic is JavaScript run with Node, using only Node's own modules, so it can be compiled later (`AGENTS.md`, rule 3). In order, each step useful on its own:
+The goal: a person installs one thing, and Cabinet needs nothing else but git and an agent tool. Today it needs git, Node.js and npm (openssl for backups); python3, perl and jq are gone. New logic is JavaScript run with Node, using only Node's own modules, so it can be compiled later (`AGENTS.md`, rule 3). What is left:
 
-- **No jq.** About a hundred jq calls in the scripts move to `scripts/lib.js`. jq ships with macOS 15 and later but is often missing on Linux. Done when: no kit script calls jq, and the requirements are git and Node.js.
 - **One file, no runtime.** When the shell scripts are thin wrappers, Cabinet is compiled with Bun into one file per platform (macOS on Apple and Intel chips, Linux on x64 and ARM), with Bun's built-in encryption in place of openssl. It is installed with a one-line installer, Homebrew or a GitHub release; npm stays as a wrapper that fetches the right file. The workspace scripts (`bin/*.sh`) become one-line wrappers that call it, so agents and schedules work as before. This also opens native Windows, not only WSL. Done when: a machine with only git and an agent tool installs Cabinet with one download and the full test suite passes against the compiled file.
 
 ## For founders without every skill

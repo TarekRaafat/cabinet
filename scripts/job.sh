@@ -25,7 +25,7 @@ j_list() {
     ( AGENT="" COMMAND="" WHEN="" TIMEOUT=""; source "$jf"; j="$(basename "$jf" .job)"
       printf '%s\t%s\t%s\t%s\t%s\n' "$j" "${AGENT:-${COMMAND:+command}}" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" \
         "$( ((reported)) && spend_since "$ws" "$j")" )
-  done | if ((json)); then jq -Rn '[inputs | split("\t") | {name: .[0], role: .[1], when: .[2], timeout_minutes: (.[3] | tonumber? // null), cost_this_week_usd: (.[4] | tonumber? // null)}]'
+  done | if ((json)); then json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], role: r[1], when: r[2], timeout_minutes: num(r[3]), cost_this_week_usd: num(r[4])}))'
          else awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-16s %-18s %-34s %4s min  %s\n", $1, $2, $3, $4, ($5 == "" ? "-" : "$" $5)} END {if (!n) print "No jobs in jobs/."}'; fi
   ((json)) && return 0
   if ((reported)); then echo "This week: \$$(spend_since "$ws") in all, $(spend_source), $( [[ -n "$CABINET_BUDGET" ]] && echo "of a \$$CABINET_BUDGET budget" || echo "no budget set (cabinet config --budget <dollars>)")."
@@ -61,7 +61,7 @@ quiet_state() {
     [[ -z "$(git -C "$d" status --porcelain 2>/dev/null)" ]] || return 1
     echo "$d"; git -C "$d" for-each-ref --format='%(refname) %(objectname)'
   done < <(data_dirs)
-  { "$WS/bin/doctor.sh" --json 2>/dev/null || true; } | jq -r '.results[] | select(.level == "fix") | .id' | sort -u
+  { "$WS/bin/doctor.sh" --json 2>/dev/null || true; } | json -r --each '$.results.filter((x) => x.level == "fix").map((x) => x.id)' | sort -u
   [[ -f "$WS/$RESULT" ]] && sha256 "$WS/$RESULT"
 }
 state_file="$LOGDIR/$job.quiet"   # the start of the last full run, and quiet_state after it

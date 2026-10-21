@@ -13,7 +13,7 @@ set -euo pipefail
 
 KIT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 LIBJS="$KIT/scripts/lib.js"   # the kit's JavaScript, run with node (AGENTS.md, rule 3)
-VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$KIT/package.json")"   # not jq: a missing jq is reported below
+VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$KIT/package.json")"   # read before node is checked (below)
 source "$KIT/scripts/when.sh"   # when_norm, when_calendar, when_human: the same parser the workspace scripts use
 source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase, schedules
 
@@ -199,13 +199,11 @@ cmd_help() {
   for x in "$@"; do case "$x" in --json) json=1 ;; -*) bad_usage "unknown option $x" ;; *) one="${one:+$one }$x" ;; esac; done
   [[ -z "$one" ]] || is_cmd "$one" || is_noun "$one" || bad_usage "unknown command '$one' (see: cabinet help)"
   if ((json)); then
-    commands_table | jq -Rn --arg v "$VERSION" --arg one "$one" '
-      [inputs | split("\t")] as $t
-      | [$t[] | select(.[0] == "C") | . as $c
-         | {name: $c[2], group: $c[1], usage: ("cabinet " + $c[2] + (if $c[3] == "" then "" else " " + $c[3] end)), summary: $c[4],
-            options: [$t[] | select(.[0] == "O" and (.[1] | split(",") | index($c[2]))) | {name: .[2], value: .[3], text: .[4]}]}
-         | select($one == "" or .name == $one or (.name | startswith($one + " ")))]
-      | {name: "cabinet", version: $v, docs: "docs/commands.md", commands: .}'
+    commands_table | json -R --arg v "$VERSION" --arg one "$one" '((t) => ({name: "cabinet", version: $v, docs: "docs/commands.md", commands: t
+      .filter((c) => c[0] == "C")
+      .map((c) => ({name: c[2], group: c[1], usage: "cabinet " + c[2] + (c[3] == "" ? "" : " " + c[3]), summary: c[4],
+        options: t.filter((o) => o[0] == "O" && o[1].split(",").includes(c[2])).map((o) => ({name: o[2], value: o[3], text: o[4]}))}))
+      .filter((c) => $one == "" || c.name == $one || c.name.startsWith($one + " "))}))($.map((l) => l.split("\t")))'
     return 0
   fi
   if [[ -n "$one" ]] && ! is_cmd "$one"; then
@@ -461,20 +459,20 @@ setup() {
   # What an existing project already says about itself, copied as facts only:
   # its package.json name, description, scripts and repository.
   local pj="" pkg_name="" pkg_desc="" pkg_url="" pkg_run="" pkg_scripts=()
-  [[ -n "$host" && -f "$host/package.json" ]] && jq -e 'type == "object"' "$host/package.json" >/dev/null 2>&1 && pj="$host/package.json"
+  [[ -n "$host" && -f "$host/package.json" ]] && json -e '$ !== null && typeof $ == "object" && !Array.isArray($)' "$host/package.json" >/dev/null 2>&1 && pj="$host/package.json"
   if [[ -n "$pj" ]]; then
     # A cloned project's package.json is not trusted: each value is used only if it is plain.
-    pkg_name="$(jq -r '.displayName // .name // empty | sub("^@[^/]+/"; "")' "$pj")"
+    pkg_name="$(json -r '((n) => (typeof n == "string" ? n.replace(/^@[^/]+\//, "") : undefined))($.displayName || $.name)' "$pj")"
     safe "$pkg_name" || { echo "  package.json name not used (it holds characters setup does not write): the folder name is the default" >&2; pkg_name=""; }
-    pkg_desc="$(jq -r '.description // empty' "$pj" | tr '\n\r\t' '   ' | tr -d '[:cntrl:]' | sed 's/ *$//')"
-    pkg_url="$(jq -r '.repository | if type == "string" then . elif type == "object" then .url // empty else empty end | sub("^git\\+"; "")' "$pj")"
+    pkg_desc="$(json -r '$.description || undefined' "$pj" | tr '\n\r\t' '   ' | tr -d '[:cntrl:]' | sed 's/ *$//')"
+    pkg_url="$(json -r '((r) => ((u) => (typeof u == "string" ? u.replace(/^git\+/, "") : undefined))(typeof r == "object" ? r?.url : r))($.repository)' "$pj")"
     url_ok "$pkg_url" || pkg_url=""
     pkg_run="npm run"
     [[ -f "$host/bun.lock" || -f "$host/bun.lockb" ]] && pkg_run="bun run"
     [[ -f "$host/pnpm-lock.yaml" ]] && pkg_run="pnpm run"
     [[ -f "$host/yarn.lock" ]] && pkg_run="yarn"
     while IFS= read -r r; do [[ -n "$r" ]] && pkg_scripts+=("$pkg_run $r"); done \
-      < <(jq -r '(.scripts // {}) | keys_unsorted[] | select(IN("test", "dev", "start", "build", "lint", "typecheck"))' "$pj")
+      < <(json -r --each 'Object.keys(obj($.scripts)).filter((k) => ["test", "dev", "start", "build", "lint", "typecheck"].includes(k))' "$pj")
   fi
 
   # Defaults: the project's own name and git identity, every role, the first agent tool installed.
@@ -799,7 +797,7 @@ setup() {
   # workspace's own (placed from the template). Written with npm's own editor, no network.
   local pinned=0 installed=0 setup=0 pinat="$ws"
   ((host_pkg)) && pinat="$host"
-  if [[ -f "$pinat/package.json" ]] && jq -e '((.devDependencies // {}) + (.dependencies // {})) | has("@tarekraafat/cabinet")' "$pinat/package.json" >/dev/null 2>&1; then
+  if [[ -f "$pinat/package.json" ]] && json -e '[$.devDependencies, $.dependencies].some((d) => Object.hasOwn(obj(d), "@tarekraafat/cabinet"))' "$pinat/package.json" >/dev/null 2>&1; then
     pinned=1
   elif ((host_pkg)); then
     if command -v npm >/dev/null && (cd "$host" && npm pkg set "devDependencies[@tarekraafat/cabinet]=^$VERSION"); then
@@ -1287,8 +1285,8 @@ JOB
   local files=() f
   for f in AGENTS.md HANDOFFS.md OPERATIONS.md README.md specs/ROADMAP.md cabinet.env; do [[ -f "$ws/$f" ]] && files+=("$ws/$f"); done
   # The workspace's own package.json names the workspace (not a project's, which is never touched).
-  if [[ -f "$ws/package.json" ]] && jq -e '.private == true and (.name | endswith("-workspace"))' "$ws/package.json" >/dev/null 2>&1; then
-    local pj2; pj2="$(jq --arg n "$slug-workspace" --arg d "$name workspace, run with the cabinet kit." '.name = $n | .description = $d' "$ws/package.json")" \
+  if [[ -f "$ws/package.json" ]] && json -e '$.private === true && String($.name).endsWith("-workspace")' "$ws/package.json" >/dev/null 2>&1; then
+    local pj2; pj2="$(json --arg n "$slug-workspace" --arg d "$name workspace, run with the cabinet kit." '({...$, name: $n, description: $d})' "$ws/package.json")" \
       && [[ -n "$pj2" ]] && printf '%s\n' "$pj2" > "$ws/package.json"
   fi
   if [[ "$name" != "$o_name" ]]; then
@@ -1422,7 +1420,7 @@ cmd_next() {
   local json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown option $x (see: cabinet next --help)" ;; esac; done
   local ws; ws="$(find_ws_up)" || {
-    if ((json)); then jq -n '{workspace: null, steps: [{id: "start", text: "Start a workspace: cabinet new (a new folder), or cabinet init (an existing project or folder of repos).", command: "cabinet new"}], optional: []}'
+    if ((json)); then json -n '({workspace: null, steps: [{id: "start", text: "Start a workspace: cabinet new (a new folder), or cabinet init (an existing project or folder of repos).", command: "cabinet new"}], optional: []})'
     else
       echo "Not inside a cabinet workspace."
       echo "  1. Start one: cabinet new (a new folder), or cabinet init (an existing project or folder of repos)."
@@ -1472,7 +1470,7 @@ cmd_next() {
   # Everything else the doctor knows.
   local problems
   # The doctor exits 1 when it finds problems: read its count, not its exit code.
-  problems="$( { "$ws/bin/doctor.sh" --json 2>/dev/null || true; } | jq -r '.problems // 0' 2>/dev/null || true)"
+  problems="$( { "$ws/bin/doctor.sh" --json 2>/dev/null || true; } | json -r '$.problems ?? 0' 2>/dev/null || true)"
   [[ "$problems" =~ ^[1-9] ]] && step doctor "The doctor found $problems thing(s) to fix (cabinet doctor --fix runs the ones it can)." "cabinet doctor"
   local optional=""
   local bdir; bdir="$(envget CABINET_BACKUP_DIR)"
@@ -1480,9 +1478,9 @@ cmd_next() {
   [[ -z "$bdir" ]] && optional="backups"$'\t'"Daily encrypted backups."$'\t'"cabinet config --backup-dir <a folder outside the workspace>"$'\n'
 
   if ((json)); then
-    jq -n --arg ws "$ws" --arg project "$(envget CABINET_PROJECT)" --arg steps "$steps" --arg optional "$optional" '
-      def rows: split("\n") | map(select(length > 0) | split("\t") | {id: .[0], text: .[1], command: .[2]});
-      {workspace: $ws, project: $project, steps: ($steps | rows), optional: ($optional | rows)}'
+    json -n --arg ws "$ws" --arg project "$(envget CABINET_PROJECT)" --arg steps "$steps" --arg optional "$optional" '((rows) =>
+      ({workspace: $ws, project: $project, steps: rows($steps), optional: rows($optional)}))
+      ((s) => s.split("\n").filter(Boolean).map((l) => l.split("\t")).map((r) => ({id: r[0], text: r[1], command: r[2]})))'
     return 0
   fi
   echo "Next in $(envget CABINET_PROJECT) ($ws):"
@@ -1550,12 +1548,11 @@ cmd_digest() {
   done < <(known_workspaces)
 
   if ((json)); then
-    printf '%s' "$rows" | jq -Rn '[inputs | split("\u001f") | map(gsub("\u0002"; "\n")) | {slug: .[0], project: .[1], path: .[2], exists: (.[3] == "ok"),
-      brief_written: (.[5] | if . == "" then null else . end), brief_stale: (.[6] == "1"),
-      sign_off_queue: (.[7] | if . == "" or . == "\u0001" then null else . end),
-      queue_heading_found: (if .[5] == "" then null else .[7] != "\u0001" end),
-      actions_for_owner: (.[8] | if . == "" then null else . end), waiting_on_owner: (.[9] | tonumber? // null),
-      spend_this_week_usd: (.[10] | tonumber? // null), budget_usd: (.[11] | tonumber? // null)}]'
+    printf '%s' "$rows" | json -R '$.map((l) => l.split("\u001f").map((f) => f.replaceAll("\u0002", "\n"))).map((r) => ({slug: r[0], project: r[1], path: r[2],
+      exists: r[3] == "ok", brief_written: str(r[5]), brief_stale: r[6] == "1",
+      sign_off_queue: r[7] == "\u0001" ? null : str(r[7]),
+      queue_heading_found: r[5] == "" ? null : r[7] != "\u0001",
+      actions_for_owner: str(r[8]), waiting_on_owner: num(r[9]), spend_this_week_usd: num(r[10]), budget_usd: num(r[11])}))'
     return 0
   fi
 
@@ -1643,7 +1640,7 @@ digest_text() {  # digest_text <count> <rows>
 digest_schedule_line() {
   local pl args w; pl="$(sched_file "$DIGEST_LABEL")"
   if [[ ! -f "$pl" ]]; then echo "Not scheduled. To have it written for you: cabinet digest --schedule [--notify] (every day at 10:00 AM), or --schedule <when>"; return 0; fi
-  args="$(sched_get "$pl" command | jq -r '.[2:] | join(" ")' 2>/dev/null)"
+  args="$(sched_get "$pl" command | json -r '$.slice(2).join(" ")' 2>/dev/null)"
   w="$(sched_get "$pl" when)" && [[ -n "$w" ]] && w="$(when_human "$w")" || w="see $pl"
   echo "Scheduled, $w: cabinet digest ${args:-?}. Change: cabinet digest --schedule <when>; stop: cabinet digest --schedule off"
 }
@@ -1667,9 +1664,9 @@ digest_schedule() {
     echo "Note: macOS may block a scheduled job from writing to $file until you allow it (System Settings > Privacy & Security > Files and Folders). $LOGROOT_SHOWN/ needs no permission." ;; esac
   local me; me="$(cd "$KIT" && pwd -P)/bin/cabinet"
   [[ "$me" == */_npx/* ]] && echo "Note: this cabinet runs from npx's cache, which npm can clear. For a schedule that lasts: npm i -g @tarekraafat/cabinet, then schedule again."
-  # Scheduled jobs get a bare PATH: keep where jq, git and node are now.
+  # Scheduled jobs get a bare PATH: keep where git and node are now.
   local path="/usr/bin:/bin:/usr/sbin:/sbin" t text
-  for t in jq git node; do t="$(command -v "$t" 2>/dev/null)" && [[ ":$path:" != *":${t%/*}:"* ]] && path="${t%/*}:$path"; done
+  for t in git node; do t="$(command -v "$t" 2>/dev/null)" && [[ ":$path:" != *":${t%/*}:"* ]] && path="${t%/*}:$path"; done
   mkdir -p "$LOGROOT"
   if ((notify)); then text="$(sched_render "$DIGEST_LABEL" "$when" "$LOGROOT/digest.log" "$path" "$me" digest --write "$file" --notify)"
   else text="$(sched_render "$DIGEST_LABEL" "$when" "$LOGROOT/digest.log" "$path" "$me" digest --write "$file")"; fi
@@ -1703,7 +1700,7 @@ cmd_list() {
       exists=true; version="$(cat "$ws/.cabinet/version")"
       project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) )"
       waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
-      problems="$(jq -r '.problems // empty' "$tmp/$i.doctor" 2>/dev/null || true)"
+      problems="$(json -r '$.problems ?? undefined' "$tmp/$i.doctor" 2>/dev/null || true)"
       if [[ -f "$ws/BRIEF.md" ]]; then brief="$(human_mtime "$ws/BRIEF.md")"; brief_iso="$(date -u -r "$ws/BRIEF.md" +%Y-%m-%dT%H:%M:%SZ)"; fi
     fi
     # Unit separator, not tab: read keeps empty fields only with a separator that is not whitespace.
@@ -1711,10 +1708,9 @@ cmd_list() {
   done
 
   if ((json)); then
-    jq -Rn --arg kit "$VERSION" '[inputs | split("\u001f") | {slug: .[0], project: .[1], path: .[2], exists: (.[3] == "true"),
-      version: (.[4] | if . == "" then null else . end), update_available: (.[4] != "" and .[4] != $kit),
-      waiting_on_owner: (.[5] | tonumber? // null), doctor_problems: (.[6] | tonumber? // null),
-      brief_written: (.[8] | if . == "" then null else . end)}]' < "$tmp/all"
+    json -R --arg kit "$VERSION" '$.map((l) => l.split("\u001f")).map((r) => ({slug: r[0], project: r[1], path: r[2], exists: r[3] == "true",
+      version: str(r[4]), update_available: r[4] != "" && r[4] != $kit,
+      waiting_on_owner: num(r[5]), doctor_problems: num(r[6]), brief_written: str(r[8])}))' "$tmp/all"
     return 0
   fi
   if ((n == 0)); then
@@ -1845,8 +1841,8 @@ cmd_outdated() {
   ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(cat "$ws/.cabinet/version")"
   latest="$(npm view @tarekraafat/cabinet version 2>/dev/null)" || latest=""
   if ((json)); then
-    jq -n --arg w "$have" --arg k "$VERSION" --arg l "$latest" '{workspace_version: (if $w == "" then null else $w end), kit_version: $k, latest: (if $l == "" then null else $l end),
-      update_available: (if $l == "" then null else ($l != $k or ($w != "" and $w != $k)) end)}'
+    json -n --arg w "$have" --arg k "$VERSION" --arg l "$latest" '({workspace_version: str($w), kit_version: $k, latest: str($l),
+      update_available: $l == "" ? null : $l != $k || ($w != "" && $w != $k)})'
     return 0
   fi
   [[ -n "$have" ]] && echo "this workspace: cabinet $have"
@@ -1922,7 +1918,7 @@ version_mark() {
     "$o" "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o"
 }
 cmd_version() {
-  case "${1:-}" in "") if [[ -t 1 ]]; then version_mark; else echo "cabinet $VERSION"; fi ;; --json) jq -n --arg v "$VERSION" '{name: "cabinet", version: $v}' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac
+  case "${1:-}" in "") if [[ -t 1 ]]; then version_mark; else echo "cabinet $VERSION"; fi ;; --json) json -n --arg v "$VERSION" '({name: "cabinet", version: $v})' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac
 }
 cmd_changelog() {
   local from="" json=0 x
@@ -1931,7 +1927,7 @@ cmd_changelog() {
     # One record per version: its number, its date as written ("Unreleased" until released), and its text.
     changelog "$from" | awk '/^## [0-9]/ {if (v != "") printf "%s\t%s\t%s\n", v, d, t; v = $2; d = $0; sub(/^## [^ ]+ - /, "", d); t = ""; next}
       {gsub(/\t/, " "); t = t $0 "\001"} END {if (v != "") printf "%s\t%s\t%s\n", v, d, t}' \
-      | jq -Rn '[inputs | split("\t") | {version: .[0], date: .[1], text: (.[2] | gsub("\u0001"; "\n") | sub("^\n+"; "") | sub("\n+$"; ""))}]'
+      | json -R '$.map((l) => l.split("\t")).map((r) => ({version: r[0], date: r[1], text: r[2].replaceAll("\u0001", "\n").replace(/^\n+/, "").replace(/\n+$/, "")}))'
     return 0
   fi
   changelog "$from"
@@ -1981,8 +1977,8 @@ cmd_status() {
     [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" == "$h" ]] || edited+=("$p")
   done < "$ws/.cabinet/manifest"
   if ((json)); then
-    printf '%s\n' ${edited[@]+"${edited[@]}"} | jq -Rn --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" \
-      '{workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: [inputs | select(length > 0)]}'
+    printf '%s\n' ${edited[@]+"${edited[@]}"} | json -R --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" \
+      '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean)})'
     return 0
   fi
   echo "workspace $ws: cabinet $(cat "$ws/.cabinet/version"); kit at $KIT: $VERSION"

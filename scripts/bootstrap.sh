@@ -50,7 +50,7 @@ backup() { [[ -f "$1" ]] && run cp -p "$1" "$1.bak.$(date +%Y%m%d%H%M%S)"; retur
 write_into() {
   local target=$1 kind=$2 tmp; shift 2
   tmp="$(mktemp)"
-  if "$@" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]] && { [[ "$kind" != json ]] || jq -e . "$tmp" >/dev/null 2>&1; }; then
+  if "$@" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]] && { [[ "$kind" != json ]] || json -e '$' "$tmp" >/dev/null 2>&1; }; then
     cat "$tmp" > "$target"; rm -f "$tmp"; return 0
   fi
   rm -f "$tmp"
@@ -59,23 +59,22 @@ write_into() {
 }
 
 # A config that is not plain JSON (comments, trailing commas) is never rewritten.
-json_ok() { [[ ! -f "$1" ]] || jq -e . "$1" >/dev/null 2>&1; }
+json_ok() { [[ ! -f "$1" ]] || json -e '$' "$1" >/dev/null 2>&1; }
 
 # Union-merge a {permissions:{deny,ask}} snippet into a JSON settings file.
 merge_permissions() {
   local snippet=$1 target=$2 missing
   [[ -f "$snippet" ]] || return 0
   json_ok "$target" || { echo "  $target is not plain JSON, left as is: add the rules in $snippet by hand"; failures=1; return 0; }
-  missing="$(jq -s '((.[1].permissions.deny // []) - (.[0].permissions.deny // []))
-    + ((.[1].permissions.ask // []) - (.[0].permissions.ask // [])) | length' \
-    "$target" "$snippet" 2>/dev/null)" || missing="$(jq '(.permissions.deny // []) + (.permissions.ask // []) | length' "$snippet")"
+  missing="$(json -s '((a, b) => ["deny", "ask"].map((k) => list(b[k]).filter((x) => !list(a[k]).includes(x)).length).reduce((x, y) => x + y))
+    (obj(obj($[0]).permissions), obj(obj($[1]).permissions))' "$target" "$snippet" 2>/dev/null)" \
+    || missing="$(json 'list(obj($.permissions).deny).length + list(obj($.permissions).ask).length' "$snippet")"
   [[ "$missing" == "0" ]] && return 0
   if ((DRY)); then echo "  would add $missing permission rule(s) to $target"; return 0; fi
   [[ -f "$target" ]] || { mkdir -p "$(dirname "$target")"; echo '{}' > "$target"; }
   backup "$target"
-  write_into "$target" json jq -s '.[0] as $a | .[1] as $b | $a
-    | .permissions.deny = (($a.permissions.deny // []) + (($b.permissions.deny // []) - ($a.permissions.deny // [])))
-    | .permissions.ask  = (($a.permissions.ask  // []) + (($b.permissions.ask  // []) - ($a.permissions.ask  // [])))' \
+  write_into "$target" json json -s '((a, b) => ({...obj($[0]), permissions: {...a, ...Object.fromEntries(["deny", "ask"].map((k) =>
+      [k, [...list(a[k]), ...list(b[k]).filter((x) => !list(a[k]).includes(x))]]))}}))(obj(obj($[0]).permissions), obj(obj($[1]).permissions))' \
     "$target" "$snippet" && echo "  added $missing permission rule(s) to $target"
   return 0
 }
@@ -196,8 +195,12 @@ if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
     echo "  $g is not plain JSON, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1
   elif [[ ! -f "$g" ]]; then
     place "$G/gemini-context.json" "$g"
-  elif [[ "$(jq '.context.fileName // empty' "$g")" == "" ]]; then
-    ((DRY)) && echo "  would set context.fileName in $g" || { backup "$g"; write_into "$g" json jq -s '.[0] * .[1]' "$g" "$G/gemini-context.json" && echo "  set context.fileName in $g (Gemini reads AGENTS.md)"; }
+  elif [[ "$(json 'obj(obj($).context).fileName ?? undefined' "$g" 2>/dev/null)" == "" ]]; then
+    # The kit's file merged in, an object inside an object key by key; anything else is replaced.
+    ((DRY)) && echo "  would set context.fileName in $g" || { backup "$g"; write_into "$g" json json -s '(function m(a, b) {
+      const o = (x) => x !== null && typeof x == "object" && !Array.isArray(x);
+      return o(a) && o(b) ? Object.keys(b).reduce((r, k) => ({...r, [k]: k in a ? m(a[k], b[k]) : b[k]}), a) : b;
+    })(obj($[0]), $[1])' "$g" "$G/gemini-context.json" && echo "  set context.fileName in $g (Gemini reads AGENTS.md)"; }
   fi
 fi
 
@@ -229,26 +232,27 @@ echo "== opencode"
 # file is never rewritten. bin/doctor.sh checks the order opencode resolves.
 merge_opencode() {
   local snippet=$1 target=$2 rules missing
-  rules="$(jq -c '[((.permissions.deny // [])[] | {r: ., a: "deny"}), ((.permissions.ask // [])[] | {r: ., a: "ask"})]
-    | map(select(.r | startswith("Bash(")) | {key: (.r | sub("^Bash\\((?<p>.*)\\)$"; "\(.p)")), value: .a}) | from_entries' "$snippet")"
+  rules="$(json -c '((p) => Object.fromEntries([...list(p.deny).map((r) => [r, "deny"]), ...list(p.ask).map((r) => [r, "ask"])]
+    .filter(([r]) => r.startsWith("Bash(")).map(([r, a]) => [r.replace(/^Bash\((.*)\)$/, "$1"), a])))(obj(obj($).permissions))' "$snippet")"
   if ! json_ok "$target"; then
     echo "  $target is not plain JSON, left as is: add these under permission.bash by hand: $rules"; failures=1; return 0
   fi
   if [[ ! -f "$target" ]]; then
-    if ((DRY)); then echo "  would create $target with $(jq length <<<"$rules") bash rule(s)"; return 0; fi
+    if ((DRY)); then echo "  would create $target with $(json 'Object.keys($).length' <<<"$rules") bash rule(s)"; return 0; fi
     mkdir -p "$(dirname "$target")"; echo '{"$schema": "https://opencode.ai/config.json"}' > "$target"
   fi
   # Missing: any kit rule absent, different, or not among the last entries.
-  missing="$(jq --argjson r "$rules" '(.permission | if type == "object" then .bash else null end) as $b
-    | if ($b | type) != "object" then ($r | length)
-      else ($b | to_entries | .[-($r | length):] | from_entries) as $tail | [$r | to_entries[] | select($tail[.key] != .value)] | length end' "$target")"
+  missing="$(json --argjson r "$rules" '((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
+    : ((tail) => Object.keys($r).filter((k) => tail[k] !== $r[k]).length)(Object.fromEntries(Object.entries(b).slice(-n)))))
+    (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length)' "$target")"
   [[ "$missing" == 0 ]] && return 0
   backup "$target"
   if ((DRY)); then echo "  would add or reorder $missing bash rule(s) in $target"; return 0; fi
-  write_into "$target" json jq --argjson r "$rules" '
-    .permission = (.permission // {} | if type == "string" then {"*": .} else . end)
-    | (.permission.bash // {} | if type == "string" then {"*": .} else . end) as $b
-    | .permission = (.permission | del(.bash)) + {bash: (($b | with_entries(select(.key as $k | $r | has($k) | not))) + $r)}' \
+  # A rule set as one string ("permission": "ask") is the catch-all "*"; the kit's rules go last.
+  write_into "$target" json json --argjson r "$rules" '((p) => ((b) => ({...obj($), permission: {
+      ...Object.fromEntries(Object.entries(p).filter(([k]) => k != "bash")),
+      bash: {...Object.fromEntries(Object.entries(b).filter(([k]) => !Object.hasOwn($r, k))), ...$r}}}))
+    (typeof p.bash == "string" ? {"*": p.bash} : obj(p.bash)))(typeof obj($).permission == "string" ? {"*": $.permission} : obj($.permission))' \
     "$target" && echo "  added or reordered $missing bash rule(s) in $target"
   return 0
 }

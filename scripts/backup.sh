@@ -259,8 +259,8 @@ if ((verify)); then
   # The doctor reads the date of the last good verify from here, never from the backup folder.
   ((problems)) || { mkdir -p -m 700 "$LOGDIR"; echo "$file" > "$LOGDIR/backup-verified"; }
   if ((json)); then
-    jq -Rn --arg a "$file" --arg at "$(sed -E 's/^(....)(..)(..)-(..)(..)(..)$/\1-\2-\3T\4:\5:\6/' <<<"$stamp")" --argjson p "$problems" \
-      '{archive: $a, backed_up: $at, ok: ($p == 0), problems: $p, results: [inputs | split("\t") | {repo: (if .[0] == "" then null else .[0] end), result: .[1], text: .[2]}]}' < "$tmp/results"
+    json -R --arg a "$file" --arg at "$(sed -E 's/^(....)(..)(..)-(..)(..)(..)$/\1-\2-\3T\4:\5:\6/' <<<"$stamp")" --argjson p "$problems" \
+      '({archive: $a, backed_up: $at, ok: $p == 0, problems: $p, results: $.map((l) => l.split("\t")).map((r) => ({repo: str(r[0]), result: r[1], text: r[2]}))})' "$tmp/results"
   elif ((problems)); then echo "Verify failed: $problems problem(s). Back up again (bin/backup.sh create), then verify that archive."
   else echo "Verified: $file restores. The temporary copy is deleted."; fi
   ((problems)) && exit 1

@@ -39,7 +39,7 @@ cabinet new [dir] [options]
 
 Creates a workspace in an empty or missing folder. In a terminal it asks a question for each setting; options set the defaults, and `--yes` skips the questions.
 
-**Tools first.** `new`, `init` and `bootstrap` first check for the tools Cabinet needs (git, jq, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
+**Tools first.** `new`, `init` and `bootstrap` first check for the tools Cabinet needs (git, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
 
 | Option | Default | Notes |
 |---|---|---|

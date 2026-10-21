@@ -4,6 +4,9 @@
 # user's systemd is not running. Sourced after when.sh by lib.sh and by the cabinet command,
 # never run.
 
+LIBJS="${LIBJS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js}"   # the JavaScript beside this file, run with node
+json() { node "$LIBJS" json "$@"; }   # JSON in and out: jq's options with a JavaScript expression (lib.js, json)
+
 USER="${USER:-$(id -un)}"   # cron and containers can leave it unset
 if [[ "$(uname)" == Darwin ]]; then
   OS=mac LOGROOT="$HOME/Library/Logs/cabinet" PASS_STORE="keychain"
@@ -126,7 +129,7 @@ sched_render() {
     return 0 ;;
   esac
   # systemd and cron: what the doctor and the digest read back, as comments first.
-  printf '# cabinet-when: %s\n# cabinet-path: %s\n# cabinet-command: %s\n' "$when" "$path" "$(printf '%s\0' "$@" | jq -Rsc 'split("\u0000")[:-1]')"
+  printf '# cabinet-when: %s\n# cabinet-path: %s\n# cabinet-command: %s\n' "$when" "$path" "$(json -n -c '$args' --args "$@")"
   if [[ "$SCHEDULER" == systemd ]]; then
     local cmd=""; for a in "$@"; do cmd+="${cmd:+ }$(sd_q "$a")"; done
     printf '%s\n' "[Unit]" "Description=cabinet $label" "" "[Service]" "Type=oneshot" \
@@ -156,7 +159,7 @@ sched_ws() {
     p="$(sed -n 's#.*<string>\(.*\)/bin/[a-z]*\.sh</string>.*#\1#p' "$1" 2>/dev/null | head -1)"
     p="${p//&lt;/<}"; p="${p//&gt;/>}"; p="${p//&amp;/&}"
   else
-    p="$(sched_get "$1" command | jq -r '.[0] // empty' 2>/dev/null)"
+    p="$(sched_get "$1" command | json -r '$[0]' 2>/dev/null)"
     [[ "$p" == */bin/*.sh ]] && p="${p%/bin/*}" || p=""
   fi
   printf '%s' "$p"
@@ -238,7 +241,7 @@ cron_sync() {
 # Tools cabinet needs, and how this machine installs them (brew, apt, dnf or pacman).
 # Optional tools are checked where their feature is turned on: openssl and secret-tool for
 # backups, notify-send for digest notifications.
-DEPS_REQUIRED="git jq node npm"
+DEPS_REQUIRED="git node npm"
 # deps_missing [<tools>]: the ones not found (CABINET_TEST_MISSING makes the tests miss some).
 deps_missing() {
   local t out=""

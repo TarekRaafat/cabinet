@@ -53,21 +53,23 @@ spend_counts() { has "$SPEND_DOLLARS" "$CABINET_RUNNER" || { has "$SPEND_TOKENS"
 # What each runner's JSON says, as {text, usd, in, cached, out}: the reply, the dollars it reports,
 # and tokens (in: uncached input). Shapes seen live (Grok 1.0.62, opencode 2.0.32, Codex 0.163.0,
 # Cursor 2026.10.16, Antigravity CLI 1.4.2, Qwen Code 0.25.3's envelope) or documented (Claude Code).
-spend_jq() {
+spend_js() {
   case "$1" in
-    claude)   echo '{text: .result, usd: .total_cost_usd}' ;;
-    grok)     echo '{text: .text, usd: .total_cost_usd, in: .usage.input_tokens, cached: .usage.cache_read_input_tokens, out: .usage.output_tokens}' ;;
-    cursor)   echo '{text: .result, in: .usage.inputTokens, cached: .usage.cacheReadTokens, out: .usage.outputTokens}' ;;
-    qwen)     echo 'map(select(.type == "result")) | last | {text: .result, in: .usage.input_tokens, cached: (.usage.cache_read_input_tokens // 0), out: .usage.output_tokens}' ;;
+    claude)   echo '({text: $.result, usd: $.total_cost_usd})' ;;
+    grok)     echo '({text: $.text, usd: $.total_cost_usd, in: $.usage?.input_tokens, cached: $.usage?.cache_read_input_tokens, out: $.usage?.output_tokens})' ;;
+    cursor)   echo '({text: $.result, in: $.usage?.inputTokens, cached: $.usage?.cacheReadTokens, out: $.usage?.outputTokens})' ;;
+    qwen)     echo '((r) => ({text: r?.result, in: r?.usage?.input_tokens, cached: r?.usage?.cache_read_input_tokens ?? 0, out: r?.usage?.output_tokens}))($.filter((x) => x.type == "result").at(-1))' ;;
     # ponytail: takes input_tokens to include cache_read_tokens (total_tokens leaves the cache out);
     # a run with cache reads, seen live, would settle it.
-    antigravity) echo '{text: .response, cached: (.usage.cache_read_tokens // 0), out: ((.usage.output_tokens // 0) + (.usage.thinking_tokens // 0))}
-                + {in: ((.usage.input_tokens // 0) - (.usage.cache_read_tokens // 0))}' ;;
-    # JSON lines, read with jq -s.
-    codex)    echo '[.[] | select(.type == "turn.completed") | .usage] as $u | {text: ([.[] | select(.type == "item.completed" and .item.type == "agent_message") | .item.text] | join("\n")),
-                cached: ([$u[].cached_input_tokens // 0] | add), out: ([$u[].output_tokens // 0] | add)} + {in: (([$u[].input_tokens // 0] | add) - ([$u[].cached_input_tokens // 0] | add))}' ;;
-    opencode) echo '[.[] | select(.type == "step_finish") | .part] as $p | {text: ([.[] | select(.type == "text") | .part.text] | join("")), usd: ([$p[].cost // 0] | add),
-                in: ([$p[].tokens.input // 0] | add), cached: ([$p[].tokens.cache.read // 0] | add), out: ([$p[] | (.tokens.output // 0) + (.tokens.reasoning // 0)] | add)}' ;;
+    antigravity) echo '({text: $.response, cached: $.usage?.cache_read_tokens ?? 0, out: ($.usage?.output_tokens ?? 0) + ($.usage?.thinking_tokens ?? 0),
+                in: ($.usage?.input_tokens ?? 0) - ($.usage?.cache_read_tokens ?? 0)})' ;;
+    # JSON lines, read with json -s.
+    codex)    echo '((u) => ({text: $.filter((x) => x.type == "item.completed" && x.item?.type == "agent_message").map((x) => x.item.text).join("\n"),
+                cached: sum(u.map((x) => x?.cached_input_tokens ?? 0)), out: sum(u.map((x) => x?.output_tokens ?? 0)),
+                in: sum(u.map((x) => (x?.input_tokens ?? 0) - (x?.cached_input_tokens ?? 0)))}))($.filter((x) => x.type == "turn.completed").map((x) => x.usage))' ;;
+    opencode) echo '((p) => ({text: $.filter((x) => x.type == "text").map((x) => x.part?.text ?? "").join(""), usd: sum(p.map((x) => x?.cost ?? 0)),
+                in: sum(p.map((x) => x?.tokens?.input ?? 0)), cached: sum(p.map((x) => x?.tokens?.cache?.read ?? 0)),
+                out: sum(p.map((x) => (x?.tokens?.output ?? 0) + (x?.tokens?.reasoning ?? 0)))}))($.filter((x) => x.type == "step_finish").map((x) => x.part))' ;;
   esac
 }
 # spend_report <out file>: print the reply from the runner's JSON (or the output as it is, when it
@@ -75,11 +77,11 @@ spend_jq() {
 spend_report() {
   local f="$1" j slurp="" usd tin tc tout
   case "$CABINET_RUNNER" in codex|opencode) slurp=-s ;; esac
-  if ! j="$(jq -c $slurp "$(spend_jq "$CABINET_RUNNER")" "$f" 2>/dev/null)" || [[ "$(jq -r '.text | type' <<<"$j" 2>/dev/null)" != string ]]; then
+  if ! j="$(json -c $slurp "$(spend_js "$CABINET_RUNNER")" "$f" 2>/dev/null)" || [[ "$(json -r 'typeof $.text' <<<"$j" 2>/dev/null)" != string ]]; then
     cat "$f"; return 0
   fi
-  jq -r '.text' <<<"$j"
-  read -r usd tin tc tout <<<"$(jq -r '[.usd, .in, .cached, .out] | map(if . == null then "-" else tostring end) | join(" ")' <<<"$j")"
+  json -r '$.text' <<<"$j"
+  read -r usd tin tc tout <<<"$(json -r '[$.usd, $.in, $.cached, $.out].map((x) => (x == null ? "-" : String(x))).join(" ")' <<<"$j")"
   if [[ "$usd" == - || "$usd" == 0 ]] && [[ -n "$CABINET_PRICE" && "$tin$tout" != -- ]]; then
     usd="$(awk -v p="$CABINET_PRICE" -v i="${tin/-/0}" -v c="${tc/-/0}" -v o="${tout/-/0}" \
       'BEGIN { n = split(p, x, " "); if (n < 3) x[3] = x[1]; printf "%.6f", (i * x[1] + c * x[3] + o * x[2]) / 1000000 }')"
@@ -375,7 +377,7 @@ small_problems() {
 # The builder a repo most looks like, from the files at its top (package.json is read as data only).
 builder_for() {
   local d=$1 deps=""
-  [[ -f "$d/package.json" ]] && deps="$(jq -r '((.dependencies // {}) + (.devDependencies // {})) | keys[]' "$d/package.json" 2>/dev/null | tr '\n' ' ')"
+  [[ -f "$d/package.json" ]] && deps="$(json -r '[...Object.keys($.dependencies ?? {}), ...Object.keys($.devDependencies ?? {})].join(" ")' "$d/package.json" 2>/dev/null)"
   if [[ -d "$d/ios" || -d "$d/android" || -f "$d/pubspec.yaml" ]] || ls -d "$d"/*.xcodeproj >/dev/null 2>&1 || has "$deps" react-native || has "$deps" expo; then echo mobile
   elif ls "$d"/*.tf >/dev/null 2>&1 || [[ -d "$d/terraform" || -f "$d/Pulumi.yaml" || -f "$d/Chart.yaml" || -f "$d/cdk.json" ]]; then echo infrastructure
   elif has "$deps" react || has "$deps" next || has "$deps" vue || has "$deps" svelte || has "$deps" @angular/core || has "$deps" astro || has "$deps" nuxt || [[ -f "$d/index.html" ]]; then echo web
@@ -400,7 +402,7 @@ job_path() {
   local runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
   [[ "$runner" == cursor ]] && runner="$(cursor_bin || echo cursor-agent)"
   [[ "$runner" == antigravity ]] && runner=agy
-  for t in "$runner" node git jq openssl; do
+  for t in "$runner" node git openssl; do
     d="$(command -v "$t" 2>/dev/null)" || continue
     [[ "$d" == /* ]] || continue
     d="$(dirname "$d")"; [[ ":$p:" == *":$d:"* ]] || p="$d:$p"

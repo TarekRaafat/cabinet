@@ -113,28 +113,29 @@ while IFS= read -r d; do
   lh="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
   [[ -n "$lh" ]] && bad guardrails.repo-hookspath "$d sets its own core.hooksPath ($lh), which bypasses the push gate"
 done < <(data_dirs | awk '!seen[$0]++')
-# Every deny rule the kit ships must be live; extra live rules are fine.
-missing="$(jq -s '(.[1].permissions.deny - (.[0].permissions.deny // [])) | length' ~/.claude/settings.json "$K/guardrails/claude-permissions.json" 2>/dev/null || echo all)"
+# Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
+deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
+missing="$(json -s "$deny_missing" ~/.claude/settings.json "$K/guardrails/claude-permissions.json" 2>/dev/null || echo all)"
 [[ "$missing" == 0 ]] && ok guardrails.claude "Claude Code denies push and publish" || bad guardrails.claude "Claude Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 if command -v codex >/dev/null; then
-  [[ "$(codex execpolicy check --rules ~/.codex/rules/default.rules git push origin main 2>/dev/null | jq -r .decision)" == "forbidden" ]] \
+  [[ "$(codex execpolicy check --rules ~/.codex/rules/default.rules git push origin main 2>/dev/null | json -r '$.decision')" == "forbidden" ]] \
     && ok guardrails.codex "Codex forbids git push" || bad guardrails.codex "Codex push rule missing (run bin/bootstrap.sh)"
 fi
 if command -v agy >/dev/null; then
-  jq -e '.permissions.deny | index("command(git push)")' ~/.gemini/antigravity-cli/settings.json >/dev/null 2>&1 \
+  json -e 'list(obj(obj($).permissions).deny).includes("command(git push)")' ~/.gemini/antigravity-cli/settings.json >/dev/null 2>&1 \
     && ok guardrails.agy "agy denies git push" || bad guardrails.agy "agy push deny rule missing (run bin/bootstrap.sh)"
 fi
 if command -v gemini >/dev/null; then
   [[ -f ~/.gemini/policies/owner-control.toml ]] && ok guardrails.gemini "Gemini CLI policy present" || bad guardrails.gemini "Gemini CLI policy missing (run bin/bootstrap.sh)"
 fi
-kit_deny="$(jq -c '.permissions.deny' "$K/guardrails/claude-permissions.json")"
+kit_deny="$(json -c '$.permissions.deny' "$K/guardrails/claude-permissions.json")"
 if command -v qwen >/dev/null; then
-  missing="$(jq --argjson d "$kit_deny" '($d - (.permissions.deny // [])) | length' ~/.qwen/settings.json 2>/dev/null || echo all)"
+  missing="$(json --argjson d "$kit_deny" '$d.filter((x) => !list(obj(obj($).permissions).deny).includes(x)).length' ~/.qwen/settings.json 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.qwen "Qwen Code denies push and publish" || bad guardrails.qwen "Qwen Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 fi
 if cb="$(cursor_bin)"; then
   # Checked against the file only: the rule format is Cursor's documented one, untested here.
-  missing="$(jq -s '(.[1].permissions.deny - (.[0].permissions.deny // [])) | length' ~/.cursor/cli-config.json "$K/guardrails/cursor-permissions.json" 2>/dev/null || echo all)"
+  missing="$(json -s "$deny_missing" ~/.cursor/cli-config.json "$K/guardrails/cursor-permissions.json" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.cursor "Cursor CLI config holds the deny rules (rule shapes probed live on Cursor CLI 2026.10.16)" || bad guardrails.cursor "Cursor CLI is missing $missing deny rule(s) in ~/.cursor/cli-config.json (run bin/bootstrap.sh)"
 fi
 if [[ -d /Applications/Cursor.app || -d "$HOME/Applications/Cursor.app" ]]; then
@@ -143,19 +144,18 @@ fi
 if command -v grok >/dev/null; then
   # Grok takes its rules from ~/.claude/settings.json; ask Grok itself what it loaded.
   gi="$(cd "$WS" && grok inspect --json 2>/dev/null)"
-  if jq -e --arg f "$HOME/.claude/settings.json" '.permissions.sources | any(startswith($f))' <<<"$gi" >/dev/null 2>&1 \
-     && jq -e '.permissions.skipped | length == 0' <<<"$gi" >/dev/null 2>&1; then ok guardrails.grok "Grok loads the Claude Code rules"
+  if json -e --arg f "$HOME/.claude/settings.json" '$.permissions.sources.some((s) => s.startsWith($f))' <<<"$gi" >/dev/null 2>&1 \
+     && json -e '$.permissions.skipped.length == 0' <<<"$gi" >/dev/null 2>&1; then ok guardrails.grok "Grok loads the Claude Code rules"
   else bad guardrails.grok "Grok does not load the rules in ~/.claude/settings.json (check: grok inspect)"; fi
 fi
 if command -v opencode >/dev/null; then
   # The last matching rule wins: each kit pattern must be the last bash rule that names it or "*".
   # opencode 1.x prints the rules it resolved; opencode 2.x has no such command (its
   # debug commands go through a background service), so there it is a note, not a FIX.
-  if rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && jq -e '.permission | type == "array"' <<<"$rs" >/dev/null 2>&1; then
-    open_rules="$(jq --argjson d "$kit_deny" -r '[.permission[] | select(.permission == "bash" or .permission == "*")] as $rs
-      | [$d[] | sub("^Bash\\((?<p>.*)\\)$"; "\(.p)") as $p
-        | ([$rs[] | select(.pattern == $p or .pattern == "*")] | last) as $l
-        | select($l.pattern != $p or $l.action != "deny") | $p] | join(", ")' <<<"$rs")"
+  if rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && json -e 'Array.isArray($.permission)' <<<"$rs" >/dev/null 2>&1; then
+    open_rules="$(json --argjson d "$kit_deny" -r '((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
+      .filter((p) => ((l) => l?.pattern != p || l?.action != "deny")(rs.filter((x) => x.pattern == p || x.pattern == "*").at(-1))).join(", "))
+      ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs")"
     [[ -z "$open_rules" ]] && ok guardrails.opencode "opencode denies push and publish" || bad guardrails.opencode "opencode does not deny: $open_rules (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)"
   else
     note guardrails.opencode "$(opencode --version 2>/dev/null | sed 's/^opencode //') of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)"
@@ -248,7 +248,7 @@ vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
 [[ -z "$vbad" ]] && ok handoffs.verdicts "every verdict is in the verdict format, with its note" \
   || bad handoffs.verdicts "verdicts not in the format, or naming a note that does not exist: $vbad (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)"
 # A verdict written in prose (a status line saying "qa PASS") is never read as one: say where.
-unread="$("$WS/bin/handoff.sh" list --json 2>/dev/null | jq -r '[.[] | select((.unread_verdicts // []) | length > 0) | .id] | join(" ")' 2>/dev/null || true)"
+unread="$("$WS/bin/handoff.sh" list --json 2>/dev/null | json -r '$.filter((h) => (h.unread_verdicts ?? []).length > 0).map((h) => h.id).join(" ")' 2>/dev/null || true)"
 [[ -z "$unread" ]] && ok handoffs.unread-verdicts "no verdict is written outside a Verdict line" \
   || note handoffs.unread-verdicts "PASS, BLOCK or CHANGES written outside a Verdict line, so not counted: $unread (the reviewer records it with bin/handoff.sh record)"
 # A small task that passed stays small: its commits in one repo, touching no path AGENTS.md guards.
@@ -306,7 +306,7 @@ section "Specs"
 # A spec marked ready or building has what that status needs (bin/spec.sh check).
 if [[ -x "$WS/bin/spec.sh" ]]; then
   sc="$("$WS/bin/spec.sh" check --json 2>/dev/null || true)"
-  notready="$(jq -r '[.[] | select(.problems | length > 0) | "\(.spec) (\(.problems | join(", ")))"] | join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
+  notready="$(json -r '$.filter((s) => s.problems.length > 0).map((s) => s.spec + " (" + s.problems.join(", ") + ")").join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
   [[ -z "$notready" ]] && ok specs.ready "every spec marked ready or building has what its status needs" \
     || bad specs.ready "specs not ready for their status: $notready (fix each, or set it back to draft; cabinet spec check)"
 fi
@@ -356,7 +356,7 @@ dup="$(awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
   || bad team.single-owner "more than one owner in the team table of AGENTS.md: $dup (give each one owner)"
 # Open handoffs reach someone: a role, a repo, or the owner. A removed role or repo strands them.
 known=" owner founder $(team_roles) $(repos 2>/dev/null | cut -f1 | tr '\n' ' ') "
-stranded="$("$WS/bin/handoff.sh" list --json 2>/dev/null | jq -r '.[] | [.id, .to] | @tsv' 2>/dev/null | while IFS=$'\t' read -r id to; do
+stranded="$("$WS/bin/handoff.sh" list --json 2>/dev/null | json -r --each '$.map((h) => h.id + "\t" + h.to)' 2>/dev/null | while IFS=$'\t' read -r id to; do
     printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n' | while IFS= read -r n; do
       n="$(printf '%s' "$n" | sed 's/^ *//; s/ *$//' | tr '[:upper:]' '[:lower:]')"
       [[ -z "$n" ]] || has "$known" "$n" || printf '%s (%s)\n' "$id" "$n"
@@ -480,9 +480,9 @@ grep -qE $'^fix\t[^\t]*\tdeps\.' "$REC" && actions+=" deps"
 actions="${actions# }"
 
 if ((JSON)); then
-  jq -Rn --arg ws "$WS" --arg fixes "$actions" '[inputs | split("\t") | {level: .[0], section: .[1], id: .[2], message: .[3]}] as $r
-    | {workspace: $ws, problems: ([$r[] | select(.level == "fix")] | length), notes: ([$r[] | select(.level == "note")] | length),
-       can_fix: ($fixes | split(" ") | map(select(length > 0))), results: $r}' < "$REC"
+  json -R --arg ws "$WS" --arg fixes "$actions" '((r) => ({workspace: $ws, problems: r.filter((x) => x.level == "fix").length,
+      notes: r.filter((x) => x.level == "note").length, can_fix: $fixes.split(" ").filter(Boolean), results: r}))
+    ($.map((l) => l.split("\t")).map((f) => ({level: f[0], section: f[1], id: f[2], message: f[3]})))' "$REC"
   ((problems)) && exit 1; exit 0
 fi
 

@@ -24,7 +24,7 @@ p_list() {
     dir="$(repo_dir "$path")"
     printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$dir" "$([[ -e "$dir/.git" ]] && echo yes || echo no)" "$(owner_of "$name" || true)" "$url"
   done < <(repos) | if ((json)); then
-    jq -Rn '[inputs | split("\t") | {name: .[0], path: .[1], present: (.[2] == "yes"), owner: (if .[3] == "" or .[3] == "TBD" then null else .[3] end), url: (if .[4] == "-" then null else .[4] end)}]'
+    json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], path: r[1], present: r[2] == "yes", owner: r[3] == "TBD" ? null : str(r[3]), url: r[4] == "-" ? null : r[4]}))'
   else
     awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-20s %-16s %-8s %s\n", $1, ($4 == "" ? "TBD" : $4), ($3 == "yes" ? "here" : "missing"), $2} END {if (!n) print "No repos in repos.tsv. Add one: cabinet repo add <git url>"}'
   fi

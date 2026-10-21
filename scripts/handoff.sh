@@ -156,7 +156,7 @@ if [[ -z "$spec$small" ]]; then
 fi
 if [[ -n "$spec" ]]; then
   sc="$("$(dirname "$0")/spec.sh" check "$spec" --json 2>/dev/null || true)"
-  st="$(jq -r '.[0].status // ""' <<<"$sc" 2>/dev/null || true)" sp="$(jq -r '.[0].problems // [] | join("; ")' <<<"$sc" 2>/dev/null || true)"
+  st="$(json -r '$[0]?.status ?? ""' <<<"$sc" 2>/dev/null || true)" sp="$(json -r '($[0]?.problems ?? []).join("; ")' <<<"$sc" 2>/dev/null || true)"
   [[ "$st" =~ ^(ready|building)$ ]] || { echo "$spec is ${st:-without a status}, not ready: product-manager sets it ready once bin/spec.sh check $spec passes" >&2; exit 1; }
   [[ -z "$sp" ]] || { echo "$spec is not ready to build: $sp (bin/spec.sh check $spec)" >&2; exit 1; }
 fi
@@ -262,7 +262,7 @@ run_check() {  # run_check <area> <command>
 if [[ "$verdict" == PASS ]]; then
   local ar lead a p r e c
   lead="$(role_team "$role" "Reports to")"
-  ar="$( { readiness | jq -r --arg i "$id" '.[$i].areas[]?'; [[ "$commits" == none ]] || areas_hit "$commits"; } | sort -u)"
+  ar="$( { readiness | json -r --each --arg i "$id" '$[$i]?.areas ?? []'; [[ "$commits" == none ]] || areas_hit "$commits"; } | sort -u)"
   while IFS=$'\t' read -r a p r e c; do
     grep -qxF "$a" <<<"$ar" || continue
     has "$r" "$role" || { [[ -n "$lead" ]] && has "$r" "$lead"; } || continue
@@ -312,7 +312,7 @@ epoch() { date -d "$1" +%s 2>/dev/null || date -j -f %Y-%m-%d "$1" +%s; }
 today=$(epoch "$(date +%F)")
 
 if ((json)); then
-  # One record per entry under "## Open" (and a legacy "## Archive"); jq picks the same
+  # One record per entry under "## Open" (and a legacy "## Archive"); json picks the same
   # entries as the text output: open and acknowledged, or with a name, all not closed.
   who="${1:-}"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
   awk '
@@ -324,16 +324,16 @@ if ((json)); then
   /^- Status:/ && st == "" { st=$0; sub(/^- Status: /, "", st) }
   id != "" { gsub(/\t/, " "); body = body $0 "\001" }
   END { flush() }
-  ' "$WS/HANDOFFS.md" | jq -Rn --arg who "$who" --argjson today "$today" '
-    [inputs | split("\t") | {id: .[0], status_line: .[1], from: .[2], to: .[3], title: .[4], section: .[5], text: (.[6] | gsub("\u0001"; "\n"))}
-     | .status = (.status_line | capture("^(?<s>[a-z]+)").s // "")
-     | .date = (.status_line | capture("(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})").d // null)
-     | .age_days = (if .date then (($today - (.date | strptime("%Y-%m-%d") | mktime) + 43200) / 86400 | floor) else null end)
-     | select(if $who == "" then .section == "open" and (.status == "open" or .status == "acknowledged")
-              else (.to | test("(^|[^a-z-])(" + $who + ")([^a-z-]|$)")) and (.status | test("^(done|rejected)") | not) end)
-     | del(.section)]
-    | if $who == "" then sort_by(.date // "9999-99-99") | map(del(.text)) else . end' \
-  | jq --argjson r "$rd" --argjson only "$ready" 'map(. + (($r[.id] // {}) | del(.status_now))) | if $only == 1 then map(select(.ready == true)) else . end'
+  ' "$WS/HANDOFFS.md" | json -R --arg who "$who" --argjson today "$today" --argjson r "$rd" --argjson only "$ready" '
+    ((es) => ($who == "" ? es.sort((a, b) => (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99", "en")).map(({text, ...e}) => e) : es)
+      .map((e) => (({status_now, ...more}) => ({...e, ...more}))($r[e.id] ?? {}))
+      .filter((e) => $only != 1 || e.ready === true))(
+    $.map((l) => l.split("\t")).map((f) => ((date) => ({id: f[0], status_line: f[1], from: f[2], to: f[3], title: f[4], section: f[5],
+        text: f[6].replaceAll("\u0001", "\n"), status: f[1].match(/^[a-z]+/)?.[0] ?? "", date,
+        age_days: date ? Math.floor(($today - Date.parse(date) / 1000 + 43200) / 86400) : null}))(f[1].match(/[0-9]{4}-[0-9]{2}-[0-9]{2}/)?.[0] ?? null))
+     .filter((e) => ($who == "" ? e.section == "open" && (e.status == "open" || e.status == "acknowledged")
+       : new RegExp("(^|[^a-z-])(" + $who + ")([^a-z-]|$)").test(e.to) && !/^(done|rejected)/.test(e.status)))
+     .map(({section, ...e}) => e))'
   exit 0
 fi
 
@@ -367,7 +367,7 @@ awk '
   st=$3; sub(/[^a-z].*/, "", st); print d "\t" st "\t" id "\t" to "\t" title; id=""
 }
 ' "$WS/HANDOFFS.md" | sort | while IFS=$'\t' read -r d st id to title; do
-  ((ready == 0)) || jq -e --arg i "$id" '.[$i].ready == true' <<<"$rd" >/dev/null || continue
+  ((ready == 0)) || json -e --arg i "$id" '$[$i]?.ready === true' <<<"$rd" >/dev/null || continue
   if [[ "$d" == 9999-99-99 ]]; then age="?"
   else age=$(( (today - $(epoch "$d") + 43200) / 86400 )); fi  # rounded, so a DST day still counts as one
   printf '%3sd  %-12s  %-14s  %-24s  %s\n' "$age" "$st" "$id" "$to" "$title"
@@ -408,11 +408,11 @@ fi
 # The work, oldest first: specs ready to build (all), then handoffs filed --small that are still open
 # or wait on their review; never one archived, sent back, or closed with nothing left to review.
 if [[ "$CABINET_PIPELINE" == all ]]; then
-  while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | jq -r '.[] | select((.status == "ready" or .status == "building") and (.problems | length) == 0) | .spec')
+  while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | json -r --each '$.filter((s) => (s.status == "ready" || s.status == "building") && s.problems.length == 0).map((s) => s.spec)')
 fi
-while IFS= read -r x; do items+=("handoff $x"); done < <(readiness | jq -r '
-  . as $all | to_entries | map(select(.value.small and (.value.archived | not) and (.value.status_now | test("^rejected") | not))) | map(.key) | sort | .[]
-  | . as $i | select(($all[$i].status_now | test("^done") | not) or ([$all | to_entries[] | select((.value.small | not) and .value.spec == "" and (.value.depends_on | contains($i)) and (.value.status_now | test("^(done|rejected)") | not))] | length > 0))')
+while IFS= read -r x; do items+=("handoff $x"); done < <(readiness | json -r --each '
+  Object.keys($).filter((i) => $[i].small && !$[i].archived && !/^rejected/.test($[i].status_now)).sort()
+    .filter((i) => !/^done/.test($[i].status_now) || Object.values($).some((w) => !w.small && w.spec == "" && w.depends_on.includes(i) && !/^(done|rejected)/.test(w.status_now)))')
 export CABINET_RUN_LIMIT="$limit" CABINET_RUN_SINCE="$(date +%s)" CABINET_RUN_SCHEDULED=1
 local -a lines
 lines=()
@@ -447,7 +447,7 @@ done
 [[ "$retries" =~ ^[0-9]+$ ]] || { echo "--retries is a number of fix rounds, like 2. $usage" >&2; exit 2; }
 cd "$WS"
 rd="$(readiness)"
-w="$(jq -c --arg i "$id" '.[$i] // empty' <<<"$rd")"
+w="$(json -c --arg i "$id" '$[$i] ?? undefined' <<<"$rd")"
 [[ -n "$w" ]] || { echo "$id is not in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # One builder, and work that is ready to build: what the steps start from.
 builder="$(sed -n "/^### $id:/,/^### /s/^- From: .* -> To: //p" HANDOFFS.md | head -1 | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '\`' | tr ',' '\n' \
@@ -455,8 +455,8 @@ builder="$(sed -n "/^### $id:/,/^### /s/^- From: .* -> To: //p" HANDOFFS.md | he
 [[ -n "$builder" && "$builder" != *$'\n'* ]] || { echo "$id is not work for one builder: run takes a handoff to one repo or builder" >&2; exit 1; }
 has "$(team_roles)" "$builder" || builder="$(owner_of "$builder")"
 [[ -n "$builder" ]] || { echo "$id: no role owns its repo in the team table of AGENTS.md" >&2; exit 1; }
-[[ "$(jq -r '.small' <<<"$w")" == true || -n "$(jq -r '.spec' <<<"$w")" ]] || { echo "$id is neither --small nor --spec: only work that is ready to build is run (.cabinet/rules/ready-to-build.md)" >&2; exit 1; }
-x="$(jq -r '.spec' <<<"$w")"
+[[ "$(json -r '$.small' <<<"$w")" == true || -n "$(json -r '$.spec' <<<"$w")" ]] || { echo "$id is neither --small nor --spec: only work that is ready to build is run (.cabinet/rules/ready-to-build.md)" >&2; exit 1; }
+x="$(json -r '$.spec' <<<"$w")"
 if [[ -n "$x" ]] && ! "$WS/bin/spec.sh" check "$x" >/dev/null 2>&1; then echo "$x is not ready to build (bin/spec.sh check $x)" >&2; exit 1; fi
 
 mkdir -p -m 700 "$LOGDIR"
@@ -471,7 +471,7 @@ SPEND_LABEL="$id"
 mark="$LOGDIR/run-$id.stopped"
 ((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
-spent() { local c; c="$(jq -r --arg i "$id" '.[$i].cost_usd // empty' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
+spent() { local c; c="$(json -r --arg i "$id" '$[$i]?.cost_usd ?? undefined' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
 stop() { say "Stopped: $1"; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
   if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
@@ -483,10 +483,11 @@ agent() {  # agent <role> <what it does> <prompt>
 while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
-  w="$(jq -c --arg i "$id" '.[$i]' <<<"$rd")"
-  v="$(jq -r --arg i "$id" 'to_entries | map(select(.key != $i and (.value.small | not) and .value.spec == "" and (.value.depends_on | test("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])")) and (.value.status_now | test("^(done|rejected)") | not))) | .[0].key // empty' <<<"$rd")"
+  w="$(json -c --arg i "$id" '$[$i]' <<<"$rd")"
+  v="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && !$[k].small && $[k].spec == "" && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
+    && !/^(done|rejected)/.test($[k].status_now))' <<<"$rd")"
   if [[ -z "$v" ]]; then
-    case "$(jq -r .status_now <<<"$w")" in
+    case "$(json -r '$.status_now' <<<"$w")" in
       rejected*) stop "$builder sent $id back (its status line says why)" ;;
       done*) stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
     esac
@@ -494,24 +495,24 @@ while :; do
     agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done. If it is not ready to build, set $id to rejected with what is missing instead."
     built=1; continue
   fi
-  r="$(jq -c --arg v "$v" '.[$v]' <<<"$rd")"
-  if [[ "$(jq -r .ready <<<"$r")" == true ]]; then
+  r="$(json -c --arg v "$v" '$[$v]' <<<"$rd")"
+  if [[ "$(json -r '$.ready' <<<"$r")" == true ]]; then
     say "$id is ready to push: every reviewer passed $v$(spent). Push it from your terminal; chief-of-staff closes $v once it is pushed."
     rm -f "$mark"; exit 0
   fi
-  [[ "$(jq -r .ready <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
-  if [[ "$(jq '.blocking | length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
+  [[ "$(json -r '$.ready ?? null' <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
+  if [[ "$(json '$.blocking.length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
     rounds=$((rounds + 1))
-    ((rounds <= retries)) || stop "$(jq -r '.blocking | join(", ")' <<<"$r") still block $v after $retries fix round(s): the owner decides (fix it, change the work, or override)"
-    agent "$builder" "fixes what $(jq -r '.blocking | join(", ")' <<<"$r") blocked, round $rounds" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(jq -r '.blocking | join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
+    ((rounds <= retries)) || stop "$(json -r '$.blocking.join(", ")' <<<"$r") still block $v after $retries fix round(s): the owner decides (fix it, change the work, or override)"
+    agent "$builder" "fixes what $(json -r '$.blocking.join(", ")' <<<"$r") blocked, round $rounds" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(json -r '$.blocking.join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
     fixed=1; continue
   fi
-  todo="$(jq -r '(.blocking + .stale + .missing) | unique | .[]' <<<"$r")"
+  todo="$(json -r --each '[...new Set([...$.blocking, ...$.stale, ...$.missing])].sort()' <<<"$r")"
   [[ -n "$todo" ]] || stop "$v is not ready, and no reviewer is waiting: see bin/handoff.sh list --json"
   for x in $todo; do
-    before="$(jq -c --arg x "$x" '[.verdicts[] | select(.role == $x)]' <<<"$r")"
+    before="$(json -c --arg x "$x" '$.verdicts.filter((w) => w.role == $x)' <<<"$r")"
     agent "$x" "verifies $v" "Verify handoff $v as your role says, then record your verdict with bin/handoff.sh record $v --role $x PASS|BLOCK|CHANGES --commits <every commit of the work> --note <your note>."
-    [[ "$(jq -c --arg x "$x" --arg v "$v" '[.[$v].verdicts[] | select(.role == $x)]' <<<"$(readiness)")" != "$before" ]] || stop "$x recorded no verdict on $v"
+    [[ "$(json -c --arg x "$x" --arg v "$v" '$[$v].verdicts.filter((w) => w.role == $x)' <<<"$(readiness)")" != "$before" ]] || stop "$x recorded no verdict on $v"
   done
   fixed=0
 done

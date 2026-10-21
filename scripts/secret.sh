@@ -31,7 +31,7 @@ fi
 
 if ((json)); then
   # file:line: kind, one finding per line; the value itself is never printed.
-  sed -E 's/^(.*):([0-9]+): (.*)$/\1\t\2\t\3/' "$found" | jq -Rn '[inputs | split("\t") | {file: .[0], line: (.[1] | tonumber), kind: .[2]}]'
+  sed -E 's/^(.*):([0-9]+): (.*)$/\1\t\2\t\3/' "$found" | json -R '$.map((l) => l.split("\t")).map((r) => ({file: r[0], line: Number(r[1]), kind: r[2]}))'
   [[ -s "$found" ]] && exit 1
   exit 0
 fi

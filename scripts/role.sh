@@ -213,10 +213,9 @@ r_list() {
     for r in $ROLES_OPTIONAL; do has "$(team_roles)" "$r" || printf '%s\toptional\toff\t\t\t\t\t\t\n' "$r"; done
   } > "$K/roles.list"
   if ((json)); then
-    jq -Rn '[inputs | split("\t") | {name: .[0], kind: .[1], on: (.[2] | startswith("on")), drafted: (.[2] != "on, not drafted"),
-      reports_to: (.[3] | if . == "" then null else . end), covers: (.[4] | if . == "" then [] else split(", *"; null) end),
-      trial_until: (.[5] | if . == "" then null else . end), title: (.[6] | if . == "" then null else . end),
-      display_name: (.[7] | if . == "" then null else . end), function: (.[8] | if . == "" then null else . end)}]' < "$K/roles.list"
+    json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], kind: r[1], on: r[2].startsWith("on"), drafted: r[2] != "on, not drafted",
+      reports_to: str(r[3]), covers: r[4] == "" ? [] : r[4].split(/, */),
+      trial_until: str(r[5]), title: str(r[6]), display_name: str(r[7]), function: str(r[8])}))' "$K/roles.list"
   else
     awk -F'\t' '{printf "%-20s %-9s %s%s%s\n", $1, $2, $3, ($7 $8 == "" ? "" : ", " ($7 != "" && $8 != "" ? $7 ", " $8 : $7 $8)), ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' "$K/roles.list"
   fi

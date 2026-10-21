@@ -2,7 +2,7 @@
 
 > A kit for building anything with a team of AI agents while the owner stays in charge and signs off, for one person or a team of any size. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
 
-Requirements: git, jq, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
+Requirements: git, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
 Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Agents changing the kit itself follow `AGENTS.md` at the root of this repository.
 
@@ -100,8 +100,8 @@ You need macOS or Linux, and:
 
 | Required | For |
 |---|---|
-| git, jq | Every command, handoffs and the guardrails |
-| Node.js and npm | Installing Cabinet and pinning its version in each workspace |
+| git | Every command, handoffs and the guardrails |
+| Node.js and npm | Installing Cabinet and pinning its version in each workspace; the scripts' shared logic runs with Node |
 | At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, or your own command (Gemini CLI for interactive sessions only) |
 | A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
 
@@ -114,8 +114,8 @@ You need macOS or Linux, and:
 
 `cabinet new`, `init` and `bootstrap` check for the required tools first and, in a terminal, offer to install the missing ones with your package manager; `cabinet doctor --fix` does the same later, and asks first for openssl or `secret-tool` when backups are on. Node.js and npm come first by hand, since npm installs cabinet:
 
-- macOS: `brew install jq node` (git and openssl come with macOS and its command line tools).
-- Debian or Ubuntu: `sudo apt install git jq nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
+- macOS: `brew install node` (git and openssl come with macOS and its command line tools).
+- Debian or Ubuntu: `sudo apt install git nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
 
 ```sh
 npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere
@@ -233,7 +233,7 @@ File: docs/tutorial.md
 
 About 15 minutes. You create a workspace for a made-up product, Acme, set up your machine, give the team its first task, and read the first brief. The output shown is what Cabinet prints, shortened where it says `...`.
 
-You need macOS or Linux, git, jq, Node.js and at least one agent tool (Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
+You need macOS or Linux, git, Node.js and at least one agent tool (Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode or the Cursor CLI). See [Install](../README.md#install).
 
 ## 1. Create the workspace
 
@@ -607,7 +607,7 @@ cabinet new [dir] [options]
 
 Creates a workspace in an empty or missing folder. In a terminal it asks a question for each setting; options set the defaults, and `--yes` skips the questions.
 
-**Tools first.** `new`, `init` and `bootstrap` first check for the tools Cabinet needs (git, jq, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
+**Tools first.** `new`, `init` and `bootstrap` first check for the tools Cabinet needs (git, node, npm). When one is missing, they name it and the command that installs it here (`brew install`, or `sudo apt-get`, `dnf` or `pacman` on Linux). In a terminal they offer to run it and go on once it worked; with `--yes` or `--dry-run` they never install, and stop with that command (exit 1).
 
 | Option | Default | Notes |
 |---|---|---|
@@ -1523,7 +1523,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, jq, node and npm are all found. | Nothing. |
+| `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, node and npm are all found. | Nothing. |
 | `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool Cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
 | `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
 
@@ -1860,7 +1860,7 @@ What Cabinet does next, in order. Each item says what is missing today, what it 
 
 ## 1. Windows support, through WSL
 
-Windows runs Cabinet through WSL (Windows Subsystem for Linux), which gives it Cabinet's Linux support (systemd timers when WSL runs systemd, else cron). Native Windows (PowerShell, or Git Bash, which lacks `jq` and other tools the scripts use) is not a goal.
+Windows runs Cabinet through WSL (Windows Subsystem for Linux), which gives it Cabinet's Linux support (systemd timers when WSL runs systemd, else cron). Native Windows (PowerShell, or Git Bash, which lacks tools the scripts use) is not a goal.
 
 - A README section: installing WSL, where the workspace should live (the WSL file system, not a mounted Windows drive, for git speed and file permissions), and running the agent tools inside WSL.
 - The guardrails for agent tools installed inside WSL; a note on tools installed on the Windows side, which those guardrails do not cover.
@@ -1870,9 +1870,8 @@ Done when: the full test suite passes under WSL, and the README walks a Windows 
 
 ## Toward a single download
 
-The goal: a person installs one thing, and Cabinet needs nothing else but git and an agent tool. Today it needs git, jq, Node.js and npm (openssl for backups); python3 and perl are gone. New logic is JavaScript run with Node, using only Node's own modules, so it can be compiled later (`AGENTS.md`, rule 3). In order, each step useful on its own:
+The goal: a person installs one thing, and Cabinet needs nothing else but git and an agent tool. Today it needs git, Node.js and npm (openssl for backups); python3, perl and jq are gone. New logic is JavaScript run with Node, using only Node's own modules, so it can be compiled later (`AGENTS.md`, rule 3). What is left:
 
-- **No jq.** About a hundred jq calls in the scripts move to `scripts/lib.js`. jq ships with macOS 15 and later but is often missing on Linux. Done when: no kit script calls jq, and the requirements are git and Node.js.
 - **One file, no runtime.** When the shell scripts are thin wrappers, Cabinet is compiled with Bun into one file per platform (macOS on Apple and Intel chips, Linux on x64 and ARM), with Bun's built-in encryption in place of openssl. It is installed with a one-line installer, Homebrew or a GitHub release; npm stays as a wrapper that fetches the right file. The workspace scripts (`bin/*.sh`) become one-line wrappers that call it, so agents and schedules work as before. This also opens native Windows, not only WSL. Done when: a machine with only git and an agent tool installs Cabinet with one download and the full test suite passes against the compiled file.
 
 ## For founders without every skill
@@ -1983,11 +1982,12 @@ First version.
 - Roadmap: one Cabinet per person following a team's shared rulebook, and work that is not code made as complete as code.
 - No more python3: the owner's manual page, spec checks and reviews, handoff readiness, handoff entries and archiving, and the Hard to undo list are JavaScript in `scripts/lib.js` (a workspace's `bin/lib.js`), run with Node, which Cabinet already needs. The requirements are git, jq, perl, Node.js and npm. The doctor checks that scheduled jobs find Node (`schedules.node`). `handoff list --json` writes non-ASCII text as itself rather than as `\u` escapes, and a whole-dollar `cost_usd` as `5` rather than `5.0`.
 - No more perl: the setup and settings edits (`cabinet.env`, `AGENTS.md`, jobs, team tables), the secret scan, the time limit on checks and agent runs, and repo, move and restore steps are JavaScript in `scripts/lib.js`. Like perl, the edits work on a file's bytes and keep its permissions. The requirements are now git, jq, Node.js and npm (openssl for backups).
+- No more jq: every script reads and writes JSON with `json` in `scripts/lib.js`, run with Node, so the requirements are git, Node.js and npm (openssl for backups). The JSON output of every command keeps its fields and their order. Merging the kit's rules into an agent tool's settings still leaves a file of another shape as it is.
 - The secret scan no longer misses a key in the file that follows one whose last line has no newline (it was reported under the wrong file, or not at all), and a staged file whose name has a space keeps its line number.
 - Roadmap: toward a single download (no python3 or perl, then no jq, then one file compiled with Bun). New kit logic is JavaScript run with Node, never TypeScript (`AGENTS.md`, rule 3).
 - The README opens with the Cabinet mark (`docs/logo.svg`), on its own light tile so it reads the same on light and dark themes.
 - `cabinet remove` removes a workspace (its schedules, logs and folder, and inside a project what setup added), refusing work that exists nowhere else unless `--force`.
-- Tools first: `cabinet new`, `init` and `bootstrap` check for git, jq, perl, python3, node and npm, name what is missing with the command that installs it here (`brew`, `apt-get`, `dnf` or `pacman`), and in a terminal offer to run it; with `--yes` or `--dry-run` they never install. The doctor reports a missing tool (`deps.required`) and a tool enabled backups need (`deps.backups`: openssl, and `secret-tool` on Linux), `cabinet doctor --fix` installs them after asking (always in a terminal, even with `--yes`), and `cabinet next` shows the step `deps`. Agents are told to pass the command to the owner, never to install system packages themselves.
+- Tools first: `cabinet new`, `init` and `bootstrap` check for git, node and npm, name what is missing with the command that installs it here (`brew`, `apt-get`, `dnf` or `pacman`), and in a terminal offer to run it; with `--yes` or `--dry-run` they never install. The doctor reports a missing tool (`deps.required`) and a tool enabled backups need (`deps.backups`: openssl, and `secret-tool` on Linux), `cabinet doctor --fix` installs them after asking (always in a terminal, even with `--yes`), and `cabinet next` shows the step `deps`. Agents are told to pass the command to the owner, never to install system packages themselves.
 - Writing to the owner: asked at setup and by `config` after the week start, or `--writing short|standard` on `new`, `init` and `config`, sets a house rule in `AGENTS.md` that every agent follows for the brief, sign-off items and answers (`CABINET.md`, "Writing to the owner"). `short`, for an owner with little time to read or who reads best in small pieces: answer first, one point per line, three points at most, a decision in three lines, no background unless asked; the sign-off queue stays complete and no warning is cut. `config` adds the line to an `AGENTS.md` written before it.
 - `--dry-run` for `new`, `init` and `config`. `repos.tsv` takes an optional path column for a repo that lives outside the workspace.
 
@@ -2087,7 +2087,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 1. **Never touch the real machine while testing.** Every test and experiment runs in a `mktemp -d` folder with `HOME` pointed inside it (git then reads that folder's `.gitconfig` as its global config), and fakes of `launchctl`, `systemctl`, `crontab`, `security`, `secret-tool` and the agent tools first on `PATH` from the very start, never added only by a later step. Never read or write the real `~/.claude`, `~/.qwen`, `~/.cursor`, `~/.config`, `~/Library/LaunchAgents`, `~/.local/state`, the crontab, the keychain, the secret store or the global git config. `test/smoke.sh` does this in its header for every section; follow its pattern. After an experiment, check that `launchctl list` shows no `ai.cabinet.` job you did not mean to load.
 2. **Never weaken a guardrail, and never test one by trying a real push, merge or publish.** Test a rule with the tool's own matcher, or with a harmless command of the same shape (for example `git log` for `git push`). A new rule format is untested until shown to work, and the docs say so.
 3. **bash 3.2.** macOS ships it, so the kit runs on it: no `mapfile`, no associative arrays, no `${var,,}`; guard empty arrays (`${a[@]+"${a[@]}"}`); declare an array on its own `local` line; no apostrophe inside `${x:+...}` in double quotes.
-   **New logic is JavaScript, never TypeScript,** in `scripts/lib.js`, run with `node` (which the kit already needs). Only Node's own modules (`node:fs`, `node:path`, `node:crypto`, ...): no npm packages and no build step, so the same code can later be compiled with Bun into one file. Do not add python3, perl or another language; the kit is moving off them ([roadmap](ROADMAP.md#toward-a-single-download)). bash stays for the scripts' shell work until that code moves too.
+   **New logic is JavaScript, never TypeScript,** in `scripts/lib.js`, run with `node` (which the kit already needs). Only Node's own modules (`node:fs`, `node:path`, `node:crypto`, ...): no npm packages and no build step, so the same code can later be compiled with Bun into one file. JSON in a script is read and written with `json` (in `platform.sh`: `node lib.js json`, jq's options with a JavaScript expression). Do not add python3, perl, jq or another language or tool; the kit is moving off them ([roadmap](ROADMAP.md#toward-a-single-download)). bash stays for the scripts' shell work until that code moves too.
 4. **Untrusted values never reach a shell.** Anything from a cloned project (`package.json`, folder names, git remotes) is checked (`safe`, `url_ok`, `name_ok` in `bin/cabinet`) before it is written into `cabinet.env`, `repos.tsv` or a schedule. `cabinet.env` and job files are sourced as shell.
 5. **Never lose a user's data.** A config file is changed only through `write_into` (written only when the result is valid and non-empty); an existing file is kept, never replaced; restore copies anything it would replace to `recovered/` first.
 6. **Docs match the code.** A change to a command, option, file, message or behavior updates `docs/` (and `README.md` when it is user-facing) in the same change, then `npm run docs` rebuilds `llms-full.txt`. `npm test` fails when a command, option, script, doctor message or check ID is missing from the docs, a link or heading anchor is broken, or `llms-full.txt` is stale.

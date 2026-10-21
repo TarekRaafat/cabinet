@@ -63,9 +63,9 @@ echo "== Claude Code trusted projects"
 cj="$HOME/.claude.json"
 if [[ -f "$cj" ]]; then
   backup "$cj"
-  ((DRY)) && echo "  would rename $(jq --arg o "$OLD" '[.projects // {} | keys[] | select(. == $o or startswith($o + "/"))] | length' "$cj") project entries" || {
-    out="$(jq --arg o "$OLD" --arg n "$NEW" '.projects |= ((. // {}) | with_entries(
-      if (.key == $o or (.key | startswith($o + "/"))) then .key = $n + (.key | ltrimstr($o)) else . end))' "$cj")" && printf '%s\n' "$out" > "$cj"; }
+  ((DRY)) && echo "  would rename $(json --arg o "$OLD" 'Object.keys($.projects ?? {}).filter((k) => k == $o || k.startsWith($o + "/")).length' "$cj") project entries" || {
+    out="$(json --arg o "$OLD" --arg n "$NEW" '({...$, projects: Object.fromEntries(Object.entries($.projects ?? {}).map(([k, v]) =>
+      [k == $o || k.startsWith($o + "/") ? $n + k.slice($o.length) : k, v]))})' "$cj")" && printf '%s\n' "$out" > "$cj"; }
 fi
 
 echo "== Codex trusted projects"
