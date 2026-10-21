@@ -200,6 +200,19 @@ button:hover { border-color: var(--muted); }
 /* use cases */
 .use { display: grid; gap: 12px; }
 .use .stage { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+/* Every picture in "Where it goes" is the same height, so the captions line up. */
+.use .stage, .use > .term { height: 248px; }
+.use .stage { display: grid; }
+.use .stage > * { height: 100%; min-height: 0; }
+.use .stage > .mock-tabbar, .use .stage > .mock-page { height: auto; }
+.use .mock-social, .use .mock-slide { aspect-ratio: auto; }
+.use { align-content: start; }
+.use .stage:has(> .mock-tabbar) { grid-template-rows: auto 1fr; }
+.use .mock-brief { align-content: start; }
+.use .mock-icons { align-items: center; align-content: center; }
+.use .mock-slide { padding: 22px 26px; }
+.use .mock-slide .big { width: 64px; }
+.use .mock-slide .t { font-size: clamp(18px, 2.4vw, 24px); }
 .mock-gh { background: var(--b-white); color: #1F2328; padding: 22px 24px; display: grid; gap: 12px; }
 .mock-gh.dark { background: #0D1117; color: #E6EDF3; }
 .mock-gh .h { font-size: 26px; font-weight: 700; border-bottom: 1px solid currentColor; border-color: rgba(127,127,127,0.3); padding-bottom: 6px; }
