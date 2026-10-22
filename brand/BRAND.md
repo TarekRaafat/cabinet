@@ -8,6 +8,7 @@ The rules for the Cabinet mark, name, color, type and words, written for people 
 | `brand/tokens.json` | The same decisions as data: colors, status colors, fonts, the mark's geometry, motion. |
 | `brand/assets/` | Every logo file, built from `tokens.json` by `tools/build-brand.js`. Never edit one by hand. |
 | `brand/index.html` | The visual guide: every rule shown, for people. Open it in a browser. |
+| `brand/motion.html` | The logo animation and its variants, moving. |
 
 To give a project's agents these rules, copy this file to the workspace's `guides/brand.md` and add a row for it in the "Guides" table in `AGENTS.md`.
 
@@ -40,6 +41,47 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - **(Approved)** One color: dark seats (ink) on light backgrounds, light seats (mist) on dark ones.
 - **(Approved)** On its own light tile (paper, corner radius 22 units, the mark at 66%) where the page can be light or dark and you cannot choose the file, such as a README. No border.
 - **(Draft)** Clear space: one seat's width on every side. Nothing else enters it, including the name.
+
+### Loading (Draft)
+
+- The team at work: the seven seats stay in place and light up one at a time, counterclockwise from the top, like a word passed around the table. The open place is a rest beat: nothing lights there, and the brass outline never appears, because loading is not the owner's moment.
+- Timing: one beat every 150 ms, eight beats a turn (1.2 s), the open place included. The lit seat is at full color and fades back to 30% over two beats, eased out. Seats at rest are at 30%.
+- Done: every seat comes up to full color over 400 ms, so it always ends on the mark. If it fails, it ends on the mark too, and the message says what went wrong.
+- Only opacity changes: nothing turns, moves, grows or changes color. Ink on light, mist on dark, at any size from 16px.
+- Show it only after 400 ms, so a short wait never flashes. Use it for a wait of unknown length; when the progress is known, show the progress.
+- One at a time on a screen, never the header logo, never in the README, slides or print. It says "Loading" to screen readers (`role="status"`); past a few seconds, a line in words says what is happening.
+- With reduced motion: the plain mark, still, with the word "Loading..." beside it.
+
+### The logo in motion (Draft)
+
+**One becomes a team.** Everything starts with the owner: the seed the team grows from. About 3.4 seconds, played once. `brand/motion.html` shows it moving, with every variant below.
+
+1. **You.** The owner's brass outline alone, in the middle.
+2. **A whole team.** From 800 ms, the seven seats fan out of the owner to their places on the table, each from 30% of its size, fading in over the first third, 900 ms, eased out. The seat facing the owner (180 degrees) leaves first; the others follow 45 ms apart outward from it, the two beside the open place last.
+3. **Your place.** From 1000 ms, the owner moves right into the open place, 900 ms, eased in and out. It passes through the gap and never crosses a seat.
+4. **Cabinet.** At 2500 ms the outline fades out over 400 ms; the mark slides left over 700 ms to make room, and the name fades in over 500 ms, ending on the side-by-side lockup.
+
+- Where the owner is the subject (onboarding, a welcome page, the brief), it ends on step 3: the outlined mark, no name.
+- Every animation of the mark, this one and the variants, starts with the owner in the middle and ends with the owner in the open place.
+- In these animations the seats and the outline may move and grow; nothing else does. Nothing turns, no seat ever takes the open place, and brass is only the owner's outline (except "Echo").
+- Use it: video intros and end cards, an app's launch screen, a website's first visit, onboarding. Once; never in a loop, on every page load, with anything else moving, in the README, npm, slides or print, or under 64px.
+- With reduced motion: the last frame, still.
+
+**Variants**, each for its own use, never as the logo animation:
+
+| Variant | What happens | Use |
+|---|---|---|
+| Take your seats | The faint table appears; the seats come in from outside and sit down, counterclockwise from the top; the table fades. | Explaining the team: slides and docs about how a Cabinet works. |
+| You, then the table | The owner in the middle; the seats come in from outside as the owner moves to the open place and the faint table appears where the owner was. | Onboarding and welcome pages. |
+| You, multiplied, at the table | The seats fan out of the owner while the faint table spreads under them; the owner moves to the open place. | A website's opening picture. |
+| Ripple | The owner beats once; a faint ring spreads out and the seats form where it reaches the table. | Short and calm: a splash screen, the first launch of an app. |
+| Setting the table | The owner walks around the table counterclockwise, leaving a seat at each place, and arrives at the open place. | Setup: the end of setting up a workspace, explainers about building the team. |
+| Pull back | A close-up on the owner's outline; the view pulls back as the team appears. | Video: intros, the opening of a talk or a launch film. |
+| Roll call | "you" in the middle; each seat arrives with its role's name; the names fade. | Onboarding and explainers, with the project's own roles. |
+| Pull up a chair | The owner's brass chair in the middle; the chairs slide in, then turn into the mark. An exception to the chairs starting on the mark. | Illustration and video, at 96px or more. |
+| Your circle | The owner's outline grows into the table's ring, the seats appear on it, and it draws back into the open place. | Talks and slides about vision. |
+| Echo | Copies of the owner's outline travel out one at a time and turn into the seats. The one place brass leaves the open seat. | Marketing about amplification: every agent carries the owner's intent. |
+
 
 ## 3. The open seat in brass
 
@@ -127,6 +169,8 @@ Cabinet sounds like a capable chief of staff: plain, short, specific, and always
 | App icon and avatar | The dark tile with the outline, or the light tile plain | `app-icon.svg`, `app-icon-192/512.png`, `apple-touch-icon.png`, `app-icon-light.svg` | Draft |
 | Slides | Night, light seats; the outline on a title slide about the owner | `mark-light.svg`, `mark-outlined-light.svg` | Draft |
 | Sticker and print | One color on ink or paper, no brass | `mark.svg`, `mark-light.svg` | Draft |
+| Intros, end cards, launch screens, onboarding | The logo in motion, once; a variant for its own use | (drawn in code, as in `index.html` and `motion.html`) | Draft |
+| Loading, in an app or a page | The mark, its seats lit in turn | (drawn in code, as in `index.html`) | Draft |
 | Animation, onboarding, posters | The chairs | `chairs.svg`, `chairs-light.svg`, `chairs-owner-light.svg` | Approved |
 
 ## 11. Don'ts

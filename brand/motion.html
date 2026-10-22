@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cabinet in motion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --paper: #F3F4F6; --surface: #FFFFFF; --ink: #15181E; --muted: #5C6370; --line: #D9DCE2; --brass: #A06F17;
+  --night: #101216; --mist: #E8EAEE; --brass-light: #D7A54B; --term: #0E1014;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --paper: #0B0D10; --surface: #15181E; --ink: #E8EAEE; --muted: #9AA1AD; --line: #2A2F38; --brass: #D7A54B; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --paper: #0B0D10; --surface: #15181E; --ink: #E8EAEE; --muted: #9AA1AD; --line: #2A2F38; --brass: #D7A54B; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.5 "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 48px 16px 80px; display: grid; gap: 32px; }
+h1 { font-size: clamp(32px, 5vw, 48px); letter-spacing: -0.03em; line-height: 1; margin: 0; }
+h2 { font-size: 20px; letter-spacing: -0.02em; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.muted { color: var(--muted); }
+.eyebrow { font: 500 11px/1 "JetBrains Mono", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass); }
+.head { display: grid; gap: 12px; }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: 500 13px "JetBrains Mono", monospace; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card.primary { grid-column: 1 / -1; }
+.card.primary .stage { height: 340px; }
+.stage { background: var(--night); border-radius: 8px; height: 260px; display: grid; place-items: center; overflow: hidden; position: relative; cursor: pointer; }
+.lockup { display: flex; align-items: center; gap: 0.32em; font-size: 64px; color: var(--mist); }
+.lockup svg { width: 1.1em; height: 1.1em; flex: none; overflow: visible; }
+.lockup.big svg { width: 2.2em; height: 2.2em; }
+.name { font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.says { font-size: 15px; }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+dt { font: 500 11px/1.9 "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+dd { margin: 0; color: var(--muted); }
+.eyebrow a { color: inherit; }
+.eyebrow .tag { color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: 6px; }
+.group { font: 500 12px/1 "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: -16px; }
+summary.group { cursor: pointer; margin-bottom: 16px; }
+@media (max-width: 520px) { .lockup { font-size: 40px; } </style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <span class="eyebrow"><a href="index.html">Cabinet brand</a>, motion <span class="tag">Draft</span></span>
+    <h1>The mark in motion</h1>
+    <p class="muted">Everything starts with you: the owner's outline in the middle, the seed the team grows from, then the owner's own place on the right. The logo animation and its variants, as they move; the rules are in <code>BRAND.md</code>, "The logo in motion". Each plays once in about 3 seconds and ends on the mark or the lockup; nothing turns, and no seat ever takes the open place. Click a stage to play it again.</p>
+    <div class="bar"><button type="button" id="all">Play all</button><button type="button" id="ending" aria-pressed="false">Ending: the name fades in</button></div>
+  </div>
+  <h2 class="group">The logo animation</h2>
+  <div class="grid" id="short"></div>
+  <div class="grid" id="fresh" hidden></div>
+  <h2 class="group">Variants, each for its own use</h2>
+  <div class="grid" id="variants"></div>
+</main>
+<script>
+(function () {
+  var MIST = "#E8EAEE", BRASS = "#D7A54B", NS = "http://www.w3.org/2000/svg";
+  var OUT = "cubic-bezier(0.2, 0, 0, 1)", INOUT = "cubic-bezier(0.65, 0, 0.35, 1)";
+  var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function pos(k, r) { var a = k * Math.PI / 4; r = r || 36; return { x: r * Math.cos(a), y: -r * Math.sin(a) }; }
+  function el(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var a in attrs) e.setAttribute(a, attrs[a]); if (parent) parent.appendChild(e); return e; }
+
+  // One mark per stage: seats 1 to 7 (45 to 315 degrees), the owner's outline at 0, an optional table, the name.
+  function build(stage, o) {
+    stage.innerHTML = "";
+    var wrap = document.createElement("div"); wrap.className = "lockup" + (o.big ? " big" : "");
+    var svg = el("svg", { viewBox: "-50 -50 100 100", "aria-hidden": "true" });
+    var m = { svg: svg, seats: [], wrap: wrap };
+    if (o.table) m.table = el("circle", { r: 17, fill: MIST, opacity: 0.12 }, svg);
+    m.layer = el("g", {}, svg);
+    for (var k = 1; k < 8; k++) { var p = pos(k); m.seats[k] = el("circle", { cx: p.x, cy: p.y, r: 9.5, fill: MIST }, m.layer); }
+    m.open = el("circle", { cx: 36, cy: 0, r: 8.4, fill: "none", stroke: BRASS, "stroke-width": 2.2, pathLength: 1 }, svg);
+    wrap.appendChild(svg);
+    if (o.name !== false) { m.name = document.createElement("span"); m.name.className = "name"; m.name.textContent = "cabinet"; wrap.appendChild(m.name); }
+    stage.appendChild(wrap);
+    m.list = [];
+    // The mark starts centered; the lockup slides into place as the name arrives.
+    m.shift = m.name ? (m.name.getBoundingClientRect().width + parseFloat(getComputedStyle(wrap).fontSize) * 0.32) / 2 : 0;
+    return m;
+  }
+  function anim(m, node, frames, opts) {
+    var a = node.animate(frames, Object.assign({ fill: "both", easing: OUT }, opts));
+    m.list.push(a); return a;
+  }
+  function seatIn(m, k, delay, from) {
+    anim(m, m.seats[k], [{ opacity: 0, transform: "scale(" + (from || 0.6) + ")" }, { opacity: 1, transform: "none" }], { delay: delay, duration: 400 });
+  }
+  // The usual ending: the outline fades, the mark slides left, the name fades in.
+  // legacy: the shortlist as first shown, where the outline is at full from the first frame.
+  function ending(m, at, legacy) {
+    anim(m, m.open, [{ opacity: 1 }, { opacity: 0 }], legacy ? { delay: at, duration: 400, easing: INOUT } : { delay: at, duration: 400, easing: INOUT, fill: "forwards", composite: "replace" });
+    anim(m, m.wrap, [{ transform: "translateX(" + m.shift + "px)" }, { transform: "none" }], { delay: at + 200, duration: 700, easing: INOUT });
+    if (fromYou) anim(m, m.name, [{ opacity: 0, clipPath: "inset(0 100% 0 0)", transform: "translateX(-0.15em)" }, { opacity: 1, offset: 0.2 }, { opacity: 1, clipPath: "inset(0 0 0 0)", transform: "none" }], { delay: at + 250, duration: 750, easing: INOUT });
+    else anim(m, m.name, [{ opacity: 0 }, { opacity: 1 }], { delay: at + 400, duration: 500, easing: INOUT });
+  }
+  var fromYou = false;
+  function origin(node) { node.style.transformBox = "fill-box"; node.style.transformOrigin = "center"; }
+
+  var concepts = [
+    {
+      use: "The logo animation: video intros and end cards, an app's launch screen, a website's first visit. Once.",
+      title: "2. One becomes a team",
+      says: "You are multiplied, not replaced. The person stays the person; the team grows out of them, and they take the chair at the head.",
+      how: "The owner's outline at the center. Seven seats fan out of it to their places; the outline moves right into the open place. Then the name.",
+      rule: "Seats and the outline move; the outline starts in the middle.",
+      play: function (stage) {
+        var m = build(stage, {});
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        for (var k = 1; k < 8; k++) {
+          var p = pos(k);
+          anim(m, m.seats[k], [{ opacity: 0, transform: "translate(" + -p.x + "px," + -p.y + "px) scale(0.3)" }, { opacity: 1, offset: 0.3 }, { opacity: 1, transform: "none" }], { delay: 800 + 45 * Math.abs(k - 4), duration: 900 });
+        }
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 1000, duration: 900, easing: INOUT, composite: "replace" });
+        ending(m, 2500, true);
+        return m;
+      }
+    },
+    {
+      use: "Explaining the team: slides and docs about how a Cabinet works.",
+      title: "3. Take your seats",
+      says: "A small company around one table, not an org chart. Everyone sits down; one chair is kept.",
+      how: "The faint table appears. Seats come in from outside to their places, counterclockwise from the top. The owner's outline marks the kept place. The table fades: only the mark is left.",
+      rule: "Uses the table (allowed for pictures that explain the idea); seats move inward.",
+      play: function (stage) {
+        var m = build(stage, { table: true });
+        anim(m, m.table, [{ opacity: 0, transform: "scale(0.6)" }, { opacity: 0.12, transform: "none" }], { duration: 600, easing: INOUT });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) {
+          var p = pos(k, 22);
+          anim(m, m.seats[k], [{ opacity: 0, transform: "translate(" + p.x + "px," + p.y + "px)" }, { opacity: 1, transform: "none" }], { delay: 500 + 130 * i, duration: 650 });
+        });
+        anim(m, m.open, [{ opacity: 0 }, { opacity: 1 }], { delay: 1750, duration: 500, easing: INOUT });
+        anim(m, m.table, [{ opacity: 0.12 }, { opacity: 0 }], { delay: 2300, duration: 500, easing: INOUT, composite: "replace" });
+        ending(m, 2700, true);
+        return m;
+      }
+    },
+    {
+      use: "Onboarding and welcome pages, when the owner arrives.",
+      title: "7. You, then the table (2 + 3)",
+      says: "You start alone. The team comes to the table and sits down around you; you take your own place, the one kept for you.",
+      how: "The owner's outline in the middle. Seats come in from outside, counterclockwise from the top; as they sit, the owner moves right into the open place and the faint table appears where the owner was. The table fades, then the name.",
+      rule: "Seats and the outline move; the outline starts in the middle; the table, faint, as in 3.",
+      play: function (stage) {
+        var m = build(stage, { table: true });
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) {
+          var p = pos(k, 22);
+          anim(m, m.seats[k], [{ opacity: 0, transform: "translate(" + p.x + "px," + p.y + "px)" }, { opacity: 1, transform: "none" }], { delay: 800 + 120 * i, duration: 650 });
+        });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 1200, duration: 900, easing: INOUT, composite: "replace" });
+        anim(m, m.table, [{ opacity: 0, transform: "scale(0.5)" }, { opacity: 0.12, transform: "none" }], { delay: 1300, duration: 700, easing: INOUT });
+        anim(m, m.table, [{ opacity: 0.12 }, { opacity: 0 }], { delay: 2400, duration: 500, easing: INOUT, composite: "replace" });
+        ending(m, 2800, true);
+        return m;
+      }
+    },
+    {
+      use: "A website's opening picture.",
+      title: "8. You, multiplied, at the table (2 + 3)",
+      says: "The team grows out of you and settles around a table; then you take the chair kept for you.",
+      how: "The owner's outline in the middle. Seven seats fan out of it to their places while the faint table spreads under them; the owner moves right into the open place. The table fades, then the name.",
+      rule: "Seats and the outline move; the outline starts in the middle; the table, faint.",
+      play: function (stage) {
+        var m = build(stage, { table: true });
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        for (var k = 1; k < 8; k++) {
+          var p = pos(k);
+          anim(m, m.seats[k], [{ opacity: 0, transform: "translate(" + -p.x + "px," + -p.y + "px) scale(0.3)" }, { opacity: 1, offset: 0.3 }, { opacity: 1, transform: "none" }], { delay: 800 + 45 * Math.abs(k - 4), duration: 900 });
+        }
+        anim(m, m.table, [{ opacity: 0, transform: "scale(0.3)" }, { opacity: 0.12, transform: "none" }], { delay: 900, duration: 800 });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 1100, duration: 900, easing: INOUT, composite: "replace" });
+        anim(m, m.table, [{ opacity: 0.12 }, { opacity: 0 }], { delay: 2300, duration: 500, easing: INOUT, composite: "replace" });
+        ending(m, 2700, true);
+        return m;
+      }
+    },
+    {
+      use: "Video: intros and the opening of a talk or a launch film.",
+      title: "11. Pull back",
+      says: "It is about you first. Then the camera pulls back and shows the whole team around you, and you take your place.",
+      how: "Close up on the owner's brass outline in the middle, filling the frame. The view pulls back from above as the seats appear around it; the owner moves right into the open place. Then the name. For video and a website's opening.",
+      rule: "The whole mark scales (evenly), starting very large; the outline starts in the middle and moves.",
+      play: function (stage) {
+        var m = build(stage, {});
+        origin(m.open);
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 400, easing: INOUT });
+        anim(m, m.svg, [{ transform: "scale(7)" }, { transform: "none" }], { delay: 500, duration: 1800, easing: "cubic-bezier(0.6, 0, 0.1, 1)" });
+        for (var k = 1; k < 8; k++) anim(m, m.seats[k], [{ opacity: 0 }, { opacity: 1 }], { delay: 800 + 60 * Math.abs(k - 4), duration: 700, easing: INOUT });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 1900, duration: 800, easing: INOUT, composite: "replace" });
+        ending(m, 3000);
+        return m;
+      }
+    },
+    {
+      use: "Onboarding and explainers, with the project's own roles.",
+      title: "12. Roll call",
+      says: "You, then a whole team of specialists for whatever you build. The mark explained in its own motion.",
+      how: "\"you\" in the middle. Each seat appears with its role's name, counterclockwise from the top. You move to your place; the names fade and leave the mark. Then the name. For onboarding and explainers; the roles can be the project's own.",
+      rule: "Role names beside the seats (the chairs may carry them already; the mark may not); the outline starts in the middle and moves.",
+      play: function (stage) {
+        var m = build(stage, {});
+        var roles = { 1: "review", 2: "product", 3: "design", 4: "code", 5: "writing", 6: "marketing", 7: "finance" };
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        var labels = el("g", { "font-family": "JetBrains Mono, monospace", "font-size": 15, fill: MIST }, m.svg);
+        function label(k, text, at) {
+          var p = pos(k, k === 0 ? 50 : 57), anchor = p.x > 5 ? "start" : p.x < -5 ? "end" : "middle";
+          var t = el("text", { x: p.x, y: p.y + 5, "text-anchor": anchor }, labels); t.textContent = text;
+          anim(m, t, [{ opacity: 0 }, { opacity: 0.75 }], { delay: at, duration: 400, easing: INOUT });
+          anim(m, t, [{ opacity: 0.75 }, { opacity: 0 }], { delay: 2900, duration: 400, easing: INOUT, fill: "forwards", composite: "replace" });
+          return t;
+        }
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 400, easing: INOUT });
+        var you = label(0, "you", 100);
+        anim(m, you, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 2100, duration: 700, easing: INOUT });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 2100, duration: 700, easing: INOUT, composite: "replace" });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) { seatIn(m, k, 600 + 200 * i); label(k, roles[k], 650 + 200 * i); });
+        ending(m, 3300);
+        return m;
+      }
+    },
+    {
+      use: "Illustration and video, at 96px or more.",
+      title: "13. Pull up a chair",
+      says: "Your chair first, in the middle. The team pulls up its chairs around you; you take the place kept for you. Then the furniture becomes the logo.",
+      how: "The owner's brass chair in the middle. The brand's chairs slide in from outside, backs outward, counterclockwise from the top. The brass chair moves to the open place. Each chair turns into its dot, the brass chair into the outline. Then the name. For illustration and video, at 96px or more.",
+      rule: "Chairs move (today they only appear in place); the owner's chair starts in the middle.",
+      play: function (stage) {
+        var m = build(stage, {}), w = 14.8;
+        var chairs = el("g", {}, m.svg), ch = [];
+        for (var k = 0; k < 8; k++) {
+          var p = pos(k), outer = el("g", {}, chairs);
+          var inner = el("g", k === 0 ? { transform: "translate(" + p.x + " " + p.y + ")", fill: "none", stroke: BRASS, "stroke-width": 2.2 } : { transform: "translate(" + p.x + " " + p.y + ") rotate(" + -k * 45 + ")", fill: MIST }, outer);
+          el("rect", { x: -w / 2 - 1, y: -w / 2, width: w, height: w, rx: w * 0.28 }, inner);
+          el("rect", { x: w / 2 + 0.6, y: -w * 0.62, width: w * 0.26, height: w * 1.24, rx: w * 0.13 }, inner);
+          ch[k] = outer;
+        }
+        anim(m, ch[0], [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) {
+          var p = pos(k, 20);
+          anim(m, ch[k], [{ opacity: 0, transform: "translate(" + p.x + "px," + p.y + "px)" }, { opacity: 1, transform: "none" }], { delay: 600 + 130 * i, duration: 650 });
+          anim(m, ch[k], [{ opacity: 1 }, { opacity: 0 }], { delay: 2300 + 60 * i, duration: 350, easing: INOUT, fill: "forwards", composite: "replace" });
+          anim(m, m.seats[k], [{ opacity: 0 }, { opacity: 1 }], { delay: 2300 + 60 * i, duration: 350, easing: INOUT });
+        });
+        anim(m, ch[0], [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 1500, duration: 800, easing: INOUT, composite: "replace" });
+        anim(m, ch[0], [{ opacity: 1 }, { opacity: 0 }], { delay: 2700, duration: 350, easing: INOUT, fill: "forwards", composite: "replace" });
+        anim(m, m.open, [{ opacity: 0 }, { opacity: 1 }], { delay: 2700, duration: 350, easing: INOUT });
+        ending(m, 3200);
+        return m;
+      }
+    },
+    {
+      use: "Short and calm: loading into an app the first time, a splash screen.",
+      title: "14. Ripple",
+      says: "Everything starts with you. Your intent goes out like a ripple, and where it lands, the team takes shape.",
+      how: "The owner's outline in the middle beats once. A faint ring spreads out from it; as the ring reaches the table's edge, the seven seats form on it. The ring is gone; the owner moves to the open place. Then the name.",
+      rule: "A faint expanding ring in the seats' color (a new element); the outline starts in the middle and moves.",
+      play: function (stage) {
+        var m = build(stage, {});
+        origin(m.open);
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        var ring = el("circle", { r: 36, fill: "none", stroke: MIST, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke" });
+        m.svg.insertBefore(ring, m.layer);
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "translate(-36px, 0) scale(1.3)", offset: 0.4 }, { transform: "translate(-36px, 0)" }], { delay: 650, duration: 450, easing: INOUT, composite: "replace" });
+        anim(m, ring, [{ transform: "scale(0.23)", opacity: 0.6 }, { transform: "scale(1)", opacity: 0.5, offset: 0.8 }, { transform: "scale(1.1)", opacity: 0 }], { delay: 800, duration: 1000, easing: "cubic-bezier(0.3, 0, 0.2, 1)" });
+        for (var k = 1; k < 8; k++) seatIn(m, k, 1450 + 25 * Math.abs(k - 4), 0.2);
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 2000, duration: 800, easing: INOUT, composite: "replace" });
+        ending(m, 3000);
+        return m;
+      }
+    },
+    {
+      use: "Talks and slides about vision: the owner brings it, the team works inside it.",
+      title: "15. Your circle",
+      says: "You bring the vision; the team works inside it. Your outline opens up into the circle the team sits on, then returns to your own place.",
+      how: "The owner's outline in the middle grows into the ring of the table. The seats appear on that ring, counterclockwise from the top. The brass ring draws back into a single outline as it moves to the open place. Then the name.",
+      rule: "The brass outline large for a moment (brass is at most 1% of anything still); the outline starts in the middle and moves.",
+      play: function (stage) {
+        var m = build(stage, {});
+        origin(m.open);
+        m.open.setAttribute("vector-effect", "non-scaling-stroke");
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "translate(-36px, 0) scale(4.286)" }], { delay: 700, duration: 800, easing: INOUT, composite: "replace" });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) { seatIn(m, k, 1450 + 90 * i, 0.3); });
+        anim(m, m.open, [{ transform: "translate(-36px, 0) scale(4.286)" }, { transform: "none" }], { delay: 2200, duration: 800, easing: INOUT, fill: "forwards", composite: "replace" });
+        ending(m, 3200);
+        return m;
+      }
+    },
+    {
+      use: "Setup: the end of setting up a workspace, and explainers about building the team.",
+      title: "16. Setting the table",
+      says: "You set up your team one role at a time, then take your own seat. Cabinet's setup, as a gesture.",
+      how: "The owner's outline in the middle moves out to the table and walks around it counterclockwise; at each place it passes, a seat appears behind it. After the seventh, it arrives at the open place and stays. Then the name.",
+      rule: "The outline travels around the ring, over the places before the seats appear; it starts in the middle.",
+      play: function (stage) {
+        var m = build(stage, {});
+        m.seats.forEach(function (s) { if (s) origin(s); });
+        var lead = 36, arc = 36 * 315 * Math.PI / 180, total = lead + arc, frames = [{ opacity: 1, transform: "translate(-36px, 0)", offset: 0 }];
+        var p1 = pos(1);
+        frames.push({ transform: "translate(" + (p1.x - 36) + "px," + p1.y + "px)", offset: lead / total });
+        for (var d = 50; d <= 360; d += 5) {
+          var a = d * Math.PI / 180, x = 36 * Math.cos(a), y = -36 * Math.sin(a);
+          frames.push({ transform: "translate(" + (x - 36) + "px," + y + "px)", offset: (lead + 36 * (d - 45) * Math.PI / 180) / total });
+        }
+        frames[frames.length - 1].transform = "none";
+        var start = 700, dur = 2100;
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        anim(m, m.open, frames, { delay: start, duration: dur, easing: "linear", composite: "replace" });
+        for (var k = 1; k < 8; k++) seatIn(m, k, start + dur * (lead + 36 * (k * 45 - 45) * Math.PI / 180) / total + 90, 0.3);
+        ending(m, 3200);
+        return m;
+      }
+    },
+    {
+      use: "Marketing about amplification: every agent carries the owner's intent.",
+      title: "19. Echo",
+      says: "Every agent carries your intent. The team is you, amplified: echoes of your outline that become the seats.",
+      how: "The owner's outline in the middle. One at a time, counterclockwise from the top, a copy of the outline travels out to a place and turns solid as it arrives. Then the owner moves to the open place. Then the name.",
+      rule: "Brass outlines travel out and turn into seats (brass appears on more than the open place, for a moment); the outline starts in the middle and moves.",
+      play: function (stage) {
+        var m = build(stage, {});
+        anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });
+        [2, 3, 4, 5, 6, 7, 1].forEach(function (k, i) {
+          var s = m.seats[k], p = pos(k);
+          s.setAttribute("stroke", BRASS); s.setAttribute("stroke-width", 2.2);
+          s.style.transformBox = "view-box";
+          anim(m, s, [
+            { opacity: 0, transform: "translate(" + -p.x + "px," + -p.y + "px)", fillOpacity: 0, strokeOpacity: 1, r: "8.4px" },
+            { opacity: 1, offset: 0.15 },
+            { transform: "none", fillOpacity: 0, strokeOpacity: 1, r: "8.4px", offset: 0.7 },
+            { opacity: 1, transform: "none", fillOpacity: 1, strokeOpacity: 0, r: "9.5px" }], { delay: 700 + 170 * i, duration: 800, easing: INOUT });
+        });
+        anim(m, m.open, [{ transform: "translate(-36px, 0)" }, { transform: "none" }], { delay: 2300, duration: 800, easing: INOUT, composite: "replace" });
+        ending(m, 3300);
+        return m;
+      }
+    }
+  ];
+
+  // Shortlisted first, then the new directions, then the ones set aside.
+  var groups = { short: [2], fresh: [], variants: [3, 7, 8, 14, 16, 11, 12, 13, 15, 19], aside: [] }, running = [];
+  concepts.forEach(function (c, i) {
+    var n = parseInt(c.title, 10), grid = document.getElementById(groups.short.indexOf(n) >= 0 ? "short" : groups.fresh.indexOf(n) >= 0 ? "fresh" : groups.variants.indexOf(n) >= 0 ? "variants" : "aside");
+    var card = document.createElement("article"); card.className = "card" + (n === 2 ? " primary" : "");
+    card.innerHTML = '<div class="stage" role="img" aria-label="' + c.title.replace(/^\d+\. /, "") + ', animated"></div>' +
+      '<div class="row"><h2>' + c.title.replace(/^\d+\. /, "").replace(" (2 + 3)", "") + '</h2><button type="button">Play again</button></div>' +
+      '<p class="says">' + c.says + "</p><dl><dt>How</dt><dd>" + c.how + "</dd><dt>Use</dt><dd>" + c.use + "</dd><dt>Allows</dt><dd>" + c.rule + "</dd></dl>";
+    grid.appendChild(card);
+    var stage = card.querySelector(".stage");
+    function play() {
+      var old = running[i];
+      if (old) { old.list.forEach(function (a) { a.cancel(); }); (old.timers || []).forEach(clearTimeout); }
+      running[i] = c.play(stage);
+      if (reduce) running[i].list.forEach(function (a) { a.finish(); });
+    }
+    stage.addEventListener("click", play);
+    card.querySelector("button").addEventListener("click", play);
+    c.replay = play;
+  });
+  function all() { concepts.forEach(function (c) { c.replay(); }); }
+  document.getElementById("all").addEventListener("click", all);
+  var endBtn = document.getElementById("ending");
+  endBtn.addEventListener("click", function () {
+    fromYou = !fromYou;
+    endBtn.setAttribute("aria-pressed", fromYou);
+    endBtn.textContent = fromYou ? "Ending: the name comes out of your place" : "Ending: the name fades in";
+    all();
+  });
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(all);
+})();
+</script>
+</body>
+</html>

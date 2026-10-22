@@ -77,6 +77,58 @@ a { color: inherit; }
 .reveal:hover .open, .reveal:focus-visible .open { opacity: 1; }
 .cover-mark:focus-visible { border-radius: 22%; }
 @media (prefers-reduced-motion: reduce) { .reveal .open { transition: none; } }
+/* loading: one beat every 150 ms, counterclockwise from the top (child 2), the open place a rest beat (brand guide, "Loading") */
+.loader circle { opacity: 0.3; animation: seat 1200ms ease-out infinite; }
+.loader circle:nth-child(2) { animation-delay: -1200ms; }
+.loader circle:nth-child(3) { animation-delay: -1050ms; }
+.loader circle:nth-child(4) { animation-delay: -900ms; }
+.loader circle:nth-child(5) { animation-delay: -750ms; }
+.loader circle:nth-child(6) { animation-delay: -600ms; }
+.loader circle:nth-child(7) { animation-delay: -450ms; }
+.loader circle:nth-child(1) { animation-delay: -150ms; }
+@keyframes seat { 0% { opacity: 1; } 25%, 100% { opacity: 0.3; } }
+.loader.done circle { animation: none; opacity: 1; transition: opacity 400ms ease; }
+.loader-word { display: none; font-family: var(--font-mono); font-size: 12px; }
+.loading-row { display: flex; align-items: center; gap: 12px; }
+@media (prefers-reduced-motion: reduce) { .loader circle { animation: none; opacity: 1; } .loader-word { display: inline; } }
+/* the logo in motion: the owner in the middle; the seats fan out of it, the seat facing it first; the owner moves to the open place; then the name (brand guide, "The logo in motion") */
+.fan g > circle:nth-child(1) { --x: -25.456px; --y: 25.456px; }
+.fan g > circle:nth-child(2) { --x: 0px; --y: 36px; }
+.fan g > circle:nth-child(3) { --x: 25.456px; --y: 25.456px; }
+.fan g > circle:nth-child(4) { --x: 36px; --y: 0px; }
+.fan g > circle:nth-child(5) { --x: 25.456px; --y: -25.456px; }
+.fan g > circle:nth-child(6) { --x: 0px; --y: -36px; }
+.fan g > circle:nth-child(7) { --x: -25.456px; --y: -25.456px; }
+.intro .open { transform: translateX(-36px); animation: home 900ms cubic-bezier(0.65, 0, 0.35, 1) 1000ms forwards, fade-out 400ms ease-in-out 2500ms forwards; }
+.intro.owner .open { animation: home 900ms cubic-bezier(0.65, 0, 0.35, 1) 1000ms forwards; }
+.intro g > circle { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fan 900ms cubic-bezier(0.2, 0, 0, 1) forwards; }
+.intro g > circle:nth-child(1) { animation-delay: 935ms; }
+.intro g > circle:nth-child(2) { animation-delay: 890ms; }
+.intro g > circle:nth-child(3) { animation-delay: 845ms; }
+.intro g > circle:nth-child(4) { animation-delay: 800ms; }
+.intro g > circle:nth-child(5) { animation-delay: 845ms; }
+.intro g > circle:nth-child(6) { animation-delay: 890ms; }
+.intro g > circle:nth-child(7) { animation-delay: 935ms; }
+.intro.lockup-h { transform: translateX(var(--shift, 0)); animation: home 700ms cubic-bezier(0.65, 0, 0.35, 1) 2700ms forwards; }
+.intro .wordmark { opacity: 0; animation: fade-in 500ms ease-in-out 2900ms forwards; }
+@keyframes home { to { transform: none; } }
+@keyframes fan { from { opacity: 0; transform: translate(var(--x), var(--y)) scale(0.3); } 30% { opacity: 1; } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+.intro-stage { min-height: 220px; overflow: hidden; }
+.intro-stage .lockup-h { font-size: 64px; }
+.f1 g { display: none; }
+.f1 .open { transform: translateX(-36px); }
+.f2 .open { transform: translateX(-36px); }
+.f2 g > circle { transform-box: fill-box; transform-origin: center; transform: translate(calc(var(--x) * 0.45), calc(var(--y) * 0.45)) scale(0.75); }
+.f3 .open { transform: translateX(-14px); }
+.frame .lockup-h { font-size: 26px; }
+.frame .tile .lockup-h svg { width: 1.1em; height: 1.1em; }
+@media (prefers-reduced-motion: reduce) {
+  .intro .open, .intro g > circle, .intro .wordmark, .intro.lockup-h { animation: none; opacity: 1; transform: none; }
+  .intro .open { opacity: 0; }
+  .intro.owner .open { opacity: 1; }
+}
 .cover h1 { font-size: clamp(56px, 9vw, 96px); font-weight: 700; letter-spacing: -0.045em; line-height: 0.95; }
 .cover-text { display: grid; gap: 14px; min-width: 0; }
 .cover-text p { font-size: 18px; }
@@ -355,7 +407,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
     <!-- 02 -->
     <section class="chapter" id="mark">
       <div class="chapter-head">
-        <span class="num">02 <span class="state ok">Approved, clear space draft</span></span>
+        <span class="num">02 <span class="state ok">Approved, clear space and motion draft</span></span>
         <h2>The mark</h2>
         <p class="muted">Seven dots on a ring, the open place on the right. One mark at every size, in one color.</p>
       </div>
@@ -402,6 +454,66 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
           <h3>Construction</h3>
           <p class="muted">On a 100 unit grid: eight places every 45 degrees on a ring of radius 36, seats 19 units wide, the place at 0 degrees left open.</p>
           <div class="card" style="justify-items:center"><div data-construct style="width:220px;color:var(--ink)"></div></div>
+        </div>
+      </div>
+
+      <div class="block" id="loading">
+        <h3>Loading: the team at work <span class="state">Draft</span></h3>
+        <p class="muted">The seats stay in place and light up one at a time, counterclockwise from the top, like a word passed around the table. The open place is a rest beat: nothing lights there. When the work is done, every seat comes up to full and it ends on the mark.</p>
+        <div class="grid2">
+          <div class="card">
+            <div class="tile on-white"><div class="loading-row" role="status" aria-label="Loading"><span class="loader" data-mark='{"fill":"#15181E","size":96}'></span><span class="loader-word">Loading...</span></div></div>
+            <div class="tile on-night sizes" style="justify-content:center;align-items:center"><span class="loader" data-mark='{"fill":"#E8EAEE","size":48}'></span><span class="loader" data-mark='{"fill":"#E8EAEE","size":24}'></span><span class="loader" data-mark='{"fill":"#E8EAEE","size":16}'></span></div>
+            <button type="button" id="loading-done">Finish loading</button>
+          </div>
+          <div class="card">
+            <span class="tag">How it moves</span>
+            <ul class="rules">
+              <li><b>One beat every 150 ms,</b> eight beats a turn (1.2 s), the open place included. The lit seat fades back to 30% over two beats, eased out.</li>
+              <li><b>Only opacity changes.</b> Nothing turns, moves, grows or changes color. No brass: loading is not the owner's moment.</li>
+              <li><b>Done, or failed:</b> every seat comes up to full over 400 ms. A failure says what went wrong in words.</li>
+              <li><b>After 400 ms only,</b> so a short wait never flashes. When the progress is known, show the progress instead.</li>
+            </ul>
+            <span class="tag bad">Not</span>
+            <ul class="rules">
+              <li>More than one on a screen, on the header logo, or anywhere nothing is loading: the README, slides, print.</li>
+              <li>Without words: it says "Loading" to screen readers, and past a few seconds a line says what is happening. With reduced motion it is the still mark and the word.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="block" id="intro">
+        <h3>The logo in motion: one becomes a team <span class="state">Draft</span></h3>
+        <p class="muted">Everything starts with you. The owner's outline in the middle, the seed; the team fans out of it to the table, the seat facing the owner first; the owner moves right into the open place; then the name. One person, a whole team, and you stay in charge. About 3.4 seconds, played once.</p>
+        <div class="grid2">
+          <div class="tile on-white intro-stage"><div class="intro fan lockup-h" role="img" aria-label="Cabinet" style="color:#15181E"><span data-mark='{"fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open"}'></span><span class="wordmark">cabinet</span></div></div>
+          <div class="tile on-night intro-stage"><div class="intro fan owner" role="img" aria-label="Cabinet, with the owner's place"><span data-mark='{"fill":"#E8EAEE","open":"ghost","accent":"#D7A54B","openClass":"open","size":120}'></span></div></div>
+        </div>
+        <button type="button" id="intro-replay">Play again</button>
+        <div class="story">
+          <div class="frame"><div class="tile on-night"><span class="f1 fan" data-mark='{"fill":"#E8EAEE","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>1. You</b><p>The owner's brass outline, alone, in the middle.</p></div>
+          <div class="frame"><div class="tile on-night"><span class="f2 fan" data-mark='{"fill":"#E8EAEE","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>2. A whole team</b><p>The seats fan out of the owner to the table, the seat facing the owner first.</p></div>
+          <div class="frame"><div class="tile on-night"><span class="f3 fan" data-mark='{"fill":"#E8EAEE","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>3. Your place</b><p>The owner moves right into the open place. Owner pages may end here.</p></div>
+          <div class="frame"><div class="tile on-night"><div class="lockup-h" style="color:#E8EAEE"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span><span class="wordmark">cabinet</span></div></div><b>4. Cabinet</b><p>The outline fades, the mark makes room, the name follows.</p></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <span class="tag">Use it</span>
+            <ul class="rules">
+              <li>Video intros and end cards, an app's launch screen, a website's first visit.</li>
+              <li>Onboarding and welcome pages when the owner arrives, ending on the outlined mark (right).</li>
+              <li><b>Once.</b> With reduced motion, the last frame. Ten variants, each for its own use, are in <a href="motion.html">motion.html</a>.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="tag bad">Not</span>
+            <ul class="rules">
+              <li>In a loop, on every page load, or with anything else moving.</li>
+              <li>The README, npm, slides or print; under 64px, where the outline blurs.</li>
+              <li>Turning, bouncing, or a seat at the open place.</li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>
@@ -789,6 +901,30 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
   }
 
   document.querySelectorAll("[data-mark]").forEach(function (el) { el.innerHTML = mark(JSON.parse(el.getAttribute("data-mark"))); });
+  // Loading: finish settles every seat from where it is to full; press again to load again.
+  var done = document.getElementById("loading-done");
+  done.addEventListener("click", function () {
+    var loaders = document.querySelectorAll(".loader"), finishing = done.textContent === "Finish loading";
+    loaders.forEach(function (l) {
+      var seats = l.querySelectorAll("circle");
+      if (finishing) seats.forEach(function (s) { s.style.opacity = getComputedStyle(s).opacity; });
+      l.classList.toggle("done", finishing);
+      if (finishing) { l.getBoundingClientRect(); seats.forEach(function (s) { s.style.opacity = ""; }); }
+    });
+    done.textContent = finishing ? "Load again" : "Finish loading";
+  });
+  // The logo in motion: a fresh copy plays it again.
+  function center() {
+    document.querySelectorAll(".intro.lockup-h").forEach(function (el) {
+      var name = el.querySelector(".wordmark"), gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+      el.style.setProperty("--shift", (name.getBoundingClientRect().width + gap) / 2 + "px");
+    });
+  }
+  center();
+  if (document.fonts) document.fonts.ready.then(center);
+  document.getElementById("intro-replay").addEventListener("click", function () {
+    document.querySelectorAll(".intro").forEach(function (el) { el.replaceWith(el.cloneNode(true)); });
+  });
   document.querySelectorAll("[data-icon]").forEach(function (el) { el.innerHTML = icon(el.getAttribute("data-icon")); });
   document.querySelectorAll("[data-sizes]").forEach(function (el) {
     var fill = el.getAttribute("data-sizes");
