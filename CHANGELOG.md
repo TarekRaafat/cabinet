@@ -9,6 +9,7 @@ First version.
 ### Setup and settings
 
 - Installed per workspace as the dev dependency `@tarekraafat/cabinet`; the package names its repository, home page and issue tracker on GitHub, publishes as public, and installs on macOS and Linux.
+- Bootstrap commits what a new builder changes (the team table in `AGENTS.md`, `ORG.md`, the built roles), when the workspace has its own git and those files held no uncommitted edits of the owner's; otherwise it says to review and commit them, naming `ORG.md` too.
 - Setup commits every file it writes, the org page `ORG.md` included, so a new workspace starts with nothing uncommitted.
 - `cabinet new` asks its setup questions in a terminal (name, folder, owner, roles, agent tool, a weekly budget (and a price for a runner that reports only tokens), brief time, week start, writing to the owner, backups, repos); each is also an option, and `--yes` skips them for scripts.
 - `cabinet init` adds Cabinet to an existing project: inside it as `cabinet/`, private or shared, or beside it; or makes an existing folder of repos the workspace. Nothing existing is replaced. It fills the project name, description, test commands, repository URL and owner from the project's `package.json` and git, each marked with its source.

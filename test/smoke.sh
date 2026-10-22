@@ -1163,6 +1163,7 @@ out="$(HOME="$BH" "$B/bin/bootstrap.sh" 2>&1)" || true
 for kv in kind-web:web kind-app:mobile kind-infra:infrastructure kind-api:backend; do
   echo "$out" | grep -q "${kv%%:*}: owned by the ${kv#*:} builder" && grep -q "^| \`${kv%%:*}\` | TBD | ${kv#*:} |$" "$B/AGENTS.md" || fail "${kv%%:*} was not given the ${kv#*:} builder: $out"
 done
+[[ -z "$(git -C "$B" status --porcelain -- AGENTS.md ORG.md agents .claude/agents)" ]] && echo "$out" | grep -q "committed the new builders" || fail "bootstrap left the new builders uncommitted: $(git -C "$B" status --porcelain)"
 for r in backend web mobile infrastructure; do
   grep -q "^name: $r$" "$B/agents/$r.md" && [[ -f "$B/.claude/agents/$r.md" ]] || fail "the $r builder was not built"
 done
@@ -1170,7 +1171,7 @@ grep -q '`.cabinet/rules/builders.md`' "$B/agents/web.md" && grep -q '^## Builde
 out="$(HOME="$BH" "$B/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    manual names every script, job and role' && echo "$out" | grep -q 'ok    roles built: .*backend' || fail "doctor after builders: $(echo "$out" | grep -E 'manual|roles')"
 # A row that is not TBD is never changed; the team table decides which builders are built.
-git -C "$B" add -A && git -C "$B" commit -qm builders
+git -C "$B" add -A && { git -C "$B" diff --cached --quiet || git -C "$B" commit -qm builders; }
 HOME="$BH" "$B/bin/bootstrap.sh" 2>&1 | grep -q 'owned by the' && fail "bootstrap reassigned a repo that has an owner"
 sedi 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGENTS.md"
 "$B/bin/role.sh" build >/dev/null && [[ ! -e "$B/agents/backend.md" ]] || fail "a builder that owns no repo is still built"
@@ -1178,6 +1179,9 @@ sedi 's/^| `kind-api` | TBD | backend |$/| `kind-api` | TBD | owner |/' "$B/AGEN
 [[ -f "$B/agents/web.md" && -f "$B/agents/qa.md" && ! -e "$B/agents/finance.md" ]] || fail "config --roles dropped a builder that owns a repo"
 sedi 's/^| `kind-api` | TBD | owner |$/| `kind-api` | TBD | TBD |/' "$B/AGENTS.md"; cp "$B/AGENTS.md" "$T/agents.bak"
 HOME="$BH" "$B/bin/bootstrap.sh" --dry-run 2>&1 | grep -q 'would make backend the owner of kind-api' && cmp -s "$B/AGENTS.md" "$T/agents.bak" || fail "dry run: builder not shown, or AGENTS.md changed"
+# The owner's own uncommitted edit in AGENTS.md is never swept into bootstrap's commit.
+echo "owner note" >> "$B/AGENTS.md"; before="$(git -C "$B" rev-parse HEAD)"
+HOME="$BH" "$B/bin/bootstrap.sh" 2>&1 | grep -q "review and commit AGENTS.md, ORG.md" && [[ "$(git -C "$B" rev-parse HEAD)" == "$before" ]] && grep -q "^owner note$" "$B/AGENTS.md" || fail "bootstrap committed over the owner's own edit"
 # The guess reads only the files at the repo's top.
 ( WS="$B"; source "$B/bin/lib.sh"
   mkdir -p "$T/k1/android" "$T/k2/terraform" "$T/k3"; echo '<html></html>' > "$T/k3/index.html"

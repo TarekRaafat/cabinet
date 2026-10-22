@@ -117,6 +117,11 @@ echo "== Builders"
 # The owner may change the row to another builder, a project role or owner; a row that is
 # not TBD is never touched.
 assigned=0
+# What a new builder changes. Committed below when the workspace has its own git and none of it
+# held uncommitted changes before, so the owner's own edits are never swept into the commit.
+built=(AGENTS.md ORG.md agents .claude/agents)
+own_git=0
+[[ "$(secrets_hook)" != none && -z "$(git -C "$WS" status --porcelain -- "${built[@]}" 2>/dev/null)" ]] && own_git=1
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
   [[ -e "$repo/.git" ]] || continue
@@ -127,11 +132,18 @@ while IFS=$'\t' read -r name url files link path; do
   echo "  $name: owned by the $b builder, from what the repo holds (change its row in AGENTS.md to choose another)"
   assigned=1
 done < <(repos)
-((assigned)) && echo "  review and commit AGENTS.md and the built roles (agents/, .claude/agents/)"
 
 echo "== Shared instructions and roles"
 [[ -e "$WS/CLAUDE.md" ]] || { run ln -s AGENTS.md "$WS/CLAUDE.md"; echo "  linked CLAUDE.md"; }
 run "$WS/bin/role.sh" build
+if ((assigned)); then
+  if ((own_git)) && git -C "$WS" add -A -- "${built[@]}" 2>/dev/null &&
+     git -C "$WS" -c commit.gpgsign=false commit -q -m "roles: builders for new repos, from bootstrap" -- "${built[@]}" >/dev/null 2>&1; then
+    echo "  committed the new builders (AGENTS.md, ORG.md, agents/, .claude/agents/)"
+  else
+    echo "  review and commit AGENTS.md, ORG.md and the built roles (agents/, .claude/agents/)"
+  fi
+fi
 
 echo "== Git push gate"
 # A global core.hooksPath makes git skip every repo's own .git/hooks, so every other
