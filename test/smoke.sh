@@ -757,6 +757,10 @@ section "docs match the code" ""
 s23() {
 node "$KIT/test/docs-check.js" "$KIT" || fail "the docs fell behind the code (see above)"
 node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of date (npm run docs)"
+# An agent asked to set Cabinet up finds its guide from every way in: the root AGENTS.md (which agent
+# tools load first) says so before anything else, and so do the README and llms.txt.
+[[ -f "$KIT/docs/agent-setup.md" ]] && head -3 "$KIT/AGENTS.md" | grep -q '(docs/agent-setup.md)' && grep -q '(docs/agent-setup.md)' "$KIT/README.md" \
+  && grep -m1 '^- \[' "$KIT/llms.txt" | grep -q 'docs/agent-setup.md' || fail "the agent setup guide is not where an agent looks first"
 # Nothing in the kit, its tests or its tools runs python3, perl or jq (AGENTS.md, rule 3); its JavaScript parses.
 [[ -z "$(find "$KIT" -name node_modules -prune -o \( -name '*.py' -o -name '*.pl' \) -print)" ]] || fail "a Python or perl file is in the kit; write it in JavaScript"
 ! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs python3 or perl; move it to scripts/lib.js"
@@ -1323,6 +1327,10 @@ mkdir -p "$T/kitcopy"; (cd "$KIT" && tar --exclude .git --exclude node_modules -
 L before "$T/kitcopy/bin/cabinet" '/^C\tTeam\trole list\t/' $'C\tTeam\troles show\t\tShow roles.'
 out="$(node "$KIT/test/docs-check.js" "$T/kitcopy" 2>&1)" && fail "the docs check passed a plural noun"
 echo "$out" | grep -q "the noun 'roles' is plural" && echo "$out" | grep -q "'roles show' uses a verb that is not in AGENTS.md" || fail "the docs check did not name the broken conventions: $out"
+# ...a cabinet next step missing from the docs, and an option the agent setup guide uses that no command has.
+L sub "$T/kitcopy/docs/commands.md" -- '/Step IDs: `deps`, /' 'Step IDs: '; L sub "$T/kitcopy/docs/agent-setup.md" -- '/--week-start sunday/' '--week-starts sunday'
+out="$(node "$KIT/test/docs-check.js" "$T/kitcopy" 2>&1)" && fail "the docs check passed a missing step ID"
+echo "$out" | grep -q "does not list the cabinet next step ID deps" && echo "$out" | grep -q "uses the option --week-starts, which no command has" || fail "the docs check missed a step ID or a guide option: $out"
   return 0   # a last "check && fail" line must not end the run
 }
 

@@ -90,6 +90,21 @@ for (const o of [...new Set(Object.values(opts).flatMap((s) => [...s]))].sort())
   if (!commands.includes("`" + o) && !commands.includes(" " + o)) fail(`docs/commands.md does not mention the option ${o}`);
 if (!commands.includes("cabinet -C <dir>")) fail("docs/commands.md does not explain -C <dir>");
 
+// The agent setup guide uses only options that exist (on lines about cabinet, not git or node).
+const allOpts = new Set(Object.values(opts).flatMap((s) => [...s]));
+const guide = read("docs/agent-setup.md").split("\n").filter((l) => l.includes("cabinet ") || l.startsWith("|")).join("\n");
+for (const o of new Set(all(/(?<![\w-])--[a-z][a-z-]*/g, guide).map((m) => m[0])))
+  if (!allOpts.has(o)) fail(`docs/agent-setup.md uses the option ${o}, which no command has`);
+
+// The "Agent team" section the guide offers is the one init writes.
+const pointer = (cabinet.match(/local pointer="([^"]*)"/) || ["", ""])[1].replace(/\\`/g, "`");
+if (!pointer || !read("docs/agent-setup.md").includes(pointer)) fail("docs/agent-setup.md does not hold the Agent team section init writes (bin/cabinet, pointer=)");
+
+// Every step cabinet next can give (step <id> in bin/cabinet) is in its list of step IDs.
+const stepIds = (commands.match(/Step IDs: ([^;]*);/) || ["", ""])[1];
+for (const id of new Set(all(/\bstep ([a-z-]+) "/g, cabinet).map((m) => m[1])))
+  if (!stepIds.includes("`" + id + "`")) fail(`docs/commands.md does not list the cabinet next step ID ${id}`);
+
 // Every workspace script is in docs/commands.md.
 for (const f of ls("scripts"))
   if (f.endsWith(".sh") && !["lib.sh", "when.sh", "platform.sh"].includes(f) && !commands.includes(`bin/${f}`)) fail(`docs/commands.md does not mention bin/${f}`);

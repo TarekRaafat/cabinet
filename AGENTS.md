@@ -1,5 +1,7 @@
 # AGENTS.md - working on the Cabinet kit
 
+**Setting up or using Cabinet for a person or a project? This file is not for you:** follow [docs/agent-setup.md](docs/agent-setup.md), and never run `cabinet new` or `cabinet init` inside this repository.
+
 Read this before changing anything in this repository. It is for agents (and people) improving the kit itself. The rules agents follow inside a workspace made by the kit are in `core/CABINET.md`, which becomes each workspace's `CABINET.md`.
 
 ## What is where

@@ -28,7 +28,7 @@ Add one row per product repo (and list it in `repos.tsv`). A repo whose owning a
 
 ## Contracts that cross repo lines
 
-A change on one side is not done until every side agrees. The side that changes files the handoff. Name the files a contract lives in as `` `<repo>/<path>` `` under "Source of truth" (a path ending in `/` covers its folder): a small task never changes them, and `bin/handoff.sh record` refuses a PASS on one that does.
+For work without code, or with one repo, write `none` in place of `TBD`. A change on one side is not done until every side agrees. The side that changes files the handoff. Name the files a contract lives in as `` `<repo>/<path>` `` under "Source of truth" (a path ending in `/` covers its folder): a small task never changes them, and `bin/handoff.sh record` refuses a PASS on one that does.
 
 | Contract | Repos that move together | Source of truth |
 |---|---|---|
@@ -74,7 +74,7 @@ Standing documents every agent follows when its work touches their subject: bran
 
 ## How to test
 
-TBD: how qa runs the product locally (services, local database, test account), and what must never be touched (production, shared databases).
+TBD: how qa runs the product locally (services, local database, test account), and what must never be touched (production, shared databases). For work without code: how qa reviews it (previews, exports, the files to open) and what must never be sent or published without the owner.
 
 ## Open items for the owner
 

@@ -13,6 +13,7 @@ Cabinet is for one person or a team of any size, and for anything agents can bui
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
 - **Status:** version 0.1.0, not yet published to npm. Until it is, install from a clone (see [Install](#install)).
 - **Works with:** Claude Code, Codex, Gemini CLI, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, and any other tool that reads `AGENTS.md`.
+- **Set up by your AI agent:** give your agent tool this link with "Set up Cabinet for me, following docs/agent-setup.md". [The guide](docs/agent-setup.md) tells it what to ask you, what to run, and what to show you before anything changes on your machine.
 
 ## Contents
 
@@ -108,16 +109,30 @@ npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere
 npx @tarekraafat/cabinet new      # or no install: run it through npx when you need it
 ```
 
-Until the package is published, clone the repository and link the command (any folder on your PATH works):
+Until the package is published, clone the repository somewhere you keep (the clone is what runs) and link the command into a folder on your PATH:
 
 ```sh
-git clone https://github.com/TarekRaafat/cabinet.git && cd cabinet
-ln -s "$PWD/bin/cabinet" ~/.local/bin/cabinet
+git clone https://github.com/TarekRaafat/cabinet.git ~/cabinet-kit
+mkdir -p ~/.local/bin && ln -s ~/cabinet-kit/bin/cabinet ~/.local/bin/cabinet
+command -v cabinet   # nothing printed? add  export PATH="$HOME/.local/bin:$PATH"  to ~/.zshrc or ~/.bashrc
 ```
+
+Update it with `git -C ~/cabinet-kit pull`. Create workspaces elsewhere, never inside the clone, and skip the `npm install` steps until the package is published: Cabinet works without them.
 
 Tab completion: add `eval "$(cabinet completion zsh)"` to `~/.zshrc` (or `bash` to `~/.bashrc`).
 
 Every workspace also pins its own copy as a dev dependency. Inside a workspace, the global `cabinet` hands off to that pinned copy, so it always acts with the project's version.
+
+### What setup changes on your machine
+
+Creating a workspace changes only its folder (and, inside a project, the few lines [layouts](docs/layouts.md) lists). `cabinet bootstrap`, which `new` and `init` offer at the end and always show as a dry run first, also sets up this machine for every project on it ([guardrails](docs/guardrails.md)):
+
+- **A push gate for every repository:** a global git pre-push hook (`core.hooksPath`) asks for `yes` at your terminal for every `git push`, so agents, which have no terminal, cannot push. Each repository's own hooks still run.
+- **Deny rules in each agent tool it finds,** such as `~/.claude/settings.json` or `~/.codex/rules/default.rules`, blocking push, merge, release and publish. Rules are only added, and each file is backed up first.
+- **Schedules** for the daily brief and backups: launchd on macOS, systemd or cron on Linux.
+- **A secrets check** before each commit in the workspace.
+
+[Undoing the guardrails](docs/guardrails.md#undoing-the-guardrails) says how to take them out; `cabinet remove` removes a workspace with its schedules.
 
 ## Start a new project
 
@@ -151,6 +166,8 @@ cd ~/dev/acme-app
 npm i -D @tarekraafat/cabinet
 npx cabinet init
 ```
+
+Until the package is published, run `cabinet init` there from the [clone install](#install) instead.
 
 In a project repo, `cabinet init` asks where the team's files go:
 

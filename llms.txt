@@ -4,12 +4,13 @@
 
 Requirements: git, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
-Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Agents changing the kit itself follow `AGENTS.md` at the root of this repository.
+**An agent asked to set Cabinet up for someone follows [docs/agent-setup.md](docs/agent-setup.md)**: the questions to ask, the commands to run (with `--yes` and `--dry-run` first), and what to show the person before `cabinet bootstrap` changes their machine. Agents inside a workspace follow its `CABINET.md` (from `core/CABINET.md`), then its `AGENTS.md`. Only agents changing the kit itself follow `AGENTS.md` at the root of this repository.
 
 Every page below in one file, for reading in one go: [llms-full.txt](llms-full.txt).
 
 ## Docs
 
+- [Set up Cabinet for someone](docs/agent-setup.md): for an AI agent asked to set Cabinet up: checks, the install, the questions to ask, the commands for a new or existing project (or work that is not code), what `bootstrap` changes on the machine, how to check the result
 - [README](README.md): what Cabinet is, quick start, the daily loop, a glossary, install, new and existing projects, settings, updates, removal
 - [Tutorial](docs/tutorial.md): the first day, step by step: create a workspace, set up the machine, give the team a task, read the brief
 - [Recipes](docs/recipes.md): add your own rules, guides and business documents, add a role or job, change the brief or agent tool, add a repo, turn on backups, move to a new machine, add a teammate, update the kit, use Cabinet from a script or agent
