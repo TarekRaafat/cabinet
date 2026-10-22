@@ -53,7 +53,7 @@
     "macos",
     "linux"
   ],
-  "author": "Tarek Raafat",
+  "author": "Tarek Raafat (https://github.com/TarekRaafat)",
   "license": "Apache-2.0",
   "homepage": "https://github.com/TarekRaafat/cabinet#readme",
   "repository": {
@@ -78,7 +78,8 @@
     "ROADMAP.md",
     "llms.txt",
     "llms-full.txt",
-    "AGENTS.md"
+    "AGENTS.md",
+    "NOTICE"
   ],
   "scripts": {
     "test": "test/smoke.sh",

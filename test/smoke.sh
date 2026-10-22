@@ -2054,6 +2054,17 @@ j -e '!$.files.some((f) => /CONTRIBUTING|SECURITY|CODE_OF_CONDUCT|\.github/.test
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "credit and rights: notice, brand license" ""
+s56() {
+# The NOTICE names the copyright holder of LICENSE and ships in the package; the brand keeps its own terms.
+holder="$(sed -n "s/^ *Copyright \([0-9]* .*\)$/\1/p" "$KIT/LICENSE" | tail -1)"
+[[ -n "$holder" ]] && grep -qF "Copyright $holder" "$KIT/NOTICE" || fail "NOTICE does not carry the copyright line of LICENSE"
+grep -qF "brand/LICENSE.md" "$KIT/NOTICE" && [[ -s "$KIT/brand/LICENSE.md" ]] || fail "the brand license is missing or not named in NOTICE"
+j -e '$.files.includes("NOTICE")' "$KIT/package.json" >/dev/null || fail "the package does not ship NOTICE"
+grep -qF "(NOTICE)" "$KIT/README.md" && grep -qF "(brand/LICENSE.md)" "$KIT/README.md" || fail "the README License section does not link NOTICE and the brand license"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

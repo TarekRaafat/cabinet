@@ -225,4 +225,4 @@ A release: add its section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`
 
 ## License
 
-Apache-2.0
+The code is licensed under the [Apache License 2.0](LICENSE), copyright 2026 Tarek Raafat. Anyone who redistributes it or builds on it keeps the [NOTICE](NOTICE). The Cabinet name, logo and the other brand assets are not part of that license: see [brand/LICENSE.md](brand/LICENSE.md).
