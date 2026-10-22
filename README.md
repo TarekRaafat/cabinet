@@ -84,7 +84,7 @@ You need macOS or Linux, and:
 | Required | For |
 |---|---|
 | git | Every command, handoffs and the guardrails |
-| Node.js and npm | Installing Cabinet and pinning its version in each workspace; the scripts' shared logic runs with Node |
+| Node.js 18 or newer, and npm | Installing Cabinet and pinning its version in each workspace; the scripts' shared logic runs with Node |
 | At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, or your own command (Gemini CLI for interactive sessions only) |
 | A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
 
@@ -98,7 +98,7 @@ You need macOS or Linux, and:
 `cabinet new`, `init` and `bootstrap` check for the required tools first and, in a terminal, offer to install the missing ones with your package manager; `cabinet doctor --fix` does the same later, and asks first for openssl or `secret-tool` when backups are on. Node.js and npm come first by hand, since npm installs cabinet:
 
 - macOS: `brew install node` (git and openssl come with macOS and its command line tools).
-- Debian or Ubuntu: `sudo apt install git nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
+- Debian or Ubuntu: `sudo apt install git nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`. Ubuntu 22.04 and Debian 11 install a Node.js older than 18; there, install a current one from [nodejs.org](https://nodejs.org).
 
 ```sh
 npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere

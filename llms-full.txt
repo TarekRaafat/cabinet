@@ -101,7 +101,7 @@ You need macOS or Linux, and:
 | Required | For |
 |---|---|
 | git | Every command, handoffs and the guardrails |
-| Node.js and npm | Installing Cabinet and pinning its version in each workspace; the scripts' shared logic runs with Node |
+| Node.js 18 or newer, and npm | Installing Cabinet and pinning its version in each workspace; the scripts' shared logic runs with Node |
 | At least one agent tool | Running the team and its scheduled jobs: Claude Code, Codex, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, or your own command (Gemini CLI for interactive sessions only) |
 | A scheduler | launchd on macOS (built in); systemd user timers on Linux, or cron where the machine did not boot with systemd |
 
@@ -115,7 +115,7 @@ You need macOS or Linux, and:
 `cabinet new`, `init` and `bootstrap` check for the required tools first and, in a terminal, offer to install the missing ones with your package manager; `cabinet doctor --fix` does the same later, and asks first for openssl or `secret-tool` when backups are on. Node.js and npm come first by hand, since npm installs cabinet:
 
 - macOS: `brew install node` (git and openssl come with macOS and its command line tools).
-- Debian or Ubuntu: `sudo apt install git nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`.
+- Debian or Ubuntu: `sudo apt install git nodejs npm`, and for the optional ones `openssl libsecret-tools libnotify-bin lsof`. Ubuntu 22.04 and Debian 11 install a Node.js older than 18; there, install a current one from [nodejs.org](https://nodejs.org).
 
 ```sh
 npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere
@@ -1382,7 +1382,7 @@ Together they are a strong speed bump, not a boundary. For a hard boundary, prot
 
 ## What bootstrap installs
 
-`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, or whose shape is unexpected, is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. A file that already exists (the push gate, the Codex rules, the Gemini policy) is left as it is and checked, never replaced.
+`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, whose shape is unexpected, or that holds a value a rewrite would change (a number written as `1.0` or `1e3`, one too large to keep exactly, or a key that is a whole number), is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. A file that already exists (the push gate, the Codex rules, the Gemini policy) is left as it is and checked, never replaced.
 
 | Tool | Reads `AGENTS.md` | Guardrails | Checked by `bin/doctor.sh` |
 |---|---|---|---|
@@ -1524,6 +1524,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
 | `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, node and npm are all found. | Nothing. |
+| `ok Node.js is 18 or newer` | `deps.node` | The Node.js found can run the scripts' JavaScript. | Nothing. |
+| `FIX cabinet needs Node.js 18 or newer; this is <...> (<...>)` | `deps.node` | The Node.js found is too old for the scripts' JavaScript, so most commands stop with the same message. Ubuntu 22.04 and Debian 11 install an older one. | `brew upgrade node` on macOS; on Linux, a current Node.js from [nodejs.org](https://nodejs.org). `cabinet new`, `init` and `bootstrap` stop with this message before changing anything. |
 | `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool Cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
 | `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
 
@@ -1980,7 +1982,7 @@ First version.
 - The tagline is "Build anything with a team of AI agents. You stay in charge and sign off.": in the README, `llms.txt`, the package description, `cabinet help` and `cabinet version`. The README says Cabinet is for one person or a team of any size and for anything agents can build, with what is still made for code first, and opens with "Why Cabinet": where it comes from and what it believes.
 - The name is written "Cabinet" in sentences and headings across the README, the docs, the roles and the workspace rules; `cabinet` stays lowercase where it is the command, a file or the package.
 - Roadmap: one Cabinet per person following a team's shared rulebook, and work that is not code made as complete as code.
-- Needs git, Node.js and npm (openssl for backups). The workspace scripts are bash, and the logic they share is JavaScript in `scripts/lib.js` (a workspace's `bin/lib.js`), run with Node: the owner's manual page, spec checks, handoff readiness and entries, file edits that keep each file's bytes and permissions, the secret scan, time limits, and reading and writing JSON (`json`). The kit's tests and tools need nothing more.
+- Needs git, Node.js 18 or newer and npm (openssl for backups). With an older Node.js, setup, the doctor (`deps.node`) and every script stop with a message that says how to get a newer one, instead of failing on a syntax error. The workspace scripts are bash, and the logic they share is JavaScript in `scripts/lib.js` (a workspace's `bin/lib.js`), run with Node: the owner's manual page, spec checks, handoff readiness and entries, file edits that keep each file's bytes and permissions, the secret scan, time limits, and reading and writing JSON (`json`). The kit's tests and tools need nothing more.
 - Roadmap: toward a single download, one file compiled with Bun, once people without Node need it; until then the bash moves to JavaScript one command at a time, when a command is slow or being reworked. New kit logic is JavaScript run with Node, never TypeScript (`AGENTS.md`, rule 3).
 - The README opens with the Cabinet mark (`docs/logo.svg`), on its own light tile so it reads the same on light and dark themes.
 - `cabinet remove` removes a workspace (its schedules, logs and folder, and inside a project what setup added), refusing work that exists nowhere else unless `--force`.
@@ -2040,7 +2042,7 @@ First version.
 - Guardrails for Claude Code, Codex, Antigravity, Gemini CLI, Qwen Code, opencode and the Cursor CLI (Grok reads the Claude Code rules; the Cursor rule shapes were probed live on Cursor CLI 2026.10.16), checked by `bin/doctor.sh` (opencode on 1.x only), which also names installed tools it cannot guard; and the owner's pre-push gate for every tool.
 - Values from a cloned project's `package.json` never reach a shell (only plain values are used, the description is quoted as data); clone URLs and repo names are checked; a slug another workspace uses is refused.
 - Backups must live outside the workspace and its repos, clean up only their own archives, and restore never loses a file. `cabinet backup verify` restores the newest archive into a temporary folder, checks the workspace and each repo against it (a damaged or incomplete archive fails), and deletes the copy; the doctor notes when no restore has been verified in 92 days (`backups.verified`).
-- Config files keep their permissions and symlinks, and a file that is not plain JSON is left alone; every git hook passes through to the repo's own under the global hooks path.
+- Config files keep their permissions and symlinks, and a file that is not plain JSON, or holds a value a rewrite would change (`1.0`, `1e3`, a number too large to keep exactly, a key that is a whole number), is left alone; a byte-order mark before the JSON is accepted; every git hook passes through to the repo's own under the global hooks path.
 - A secrets check: `cabinet secret check` (`bin/secret.sh check`) looks for keys, tokens and passwords in the workspace's files and names each file and line, never the value; the doctor runs it (`secrets.none`), bootstrap places a pre-commit hook in the workspace that refuses a commit adding one (`secrets.hook`), and `not-a-secret` on a line marks a false alarm.
 
 ### Docs

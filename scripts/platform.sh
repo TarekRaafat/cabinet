@@ -242,6 +242,19 @@ cron_sync() {
 # Optional tools are checked where their feature is turned on: openssl and secret-tool for
 # backups, notify-send for digest notifications.
 DEPS_REQUIRED="git node npm"
+NODE_MIN=18   # the oldest Node.js the scripts' JavaScript runs on (package.json, engines; lib.js says so too)
+# node_old: the version of a Node.js older than NODE_MIN, and 0; 1 when it is new enough or not found
+# (deps_missing reports that). CABINET_TEST_NODE_VERSION stands in for the version in the tests.
+node_old() {
+  command -v node >/dev/null || return 1
+  local v="${CABINET_TEST_NODE_VERSION:-$(node -p process.versions.node 2>/dev/null)}"
+  [[ "${v%%.*}" =~ ^[0-9]+$ ]] && ((${v%%.*} < NODE_MIN)) || return 1
+  echo "$v"
+}
+node_hint() {  # how to get a newer Node.js here
+  if [[ $OS == mac ]]; then printf 'brew upgrade node'
+  else printf "install a current Node.js from https://nodejs.org, since the system's package can be older"; fi
+}
 # deps_missing [<tools>]: the ones not found (CABINET_TEST_MISSING makes the tests miss some).
 deps_missing() {
   local t out=""

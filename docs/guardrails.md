@@ -11,7 +11,7 @@ Together they are a strong speed bump, not a boundary. For a hard boundary, prot
 
 ## What bootstrap installs
 
-`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, or whose shape is unexpected, is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. A file that already exists (the push gate, the Codex rules, the Gemini policy) is left as it is and checked, never replaced.
+`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, whose shape is unexpected, or that holds a value a rewrite would change (a number written as `1.0` or `1e3`, one too large to keep exactly, or a key that is a whole number), is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. A file that already exists (the push gate, the Codex rules, the Gemini policy) is left as it is and checked, never replaced.
 
 | Tool | Reads `AGENTS.md` | Guardrails | Checked by `bin/doctor.sh` |
 |---|---|---|---|

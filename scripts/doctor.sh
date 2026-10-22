@@ -31,6 +31,8 @@ section "Tools"
 miss="$(deps_missing)"
 if [[ -z "$miss" ]]; then ok deps.required "the tools cabinet needs are here (${DEPS_REQUIRED// /, })"
 else h="$(deps_hint "$miss")"; bad deps.required "cabinet needs ${miss// /, }, not found ($h; cabinet doctor --fix runs it, asking first)"; fi
+if v="$(node_old)"; then bad deps.node "cabinet needs Node.js $NODE_MIN or newer; this is $v ($(node_hint))"
+elif [[ " $miss " != *" node "* ]]; then ok deps.node "Node.js is $NODE_MIN or newer"; fi
 
 section "Product repos"
 before=$problems

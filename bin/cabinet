@@ -50,7 +50,11 @@ die() { echo "cabinet: $*" >&2; exit 1; }
 # need_deps <yes>: stop unless the tools cabinet needs are here. In a terminal, offers to install
 # the missing ones and shows the command first; with --yes (scripts, agents) it never installs.
 need_deps() {
-  local miss a="" c; miss="$(deps_missing)"; [[ -z "$miss" ]] && return 0
+  local miss a="" c v; miss="$(deps_missing)"
+  if [[ -z "$miss" ]]; then
+    v="$(node_old)" && die "cabinet needs Node.js $NODE_MIN or newer; this is $v ($(node_hint)), then run this again"
+    return 0
+  fi
   echo "cabinet needs ${miss// /, }, not found on this machine." >&2
   if c="$(deps_cmd "$miss")"; then
     if (($1 == 0)) && { exec 4<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null; then

@@ -7,6 +7,8 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
 | `ok the tools cabinet needs are here (<...>)` | `deps.required` | git, node and npm are all found. | Nothing. |
+| `ok Node.js is 18 or newer` | `deps.node` | The Node.js found can run the scripts' JavaScript. | Nothing. |
+| `FIX cabinet needs Node.js 18 or newer; this is <...> (<...>)` | `deps.node` | The Node.js found is too old for the scripts' JavaScript, so most commands stop with the same message. Ubuntu 22.04 and Debian 11 install an older one. | `brew upgrade node` on macOS; on Linux, a current Node.js from [nodejs.org](https://nodejs.org). `cabinet new`, `init` and `bootstrap` stop with this message before changing anything. |
 | `FIX cabinet needs <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.required` | A tool Cabinet needs is missing. The message names the install command for this machine (`brew`, `apt-get`, `dnf` or `pacman`), or where to get a package manager. | `cabinet doctor --fix` in a terminal, or run the command yourself. |
 | `FIX backups need <...>, not found (<...>; cabinet doctor --fix runs it, asking first)` | `deps.backups` | Backups are on, and openssl (or, on Linux, `secret-tool`, unless `CABINET_BACKUP_PASSPHRASE` is set) is missing. | The same. |
 

@@ -5,6 +5,16 @@
 //
 // Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual, json, and the line edits and helpers below.
 "use strict";
+// Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
+// say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
+// version in the tests.
+const NODE_MIN = 18;
+const nodeVersion = process.env.CABINET_TEST_NODE_VERSION || process.versions.node;
+if (parseInt(nodeVersion, 10) < NODE_MIN) {
+  process.stderr.write("cabinet needs Node.js " + NODE_MIN + " or newer; this is " + nodeVersion + " (" +
+    (process.platform === "darwin" ? "brew upgrade node" : "install a current Node.js from https://nodejs.org, since the system's package can be older") + ")\n");
+  process.exit(1);
+}
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -692,13 +702,41 @@ function secretScan(mode) {
   process.stdout.write(Buffer.from(out, "latin1"));
 }
 
-// json [-n] [-R] [-s] [-r] [-c] [-e] [--each] [--arg name text]... [--argjson name json]... <expression> [file]... [--args word...]
+// inexact <JSON text>: what JSON.parse and JSON.stringify would not give back as written, or null: a
+// number written another way (1.0, 1e3, -0, or beyond what a double holds) or an object key that is
+// a whole number (JavaScript moves those first).
+function inexact(t) {
+  const num = /-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?/y;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < t.length && t[j] !== '"') j += t[j] === "\\" ? 2 : 1;
+      const raw = t.slice(i, j + 1);
+      let k = j + 1;
+      while (/\s/.test(t[k] || "")) k++;
+      if (t[k] === ":" && /^(0|[1-9][0-9]*)$/.test(JSON.parse(raw))) return "the key " + raw;
+      i = j;
+    } else if (c === "-" || (c >= "0" && c <= "9")) {
+      num.lastIndex = i;
+      const m = num.exec(t);
+      if (!m) continue;
+      if (JSON.stringify(Number(m[0])) !== m[0]) return "the number " + m[0];
+      i += m[0].length - 1;
+    }
+  }
+  return null;
+}
+
+// json [-n] [-R] [-s] [-r] [-c] [-e] [--each] [--exact] [--arg name text]... [--argjson name json]... <expression> [file]... [--args word...]
 // Reads and writes JSON for the scripts, with a JavaScript expression: $ is the input,
 // --arg x and --argjson x are $x, --args words are $args. Input is each JSON value in the files (or on
 // stdin; a file of JSON lines is one value per line), all of them as one array with -s, its lines as
 // an array with -R, nothing with -n. The result is printed as JSON (one line with -c), a string as it
 // is with -r, each item of an array on its own with --each; undefined prints nothing. -e: exit 1 when
-// the last result is null, false or undefined. Exit 2 on input that is not JSON, 5 on an error.
+// the last result is null, false or undefined. A byte-order mark before a JSON value is skipped.
+// --exact: exit 3 on input that would not be written back as it is (inexact), so a file that is
+// rewritten keeps every value. Exit 2 on input that is not JSON, 5 on an error.
 function json(...argv) {
   const o = { names: [], vals: [], files: [] };
   let expr = null;
@@ -710,13 +748,17 @@ function json(...argv) {
       i += 2;
     } else if (a === "--args") { o.names.push("$args"); o.vals.push(argv.slice(i + 1)); break; }
     else if (a === "--each") o.each = true;
+    else if (a === "--exact") o.exact = true;
     else if (/^-[nRsrce]+$/.test(a)) for (const f of a.slice(1)) o[f] = true;
     else if (expr === null) expr = a;
     else o.files.push(a);
   }
   const text = () => (o.files.length ? o.files.map((f) => fs.readFileSync(f, "utf8")) : [fs.readFileSync(0, "utf8")]);
   const values = (t) => {
+    t = t.replace(/^﻿/, "");
     if (!t.trim()) return [];
+    const bad = o.exact && inexact(t);
+    if (bad) die("json: " + bad + " would be written differently", 3);
     try { return [JSON.parse(t)]; } catch (e) { return t.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l)); }
   };
   let inputs;

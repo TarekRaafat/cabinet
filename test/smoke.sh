@@ -476,13 +476,19 @@ oc="$H/.config/opencode/opencode.json"
 j -e 'Object.keys($.permission).join() == "*,bash" && Object.keys($.permission.bash)[0] == "*" && $.permission.bash["git push*"] == "deny" && $.mcp.x.enabled === false' "$oc" >/dev/null || fail "opencode rules not last, or settings lost"
 j -e --argjson n "$(j '$.permissions.deny.length + $.permissions.ask.length' "$KIT/guardrails/claude-permissions.json")" 'Object.keys($.permission.bash).length - 1 == $n' "$oc" >/dev/null || fail "opencode did not get every rule"
 [[ -z "$(boot | grep -E 'added')" ]] || fail "a second run changed the guardrails again"
+# A settings file holding a value a rewrite would change (here 1.0) is left exactly as it is, with a message.
+cp "$H/.qwen/settings.json" "$T/qwen.keep"; echo '{"ui":{"scale":1.0}}' > "$H/.qwen/settings.json"; cp "$H/.qwen/settings.json" "$T/qwen.inexact"
+out="$(boot || true)"
+cmp -s "$H/.qwen/settings.json" "$T/qwen.inexact" && echo "$out" | grep -q 'settings.json is not plain JSON, or a rewrite would change one of its values, left as is' \
+  || { echo "$out"; fail "a settings file a rewrite would change was rewritten"; }
+cp "$T/qwen.keep" "$H/.qwen/settings.json"
 # opencode reads opencode.json and then opencode.jsonc: the rules go in the .json, the commented .jsonc is never rewritten.
 rm "$oc"; printf '{ // my comment\n}\n' > "${oc}c"; cp "${oc}c" "$T/jsonc.before"
 boot >/dev/null
 cmp -s "${oc}c" "$T/jsonc.before" && j -e '$.permission.bash["git push*"] == "deny"' "$oc" >/dev/null || fail "rules not placed beside a commented opencode.jsonc"
 # A config that is not plain JSON is never rewritten, and the merge says so instead of claiming success.
 printf '{"a": 1,}\n' > "$H/.qwen/settings.json"
-out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, left as is' && ! echo "$out" | grep -q 'added .* rule(s) to .*qwen' || fail "an unreadable config was reported as merged"
+out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, or a rewrite would change one of its values, left as is' && ! echo "$out" | grep -q 'added .* rule(s) to .*qwen' || fail "an unreadable config was reported as merged"
 [[ "$(cat "$H/.qwen/settings.json")" == '{"a": 1,}' && ! -e "$H/.qwen/settings.json.tmp" ]] || fail "an unreadable config was changed"
 # Permissions and symlinks of a config survive the merge.
 printf '{"k": 1}\n' > "$T/real-settings.json"; chmod 600 "$T/real-settings.json"; rm "$H/.qwen/settings.json"; ln -s "$T/real-settings.json" "$H/.qwen/settings.json"
@@ -767,6 +773,13 @@ j -n -e '0' >/dev/null || fail "json -e: only null, false and nothing fail"
 rc=0; printf 'nope' | j '$' 2>/dev/null || rc=$?; [[ $rc == 2 ]] || fail "json: input that is not JSON exits 2"
 rc=0; j -n 'obj([1])' 2>/dev/null || rc=$?
 [[ $rc == 5 && "$(j -n -c '[obj(null), list(undefined)]')" == "[{},[]]" ]] || fail "json: obj and list refuse another shape"
+[[ "$(printf '\357\273\277{"a":1}' | j -c '$')" == '{"a":1}' ]] || fail "json: a byte-order mark before the JSON"
+# --exact: refuse (3) what would be written back differently, take what would not.
+for x in '{"a":1.0}' '{"a":1e3}' '{"a":12345678901234567890}' '{"a":-0}' '{"2":1}'; do
+  rc=0; printf '%s' "$x" | j --exact '$' >/dev/null 2>&1 || rc=$?; [[ $rc == 3 ]] || fail "json --exact took $x"
+done
+x='{"a":[1,2.5,-3,"1.0"],"k\"2":0.1,"b":1e-7,"3x":0}'
+[[ "$(printf '%s' "$x" | j --exact -c '$')" == "$x" ]] || fail "json --exact refused what it writes as it is"
 node "$KIT/tools/build-brand.js" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
 j -e '!!$.color.ink.value && !!$.status_color.fix.light && $.mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
@@ -1398,6 +1411,15 @@ grep -qxE '(brew install git|sudo apt-get install -y git)' "$T/fake.log" && [[ !
 : > "$T/fake.log"
 out="$(cd "$D" && CABINET_TEST_MISSING=git "$D/bin/doctor.sh" --fix --yes 2>&1 || true)"
 echo "$out" | grep -q 'installing tools always asks' && [[ "$(installs)" == 0 ]] || { echo "$out"; fail "doctor --fix --yes installed a tool"; }
+# A Node.js older than 18: setup stops before making anything, the doctor says so, and the scripts'
+# JavaScript stops with the same message instead of a syntax error.
+out="$(CABINET_TEST_NODE_VERSION=12.22.9 "$F" new "$T/oldnode" --yes 2>&1)" && fail "setup went ahead with an old Node.js"
+echo "$out" | grep -q 'cabinet needs Node.js 18 or newer; this is 12.22.9' && [[ ! -e "$T/oldnode" ]] || { echo "$out"; fail "setup with an old Node.js"; }
+out="$(cd "$D" && CABINET_TEST_NODE_VERSION=12.22.9 "$D/bin/doctor.sh" 2>&1 || true)"
+echo "$out" | grep -q 'FIX.*cabinet needs Node.js 18 or newer; this is 12.22.9' || { echo "$out"; fail "doctor: an old Node.js"; }
+(cd "$D" && "$F" doctor --json) | j -e '$.results.find((r) => r.id == "deps.node")?.level == "ok"' >/dev/null || fail "doctor: a new enough Node.js"
+rc=0; out="$(CABINET_TEST_NODE_VERSION=16.20.2 L json -n 1 2>&1)" || rc=$?
+[[ $rc == 1 && "$out" == *"cabinet needs Node.js 18 or newer; this is 16.20.2"* ]] || fail "lib.js on an old Node.js: $out"
   return 0   # a last "check && fail" line must not end the run
 }
 

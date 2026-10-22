@@ -58,14 +58,15 @@ write_into() {
   failures=1; return 1
 }
 
-# A config that is not plain JSON (comments, trailing commas) is never rewritten.
-json_ok() { [[ ! -f "$1" ]] || json -e '$' "$1" >/dev/null 2>&1; }
+# A config that is not plain JSON (comments, trailing commas), or holds a value that a rewrite would
+# change (json --exact: 1.0, 1e3, a number beyond a double, a whole-number key), is never rewritten.
+json_ok() { [[ ! -f "$1" ]] || json --exact -e '$' "$1" >/dev/null 2>&1; }
 
 # Union-merge a {permissions:{deny,ask}} snippet into a JSON settings file.
 merge_permissions() {
   local snippet=$1 target=$2 missing
   [[ -f "$snippet" ]] || return 0
-  json_ok "$target" || { echo "  $target is not plain JSON, left as is: add the rules in $snippet by hand"; failures=1; return 0; }
+  json_ok "$target" || { echo "  $target is not plain JSON, or a rewrite would change one of its values, left as is: add the rules in $snippet by hand"; failures=1; return 0; }
   missing="$(json -s '((a, b) => ["deny", "ask"].map((k) => list(b[k]).filter((x) => !list(a[k]).includes(x)).length).reduce((x, y) => x + y))
     (obj(obj($[0]).permissions), obj(obj($[1]).permissions))' "$target" "$snippet" 2>/dev/null)" \
     || missing="$(json 'list(obj($.permissions).deny).length + list(obj($.permissions).ask).length' "$snippet")"
@@ -192,7 +193,7 @@ if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
   place "$G/gemini-owner-control.toml" "$HOME/.gemini/policies/owner-control.toml"
   g="$HOME/.gemini/settings.json"
   if ! json_ok "$g"; then
-    echo "  $g is not plain JSON, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1
+    echo "  $g is not plain JSON, or a rewrite would change one of its values, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1
   elif [[ ! -f "$g" ]]; then
     place "$G/gemini-context.json" "$g"
   elif [[ "$(json 'obj(obj($).context).fileName ?? undefined' "$g" 2>/dev/null)" == "" ]]; then
@@ -235,7 +236,7 @@ merge_opencode() {
   rules="$(json -c '((p) => Object.fromEntries([...list(p.deny).map((r) => [r, "deny"]), ...list(p.ask).map((r) => [r, "ask"])]
     .filter(([r]) => r.startsWith("Bash(")).map(([r, a]) => [r.replace(/^Bash\((.*)\)$/, "$1"), a])))(obj(obj($).permissions))' "$snippet")"
   if ! json_ok "$target"; then
-    echo "  $target is not plain JSON, left as is: add these under permission.bash by hand: $rules"; failures=1; return 0
+    echo "  $target is not plain JSON, or a rewrite would change one of its values, left as is: add these under permission.bash by hand: $rules"; failures=1; return 0
   fi
   if [[ ! -f "$target" ]]; then
     if ((DRY)); then echo "  would create $target with $(json 'Object.keys($).length' <<<"$rules") bash rule(s)"; return 0; fi
