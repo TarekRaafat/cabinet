@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 23 Oct 2026
 
 First version.
 
