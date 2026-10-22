@@ -779,7 +779,7 @@ setup() {
 
   # The workspace's own git, unless it already had one or lives in the project's (shared).
   # Only the files setup placed are staged: never something that was already in the folder.
-  local committed=0 add=(.cabinet CLAUDE.md agents .claude/agents) x
+  local committed=0 add=(.cabinet CLAUDE.md ORG.md agents .claude/agents) x
   for x in $placed; do add+=("$x"); done
   while read -r _ x; do add+=("$x"); done < <(managed)
   if [[ "$layout" == inside && "$visibility" == shared ]] || ((had_git)); then :

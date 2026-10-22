@@ -79,6 +79,7 @@ grep -q '^# AGENTS.md - Demo Co$' "$W/AGENTS.md" || fail "project name not fille
 [[ -L "$W/CLAUDE.md" ]] || fail "CLAUDE.md link missing"
 [[ "$(cat "$W/.cabinet/version")" == "$(j -r '$.version' "$KIT/package.json")" ]] || fail "version not recorded"
 git -C "$W" log --oneline | grep -q 'create from cabinet' || fail "workspace not committed"
+[[ -z "$(git -C "$W" status --porcelain)" ]] || { git -C "$W" status --porcelain; fail "setup left files uncommitted"; }
 [[ "$("$W/bin/handoff.sh" list)" == "No open handoffs." && "$("$W/bin/handoff.sh" list --json)" == "[]" ]] || fail "handoffs with none open"
   return 0   # a last "check && fail" line must not end the run
 }
