@@ -6,7 +6,7 @@ The rules for the Cabinet mark, name, color, type and words, written for people 
 |---|---|
 | `brand/BRAND.md` | These rules, each with its status. |
 | `brand/tokens.json` | The same decisions as data: colors, status colors, fonts, the mark's geometry, motion. |
-| `brand/assets/` | Every logo file, built from `tokens.json` by `tools/build-brand.py`. Never edit one by hand. |
+| `brand/assets/` | Every logo file, built from `tokens.json` by `tools/build-brand.js`. Never edit one by hand. |
 | `brand/index.html` | The visual guide: every rule shown, for people. Open it in a browser. |
 
 To give a project's agents these rules, copy this file to the workspace's `guides/brand.md` and add a row for it in the "Guides" table in `AGENTS.md`.
@@ -155,4 +155,6 @@ Cabinet sounds like a capable chief of staff: plain, short, specific, and always
 | `chairs.svg`, `chairs-light.svg`, `chairs-owner-light.svg` | The chairs illustration. |
 | `social-preview.svg`, `social-preview.png` | The social preview, 1280 x 640. |
 
-To change a color or the geometry, edit `tokens.json`, then run `python3 tools/build-brand.py --png` (macOS) and update this file and `index.html`. `npm test` fails when a file is out of date.
+To change a color or the geometry, edit `tokens.json`, then run `npm run brand` (macOS) and update this file and `index.html`. `npm test` fails when a file is out of date.
+
+The name and the tagline are outlines kept in `text-paths.json`, drawn once from Schibsted Grotesk with its kerning. Changing the name, the tagline or the font means redrawing them with a font shaping tool; the kit has none, so it needs no font tools to build.

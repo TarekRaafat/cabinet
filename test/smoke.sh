@@ -30,30 +30,16 @@ export PATH="$T/shim:$PATH"
 for t in launchctl systemctl crontab security secret-tool brew apt-get sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
 sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
 perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
-# in_tty <command>...: run it with its output on a terminal and print what it wrote. Not pty.spawn:
-# on macOS that can wait forever after the command exits. This stops when the command has exited
-# and its output is read, or after 60 seconds.
+# The kit's JavaScript (scripts/lib.js): L runs one of its commands, such as the line edits; j reads
+# JSON (json: jq's options with a JavaScript expression).
+L() { node "$KIT/scripts/lib.js" "$@"; }
+j() { L json "$@"; }
+# in_tty <command>...: run it with its output on a terminal and print what it wrote, with script (in
+# macOS and in Linux's util-linux; their options differ), stopped after 60 seconds. script's input
+# never ends while the command runs: at its end, script would type ^D, which the terminal can echo.
 in_tty() {
-  python3 -I -c '
-import os, select, subprocess, sys, time
-m, s = os.openpty()
-p = subprocess.Popen(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=s, stderr=s)
-os.close(s)
-out, end = b"", time.time() + 60
-while time.time() < end:
-    if select.select([m], [], [], 0.2)[0]:
-        try:
-            d = os.read(m, 65536)
-        except OSError:
-            break
-        if not d:
-            break
-        out += d
-    elif p.poll() is not None:
-        break
-if p.poll() is None:
-    p.kill()
-sys.stdout.write(out.decode(errors="replace"))' "$@"
+  if [[ "$(uname)" == Darwin ]]; then L run-limited 60 script -q /dev/null "$@" < <(sleep 60) || true
+  else L run-limited 60 script -qfec "$(printf '%q ' "$@")" /dev/null < <(sleep 60) || true; fi
 }
 # Where this machine keeps logs and schedules, under a HOME (bin/platform.sh): $H/$LOGS, $H/$SD/<label>$SX.
 pf() { bash -c 'source "$0/scripts/when.sh"; source "$0/scripts/platform.sh"; "$@"' "$KIT" "$@"; }
@@ -63,7 +49,7 @@ case "$SCH" in launchd) SD="Library/LaunchAgents" SX=.plist ;; systemd) SD=".con
 # A schedule's days and times as "<weekday or *>:<hour>:<minute> ...", its stored time and its command (JSON).
 cal() {
   case "$SCH" in
-    launchd) plutil -extract StartCalendarInterval json -o - "$1" | jq -r '[.[] | "\(.Weekday // "*"):\(.Hour):\(.Minute)"] | join(" ")' ;;
+    launchd) plutil -extract StartCalendarInterval json -o - "$1" | j -r '$.map((c) => (c.Weekday ?? "*") + ":" + c.Hour + ":" + c.Minute).join(" ")' ;;
     systemd) sed -n 's/^OnCalendar=//p' "${1%.service}.timer" | awk '{ n = split($1, d, ","); split($3, t, ":"); if (NF == 2) { n = 1; d[1] = "*"; split($2, t, ":") }
       for (i = 1; i <= n; i++) { w = index("SunMonTueWedThuFriSat", d[i]); printf "%s%s:%d:%d", (i > 1 ? " " : ""), (d[i] == "*" ? "*" : (w - 1) / 3), t[1], t[2] } }' ;;
     *) grep -v '^#' "$1" | awk '{ n = split($5, d, ","); for (i = 1; i <= n; i++) printf "%s%s:%d:%d", (i > 1 ? " " : ""), d[i], $2, $1 }' ;;
@@ -91,7 +77,7 @@ grep -q 'CABINET_SLUG="demo-co"' "$W/cabinet.env" && grep -qx 'CABINET_LAYOUT="n
 grep -q '^# AGENTS.md - Demo Co$' "$W/AGENTS.md" || fail "project name not filled in"
 ! grep -rq '@@' "$W" --exclude-dir=.git --exclude-dir=.cabinet || fail "placeholder left in a project file"
 [[ -L "$W/CLAUDE.md" ]] || fail "CLAUDE.md link missing"
-[[ "$(cat "$W/.cabinet/version")" == "$(jq -r .version "$KIT/package.json")" ]] || fail "version not recorded"
+[[ "$(cat "$W/.cabinet/version")" == "$(j -r '$.version' "$KIT/package.json")" ]] || fail "version not recorded"
 git -C "$W" log --oneline | grep -q 'create from cabinet' || fail "workspace not committed"
 [[ "$("$W/bin/handoff.sh" list)" == "No open handoffs." && "$("$W/bin/handoff.sh" list --json)" == "[]" ]] || fail "handoffs with none open"
   return 0   # a last "check && fail" line must not end the run
@@ -157,7 +143,7 @@ grep -qx 'CABINET_LAYOUT="inside"' "$I/cabinet/cabinet.env" && grep -qx 'CABINET
 [[ "$(cat "$I/AGENTS.md")" == '# Acme rules' ]] || fail "private changed the project's tracked AGENTS.md"
 grep -q 'cabinet/CABINET.md' "$I/CLAUDE.local.md" && grep -q 'cabinet/CABINET.md' "$I/QWEN.local.md" || fail "private pointer not in the local instruction files"
 [[ "$(cat "$I/.claude/agents/security.md")" == mine ]] || fail "a hand-made project agent was replaced"
-[[ -f "$I/.claude/agents/qa.md" ]] && jq -e '.devDependencies["@tarekraafat/cabinet"]' "$I/cabinet/package.json" >/dev/null || fail "roles not in the project, or the private pin not in cabinet/package.json"
+[[ -f "$I/.claude/agents/qa.md" ]] && j -e '$.devDependencies?.["@tarekraafat/cabinet"]' "$I/cabinet/package.json" >/dev/null || fail "roles not in the project, or the private pin not in cabinet/package.json"
 grep -q $'^acme-app\tgit@example.com:acme/app.git\t-\tno\t..$' "$I/cabinet/repos.tsv" || fail "project row"
 (cd "$I" && "$F" status) | grep -q 'no kit file edited' && (cd "$I" && "$F" update >/dev/null) || fail "status or update from the project top"
 out="$("$I/cabinet/bin/doctor.sh" 2>&1 || true)"
@@ -182,7 +168,7 @@ grep -q '^TBD: what else qa needs' "$GA" && grep -q '^TBD: who it is for' "$GA" 
 grep -q $'^shop\thttps://github.com/acme/shop.git\t' "$T/shop-hq/repos.tsv" || fail "repository URL not taken from package.json"
 grep -q 'Authored as Shop Owner <shop@example.com>' "$GA" || fail "the repo's own git identity not used"
 ! grep -q 'TBD: one paragraph\|TBD: how qa runs' "$GA" || fail "answered TBDs left in place"
-! grep -q 'tarekraafat/cabinet' "$G/package.json" && jq -e '.devDependencies["@tarekraafat/cabinet"]' "$T/shop-hq/package.json" >/dev/null || fail "beside put the pin in the project instead of the workspace"
+! grep -q 'tarekraafat/cabinet' "$G/package.json" && j -e '$.devDependencies?.["@tarekraafat/cabinet"]' "$T/shop-hq/package.json" >/dev/null || fail "beside put the pin in the project instead of the workspace"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -194,10 +180,10 @@ printf '{\n\t"name": "shared-app"\n}\n' > "$S/package.json"; git -C "$S" add -A;
 grep -qx 'CABINET_VISIBILITY="shared"' "$S/cabinet/cabinet.env" || fail "shared setting"
 [[ ! -e "$S/cabinet/.git" ]] && git -C "$S" status --porcelain | grep -q '^?? cabinet/$' || fail "shared workspace is not part of the project"
 git -C "$S" log --oneline | grep -q 'create from cabinet' && fail "shared init committed in the project"
-v="$(jq -r .version "$KIT/package.json")"
-[[ "$(jq -r '.devDependencies["@tarekraafat/cabinet"]' "$S/package.json")" == "^$v" ]] || fail "pin not added to the project's package.json under --yes"
+v="$(j -r '$.version' "$KIT/package.json")"
+[[ "$(j -r '$.devDependencies["@tarekraafat/cabinet"]' "$S/package.json")" == "^$v" ]] || fail "pin not added to the project's package.json under --yes"
 grep -q $'^\t"name"' "$S/package.json" && [[ ! -f "$S/cabinet/package.json" ]] || fail "package.json formatting lost, or a second one placed"
-[[ "$(jq -r '.devDependencies["@tarekraafat/cabinet"]' "$I/package.json")" == "^0.1.0" && -z "$(git -C "$I" diff --stat -- package.json)" ]] || fail "an existing pin was touched"
+[[ "$(j -r '$.devDependencies["@tarekraafat/cabinet"]' "$I/package.json")" == "^0.1.0" && -z "$(git -C "$I" diff --stat -- package.json)" ]] || fail "an existing pin was touched"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -294,9 +280,9 @@ EOF
 "$W/bin/handoff.sh" list | grep -q 'H-20260101-01' || fail "open entry not listed"
 "$W/bin/handoff.sh" list qa | grep -q 'first' || fail "entry for qa not printed"
 "$W/bin/handoff.sh" list founder | grep -q 'second' && fail "done entry printed as open"
-"$W/bin/handoff.sh" list --json | jq -e 'length == 1 and .[0].id == "H-20260101-01" and .[0].from == "architect" and .[0].to == "qa"
-  and .[0].status == "open" and .[0].date == "2026-01-01" and .[0].age_days > 200 and .[0].title == "first" and (.[0] | has("text") | not)' >/dev/null || fail "handoffs --json"
-"$W/bin/handoff.sh" list qa --json | jq -e '.[0].text | contains("- Needed: y")' >/dev/null && (cd "$W/specs" && "$F" handoff list owner --json) | jq -e 'length == 0' >/dev/null || fail "handoffs <name> --json"
+"$W/bin/handoff.sh" list --json | j -e '$.length == 1 && $[0].id == "H-20260101-01" && $[0].from == "architect" && $[0].to == "qa"
+  && $[0].status == "open" && $[0].date == "2026-01-01" && $[0].age_days > 200 && $[0].title == "first" && !("text" in $[0])' >/dev/null || fail "handoffs --json"
+"$W/bin/handoff.sh" list qa --json | j -e '$[0].text.includes("- Needed: y")' >/dev/null && (cd "$W/specs" && "$F" handoff list owner --json) | j -e '$.length == 0' >/dev/null || fail "handoffs <name> --json"
 git -C "$W" add -A && git -C "$W" commit -qm handoffs
 "$W/bin/handoff.sh" archive | grep -q 'archived 1' || fail "archive did not move the done entry"
 grep -q 'H-20260101-02' "$W/handoffs/archive-2026-01.md" || fail "archive file missing the entry"
@@ -309,8 +295,8 @@ out="$(cd "$W/specs" && "$F" handoff add --from architect --to "api, qa" --chang
 in the client" "Raise the list limit")" || fail "handoff failed: $out"
 [[ "$out" == "H-$d-08 filed for api, qa and committed" ]] || fail "handoff did not take the next free ID across the archives: $out"
 git -C "$W" show --stat HEAD | grep -q "handoffs: H-$d-08 Raise the list limit" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "handoff not committed alone"
-"$W/bin/handoff.sh" list qa --json | jq -e --arg id "H-$d-08" '[.[] | select(.id == $id)][0] | .from == "architect" and .status == "open"
-  and (.text | contains("- Needed: page by 100 in the client\n- Depends on: none"))' >/dev/null || fail "the filed handoff is not in the format the handoff tools read"
+"$W/bin/handoff.sh" list qa --json | j -e --arg id "H-$d-08" '((h) => h.from == "architect" && h.status == "open"
+  && h.text.includes("- Needed: page by 100 in the client\n- Depends on: none"))($.find((h) => h.id == $id))' >/dev/null || fail "the filed handoff is not in the format the handoff tools read"
 "$W/bin/handoff.sh" list | grep -q "H-$d-01" && fail "an ID was reused"
 echo "- leftover line" >> "$W/HANDOFFS.md"
 out="$("$W/bin/handoff.sh" add --from qa --to architect --changed x --needed y "Second")"
@@ -367,7 +353,7 @@ out="$("$W/bin/handoff.sh" record "$v" --role qa block --commits "A1B2C3D, e4f5a
 grep -qxF -- "- Verdict: qa BLOCK $(date +%F) a1b2c3d,e4f5a6b specs/qa/r.md" "$W/HANDOFFS.md" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "the recorded verdict line, or its commit"
 "$W/bin/handoff.sh" attach "$v" "$T/run.txt" --from qa >/dev/null 2>&1 && fail "attach let someone other than the sender add evidence"
 (cd "$T" && "$F" -C "$W" handoff attach "$v" "$T/run.txt" https://example.com/v --from Web) | grep -q "$v: evidence attached and committed" || fail "attach"
-"$W/bin/handoff.sh" list qa --json | jq -e --arg id "$v" '[.[] | select(.id == $id)][0].text | test("- Evidence: \\[run.txt\\]\\(specs/evidence/" + $id + "/run.txt\\), <https://example.com/v>\n- Verdict: qa BLOCK")' >/dev/null \
+"$W/bin/handoff.sh" list qa --json | j -e --arg id "$v" '$.find((h) => h.id == $id).text.includes("- Evidence: [run.txt](specs/evidence/" + $id + "/run.txt), <https://example.com/v>\n- Verdict: qa BLOCK")' >/dev/null \
   && [[ -f "$W/specs/evidence/$v/run.txt" && -z "$(git -C "$W" status --porcelain)" ]] || fail "attached evidence: not before the verdicts, or not committed"
 "$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null || fail "record PASS once there is evidence"
 [[ "$(grep -c '^- Verdict: qa ' "$W/HANDOFFS.md")" == 1 ]] && grep -q "^- Verdict: qa PASS " "$W/HANDOFFS.md" || fail "a new verdict did not replace the role's earlier one"
@@ -378,23 +364,23 @@ rc=0; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits xyz --note specs/
 echo n > "$W/README-note.md"; "$W/bin/handoff.sh" record "$v" --role qa PASS --commits a1b2c3d --note README-note.md >/dev/null 2>&1 && fail "record took a note outside specs/"
 rm "$W/README-note.md"; [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused record or attach changed a file"
 # Readiness, computed: the reviewers an entry needs, at the latest commits, and only that work is ready.
-rj() { "$W/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+rj() { "$W/bin/handoff.sh" list --json | j -c --arg i "$1" "((\$) => $2)(\$.find((h) => h.id == \$i))"; }   # rj <id> <expression on the entry, $>
 r="$("$W/bin/handoff.sh" add --from web --to "qa, security" --changed "Login screen" --needed "Verify it" --evidence https://example.com/l "Login UI")"; r="${r%% *}"
-[[ "$(rj "$r" '[.needs, .missing, .ready]')" == '[["qa","security","design-lead"],["qa","security","design-lead"],false]' ]] || fail "readiness of new work from the web builder: $(rj "$r" .)"
+[[ "$(rj "$r" '[$.needs, $.missing, $.ready]')" == '[["qa","security","design-lead"],["qa","security","design-lead"],false]' ]] || fail "readiness of new work from the web builder: $(rj "$r" '$')"
 for x in qa security design-lead; do "$W/bin/handoff.sh" record "$r" --role "$x" PASS --commits a1b2c3d --note specs/qa/r.md >/dev/null || fail "record $x for readiness"; done
-[[ "$(rj "$r" .ready)" == true ]] && "$W/bin/handoff.sh" list --ready | grep -q "$r" && "$F" -C "$W" handoff list --ready --json | jq -e --arg i "$r" 'map(.id) == [$i]' >/dev/null || fail "work every reviewer passed is not ready: $(rj "$r" .)"
+[[ "$(rj "$r" '$.ready')" == true ]] && "$W/bin/handoff.sh" list --ready | grep -q "$r" && "$F" -C "$W" handoff list --ready --json | j -e --arg i "$r" '$.length == 1 && $[0].id == $i' >/dev/null || fail "work every reviewer passed is not ready: $(rj "$r" '$')"
 "$W/bin/handoff.sh" record "$r" --role qa PASS --commits a1b2c3d,e4f5a6b7 --note specs/qa/r.md >/dev/null
-[[ "$(rj "$r" '[.stale, .ready]')" == '[["security","design-lead"],false]' ]] || fail "a fix did not make the earlier passes stale: $(rj "$r" .)"
+[[ "$(rj "$r" '[$.stale, $.ready]')" == '[["security","design-lead"],false]' ]] || fail "a fix did not make the earlier passes stale: $(rj "$r" '$')"
 ! "$W/bin/handoff.sh" list --ready | grep -q "$r" || fail "stale work listed as ready"
 "$W/bin/handoff.sh" record "$r" --role security PASS --commits a1b2c3d4,e4f5a6b --note specs/qa/r.md >/dev/null
 "$W/bin/handoff.sh" record "$r" --role design-lead BLOCK --commits a1b2c3d,e4f5a6b --note specs/qa/r.md >/dev/null
-[[ "$(rj "$r" '[.stale, .blocking, .missing, .ready]')" == '[[],["design-lead"],[],false]' ]] || fail "a BLOCK, or hashes of two lengths: $(rj "$r" .)"
-[[ "$(rj "$r" '.verdicts | map(.role + " " + .verdict) | join(",")')" == '"qa PASS,security PASS,design-lead BLOCK"' ]] || fail "the verdicts in list --json"
-perl -pi -e "s/^(- Status: open \\([0-9-]+\\))\$/\$1 qa PASS, looks fine/ if \$on; \$on = 1 if /^### \Q$r\E:/; \$on = 0 if /^- Status:/" "$W/HANDOFFS.md"
-[[ "$(rj "$r" '.unread_verdicts | length')" == 1 ]] && "$W/bin/doctor.sh" 2>&1 | grep -q "written outside a Verdict line, so not counted: $r" || fail "a verdict in prose was not reported: $(rj "$r" .unread_verdicts)"
+[[ "$(rj "$r" '[$.stale, $.blocking, $.missing, $.ready]')" == '[[],["design-lead"],[],false]' ]] || fail "a BLOCK, or hashes of two lengths: $(rj "$r" '$')"
+[[ "$(rj "$r" '$.verdicts.map((v) => v.role + " " + v.verdict).join(",")')" == '"qa PASS,security PASS,design-lead BLOCK"' ]] || fail "the verdicts in list --json"
+sedi "/^### $r:/,/^### /s/^\(- Status: open ([0-9-]*)\)\$/\1 qa PASS, looks fine/" "$W/HANDOFFS.md"
+[[ "$(rj "$r" '$.unread_verdicts.length')" == 1 ]] && "$W/bin/doctor.sh" 2>&1 | grep -q "written outside a Verdict line, so not counted: $r" || fail "a verdict in prose was not reported: $(rj "$r" '$.unread_verdicts')"
 git -C "$W" checkout -q -- HANDOFFS.md
 o="$("$W/bin/handoff.sh" add --from chief-of-staff --to owner --changed x --needed "Decide" "Pricing")"; o="${o%% *}"
-[[ "$(rj "$o" '[.needs, .ready]')" == '[[],null]' ]] || fail "a decision for the owner needs a review: $(rj "$o" .)"
+[[ "$(rj "$o" '[$.needs, $.ready]')" == '[[],null]' ]] || fail "a decision for the owner needs a review: $(rj "$o" '$')"
 rc=0; "$W/bin/handoff.sh" list qa --ready >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "list --ready with a name, in text, was not refused"
 grep -q '^- \*\*Readiness is computed\.\*\*' "$KIT/core/rules/reviews.md" && grep -q 'never judge readiness yourself' "$KIT/roles/chief-of-staff.md" || fail "the readiness rules left reviews.md or the chief-of-staff"
 # Work that changes no repo: a verdict with no commits, never for work addressed to a builder.
@@ -423,7 +409,7 @@ git -C "$W" checkout -q -- bin/handoff.sh
 section "update to a newer kit shows its changelog" "0"
 s12() {
 K2="$T/kit2"; cp -R "$KIT" "$K2"; rm -rf "$K2/.git"
-jq '.version = "0.1.1"' "$KIT/package.json" > "$K2/package.json"
+j '({...$, version: "0.1.1"})' "$KIT/package.json" > "$K2/package.json"
 { echo "# Changelog"; echo; echo "## 0.1.1 - test"; echo; echo "- smoke change"; echo; tail -n +2 "$KIT/CHANGELOG.md"; } > "$K2/CHANGELOG.md"
 echo "# 0.1.1" >> "$K2/core/CABINET.md"
 out="$("$K2/bin/cabinet" -C "$W" update)"
@@ -446,7 +432,7 @@ grep -q 'id="status"' "$KIT/brand/index.html" && grep -q 'id="chairs"' "$KIT/bra
 git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not ignored"
 # A "global" newer kit run inside the workspace must defer to the pinned copy.
 out="$(cd "$W" && "$K2/bin/cabinet" status)"
-echo "$out" | grep -q "node_modules/@tarekraafat/cabinet: $(jq -r .version "$KIT/package.json")" || fail "global command did not defer to the pinned copy"
+echo "$out" | grep -q "node_modules/@tarekraafat/cabinet: $(j -r '$.version' "$KIT/package.json")" || fail "global command did not defer to the pinned copy"
 "$K2/bin/cabinet" version | grep -q 0.1.1 || fail "outside a workspace the global command should run itself"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -484,16 +470,16 @@ echo '{"ui":{"theme":"x"}}' > "$H/.qwen/settings.json"
 # The worst case for "last match wins": an explicit allow and catch-alls that would override rules placed first.
 echo '{"permission":{"bash":{"git push*":"allow","*":"allow"},"*":"ask"},"mcp":{"x":{"enabled":false}}}' > "$H/.config/opencode/opencode.json"
 boot >/dev/null
-kd="$(jq -c '.permissions.deny' "$KIT/guardrails/claude-permissions.json")"
-jq -e --argjson d "$kd" '(($d - .permissions.deny) | length) == 0 and .ui.theme == "x"' "$H/.qwen/settings.json" >/dev/null || fail "Qwen rules not merged or settings lost"
+kd="$(j -c '$.permissions.deny' "$KIT/guardrails/claude-permissions.json")"
+j -e --argjson d "$kd" '$d.every((r) => $.permissions.deny.includes(r)) && $.ui.theme == "x"' "$H/.qwen/settings.json" >/dev/null || fail "Qwen rules not merged or settings lost"
 oc="$H/.config/opencode/opencode.json"
-jq -e '(.permission | keys_unsorted) == ["*","bash"] and (.permission.bash | keys_unsorted | first) == "*" and .permission.bash["git push*"] == "deny" and .mcp.x.enabled == false' "$oc" >/dev/null || fail "opencode rules not last, or settings lost"
-jq -e --argjson n "$(jq '.permissions.deny + .permissions.ask | length' "$KIT/guardrails/claude-permissions.json")" '(.permission.bash | keys_unsorted | .[1:] | length) == $n' "$oc" >/dev/null || fail "opencode did not get every rule"
+j -e 'Object.keys($.permission).join() == "*,bash" && Object.keys($.permission.bash)[0] == "*" && $.permission.bash["git push*"] == "deny" && $.mcp.x.enabled === false' "$oc" >/dev/null || fail "opencode rules not last, or settings lost"
+j -e --argjson n "$(j '$.permissions.deny.length + $.permissions.ask.length' "$KIT/guardrails/claude-permissions.json")" 'Object.keys($.permission.bash).length - 1 == $n' "$oc" >/dev/null || fail "opencode did not get every rule"
 [[ -z "$(boot | grep -E 'added')" ]] || fail "a second run changed the guardrails again"
 # opencode reads opencode.json and then opencode.jsonc: the rules go in the .json, the commented .jsonc is never rewritten.
 rm "$oc"; printf '{ // my comment\n}\n' > "${oc}c"; cp "${oc}c" "$T/jsonc.before"
 boot >/dev/null
-cmp -s "${oc}c" "$T/jsonc.before" && jq -e '.permission.bash["git push*"] == "deny"' "$oc" >/dev/null || fail "rules not placed beside a commented opencode.jsonc"
+cmp -s "${oc}c" "$T/jsonc.before" && j -e '$.permission.bash["git push*"] == "deny"' "$oc" >/dev/null || fail "rules not placed beside a commented opencode.jsonc"
 # A config that is not plain JSON is never rewritten, and the merge says so instead of claiming success.
 printf '{"a": 1,}\n' > "$H/.qwen/settings.json"
 out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, left as is' && ! echo "$out" | grep -q 'added .* rule(s) to .*qwen' || fail "an unreadable config was reported as merged"
@@ -501,7 +487,7 @@ out="$(boot || true)"; echo "$out" | grep -q 'settings.json is not plain JSON, l
 # Permissions and symlinks of a config survive the merge.
 printf '{"k": 1}\n' > "$T/real-settings.json"; chmod 600 "$T/real-settings.json"; rm "$H/.qwen/settings.json"; ln -s "$T/real-settings.json" "$H/.qwen/settings.json"
 boot >/dev/null
-[[ -L "$H/.qwen/settings.json" && "$(perm "$T/real-settings.json")" == 600 ]] && jq -e '.k == 1 and (.permissions.deny | length > 0)' "$T/real-settings.json" >/dev/null || fail "merge lost a symlink or loosened permissions"
+[[ -L "$H/.qwen/settings.json" && "$(perm "$T/real-settings.json")" == 600 ]] && j -e '$.k == 1 && $.permissions.deny.length > 0' "$T/real-settings.json" >/dev/null || fail "merge lost a symlink or loosened permissions"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -642,7 +628,7 @@ git -C "$I" config core.hooksPath .husky
 git -C "$I" config --unset core.hooksPath
 # The guardrails close the known ways around the push gate and to credentials.
 for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)' 'Bash(secret-tool lookup*)' 'Bash(*cabinet/passphrases*)'; do
-  jq -e --arg r "$r" '.permissions.deny | index($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
+  j -e --arg r "$r" '$.permissions.deny.includes($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
 done
   return 0   # a last "check && fail" line must not end the run
 }
@@ -679,7 +665,7 @@ echo "$out" | grep -q 'no longer exists. To free it' || fail "no cleanup steps f
 printf -- '---\nname: ops\ndescription: Ops.\n---\n\nYou are ops.\n' > "$G2/roles/ops.md"
 (cd "$G2" && "$F" config --yes --roles "qa ops" --name "Ignoring Two" --slug ignoring-two) >/dev/null || fail "config with a project role"
 "$G2/bin/doctor.sh" 2>&1 | grep -q 'ok    manual names every script, job and role' || fail "manual check after adding a project role"
-jq -e '.name == "ignoring-two-workspace" and (.description | startswith("Ignoring Two "))' "$G2/package.json" >/dev/null || fail "workspace package.json not renamed"
+j -e '$.name == "ignoring-two-workspace" && $.description.startsWith("Ignoring Two ")' "$G2/package.json" >/dev/null || fail "workspace package.json not renamed"
 # Restore keeps a differing untracked file, and never turns a folder with files of its own into a repo.
 R2="$T/rest"; "$F" new "$R2" --yes >/dev/null; echo "draft v1" > "$R2/notes/draft.md"
 mkrepo "$R2/api"; printf 'api\t-\t-\tno\n' >> "$R2/repos.tsv"; git -C "$R2" add repos.tsv; git -C "$R2" commit -qm repos
@@ -718,7 +704,7 @@ printf 'bad name\t-\t-\tno\n' >> "$T/relnew/repos.tsv"
 "$T/relnew/bin/doctor.sh" 2>&1 | grep -q 'skipped the row named "bad name"' || fail "an unusable repos.tsv row was skipped without a message"
 # The guardrails also deny pushing without hooks and dropping the environment.
 for r in 'Bash(*send-pack*)' 'Bash(env -i*)' 'Bash(env -u*)'; do
-  jq -e --arg r "$r" '.permissions.deny | index($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
+  j -e --arg r "$r" '$.permissions.deny.includes($r)' "$KIT/guardrails/claude-permissions.json" >/dev/null || fail "missing guardrail $r"
 done
   return 0   # a last "check && fail" line must not end the run
 }
@@ -729,8 +715,8 @@ s21() {
 H3="$T/home3"; mkdir -p "$H3/.cursor"
 printf '{"version":1,"editor":{"vimMode":true},"permissions":{"allow":["Shell(ls)"],"deny":["Shell(rm)"]}}\n' > "$H3/.cursor/cli-config.json"
 boot2 "$H3" "$W" >/dev/null
-jq -e --slurpfile k "$KIT/guardrails/cursor-permissions.json" \
-  '(($k[0].permissions.deny - .permissions.deny) | length) == 0 and .editor.vimMode == true and .permissions.allow == ["Shell(ls)"] and (.permissions.deny | index("Shell(rm)"))' \
+j -e --argjson k "$(cat "$KIT/guardrails/cursor-permissions.json")" \
+  '$k.permissions.deny.every((r) => $.permissions.deny.includes(r)) && $.editor.vimMode === true && JSON.stringify($.permissions.allow) == "[\"Shell(ls)\"]" && $.permissions.deny.includes("Shell(rm)")' \
   "$H3/.cursor/cli-config.json" >/dev/null || { cat "$H3/.cursor/cli-config.json"; fail "Cursor rules not merged, or the user's settings lost"; }
 # The cursor runner calls the CLI in print mode, with the role as its first instruction.
 CB="$T/cursorbin"; mkdir -p "$CB"
@@ -763,14 +749,15 @@ echo "$out" | grep -q 'ok    every handoff ID is unique' || fail "doctor: handof
 
 section "docs match the code" ""
 s23() {
-python3 -I "$KIT/test/docs_check.py" "$KIT" || fail "the docs fell behind the code (see above)"
-python3 -I "$KIT/tools/build-llms-full.py" --check || fail "llms-full.txt is out of date (npm run docs)"
-# The kit's scripts need no python3 (AGENTS.md, rule 3); their JavaScript parses.
-! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=lib.js "$KIT/bin" "$KIT/scripts" || fail "a kit script runs python3 or perl; move it to scripts/lib.js"
-! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=lib.js "$KIT/bin" "$KIT/scripts" || fail "a kit script runs jq; use json (scripts/platform.sh)"
-node --check "$KIT/scripts/lib.js" || fail "scripts/lib.js does not parse"
+node "$KIT/test/docs-check.js" "$KIT" || fail "the docs fell behind the code (see above)"
+node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of date (npm run docs)"
+# Nothing in the kit, its tests or its tools runs python3, perl or jq (AGENTS.md, rule 3); its JavaScript parses.
+[[ -z "$(find "$KIT" -name node_modules -prune -o \( -name '*.py' -o -name '*.pl' \) -print)" ]] || fail "a Python or perl file is in the kit; write it in JavaScript"
+! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=lib.js --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs python3 or perl; move it to scripts/lib.js"
+! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=lib.js --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs jq; use json (scripts/platform.sh)"
+[[ "$(grep -cE "^[^#]*([^a-z.](python3|perl) +-|[^a-z.-]jq +['-])" "$KIT/test/smoke.sh")" == 0 ]] || fail "the tests run python3, perl or jq; use L or j (test/smoke.sh)"
+for f in scripts/lib.js test/docs-check.js tools/build-llms-full.js tools/build-brand.js; do node --check "$KIT/$f" || fail "$f does not parse"; done
 # json: jq's options with a JavaScript expression.
-j() { node "$KIT/scripts/lib.js" json "$@"; }
 [[ "$(printf '{"a":[1,2]}\n' | j -c '$.a')" == "[1,2]" && "$(printf '{"x":1}\n{"x":2}\n' | j -s -c '$.map((v) => v.x)')" == "[1,2]" \
   && "$(printf 'a\tb\n\n' | j -R -c '$')" == '["a\tb",""]' && "$(j -n -c '$args' --args "a b" "")" == '["a b",""]' \
   && "$(j -n -r --arg v 'x"y' --argjson n 2 '$v + $n')" == 'x"y2' && "$(j -n -r --each '["a", 1]')" == $'a\n1' \
@@ -780,14 +767,14 @@ j -n -e '0' >/dev/null || fail "json -e: only null, false and nothing fail"
 rc=0; printf 'nope' | j '$' 2>/dev/null || rc=$?; [[ $rc == 2 ]] || fail "json: input that is not JSON exits 2"
 rc=0; j -n 'obj([1])' 2>/dev/null || rc=$?
 [[ $rc == 5 && "$(j -n -c '[obj(null), list(undefined)]')" == "[{},[]]" ]] || fail "json: obj and list refuse another shape"
-python3 -I "$KIT/tools/build-brand.py" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
+node "$KIT/tools/build-brand.js" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
-jq -e '.color.ink.value and .status_color.fix.light and .mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
-repo="$(jq -r .repository.url "$KIT/package.json" | sed 's/^git+//')"
+j -e '!!$.color.ink.value && !!$.status_color.fix.light && $.mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
+repo="$(j -r '$.repository.url' "$KIT/package.json" | sed 's/^git+//')"
 grep -qF "git clone $repo " "$KIT/README.md" || fail "the README's clone command does not match the repository in package.json"
 # The package installs only where the README says the kit runs: macOS and Linux.
-jq -e '.publishConfig.access == "public"' "$KIT/package.json" >/dev/null || fail "the scoped package would publish as private"
-jq -e '.os == ["darwin", "linux"]' "$KIT/package.json" >/dev/null && grep -q '^- \*\*Platform:\*\* macOS and Linux ' "$KIT/README.md" || fail "package.json os and the README's platform disagree"
+j -e '$.publishConfig.access == "public"' "$KIT/package.json" >/dev/null || fail "the scoped package would publish as private"
+j -e 'JSON.stringify($.os) == "[\"darwin\",\"linux\"]"' "$KIT/package.json" >/dev/null && grep -q '^- \*\*Platform:\*\* macOS and Linux ' "$KIT/README.md" || fail "package.json os and the README's platform disagree"
 for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" || fail ".gitignore does not ignore $p"; done
 # CABINET.md holds what every agent needs on every session; the rest is in core/rules/, each file named
 # from it with when to read it, and every reference to one names a file that exists.
@@ -817,7 +804,7 @@ section "commands from anywhere in a workspace or its project" "0 3"
 s25() {
 mkdir -p "$W/specs/deep" "$I/src/deep" "$T/nowhere"
 (cd "$W/specs/deep" && "$F" handoff list) >/dev/null || fail "handoffs from a workspace subfolder"
-(cd "$I/src/deep" && "$F" doctor --json) | jq -e '.workspace | endswith("/acme-app/cabinet")' >/dev/null || fail "doctor from deep inside the project"
+(cd "$I/src/deep" && "$F" doctor --json) | j -e '$.workspace.endsWith("/acme-app/cabinet")' >/dev/null || fail "doctor from deep inside the project"
 (cd "$I/src/deep" && "$F" status) | grep -q 'no kit file edited' || fail "status from deep inside the project"
 out="$(cd "$T/nowhere" && "$F" doctor 2>&1)" && fail "doctor outside any workspace succeeded"
 echo "$out" | grep -q 'not inside a cabinet workspace' || fail "unclear error outside a workspace: $out"
@@ -832,8 +819,8 @@ before="$(git -C "$W" status --porcelain)"
 out="$(cd "$W" && "$F" next)"
 echo "$out" | grep -q '^Next in Demo Co' && echo "$out" | grep -q 'Fill the TBDs in AGENTS.md' && echo "$out" | grep -q 'cabinet bootstrap' || { echo "$out"; fail "next"; }
 (cd "$T" && "$F" next) | grep -q 'Not inside a cabinet workspace' || fail "next outside a workspace"
-(cd "$W/specs" && "$F" next --json) | jq -e '.project == "Demo Co" and ([.steps[].id] | index("tbd") and index("bootstrap")) and (.steps[] | select(.id == "bootstrap") | .command == "cabinet bootstrap")' >/dev/null || fail "next --json"
-(cd "$T" && "$F" next --json) | jq -e '.workspace == null and .steps[0].id == "start"' >/dev/null || fail "next --json outside a workspace"
+(cd "$W/specs" && "$F" next --json) | j -e '$.project == "Demo Co" && $.steps.some((s) => s.id == "tbd") && $.steps.find((s) => s.id == "bootstrap")?.command == "cabinet bootstrap"' >/dev/null || fail "next --json"
+(cd "$T" && "$F" next --json) | j -e '$.workspace == null && $.steps[0].id == "start"' >/dev/null || fail "next --json outside a workspace"
 [[ "$(git -C "$W" status --porcelain)" == "$before" ]] || fail "next changed the workspace"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -849,9 +836,9 @@ out="$(cd "$W" && in_tty "$F" doctor)"
 [[ "$out" == *$'\033[31mFIX'* && "$out" == *$'\033[32mok'* ]] || fail "doctor in a terminal should color FIX red and ok green"
 out="$(cd "$W" && NO_COLOR=1 in_tty "$F" doctor)"
 [[ "$out" != *$'\033['* ]] || fail "doctor colored its output with NO_COLOR set"
-(cd "$W" && "$F" doctor --json) | jq -e '.problems > 0 and (.can_fix | index("roles")) and (.results | length > 3)
-  and all(.results[]; .id | test("^[a-z]+\\.[a-z-]+$")) and (.results[] | select(.id == "kit.roles") | .level == "fix")' >/dev/null || fail "doctor --json IDs"
-(cd "$W" && "$F" doctor --json) | jq -e 'any(.results[]; .id == "schedules.node" and .level == "ok")' >/dev/null || fail "doctor: scheduled jobs should find node"
+(cd "$W" && "$F" doctor --json) | j -e '$.problems > 0 && $.can_fix.includes("roles") && $.results.length > 3
+  && $.results.every((r) => /^[a-z]+\.[a-z-]+$/.test(r.id)) && $.results.findLast((r) => r.id == "kit.roles")?.level == "fix"' >/dev/null || fail "doctor --json IDs"
+(cd "$W" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "schedules.node" && r.level == "ok")' >/dev/null || fail "doctor: scheduled jobs should find node"
 (cd "$W" && "$F" doctor --fix 2>&1 </dev/null) | grep -q 'run it in a terminal, or add --yes' || fail "doctor --fix ran without asking"
 (cd "$W" && "$F" doctor --fix --yes) >/dev/null 2>&1 || true
 [[ -f "$W/agents/qa.md" ]] || fail "doctor --fix --yes did not rebuild the roles"
@@ -901,7 +888,7 @@ rm "$W/jobs/weekly-review.job"
 mkdir -p "$T/npmshim"; printf '#!/bin/sh\necho 9.9.9\n' > "$T/npmshim/npm"; chmod +x "$T/npmshim/npm"
 PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: cabinet 9.9.9' || fail "outdated"
 printf '#!/bin/sh\nexit 1\n' > "$T/npmshim/npm"; PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: unknown' || fail "outdated offline"
-"$F" -C "$W" status --json | jq -e '.version == .kit_version and (.edited | length == 0)' >/dev/null || fail "status --json"
+"$F" -C "$W" status --json | j -e '$.version == $.kit_version && $.edited.length == 0' >/dev/null || fail "status --json"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -912,8 +899,8 @@ mkdir -p "$T/plain"
 (cd "$T/plain" && "$F" doctor --help) | grep -q -- '--fix' || fail "doctor --help outside a workspace"
 "$F" remove -h | grep -q '^Usage: cabinet remove \[options\]' || fail "remove -h"
 "$F" help config | grep -q -- '--backup-time <time>' || fail "help <command>"
-"$F" help --json | jq -e '.name == "cabinet" and (.commands | length > 20) and (.commands | map(.name) | index("remove"))' >/dev/null || fail "help --json"
-"$F" help remove --json | jq -e '.commands | length == 1 and (.[0].options | map(.name) | index("--force"))' >/dev/null || fail "help <command> --json"
+"$F" help --json | j -e '$.name == "cabinet" && $.commands.length > 20 && $.commands.some((c) => c.name == "remove")' >/dev/null || fail "help --json"
+"$F" help remove --json | j -e '$.commands.length == 1 && $.commands[0].options.some((o) => o.name == "--force")' >/dev/null || fail "help <command> --json"
 "$F" help nope >/dev/null 2>&1 && fail "help for an unknown command succeeded"
 # Completion offers the table's options for each command.
 w="$(bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet remove --d); COMP_CWORD=2; _cabinet; echo "${COMPREPLY[*]}"' _ "$F")"
@@ -933,8 +920,8 @@ git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first
 [[ ! -f "$LA" ]] && grep -qx 'CABINET_SCHEDULES="off"' "$P/cabinet/cabinet.local.env" || fail "--no-schedules"
 [[ -z "$(git -C "$P" status --porcelain --untracked-files=all)" ]] || { git -C "$P" status --porcelain; fail "cabinet.local.env shows in the project's git"; }
 (cd "$P" && "$F" bootstrap) >/dev/null 2>&1 || true; [[ ! -f "$LA" ]] || fail "a plain bootstrap forgot --no-schedules"
-(cd "$P" && "$F" doctor --json) | jq -e '([.results[] | select(.id == "schedules.off")] | length == 1) and ([.results[] | select(.id == "schedules.job")] | length == 0)' >/dev/null || fail "doctor with schedules off"
-(cd "$P" && "$F" next --json) | jq -e '[.steps[].id] | index("bootstrap") | not' >/dev/null || fail "next asks for bootstrap on a machine that schedules nothing"
+(cd "$P" && "$F" doctor --json) | j -e '$.results.filter((r) => r.id == "schedules.off").length == 1 && !$.results.some((r) => r.id == "schedules.job")' >/dev/null || fail "doctor with schedules off"
+(cd "$P" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "bootstrap")' >/dev/null || fail "next asks for bootstrap on a machine that schedules nothing"
 (cd "$P" && "$F" bootstrap --schedules) >/dev/null 2>&1 || true
 [[ -f "$LA" && ! -e "$P/cabinet/cabinet.local.env" ]] || fail "--schedules"
 rc=0; (cd "$P" && "$F" bootstrap --nope) >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "bootstrap with an unknown option exits $rc, not 2"
@@ -949,7 +936,7 @@ grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && gr
 (cd "$P" && "$F" config --yes --dry-run --backup-dir "$T/shared-bk") | grep -q 'this machine keeps its own folder' || fail "config did not say this machine keeps its own folder"
 (cd "$P" && "$F" config --this-machine --backup-dir off --apply) >/dev/null 2>&1 || true
 [[ ! -f "$BL" ]] || fail "--this-machine --backup-dir off kept the backup schedule"
-(cd "$P" && "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.enabled") | .message | contains("on this machine")' >/dev/null || fail "doctor with backups off on this machine"
+(cd "$P" && "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "backups.enabled")?.message.includes("on this machine")' >/dev/null || fail "doctor with backups off on this machine"
 (cd "$P" && "$F" config --this-machine --clear) >/dev/null 2>&1 || true
 [[ ! -e "$P/cabinet/cabinet.local.env" ]] || { cat "$P/cabinet/cabinet.local.env"; fail "--clear left backup lines"; }
 (cd "$P" && "$F" config --this-machine --clear) | grep -q 'already follows cabinet.env' || fail "a second --clear"
@@ -961,16 +948,16 @@ section "guides: the project's own standing documents" "0"
 s33() {
 git -C "$W" ls-files --error-unmatch guides/README.md >/dev/null 2>&1 || fail "guides/ is not placed and tracked"
 grep -q '^## Guides$' "$W/AGENTS.md" && grep -q 'Guides' "$W/CABINET.md" || fail "the Guides table or its rule is missing"
-(cd "$W" && "$F" doctor --json) | jq -e '[.results[] | select(.section == "Guides")] == [{"level": "ok", "section": "Guides", "id": "guides.listed", "message": "every guide is listed in AGENTS.md"}]' >/dev/null || fail "doctor flags a fresh workspace's guides"
+(cd "$W" && "$F" doctor --json) | j -e 'JSON.stringify($.results.filter((r) => r.section == "Guides")) == JSON.stringify([{level: "ok", section: "Guides", id: "guides.listed", message: "every guide is listed in AGENTS.md"}])' >/dev/null || fail "doctor flags a fresh workspace's guides"
 mkdir -p "$W/guides/legal"; echo "Voice: plain." > "$W/guides/brand.md"; echo terms > "$W/guides/legal/terms.md"
 [[ -n "$(git -C "$W" status --porcelain -- guides/brand.md)" ]] || fail "a new guide is not seen by git"
 j="$(cd "$W" && "$F" doctor --json || true)"
-jq -e '[.results[] | select(.id == "guides.listed" and .level == "fix") | .message] | length == 2' <<<"$j" >/dev/null || fail "doctor missed an unlisted guide"
-perl -i -pe 's/^\| none yet \|.*\n/| `guides\/brand.md` | voice | every agent |\n| `guides\/legal\/terms.md` | terms | qa |\n| `guides\/gone.md` | old | qa |\n/' "$W/AGENTS.md"
+j -e '$.results.filter((r) => r.id == "guides.listed" && r.level == "fix").length == 2' <<<"$j" >/dev/null || fail "doctor missed an unlisted guide"
+L replace-line "$W/AGENTS.md" "| none yet |" $'| `guides/brand.md` | voice | every agent |\n| `guides/legal/terms.md` | terms | qa |\n| `guides/gone.md` | old | qa |'
 j="$(cd "$W" && "$F" doctor --json || true)"
-jq -e '([.results[] | select(.id == "guides.listed" and .level == "fix")] | length == 0) and ([.results[] | select(.id == "guides.exists") | .message] == ["AGENTS.md lists guides/gone.md, which does not exist"])' <<<"$j" >/dev/null || { jq -c '.results[] | select(.section == "Guides")' <<<"$j"; fail "doctor on listed and missing guides"; }
-perl -i -ne 'print unless /guides\/gone\.md/' "$W/AGENTS.md"; rm -rf "$W/guides/brand.md" "$W/guides/legal"
-perl -i -pe 's/^\| `guides\/brand.md` \|.*\n/| none yet | x | |\n/; $_ = "" if /guides\/legal/' "$W/AGENTS.md"
+j -e '!$.results.some((r) => r.id == "guides.listed" && r.level == "fix") && JSON.stringify($.results.filter((r) => r.id == "guides.exists").map((r) => r.message)) == JSON.stringify(["AGENTS.md lists guides/gone.md, which does not exist"])' <<<"$j" >/dev/null || { j -c --each '$.results.filter((r) => r.section == "Guides")' <<<"$j"; fail "doctor on listed and missing guides"; }
+L drop-text "$W/AGENTS.md" "guides/gone.md"; rm -rf "$W/guides/brand.md" "$W/guides/legal"
+L replace-line "$W/AGENTS.md" '| `guides/brand.md` |' "| none yet | x | |"; L drop-text "$W/AGENTS.md" "guides/legal"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -984,11 +971,11 @@ echo "$out" | grep -Eq '^  demo-co +Demo Co +[0-9.]+ ' || { echo "$out"; fail "l
 echo "$out" | grep -Eq '^  listed-old +listed-old +0\.0\.1\* ' && echo "$out" | grep -q '^\* not the installed kit' || { echo "$out"; fail "list: an older kit"; }
 echo "$out" | grep -Eq '^  listed-gone +- .*folder gone' && echo "$out" | grep -q "Folder gone for listed-gone: .*rm -r ~/$LOGS/listed-gone" || { echo "$out"; fail "list: a deleted workspace"; }
 j="$(cd "$T/away" && "$F" list --json)"
-jq -e 'map(select(.slug == "demo-co"))[0] | .project == "Demo Co" and .exists and (.doctor_problems | type == "number") and (.waiting_on_owner | type == "number")' <<<"$j" >/dev/null || fail "list --json: a workspace"
-jq -e '(map(select(.slug == "listed-gone"))[0] | .exists == false and .doctor_problems == null) and (map(select(.slug == "listed-old"))[0].update_available)' <<<"$j" >/dev/null || fail "list --json: gone and older"
+j -e '((w) => w.project == "Demo Co" && w.exists === true && typeof w.doctor_problems == "number" && typeof w.waiting_on_owner == "number")($.find((w) => w.slug == "demo-co"))' <<<"$j" >/dev/null || fail "list --json: a workspace"
+j -e '((g, o) => g.exists === false && g.doctor_problems == null && !!o.update_available)($.find((w) => w.slug == "listed-gone"), $.find((w) => w.slug == "listed-old"))' <<<"$j" >/dev/null || fail "list --json: gone and older"
 (cd "$T/away" && "$F" next) | grep -q 'cabinet list shows them' || fail "next outside a workspace does not point at list"
 rm -rf "$HOME/$LOGS/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
-"$F" list --json | jq -e 'map(.slug) | (index("listed-old") or index("listed-gone")) | not' >/dev/null || fail "a removed workspace is still listed"
+"$F" list --json | j -e '!$.some((w) => w.slug == "listed-old" || w.slug == "listed-gone")' >/dev/null || fail "a removed workspace is still listed"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -1005,8 +992,8 @@ echo "$out" | grep -q 'Older than a day and a half' && echo "$out" | grep -q 'no
 ! echo "$out" | grep -q ' $' || fail "digest prints trailing spaces"
 echo "$out" | grep -q '](/.*/dg-a/specs/evidence/H-1/page.png)$' || { echo "$out"; fail "digest: evidence links do not open from outside the workspace"; }
 j="$("$F" digest --json)"
-jq -e 'map(select(.slug == "dg-a"))[0] | .project == "Digest A" and (.sign_off_queue | startswith("1. **Publish") and contains("2. **Spend")) and .actions_for_owner == "- Push api main (abc1234)." and .brief_stale == false' <<<"$j" >/dev/null || fail "digest --json: a full brief"
-jq -e '(map(select(.slug == "dg-b"))[0] | .brief_stale and .queue_heading_found == false) and (map(select(.slug == "dg-c"))[0] | .brief_written == null and .queue_heading_found == null)' <<<"$j" >/dev/null || fail "digest --json: stale and missing"
+j -e '((d) => d.project == "Digest A" && d.sign_off_queue.startsWith("1. **Publish") && d.sign_off_queue.includes("2. **Spend") && d.actions_for_owner == "- Push api main (abc1234)." && d.brief_stale === false)($.find((w) => w.slug == "dg-a"))' <<<"$j" >/dev/null || fail "digest --json: a full brief"
+j -e '((b, c) => b.brief_stale === true && b.queue_heading_found === false && c.brief_written == null && c.queue_heading_found == null)($.find((w) => w.slug == "dg-b"), $.find((w) => w.slug == "dg-c"))' <<<"$j" >/dev/null || fail "digest --json: stale and missing"
 grep -q '^Write `BRIEF.md` as .* in this order, short, each part under a `## ` heading' "$KIT/roles/chief-of-staff.md" || fail "the brief headings rule left the chief-of-staff role"
 # What each project's agent runs cost this week, against its budget, and the total.
 (cd "$T/dg-a" && "$F" config --yes --budget 4) >/dev/null && (cd "$T/dg-b" && "$F" config --yes --runner codex) >/dev/null || fail "digest test setup: budget or runner"
@@ -1015,7 +1002,7 @@ out="$(cd "$T" && "$F" digest)"
 echo "$out" | grep -q '^Agent runs this week: \$3.50 of the \$4 budget (87%). What each job cost: cd .*dg-a && cabinet job list$' \
   && echo "$out" | grep -q '^Agent runs this week: \$0.00, no budget set.$' && ! echo "$out" | awk '/^== / { b = ($2 == "dg-b") } b' | grep -q '^Agent runs' || { echo "$out"; fail "digest: each project's spend"; }
 echo "$out" | head -1 | grep -q ' 1 project(s) at 80% of their budget or more. Agent runs cost \$3.50 this week in all.$' || { echo "$out" | head -1; fail "digest: the spend in the summary"; }
-jq -e '(map(select(.slug == "dg-a"))[0] | .spend_this_week_usd == 3.5 and .budget_usd == 4) and (map(select(.slug == "dg-b"))[0] | .spend_this_week_usd == null and .budget_usd == null)' <<<"$("$F" digest --json)" >/dev/null || fail "digest --json: spend and budget"
+j -e '((a, b) => a.spend_this_week_usd == 3.5 && a.budget_usd == 4 && b.spend_this_week_usd == null && b.budget_usd == null)($.find((w) => w.slug == "dg-a"), $.find((w) => w.slug == "dg-b"))' <<<"$("$F" digest --json)" >/dev/null || fail "digest --json: spend and budget"
 # Written to a file, with a notification (a fake osascript or notify-send that only logs), and on a schedule.
 "$F" digest --write "$T/dg/out.md" --notify >/dev/null || fail "digest --write"
 head -1 "$T/dg/out.md" | grep -Eq '^# cabinet digest, [0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, ' && grep -q '^  1\. \*\*Publish the page?\*\*' "$T/dg/out.md" || fail "the written digest"
@@ -1025,12 +1012,12 @@ grep -q 'wait on you in' "$T/notify.log" && grep -q "Open .*/dg/out.md" "$T/noti
 PL="$HOME/$SD/ai.cabinet-digest$SX"
 "$F" digest --schedule "Sun,mon 8:30 AM" --notify >/dev/null || fail "digest --schedule on days"
 { [[ "$SCH" != launchd ]] || plutil -lint -s "$PL"; } && [[ "$(cal "$PL")" == "0:8:30 1:8:30" ]] || fail "the digest schedule's days and time"
-cmd_of "$PL" | jq -e --arg l "/$LOGS/digest.md" '.[1:3] == ["digest", "--write"] and (.[3] | endswith($l)) and .[4] == "--notify"' >/dev/null || fail "the digest schedule's command"
+cmd_of "$PL" | j -e --arg l "/$LOGS/digest.md" '$[1] == "digest" && $[2] == "--write" && $[3].endsWith($l) && $[4] == "--notify"' >/dev/null || fail "the digest schedule's command"
 "$F" digest --schedule "7:15 am" --file "$T/dg/sched.md" >/dev/null || fail "digest --schedule daily"
-[[ "$(cal "$PL")" == "*:7:15" ]] && cmd_of "$PL" | jq -e '.[-1] | endswith("/dg/sched.md")' >/dev/null || fail "changing the digest schedule"
+[[ "$(cal "$PL")" == "*:7:15" ]] && cmd_of "$PL" | j -e '$.at(-1).endsWith("/dg/sched.md")' >/dev/null || fail "changing the digest schedule"
 "$F" digest | grep -q '^Scheduled, every day at 7:15 AM: cabinet digest --write .*sched.md' || fail "digest does not say it is scheduled"
 "$F" digest --schedule --notify >/dev/null || fail "digest --schedule with no time"
-[[ "$(cal "$PL")" == "*:10:0" ]] && cmd_of "$PL" | jq -e '.[-1] == "--notify"' >/dev/null || fail "the default digest schedule is not every day at 10:00 AM"
+[[ "$(cal "$PL")" == "*:10:0" ]] && cmd_of "$PL" | j -e '$.at(-1) == "--notify"' >/dev/null || fail "the default digest schedule is not every day at 10:00 AM"
 "$F" digest --schedule >/dev/null && [[ "$(when_of "$PL")" == "10:00 AM" ]] || fail "digest --schedule as the last argument"
 for bad in 25:00 "fun 08:00" "mon"; do "$F" digest --schedule "$bad" >/dev/null 2>&1 && fail "digest accepted the schedule '$bad'"; done
 "$F" digest --file x.md >/dev/null 2>&1 && fail "--file without --schedule was accepted"
@@ -1056,7 +1043,7 @@ grep -qx 'WHEN="fri,sat 9:00 AM"' "$W/jobs/brief.job" || { grep WHEN "$W/jobs/br
 "$W/bin/bootstrap.sh" >/dev/null 2>&1 || true
 PB="$HOME/$SD/ai.cabinet.demo-co.brief$SX"
 [[ "$(cal "$PB")" == "5:9:0 6:9:0" ]] || fail "the brief schedule on Friday and Saturday"
-(cd "$W" && "$F" doctor --json || true) | jq -e '.results[] | select(.id == "schedules.job" and (.message | contains("brief"))) | .level == "ok" and (.message | contains("Fri, Sat at 9:00 AM"))' >/dev/null || fail "doctor on a two-day brief"
+(cd "$W" && "$F" doctor --json || true) | j -e '((r) => r.level == "ok" && r.message.includes("Fri, Sat at 9:00 AM"))($.results.findLast((r) => r.id == "schedules.job" && r.message.includes("brief")))' >/dev/null || fail "doctor on a two-day brief"
 (cd "$W" && "$F" config --yes --brief-time "funday 9:00") >/dev/null 2>&1 && fail "config accepted an unknown day"
 # A job written by hand, with a full day name and a one-digit hour.
 printf 'AGENT=qa\nWHEN="Saturday 7:30 PM"\nPROMPT="x"\n' > "$W/jobs/sat.job"
@@ -1111,7 +1098,7 @@ bk >/dev/null || fail "backup for verify"
 out="$(bk verify)" || fail "a good archive failed to verify: $out"
 echo "$out" | grep -q '^  workspace: restores exactly as it is now' && echo "$out" | grep -q '^  acme-app: restores exactly as it is now' || fail "verify did not check each repo: $out"
 [[ "$(ls "$VB" | wc -l | tr -d ' ')" == 1 ]] && [[ -f "$VH/$LOGS/acme-app/backup-verified" ]] || fail "verify changed the backup folder, or did not record the good result"
-bk verify --json | jq -e '.ok and .problems == 0 and (.results | map(.repo) | index("acme-app")) and (.backed_up | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))' >/dev/null || fail "backup verify --json"
+bk verify --json | j -e '$.ok === true && $.problems == 0 && $.results.some((r) => r.repo == "acme-app") && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test($.backed_up)' >/dev/null || fail "backup verify --json"
 # Work done since the backup is reported, not a problem.
 echo change >> "$I/f"; git -C "$I" commit -qam "after the backup"; echo draft > "$C/specs/draft.md"
 out="$(bk verify)" && echo "$out" | grep -q 'acme-app: restores ([0-9]* commits); 1 commit(s) since the backup' \
@@ -1206,7 +1193,7 @@ cp "$RW/cabinet.env" "$T/optroles-env.bak"
 printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"
 (cd "$RW" && "$F" role draft brand-strategist) >/dev/null 2>&1 && fail "a draft that left the role TBD passed"
 grep -q 'Act as the chief-of-staff role' "$RW/prompt.out" && grep -q 'as .cabinet/rules/seats.md, "Drafting a role", says' "$RW/prompt.out" && grep -q 'roles/brand-strategist.md' "$RW/prompt.out" || fail "the draft prompt: $(cat "$RW/prompt.out")"
-printf '%s\n' "CABINET_RUNNER_CMD='perl -i -pe \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md'" >> "$RW/cabinet.env"
+printf '%s\n' "CABINET_RUNNER_CMD='sed -i.bak \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md && rm roles/brand-strategist.md.bak'" >> "$RW/cabinet.env"
 (cd "$RW" && "$F" role draft brand-strategist) | grep -q 'Drafted roles/brand-strategist.md' || fail "a finished draft was not reported"
 grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist role is not drafted' || fail "the drafted role was not rebuilt, or still noted"
 (cd "$RW" && "$F" role draft qa) >/dev/null 2>&1 && fail "role draft took a kit role"
@@ -1214,9 +1201,9 @@ grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "
 bs="$RW/roles/brand-strategist.md"; cp "$bs" "$T/bs.keep"; cp "$RW/AGENTS.md" "$T/bs-agents.keep"; cp "$RW/repos.tsv" "$T/bs-repos.keep"
 "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist (says nothing of settling a disagreement with a neighbouring role)' || fail "doctor: a fresh draft without a tie-break"
 echo "Record PASS or BLOCK on the handoff." >> "$bs"
-printf 'site\t-\t-\tno\n' >> "$RW/repos.tsv"; perl -0pi -e 's/(\| Repo or area \| What it is \| Owning agent \|\n\|---\|---\|---\|\n)/$1| `site` | The website | brand-strategist |\n/' "$RW/AGENTS.md"
+printf 'site\t-\t-\tno\n' >> "$RW/repos.tsv"; L sub-all "$RW/AGENTS.md" '/(\| Repo or area \| What it is \| Owning agent \|\n\|---\|---\|---\|\n)/' $'$1| `site` | The website | brand-strategist |\n'
 grep -q '^| `site` |' "$RW/AGENTS.md" || fail "test setup: the site row"
-perl -pi -e 's/^Read `CABINET.md`, then `AGENTS.md`.*\n//' "$bs"
+L drop "$bs" '/^Read `CABINET.md`, then `AGENTS.md`/'
 out="$("$RW/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'project roles behind the workflow: brand-strategist (never sends it to CABINET.md, gives verdicts without bin/handoff.sh record, says nothing of settling a disagreement with a neighbouring role, owns a repo but writes no plan, owns a repo but attaches no evidence) (redraft each' \
   || { echo "$out" | grep -i 'project role\|brand'; fail "doctor: roles.workflow"; }
@@ -1242,12 +1229,12 @@ grep -q 'You are the quality lead' "$TW/agents/qa.md" && grep -q 'qa tests on th
 rm "$TW/roles/qa.md"; "$TW/bin/role.sh" build >/dev/null
 # One owner per repo or area.
 dr | grep -q 'ok    each repo and area in the team table has one owner' || fail "a fresh team table has two owners"
-X='| `specs/` | Specs, again | architect |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `specs/` | Specs, again | architect |'
 dr | grep -q "FIX   more than one owner in the team table of AGENTS.md: \`specs/\` (.*architect.*)" || fail "two owners of specs/ not flagged: $(dr | grep -i owner)"
 git -C "$TW" checkout -q -- AGENTS.md
 # A part of a product repo given to another role than the repo's owner: allowed, noted.
 printf 'api\t-\t-\tno\n' >> "$TW/repos.tsv"
-X='| `api` | The API | backend |' Y='| `api/docs/` | API docs | tech-writer |' perl -i -pe 'print "$ENV{X}\n$ENV{Y}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'; L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api/docs/` | API docs | tech-writer |'
 dr | grep -q 'note  parts of a repo owned by another role than the repo.s: api/docs (tech-writer) inside api (backend)' || fail "a nested owner in a repo was not noted: $(dr | grep -i nested)"
 dr | grep -q 'ok    each repo and area in the team table has one owner' || fail "a nested owner was taken for two owners"
 # role add --owns: an area another role holds is refused, the most specific row deciding.
@@ -1259,9 +1246,9 @@ out="$(cd "$TW" && "$F" role add seo --owns "search ranking, specs/seo/, specs/q
 echo "$out" | grep -q 'Note: specs/seo (inside specs, product-manager); specs/qa/seo (inside specs/qa, qa): drafting gives seo its own row' || fail "role add did not say a path sits inside another's area, by the most specific row: $out"
 # What a project role may write, against the team table.
 printf -- '---\nname: seo\ndescription: Search.\ntools: Read\n---\n\nRead `CABINET.md`.\n\n## What you may write\n\n`specs/seo/`, `HANDOFFS.md` entries, and `specs/qa/` notes.\n\n## Next\n\n`api/x`\n' > "$TW/roles/seo.md"
-X='| `specs/seo/` | Search notes | seo |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$TW/AGENTS.md"
+L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `specs/seo/` | Search notes | seo |'
 dr | grep -q 'note  project roles that may write another role.s area: seo may write specs/qa/, which the team table gives to qa (narrow' || fail "roles.writes: $(dr | grep -i 'may write')"
-perl -i -pe 's/, and `specs\/qa\/` notes//' "$TW/roles/seo.md"
+L sub "$TW/roles/seo.md" -- '/, and `specs\/qa\/` notes/' ''
 dr | grep -q 'ok    every project role writes only what the team table gives it' || fail "roles.writes flagged a role writing its own area or HANDOFFS.md"
 rm "$TW/roles/seo.md"; git -C "$TW" checkout -q -- AGENTS.md repos.tsv
 grep -q '^\*\*When roles disagree,\*\*' "$KIT/core/CABINET.md" && grep -q 'the most specific row wins' "$KIT/core/CABINET.md" || fail "the ownership or disagreement rule left CABINET.md"
@@ -1281,7 +1268,7 @@ mkdir -p "$T/plain"
 # A noun alone shows its verbs; a noun and a verb has its own --help.
 "$F" role | grep -q '^  role add <name>' && "$F" role >/dev/null || fail "a noun alone does not show its verbs"
 "$F" role add --help | grep -q '^Usage: cabinet role add <name>' && "$F" help role add | grep -q -- '--does' || fail "noun and verb --help"
-"$F" help role --json | jq -e '.commands | length == 5 and all(.[]; .name | startswith("role "))' >/dev/null || fail "help <noun> --json"
+"$F" help role --json | j -e '$.commands.length == 5 && $.commands.every((c) => c.name.startsWith("role "))' >/dev/null || fail "help <noun> --json"
 # Wrong usage exits 2: an unknown command, verb or option, a missing value, a folder where -C belongs.
 for args in "nope" "role nope" "handoff nope" "next --bogus" "new $T/x --name" "-C" "-C $T/no-such-folder status"; do
   st=0; (cd "$CW" && "$F" $args) >/dev/null 2>&1 || st=$?
@@ -1290,20 +1277,20 @@ done
 st=0; "$F" status "$CW" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a folder argument was taken (exit $st), not refused for -C"
 st=0; "$CW/bin/handoff.sh" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a script without its verb exited $st, not 2"
 # -C runs a command as if started in that folder.
-(cd "$T/plain" && "$F" -C "$CW" status --json) | jq -e --arg w "$(cd "$CW" && pwd -P)" '.workspace == $w' >/dev/null || fail "-C"
+(cd "$T/plain" && "$F" -C "$CW" status --json) | j -e --arg w "$(cd "$CW" && pwd -P)" '$.workspace == $w' >/dev/null || fail "-C"
 bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP_CWORD=4; _cabinet; echo "${COMPREPLY[*]}"' _ "$F" | grep -q 'add.*remove.*list' || fail "completion of verbs after -C"
 # Every command that reports prints JSON.
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
-[[ "$("$F" version)" == "cabinet $(jq -r .version "$KIT/package.json")" ]] || fail "version piped should print one line"
-v="$(jq -r .version "$KIT/package.json")"
+[[ "$("$F" version)" == "cabinet $(j -r '$.version' "$KIT/package.json")" ]] || fail "version piped should print one line"
+v="$(j -r '$.version' "$KIT/package.json")"
 [[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                Build anything with a team of AI agents. You sign off.\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
 LC_ALL=en_US.UTF-8 in_tty "$F" version | grep -q '●' || fail "the mark in a UTF-8 terminal should use dots"
-"$F" version --json | jq -e '.version' >/dev/null && "$F" changelog --json | jq -e '.[0].version and .[0].text' >/dev/null || fail "version or changelog --json"
+"$F" version --json | j -e '$.version' >/dev/null && "$F" changelog --json | j -e '!!$[0].version && !!$[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
-(cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | jq -e '.latest == null and .kit_version' >/dev/null || fail "outdated --json"
-(cd "$CW" && "$F" role list --json) | jq -e 'any(.[]; .name == "qa" and .kind == "kit" and .on) and any(.[]; .name == "dba" and .on == false)' >/dev/null || fail "role list --json"
-(cd "$CW" && "$F" job list --json) | jq -e '.[0].name == "brief" and .[0].role == "chief-of-staff" and .[0].timeout_minutes == 60' >/dev/null || fail "job list --json"
-(cd "$CW" && "$F" secret check --json) | jq -e 'length == 0' >/dev/null || fail "secret check --json"
+(cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | j -e '$.latest == null && !!$.kit_version' >/dev/null || fail "outdated --json"
+(cd "$CW" && "$F" role list --json) | j -e '$.some((r) => r.name == "qa" && r.kind == "kit" && r.on === true) && $.some((r) => r.name == "dba" && r.on === false)' >/dev/null || fail "role list --json"
+(cd "$CW" && "$F" job list --json) | j -e '$[0].name == "brief" && $[0].role == "chief-of-staff" && $[0].timeout_minutes == 60' >/dev/null || fail "job list --json"
+(cd "$CW" && "$F" secret check --json) | j -e '$.length == 0' >/dev/null || fail "secret check --json"
 # role add and remove: a kit role on and off, with --dry-run writing nothing.
 cp "$CW/cabinet.env" "$T/conv.env"
 (cd "$CW" && "$F" role add dba --dry-run) | grep -q 'would turn on the kit role dba' && cmp -s "$CW/cabinet.env" "$T/conv.env" || fail "role add --dry-run"
@@ -1315,13 +1302,13 @@ cp "$CW/cabinet.env" "$T/conv.env"
 mkrepo "$T/conv-api"
 (cd "$CW" && "$F" repo add "$T/conv-api" --dry-run) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" || fail "repo add --dry-run wrote"
 (cd "$CW" && "$F" repo add "$T/conv-api") >/dev/null && grep -q $'^conv-api\t' "$CW/repos.tsv" && grep -q '| `conv-api` |' "$CW/AGENTS.md" || fail "repo add"
-(cd "$CW" && "$F" repo list --json) | jq -e '.[] | select(.name == "conv-api") | .present == false and .owner == null' >/dev/null || fail "repo list --json"
+(cd "$CW" && "$F" repo list --json) | j -e '((r) => r.present === false && r.owner == null)($.findLast((r) => r.name == "conv-api"))' >/dev/null || fail "repo list --json"
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" "$CW/AGENTS.md" || fail "repo remove"
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null 2>&1 && fail "removing a repo that is not there succeeded"
 # The tests fail when a command breaks a convention: a plural noun, a verb not in the list.
 mkdir -p "$T/kitcopy"; (cd "$KIT" && tar --exclude .git --exclude node_modules -cf - .) | tar -C "$T/kitcopy" -xf -
-perl -i -pe 's/^(C\tTeam\trole list\t)/C\tTeam\troles show\t\tShow roles.\n$1/' "$T/kitcopy/bin/cabinet"
-out="$(python3 -I "$KIT/test/docs_check.py" "$T/kitcopy" 2>&1)" && fail "the docs check passed a plural noun"
+L before "$T/kitcopy/bin/cabinet" '/^C\tTeam\trole list\t/' $'C\tTeam\troles show\t\tShow roles.'
+out="$(node "$KIT/test/docs-check.js" "$T/kitcopy" 2>&1)" && fail "the docs check passed a plural noun"
 echo "$out" | grep -q "the noun 'roles' is plural" && echo "$out" | grep -q "'roles show' uses a verb that is not in AGENTS.md" || fail "the docs check did not name the broken conventions: $out"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -1343,7 +1330,7 @@ U="$SH/.config/systemd/user/ai.cabinet.sd.brief"
 grep -qxF "ExecStart=\"${OP//%/%%}/bin/job.sh\" \"run\" \"brief\"" "$U.service" && grep -qxF "StandardOutput=append:$SH/$LOGS/sd/brief.log" "$U.service" \
   && grep -qx 'OnCalendar=\*-\*-\* 07:00:00' "$U.timer" || { cat "$U.service" "$U.timer"; fail "systemd units"; }
 [[ "$(CABINET_SCHEDULER=systemd pf sched_ws "$U.service")" == "$OP" ]] && grep -q 'systemctl --user --quiet enable --now ai.cabinet.sd.brief.timer' "$T/fake.log" || fail "systemd: whose schedule, or not started"
-(cd "$OW" && HOME="$SH" CABINET_SCHEDULER=systemd "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.job") | .level == "ok"' >/dev/null || fail "doctor with systemd"
+(cd "$OW" && HOME="$SH" CABINET_SCHEDULER=systemd "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "schedules.job")?.level == "ok"' >/dev/null || fail "doctor with systemd"
 # cron: one block of cabinet's lines; the owner's own lines stay, whatever happens to the block.
 CH="$T/cron-home"; mkdir -p "$CH"; printf '%s\n' "MAILTO=me" "0 1 * * * /bin/true # mine" > "$T/crontab"
 HOME="$CH" CABINET_SCHEDULER=cron "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
@@ -1352,7 +1339,7 @@ grep -qx 'MAILTO=me' "$T/crontab" && grep -qxF '0 1 * * * /bin/true # mine' "$T/
 line="$(grep '^0 7 \* \* \* ' "$T/crontab")" || fail "the brief at 7:00 AM in the crontab"
 : > "$T/fake.log"; HOME="$CH" sh -c "$(printf '%s' "${line#0 7 \* \* \* }" | sed 's/\\%/%/g')" || true
 grep -q '^claude -p --agent chief-of-staff' "$T/fake.log" && [[ -s "$CH/$LOGS/sd/brief.log" ]] || fail "the cron line does not run the job"
-(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.job") | .level == "ok"' >/dev/null || fail "doctor with cron"
+(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "schedules.job")?.level == "ok"' >/dev/null || fail "doctor with cron"
 sedi 's/^WHEN=.*/WHEN=""/' "$OW/jobs/brief.job"
 HOME="$CH" CABINET_SCHEDULER=cron "$OW/bin/bootstrap.sh" >/dev/null 2>&1 || true
 [[ "$(cat "$T/crontab")" == "$(printf '%s\n' "MAILTO=me" "0 1 * * * /bin/true # mine")" ]] || { cat "$T/crontab"; fail "cron: the block not removed cleanly"; }
@@ -1361,7 +1348,7 @@ grep -qx 'my own line' "$T/crontab" || fail "cron: a block with no end lost the 
 # A cron backup reads its passphrase from a file only the user can read, and runs unattended.
 BW="$T/cron-bk-ws"; "$F" new "$BW" --slug cbk --yes --backup-dir "$T/cron-bk" >/dev/null; : > "$T/crontab"
 HOME="$CH" CABINET_SCHEDULER=cron "$BW/bin/bootstrap.sh" 2>&1 | grep -qF 'passphrases/cabinet.cbk.backup' || fail "bootstrap with cron: the passphrase file command"
-(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "fix"' >/dev/null || fail "doctor with cron and no passphrase file"
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "backups.passphrase")?.level == "fix"' >/dev/null || fail "doctor with cron and no passphrase file"
 [[ "$(HOME="$CH" CABINET_SCHEDULER=cron pf deps_backups)" != *secret-tool* ]] || fail "cron backups asked for secret-tool"
 printf 'cron pass\n' | HOME="$CH" bash -c "$(HOME="$CH" CABINET_SCHEDULER=cron pf pass_add_cmd cabinet.cbk.backup)" >/dev/null
 PFILE="$CH/.config/cabinet/passphrases/cabinet.cbk.backup"
@@ -1369,15 +1356,15 @@ PFILE="$CH/.config/cabinet/passphrases/cabinet.cbk.backup"
 line="$(grep 'bin/job.sh.*backup\|bin/backup.sh' "$T/crontab")" || { cat "$T/crontab"; fail "the backup in the crontab"; }
 env -i HOME="$CH" sh -c "$(printf '%s' "$line" | cut -d' ' -f6- | sed 's/\\%/%/g')" || true
 ls "$T/cron-bk"/cbk-*.tar.gz.enc >/dev/null 2>&1 || { cat "$CH/$LOGS/cbk/backup.log"; fail "a cron backup did not run unattended"; }
-(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "ok"' >/dev/null || fail "doctor with the passphrase file"
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "backups.passphrase")?.level == "ok"' >/dev/null || fail "doctor with the passphrase file"
 chmod 644 "$PFILE"
-(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | jq -e '.results[] | select(.id == "backups.passphrase") | .level == "fix" and (.message | contains("chmod 600"))' >/dev/null || fail "doctor with a passphrase file others can read"
+(cd "$BW" && HOME="$CH" CABINET_SCHEDULER=cron "$F" doctor --json) | j -e '((r) => r.level == "fix" && r.message.includes("chmod 600"))($.results.findLast((r) => r.id == "backups.passphrase"))' >/dev/null || fail "doctor with a passphrase file others can read"
 [[ -z "$(HOME="$CH" pf pass_get cabinet.cbk.backup)" ]] || fail "a passphrase file others can read was used"
 HOME="$CH" pf pass_del cabinet.cbk.backup && [[ ! -e "$PFILE" ]] || fail "pass_del kept the passphrase file"
 # No scheduler at all (a container without cron): said plainly by bootstrap and the doctor.
 git -C "$OW" checkout -q -- jobs/brief.job
 HOME="$CH" CABINET_SCHEDULER=none "$OW/bin/bootstrap.sh" 2>&1 | grep -q 'no scheduler found' || fail "bootstrap with no scheduler"
-(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=none "$F" doctor --json) | jq -e '.results[] | select(.id == "schedules.scheduler") | .level == "fix"' >/dev/null || fail "doctor with no scheduler"
+(cd "$OW" && HOME="$CH" CABINET_SCHEDULER=none "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "schedules.scheduler")?.level == "fix"' >/dev/null || fail "doctor with no scheduler"
 rm -f "$T/crontab"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -1403,10 +1390,10 @@ printf 'y\n' > "$T/answers"; CABINET_TTY="$T/answers" CABINET_TEST_MISSING=git "
 grep -qxE '(brew install git|sudo apt-get install -y git)' "$T/fake.log" && [[ ! -e "$T/nodeps" ]] || fail "yes did not run the install"
 # The doctor and next tell the owner, and any agent reading the JSON, what is missing and the command.
 "$F" new "$T/deps-ws" --yes --backup-dir "$T/deps-bk" >/dev/null; D="$T/deps-ws"
-(cd "$D" && CABINET_TEST_MISSING=git "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd git)" '([.results[] | select(.id == "deps.required")][0] | .level == "fix" and (.message | contains($c))) and (.can_fix | index("deps"))' >/dev/null || fail "doctor: a missing tool"
-(cd "$D" && CABINET_TEST_MISSING=openssl "$F" doctor --json) | jq -e --arg c "$(pf deps_cmd openssl)" '[.results[] | select(.id == "deps.backups")][0] | .level == "fix" and (.message | contains($c))' >/dev/null || fail "doctor: a tool backups need"
-(cd "$D" && "$F" doctor --json) | jq -e '([.results[] | select(.id == "deps.required")][0].level == "ok") and ([.results[] | select(.id == "deps.backups")] | length == 0)' >/dev/null || fail "doctor with every tool"
-(cd "$D" && CABINET_TEST_MISSING=git "$F" next --json) | jq -e --arg c "$(pf deps_cmd git)" '.steps[0].id == "deps" and .steps[0].command == $c' >/dev/null || fail "next: the deps step first"
+(cd "$D" && CABINET_TEST_MISSING=git "$F" doctor --json) | j -e --arg c "$(pf deps_cmd git)" '((r) => r.level == "fix" && r.message.includes($c))($.results.find((r) => r.id == "deps.required")) && $.can_fix.includes("deps")' >/dev/null || fail "doctor: a missing tool"
+(cd "$D" && CABINET_TEST_MISSING=openssl "$F" doctor --json) | j -e --arg c "$(pf deps_cmd openssl)" '((r) => r.level == "fix" && r.message.includes($c))($.results.find((r) => r.id == "deps.backups"))' >/dev/null || fail "doctor: a tool backups need"
+(cd "$D" && "$F" doctor --json) | j -e '$.results.find((r) => r.id == "deps.required").level == "ok" && !$.results.some((r) => r.id == "deps.backups")' >/dev/null || fail "doctor with every tool"
+(cd "$D" && CABINET_TEST_MISSING=git "$F" next --json) | j -e --arg c "$(pf deps_cmd git)" '$.steps[0].id == "deps" && $.steps[0].command == $c' >/dev/null || fail "next: the deps step first"
 # --fix --yes never installs: it says so and gives the command.
 : > "$T/fake.log"
 out="$(cd "$D" && CABINET_TEST_MISSING=git "$D/bin/doctor.sh" --fix --yes 2>&1 || true)"
@@ -1460,14 +1447,14 @@ printf '#!/bin/sh\necho "$*" >> "%s"\nprintf %s > BRIEF.md\nprintf %s\n' "$T/cla
   "'{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"brief written\",\"total_cost_usd\":1.5}'" > "$T/fakeclaude/claude"
 chmod +x "$T/fakeclaude/claude"
 r() { PATH="$T/fakeclaude:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; }
-dr() { "$S/bin/doctor.sh" --json | jq -r '.results[] | select(.id == "spend.budget") | "\(.level) \(.message)"'; }
+dr() { "$S/bin/doctor.sh" --json | j -r --each '$.results.filter((r) => r.id == "spend.budget").map((r) => r.level + " " + r.message)'; }
 r || fail "a run with the claude runner failed"
 grep -q -- '--output-format json' "$T/claude.args" || fail "claude not asked for JSON"
 grep -qx 'brief written' "$HOME/$LOGS/spend/brief.log" || fail "the reply did not reach the log"
 grep -q 'cost \$1.50, as claude reports it; this week \$1.50$' "$HOME/$LOGS/spend/brief.log" || fail "the run's cost is not in the log"
 "$S/bin/job.sh" list | grep -E '^brief .* \$1\.50$' >/dev/null || fail "job list does not show the job's cost"
 "$S/bin/job.sh" list | grep -q 'This week: \$1.50 in all, as claude reports it, no budget set' || fail "job list total"
-"$S/bin/job.sh" list --json | jq -e '.[0].cost_this_week_usd == 1.5' >/dev/null || fail "job list --json cost"
+"$S/bin/job.sh" list --json | j -e '$[0].cost_this_week_usd == 1.5' >/dev/null || fail "job list --json cost"
 dr | grep -q '^ok agent runs cost \$1.50 this week, as claude reports it; no budget set' || fail "doctor without a budget"
 # Runs from before this week do not count.
 printf '%s\tbrief\tclaude\t9\n' "$(( $(bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$S") - 1 ))" >> "$HOME/$LOGS/spend/spend.tsv"
@@ -1492,7 +1479,7 @@ grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" ||
 # A runner that does not report its cost: no column, and a set budget is named as untracked.
 (cd "$S" && "$F" config --yes --runner codex --budget 20) >/dev/null
 "$S/bin/job.sh" list | grep -q 'codex reports tokens, not dollars: set its price' && "$S/bin/job.sh" list | grep -E '^brief .* min  -$' >/dev/null || fail "job list with codex and no price"
-"$S/bin/doctor.sh" --json | jq -e '.results[] | select(.id == "spend.unreported") | .message | contains("cabinet config --price")' >/dev/null || fail "an unpriced budget not noted"
+"$S/bin/doctor.sh" --json | j -e '$.results.findLast((r) => r.id == "spend.unreported")?.message.includes("cabinet config --price")' >/dev/null || fail "an unpriced budget not noted"
 for bad in abc "1" "1 2 3 4" "1 -2"; do (cd "$S" && "$F" config --yes --price "$bad") >/dev/null 2>&1 && fail "the price '$bad' was accepted"; done
 (cd "$S" && "$F" config --yes --price "2 10 0.5") >/dev/null && grep -qx 'CABINET_PRICE="2 10 0.5"' "$S/cabinet.env" || fail "config --price"
 git -C "$S" commit -qam "codex, priced"
@@ -1533,7 +1520,7 @@ grep -q 'CABINET_RUNNER=gemini is no longer a runner .*cabinet config --runner a
 fk qwen 'No auth type is selected.'; sedi 's/^CABINET_RUNNER=.*/CABINET_RUNNER="qwen"/' "$S/cabinet.env"; git -C "$S" commit -qam qwen2
 PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; grep -qx 'No auth type is selected.' "$HOME/$LOGS/spend/brief.log" || fail "output that is not JSON was lost"
 (cd "$S" && "$F" config --yes --runner custom --runner-cmd 'true') >/dev/null
-"$S/bin/doctor.sh" --json | jq -e '.results[] | select(.id == "spend.unreported") | .message | contains("does not report what a run costs")' >/dev/null || fail "a custom runner's budget not noted"
+"$S/bin/doctor.sh" --json | j -e '$.results.findLast((r) => r.id == "spend.unreported")?.message.includes("does not report what a run costs")' >/dev/null || fail "a custom runner's budget not noted"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -1562,18 +1549,19 @@ section "ready to build: specs checked against their status, reviewed, and route
 s48() {
 local sp="$W/specs/login.md" c out rc base
 base="$(git -C "$W" rev-parse HEAD)"
-spc() { "$W/bin/spec.sh" check specs/login.md --json | jq -r '.[0].problems | join("; ")'; }
-put() { perl -0pi -e "$1" "$sp"; git -C "$W" commit -qm "spec" -- specs/login.md; }
+spc() { "$W/bin/spec.sh" check specs/login.md --json | j -r '$[0].problems.join("; ")'; }
+put() { while (($#)); do L sub-all "$sp" "$1" "$2"; shift 2; done; git -C "$W" commit -qm "spec" -- specs/login.md; }   # put </pattern/flags> <replacement>...
 # A fresh copy of the template, as draft: nothing needed, and the template's own "TBD" guidance is no TBD.
 sed 's/^status: draft.*/status: draft/' "$W/specs/_template.md" > "$sp"; git -C "$W" add specs/login.md; git -C "$W" commit -qm "spec: login"
 "$F" -C "$W" spec check >/dev/null || fail "a draft spec failed the check"
-put 's/(?m)^status: draft/status: ready/'
+put '/^status: draft/m' 'status: ready'
 c="$(spc)"; [[ "$c" == "no acceptance criteria; no repos or areas named; no qa review of the acceptance criteria" ]] || fail "an empty ready spec: $c"
-put 's/(?m)^repos: \[\]/repos: [api]/; s/(## Acceptance criteria\n\n)/$1- GET \/login returns 200 with a session for a valid password\n/; s/(## Rules\n\n)/$1Sessions last TBD days.\n/; s/(\|---\|---\|---\|---\|---\|\n)/$1| 1 | Session length? | A. 7 days. B. 30 days. | A | A (20 Oct 2026) |\n| 2 | Remember me? | A. yes. B. no. | B | |\n/'
+put '/^repos: \[\]/m' 'repos: [api]' '/(## Acceptance criteria\n\n)/' $'$1- GET /login returns 200 with a session for a valid password\n' '/(## Rules\n\n)/' $'$1Sessions last TBD days.\n' \
+  '/(\|---\|---\|---\|---\|---\|\n)/' $'$1| 1 | Session length? | A. 7 days. B. 30 days. | A | A (20 Oct 2026) |\n| 2 | Remember me? | A. yes. B. no. | B | |\n'
 c="$(spc)"; [[ "$c" == "TBD left in Rules; 1 decision(s) not answered; no qa review of the acceptance criteria" ]] || fail "a ready spec with open questions: $c"
 rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed y --spec specs/login.md "Login" >/dev/null 2>&1 || rc=$?
 [[ $rc == 1 ]] || fail "handoff add routed a spec that is not ready"
-put 's/Sessions last TBD days/Sessions last 7 days/; s/\| B \| \|/| B | B (20 Oct 2026) |/'
+put '/Sessions last TBD days/' 'Sessions last 7 days' '/\| B \| \|/' '| B | B (20 Oct 2026) |'
 mkdir -p "$W/specs/qa" "$W/specs/adr" && echo "testable" > "$W/specs/qa/login.md" && echo "plan ok" > "$W/specs/adr/login.md"
 git -C "$W" add specs/qa specs/adr && git -C "$W" commit -qm "notes"
 "$W/bin/spec.sh" record specs/login.md --role web PASS --note specs/qa/login.md >/dev/null 2>&1 && fail "spec record took a role other than qa or architect"
@@ -1585,30 +1573,30 @@ grep -Eq '^- Verdict: qa PASS [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9a-f]{8} specs/qa/lo
 out="$("$W/bin/handoff.sh" add --from chief-of-staff --to api --changed "Nothing yet." --needed "Build login" --spec specs/login.md "Login")" || fail "a ready spec was not routed: $out"
 grep -qx -- "- Spec: specs/login.md" "$W/HANDOFFS.md" || fail "the routed handoff does not name its spec"
 # A change to the criteria after the PASS needs a new review; a spec not committed is not reviewed.
-put 's/(valid password\n)/$1- A wrong password returns 401\n/'
+put '/(valid password\n)/' $'$1- A wrong password returns 401\n'
 c="$(spc)"; [[ "$c" == "the acceptance criteria changed since qa passed it" ]] || fail "a changed criterion kept its review: $c"
 echo "- draft line" >> "$sp"
 "$W/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null 2>&1 && fail "spec record reviewed a spec that is not committed"
 git -C "$W" checkout -q -- specs/login.md
 "$W/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "a new review did not clear the change"
 # building: each repo's plan, and for more than one repo an architect PASS on the plan as it is.
-put 's/(?m)^status: ready/status: building/; s/(?m)^repos: \[api\]/repos: [api, app]/; s/(## Plan\n\n.*\n)/$1\n### api\n\n- routes\/login.ts, with tests\n/'
+put '/^status: ready/m' 'status: building' '/^repos: \[api\]/m' 'repos: [api, app]' '/(## Plan\n\n.*\n)/' $'$1\n### api\n\n- routes/login.ts, with tests\n'
 c="$(spc)"; [[ "$c" == "no plan for app; no architect review of the plan" ]] || fail "building without every plan: $c"
 "$W/bin/doctor.sh" 2>&1 | grep -q "specs not ready for their status: specs/login.md (no plan for app, no architect review of the plan)" || fail "doctor: specs.ready"
-put 's/(### api\n\n.*\n)/$1\n### app\n\n- the login screen, after api\n/'
+put '/(### api\n\n.*\n)/' $'$1\n### app\n\n- the login screen, after api\n'
 "$W/bin/spec.sh" record specs/login.md --role architect PASS --note specs/adr/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "building with every plan and the architect: $(spc)"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'every spec marked ready or building has what its status needs' || fail "doctor after the plan"
 "$F" -C "$W" spec check | grep -q '^specs/login.md (building): ok$' || fail "spec check text"
 grep -q '^## Ready to build' "$KIT/core/CABINET.md" && grep -q 'route nothing from the owner.s words' "$KIT/roles/chief-of-staff.md" && grep -q '^## Reviewing a spec' "$KIT/roles/qa.md" \
   && grep -q 'Review the plan of every spec built in more than one repo' "$KIT/roles/architect.md" && grep -q 'your plan in a spec routed to you' "$KIT/roles/web.md" || fail "a ready-to-build rule left CABINET.md or a role"
 # What people see is designed first: a spec built in a repo the web builder owns needs design-lead's design.
-printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"; X='| `app` | The web app | web |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$W/AGENTS.md"
+printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"; L before "$W/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
 git -C "$W" commit -qam "app, built by web"
 c="$(spc)"; [[ "$c" == "no design for what people see; no design-lead review of the design" ]] || fail "a UI spec without a design: $c"
-put 's/(## Design\n\n.*\n)/$1\n- Login: email and password, then the dashboard; states: empty, wrong password, locked.\n/'
+put '/(## Design\n\n.*\n)/' $'$1\n- Login: email and password, then the dashboard; states: empty, wrong password, locked.\n'
 mkdir -p "$W/specs/design" && echo "flows ok" > "$W/specs/design/login.md" && git -C "$W" add specs/design && git -C "$W" commit -qm "design note"
 "$W/bin/spec.sh" record specs/login.md --role design-lead PASS --note specs/design/login.md >/dev/null && [[ -z "$(spc)" ]] || fail "a designed UI spec: $(spc)"
-put 's/(states: empty, wrong password, locked\.)/$1 Remember me, off by default./'
+put '/(states: empty, wrong password, locked\.)/' '$1 Remember me, off by default.'
 c="$(spc)"; [[ "$c" == "the design changed since design-lead passed it" ]] || fail "a changed design kept its review: $c"
 grep -q '^## Designing a feature' "$KIT/roles/design-lead.md" && grep -q '^## Design$' "$KIT/templates/workspace/specs/_template.md" \
   && grep -q 'notes/seats.md' "$KIT/core/rules/seats.md" && grep -q 'Look at the project as well as the backlog' "$KIT/roles/chief-of-staff.md" \
@@ -1625,7 +1613,8 @@ for r in api app; do
   git init -q "$W/$r" && echo x > "$W/$r/a.js" && git -C "$W/$r" add -A && git -C "$W/$r" commit -qm init
   printf '%s\t-\t-\tno\n' "$r" >> "$W/repos.tsv"
 done
-perl -0pi -e 's/(\| Contract \| Repos that move together \| Source of truth \|\n\|---\|---\|---\|\n)/$1| Items API | api, app | `api\/openapi.yaml` |\n/; s/(## Hard to undo\n\n.*\n\n)- none yet/$1- `api\/migrations\/`/' "$W/AGENTS.md"
+L sub-all "$W/AGENTS.md" '/(\| Contract \| Repos that move together \| Source of truth \|\n\|---\|---\|---\|\n)/' $'$1| Items API | api, app | `api/openapi.yaml` |\n'
+L sub-all "$W/AGENTS.md" '/(## Hard to undo\n\n.*\n\n)- none yet/' '$1- `api/migrations/`'
 git -C "$W" commit -qam "repos and guarded paths"
 grep -q '`api/migrations/`' "$W/AGENTS.md" && grep -q '`api/openapi.yaml` |' "$W/AGENTS.md" || fail "test setup: guarded paths"
 # Work for a repo or a builder says what it is: --small or --spec, not neither, not both.
@@ -1649,10 +1638,10 @@ out="$(rec deadbee)" && fail "a small task with an unknown commit passed"; echo 
 out="$(rec "$c1")" || fail "a small task that stayed small did not pass: $out"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'every small task that passed stayed small' || fail "doctor: a small task that stayed small"
 # A PASS written by hand on work that grew: the doctor flags it.
-perl -pi -e "s/^- Verdict: qa PASS (\\S+) \\S+ /- Verdict: qa PASS \$1 $c3 /" "$W/HANDOFFS.md"
+L sub "$W/HANDOFFS.md" -- '/^- Verdict: qa PASS (\S+) \S+ /' "- Verdict: qa PASS \$1 $c3 "
 "$W/bin/doctor.sh" 2>&1 | grep -q "handoffs marked small that were not: $id (it changes api/migrations/001.sql" || { "$W/bin/doctor.sh" 2>&1 | grep -i small; fail "doctor: handoffs.small"; }
 # cabinet config --hard-to-undo: checked against the repos, written into AGENTS.md (the section added to an older one).
-perl -0pi -e 's/## Hard to undo\n.*?(?=## )//s' "$W/AGENTS.md"; git -C "$W" commit -qam "an AGENTS.md from before the section"
+L sub-all "$W/AGENTS.md" '/## Hard to undo\n.*?(?=## )/s' ''; git -C "$W" commit -qam "an AGENTS.md from before the section"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'AGENTS.md lists no paths that are hard to undo' || fail "doctor: agents.hard-to-undo"
 cp "$W/AGENTS.md" "$T/agents.keep"
 out="$(printf '\n%.0s' $(seq 60) | CABINET_TTY=/dev/stdin "$F" -C "$W" config --dry-run 2>&1)" || true
@@ -1661,7 +1650,7 @@ for bad in api/nope/ web/x "api/../etc" 'api/$(x)'; do "$F" -C "$W" config --yes
 cmp -s "$W/AGENTS.md" "$T/agents.keep" || fail "a dry run or a refused hard-to-undo path changed AGENTS.md"
 "$F" -C "$W" config --yes --hard-to-undo "api/migrations/" >/dev/null || fail "config --hard-to-undo"
 awk '/^## Hard to undo/ {h = NR} /^## House rules/ {r = NR} END {exit !(h && r && h < r)}' "$W/AGENTS.md" && grep -qx -- '- `api/migrations/`' "$W/AGENTS.md" || fail "the Hard to undo section was not added before House rules"
-perl -pi -e 's/^(- `api\/migrations\/`)$/Our own note.\n\n$1/' "$W/AGENTS.md"
+L before "$W/AGENTS.md" '/^- `api\/migrations\/`$/' 'Our own note.'; L before "$W/AGENTS.md" '/^- `api\/migrations\/`$/' ''
 "$F" -C "$W" config --yes --hard-to-undo "api/migrations/  api/openapi.yaml" >/dev/null || fail "config --hard-to-undo, changed"
 [[ "$(grep -c '^## Hard to undo' "$W/AGENTS.md")" == 1 ]] && grep -qx 'Our own note.' "$W/AGENTS.md" && grep -qx -- '- `api/openapi.yaml`' "$W/AGENTS.md" || fail "changing the list lost the section's text or doubled it"
 "$F" -C "$W" config --yes --hard-to-undo OFF >/dev/null && grep -qx -- '- none' "$W/AGENTS.md" && ! grep -q -- '- `api/' "$W/AGENTS.md" || fail "config --hard-to-undo off"
@@ -1690,7 +1679,7 @@ PW="$T/pipe"; FS="$T/pipe-state"; mkdir -p "$FS" "$T/pfakes"
 "$F" new "$PW" --yes >/dev/null || fail "new for the runner"
 git init -q "$PW/app" && echo x > "$PW/app/a.txt" && git -C "$PW/app" add -A && git -C "$PW/app" commit -qm init
 printf 'app\t-\t-\tno\n' >> "$PW/repos.tsv"
-X='| `app` | The web app | web |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$PW/AGENTS.md"
+L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
 git -C "$PW" commit -qam "app, built by web"
 # A fake claude that acts as each role: the builder commits, hands on with --depends-on and closes the
 # work; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down.
@@ -1706,16 +1695,16 @@ if [[ "$agent" == chief-of-staff && "$prompt" == "Route "* ]]; then
   bin/handoff.sh add --from chief-of-staff --to api --spec "$spec" --changed "Nothing yet." --needed "Build the endpoint" --depends-on "${a%% *}" "Login endpoint" >/dev/null
 elif [[ "$prompt" == "Write your plan for "* ]]; then
   r="$(printf '%s' "$prompt" | sed 's/^Write your plan for \([a-z]*\) .*/\1/')"
-  perl -0pi -e "s/(## Plan\n\n.*?\n)(\n## Reviews)/\$1\n### $r\n\n- the $r change, with tests\n\$2/s" "$spec"; git commit -qm "plan $r" -- "$spec"
+  node bin/lib.js sub-all "$spec" '/(## Plan\n\n.*?\n)(\n## Reviews)/s' "\$1"$'\n'"### $r"$'\n\n'"- the $r change, with tests"$'\n'"\$2"; git commit -qm "plan $r" -- "$spec"
 elif [[ "$agent" == architect ]]; then
   mkdir -p specs/adr; echo ok > specs/adr/plan.md; git add specs/adr/plan.md; git commit -qm note -- specs/adr/plan.md
   bin/spec.sh record "$spec" --role architect PASS --note specs/adr/plan.md >/dev/null
 elif [[ ( "$agent" == web || "$agent" == backend ) && "$prompt" == "Pick up handoff"* ]]; then
-  if [[ -f "$FS/reject" ]]; then perl -i -pe "s/^- Status: open/- Status: rejected/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm rej -- HANDOFFS.md
+  if [[ -f "$FS/reject" ]]; then sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: rejected/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm rej -- HANDOFFS.md
   elif [[ ! -f "$FS/lazy" ]]; then
     echo "$id" >> $repo/a.txt; git -C $repo commit -qam "build $id"; git -C $repo rev-parse --short HEAD > "$FS/commits-$id"
     bin/handoff.sh add --from $agent --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
-    perl -i -pe "s/^- Status: open/- Status: done/ if \$on; \$on = 1 if /^### $id:/; \$on = 0 if /^- Status:/" HANDOFFS.md; git commit -qm done -- HANDOFFS.md
+    sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: done/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
   fi
 elif [[ "$agent" == web || "$agent" == backend ]]; then
   w="$(printf '%s' "$prompt" | grep -oE 'for H-[0-9]{8}-[0-9]+' | cut -c5-)"
@@ -1742,7 +1731,7 @@ out="$(run "$a" --dry-run)" && [[ "$out" == "web: builds $a" && "$(git -C "$PW" 
 out="$(run "$a")" || fail "run: $out"
 echo "$out" | grep -q "^web: builds $a$" && echo "$out" | grep -qE '^(qa|security|design-lead): verifies H-' \
   && echo "$out" | tail -1 | grep -q "^$a is ready to push: every reviewer passed H-.*, \$0.04 so far\. Push it" || fail "run to ready: $out"
-"$PW/bin/handoff.sh" list --json | jq -e --arg i "$a" 'map(select(.id == $i)) | length == 0' >/dev/null \
+"$PW/bin/handoff.sh" list --json | j -e --arg i "$a" '!$.some((h) => h.id == $i)' >/dev/null \
   && "$PW/bin/handoff.sh" list --ready | grep -q "Review $a" || fail "the run's work is not ready by list --ready"
 grep -q "builds $a" "$HOME/$LOGS/pipe/run-$a.log" || fail "the run's log"
 # A BLOCK: the builder fixes it, the blocker checks again, and earlier passes now stale are run again.
@@ -1771,7 +1760,7 @@ rmdir "$PW/.cabinet/run-$g.lock"
 # each of its handoffs in order. Two repos, two builders.
 git init -q "$PW/api" && echo x > "$PW/api/a.txt" && git -C "$PW/api" add -A && git -C "$PW/api" commit -qm init
 printf 'api\t-\t-\tno\n' >> "$PW/repos.tsv"
-X='| `api` | The API | backend |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$PW/AGENTS.md"
+L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'
 cat > "$PW/specs/login.md" <<'SPEC'
 ---
 feature: login
@@ -1868,7 +1857,7 @@ out="$(ra qa-mobile --reports-to qa --covers mobile)" || fail "role add --report
 t="$(sed -n 's/^- Trial until: //p' "$SW/roles/qa-mobile.md")"
 grep -qx -- '- Reports to: qa' "$SW/roles/qa-mobile.md" && grep -qx -- '- Covers: mobile' "$SW/roles/qa-mobile.md" && [[ "$t" > "$(date +%F)" ]] || fail "the Team section: $(cat "$SW/roles/qa-mobile.md")"
 "$F" -C "$SW" role list | grep -q "^qa-mobile  *project  *on, not drafted, reports to qa, covers mobile, on trial until $t$" || fail "role list: $("$F" -C "$SW" role list | grep qa-mobile)"
-"$F" -C "$SW" role list --json | jq -e '.[] | select(.name == "qa-mobile") | .reports_to == "qa" and .covers == ["mobile"]' >/dev/null || fail "role list --json: the sub-team"
+"$F" -C "$SW" role list --json | j -e '((r) => r.reports_to == "qa" && JSON.stringify(r.covers) == "[\"mobile\"]")($.findLast((r) => r.name == "qa-mobile"))' >/dev/null || fail "role list --json: the sub-team"
 "$SW/bin/doctor.sh" 2>&1 | grep -q 'ok    every sub-team role reports to a lead on the team' || fail "doctor: a sound sub-team"
 # Titles, names and functions, for any role, and the org page built from them.
 ra growth --title 'Head of $(x)' >/dev/null && fail "a title with shell characters was taken"
@@ -1876,7 +1865,7 @@ out="$(ra growth --title "Head of Growth" --name "Growth Agent" --function Busin
 grep -qx -- '- Title: Head of Growth' "$SW/roles/growth.md" && grep -qx -- '- Function: Business' "$SW/roles/growth.md" || fail "the title in the Team section"
 out="$(ra brand-designer --title "Brand Designer")" || fail "a kit role turned on with a title: $out"
 grep -qx -- '- Title: Brand Designer' "$SW/roles/brand-designer.md" && grep -q '^- Title: Brand Designer$' "$SW/agents/brand-designer.md" || fail "a kit role's title"
-"$F" -C "$SW" role list | grep -q '^growth  *project  *on, not drafted, Head of Growth, Growth Agent$' && "$F" -C "$SW" role list --json | jq -e '.[] | select(.name == "growth") | .title == "Head of Growth" and .display_name == "Growth Agent" and .function == "Business"' >/dev/null || fail "role list: titles"
+"$F" -C "$SW" role list | grep -q '^growth  *project  *on, not drafted, Head of Growth, Growth Agent$' && "$F" -C "$SW" role list --json | j -e '((r) => r.title == "Head of Growth" && r.display_name == "Growth Agent" && r.function == "Business")($.findLast((r) => r.name == "growth"))' >/dev/null || fail "role list: titles"
 o="$SW/ORG.md"
 [[ -f "$o" ]] && git -C "$SW" check-ignore -q ORG.md && fail "ORG.md is ignored by git"
 grep -q '^| Quality and trust | `qa` | `security`, `qa-mobile` |$' "$o" && grep -q '^| Business | `finance` | Head of Growth, Growth Agent (`growth`) |$' "$o" \
@@ -1884,29 +1873,29 @@ grep -q '^| Quality and trust | `qa` | `security`, `qa-mobile` |$' "$o" && grep 
 awk '/^### `qa-mobile`$/ { f = 1 } f && /^- Reports to: `qa`$/ { r = 1 } f && /^- Covers, for its lead: mobile$/ { c = 1 } END { exit !(r && c) }' "$o" \
   && grep -q '^### Head of Growth, Growth Agent (`growth`)$' "$o" && awk '/^## Business$/ { b = 1 } b && /^### Head of Growth/ { g = 1 } END { exit !g }' "$o" || fail "the org page's roles: $(cat "$o")"
 "$SW/bin/role.sh" build --check >/dev/null || fail "a fresh org page is out of date"
-perl -pi -e 's/^- Title: Head of Growth$/- Title: Growth Lead/' "$SW/roles/growth.md"
+L sub "$SW/roles/growth.md" -- '/^- Title: Head of Growth$/' '- Title: Growth Lead'
 "$SW/bin/role.sh" build --check 2>&1 | grep -q 'ORG.md is out of date' || fail "build --check missed a stale org page"
 "$SW/bin/role.sh" build >/dev/null && grep -q '^### Growth Lead, Growth Agent (`growth`)$' "$o" || fail "build did not rebuild the org page"
 grep -q 'named by its title where it has one' "$KIT/core/CABINET.md" || fail "the sign-off rule on titles left CABINET.md"
 # Its verdict counts for its lead's on the work it covers; during its trial, the lead's too.
 mkdir -p "$SW/specs/qa"; echo ok > "$SW/specs/qa/n.md"; git -C "$SW" add -A; git -C "$SW" commit -qm note
-sj() { "$SW/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+sj() { "$SW/bin/handoff.sh" list --json | j -c --arg i "$1" "((\$) => $2)(\$.find((h) => h.id == \$i))"; }
 rec() { "$SW/bin/handoff.sh" record "$1" --role "$2" PASS --commits a1b2c3d --note specs/qa/n.md >/dev/null || fail "record $2 on $1"; }
 m="$("$SW/bin/handoff.sh" add --from mobile --to "qa, security" --changed x --needed y --evidence https://example.com/m "App screen")"; m="${m%% *}"
 w="$("$SW/bin/handoff.sh" add --from web --to "qa, security" --changed x --needed y --evidence https://example.com/w "Web screen")"; w="${w%% *}"
-[[ "$(sj "$m" .needs)" == '["qa-mobile","qa","security","design-lead"]' && "$(sj "$w" .needs)" == '["qa","security","design-lead"]' ]] || fail "who reviews: $(sj "$m" .needs) $(sj "$w" .needs)"
+[[ "$(sj "$m" '$.needs')" == '["qa-mobile","qa","security","design-lead"]' && "$(sj "$w" '$.needs')" == '["qa","security","design-lead"]' ]] || fail "who reviews: $(sj "$m" '$.needs') $(sj "$w" '$.needs')"
 for r in qa-mobile security design-lead; do rec "$m" "$r"; done
-[[ "$(sj "$m" '[.missing, .ready]')" == '[["qa"],false]' ]] || fail "a sub-team role on trial passed without its lead: $(sj "$m" .)"
-perl -pi -e 's/^- Trial until: .*/- Trial until: 2020-01-01/' "$SW/roles/qa-mobile.md"
-[[ "$(sj "$m" '[.needs, .ready]')" == '[["qa-mobile","security","design-lead"],true]' ]] || fail "after its trial, the sub-team role's PASS did not count for its lead's: $(sj "$m" .)"
-for r in qa security design-lead; do rec "$w" "$r"; done; [[ "$(sj "$w" .ready)" == true ]] || fail "the lead's own review of work its sub-team does not cover"
+[[ "$(sj "$m" '[$.missing, $.ready]')" == '[["qa"],false]' ]] || fail "a sub-team role on trial passed without its lead: $(sj "$m" '$')"
+L sub "$SW/roles/qa-mobile.md" -- '/^- Trial until: .*/' '- Trial until: 2020-01-01'
+[[ "$(sj "$m" '[$.needs, $.ready]')" == '[["qa-mobile","security","design-lead"],true]' ]] || fail "after its trial, the sub-team role's PASS did not count for its lead's: $(sj "$m" '$')"
+for r in qa security design-lead; do rec "$w" "$r"; done; [[ "$(sj "$w" '$.ready')" == true ]] || fail "the lead's own review of work its sub-team does not cover"
 n="$("$SW/bin/handoff.sh" add --from mobile --to "qa, security" --changed x --needed y --evidence https://example.com/n "App menu")"; n="${n%% *}"
-for r in qa security design-lead; do rec "$n" "$r"; done; [[ "$(sj "$n" .ready)" == true ]] || fail "the lead's own PASS did not count for work its sub-team covers"
+for r in qa security design-lead; do rec "$n" "$r"; done; [[ "$(sj "$n" '$.ready')" == true ]] || fail "the lead's own PASS did not count for work its sub-team covers"
 # The doctor: a lead not on the team, and a loop.
-perl -pi -e 's/^- Reports to: qa$/- Reports to: nobody/' "$SW/roles/qa-mobile.md"
+L sub "$SW/roles/qa-mobile.md" -- '/^- Reports to: qa$/' '- Reports to: nobody'
 "$SW/bin/doctor.sh" 2>&1 | grep -q 'sub-team roles that do not fit the team: qa-mobile reports to nobody, who is not on the team' || fail "doctor: a lead not on the team"
 ra qa-lead --reports-to qa-mobile >/dev/null || fail "role add for a loop"
-perl -pi -e 's/^- Reports to: nobody$/- Reports to: qa-lead/' "$SW/roles/qa-mobile.md"
+L sub "$SW/roles/qa-mobile.md" -- '/^- Reports to: nobody$/' '- Reports to: qa-lead'
 "$SW/bin/doctor.sh" 2>&1 | grep -q 'qa-mobile reports to itself through qa-lead' || fail "doctor: a loop"
 grep -q '^## Sub-teams$' "$KIT/core/rules/seats.md" && grep -q 'A lead can grow a sub-team' "$KIT/core/CABINET.md" || fail "the sub-team rules left seats.md or CABINET.md"
 "$F" -C "$SW" remove --yes --force >/dev/null
@@ -1919,13 +1908,13 @@ CW="$T/crit"; "$F" new "$CW" --yes >/dev/null || fail "new for critical areas"
 [[ -f "$CW/tools/README.md" ]] && git -C "$CW" ls-files --error-unmatch tools/README.md >/dev/null 2>&1 || fail "tools/ is not placed and tracked"
 git init -q "$CW/api" && mkdir -p "$CW/api/billing" "$CW/api/search" && echo x > "$CW/api/billing/charge.js" && echo x > "$CW/api/search/q.js" && git -C "$CW/api" add -A && git -C "$CW/api" commit -qm init
 printf 'api\t-\t-\tno\n' >> "$CW/repos.tsv"
-X='| `api` | The API | backend |' perl -i -pe 'print "$ENV{X}\n" if /^\| workspace \(this folder\)/' "$CW/AGENTS.md"
+L before "$CW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'
 mkdir -p "$CW/guides" && echo "Plans and prices." > "$CW/guides/pricing.md"
 git -C "$CW" add -A && git -C "$CW" commit -qm "api and a pricing guide"
 dr() { "$CW/bin/doctor.sh" 2>&1 || true; }
 dr | grep -q 'ok    no critical areas declared' || fail "doctor: no critical areas"
 # Two areas of a made-up project: code with a check, and a workspace file with none.
-perl -i -pe 's/^\| none yet \| \| \| \| \|$/| billing | `api\/billing\/` | security, finance | a test charge in the sandbox | `tools\/check-billing.sh --fast` |\n| pricing | `workspace\/guides\/pricing.md` | finance | old and new prices side by side | none |/' "$CW/AGENTS.md"
+L sub "$CW/AGENTS.md" -- '/^\| none yet \| \| \| \| \|$/' $'| billing | `api/billing/` | security, finance | a test charge in the sandbox | `tools/check-billing.sh --fast` |\n| pricing | `workspace/guides/pricing.md` | finance | old and new prices side by side | none |'
 grep -q '^| billing |' "$CW/AGENTS.md" || fail "test setup: the areas"
 dr | grep -q 'critical areas in AGENTS.md that cannot hold: billing: its check is not a command in tools/ that can run' || fail "doctor: a check that cannot run: $(dr | grep -i 'critical')"
 cat > "$CW/tools/check-billing.sh" <<'CHECK'
@@ -1940,35 +1929,35 @@ echo '- `tools/check-billing.sh`: charges the sandbox card.' >> "$CW/OPERATIONS.
 git -C "$CW" add -A && git -C "$CW" commit -qm "areas, a check, the manual"
 # The areas work touches, from its commits, and their reviewers added to what it needs.
 mkdir -p "$CW/specs/qa" && echo ok > "$CW/specs/qa/n.md" && git -C "$CW" add -A && git -C "$CW" commit -qm note
-cj() { "$CW/bin/handoff.sh" list --json | jq -c --arg i "$1" ".[] | select(.id == \$i) | $2"; }
+cj() { "$CW/bin/handoff.sh" list --json | j -c --arg i "$1" "((\$) => $2)(\$.find((h) => h.id == \$i))"; }
 rec() { CHECK_FAIL="$T/check-fails" "$CW/bin/handoff.sh" record "$1" --role "$2" "${4:-PASS}" --commits "$3" --note specs/qa/n.md 2>&1; }
 echo y >> "$CW/api/billing/charge.js"; git -C "$CW/api" commit -qam bill; cb="$(git -C "$CW/api" rev-parse --short HEAD)"
 echo y >> "$CW/api/search/q.js"; git -C "$CW/api" commit -qam search; cs="$(git -C "$CW/api" rev-parse --short HEAD)"
 b="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/b "Charge")"; b="${b%% *}"
 o="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/o "Search")"; o="${o%% *}"
 out="$(rec "$b" qa "$cb")" && out="$(rec "$o" qa "$cs")" || fail "qa PASS: $out"
-[[ "$(cj "$b" '[.areas, .needs]')" == '[["billing"],["qa","security","finance"]]' && "$(cj "$o" '[.areas, .needs]')" == '[[],["qa","security"]]' ]] || fail "areas from commits: $(cj "$b" '[.areas, .needs]') $(cj "$o" '[.areas, .needs]')"
+[[ "$(cj "$b" '[$.areas, $.needs]')" == '[["billing"],["qa","security","finance"]]' && "$(cj "$o" '[$.areas, $.needs]')" == '[[],["qa","security"]]' ]] || fail "areas from commits: $(cj "$b" '[$.areas, $.needs]') $(cj "$o" '[$.areas, $.needs]')"
 # A reviewer the area names passes only when its check passes; the output is kept as evidence.
 touch "$T/check-fails"; out="$(rec "$b" security "$cb")" && fail "a PASS went through a failing check"
 echo "$out" | grep -q 'the billing check failed (exit 3)' && echo "$out" | grep -q 'charge declined' && ! grep -q '^- Verdict: security' "$CW/HANDOFFS.md" && [[ ! -f "$CW/specs/evidence/$b/check-billing.txt" ]] || fail "a failing check: $out"
 rm "$T/check-fails"; out="$(rec "$b" security "$cb")" || fail "security PASS with a passing check: $out"
 grep -q "^area=billing handoff=$b commits=$cb args=--fast$" "$CW/specs/evidence/$b/check-billing.txt" && grep -qF "[check-billing.txt](specs/evidence/$b/check-billing.txt)" "$CW/HANDOFFS.md" \
   && [[ -z "$(git -C "$CW" status --porcelain -- specs HANDOFFS.md)" ]] || fail "the check's output as evidence"
-rec "$b" finance "$cb" >/dev/null || fail "finance PASS"; [[ "$(cj "$b" .ready)" == true ]] || fail "work through a critical area is not ready: $(cj "$b" .)"
-rec "$o" security "$cs" >/dev/null && [[ "$(cj "$o" .ready)" == true ]] || fail "work outside the areas needed more"
+rec "$b" finance "$cb" >/dev/null || fail "finance PASS"; [[ "$(cj "$b" '$.ready')" == true ]] || fail "work through a critical area is not ready: $(cj "$b" '$')"
+rec "$o" security "$cs" >/dev/null && [[ "$(cj "$o" '$.ready')" == true ]] || fail "work outside the areas needed more"
 # A workspace file as an area, for work with no code; and a spec that names an area before any commit.
 echo "Pro: 12 dollars" >> "$CW/guides/pricing.md"; git -C "$CW" commit -qm price -- guides/pricing.md; cp="$(git -C "$CW" rev-parse --short HEAD)"
 q="$("$CW/bin/handoff.sh" add --from product-manager --to qa --changed x --needed y --evidence https://example.com/p "Prices")"; q="${q%% *}"
-out="$(rec "$q" qa "$cp")" || fail "qa PASS on a workspace area: $out"; [[ "$(cj "$q" '[.areas, .needs]')" == '[["pricing"],["qa","finance"]]' ]] || fail "a workspace area: $(cj "$q" '[.areas, .needs]')"
+out="$(rec "$q" qa "$cp")" || fail "qa PASS on a workspace area: $out"; [[ "$(cj "$q" '[$.areas, $.needs]')" == '[["pricing"],["qa","finance"]]' ]] || fail "a workspace area: $(cj "$q" '[$.areas, $.needs]')"
 printf -- '---\nfeature: pay\nstatus: draft\nrepos: [api]\nareas: [billing]\n---\n\n# Pay\n' > "$CW/specs/pay.md"; git -C "$CW" add -A && git -C "$CW" commit -qm spec
 s="$("$CW/bin/handoff.sh" add --from chief-of-staff --to qa --changed x --needed y "Pay")"; s="${s%% *}"
-perl -i -pe "print \"- Spec: specs/pay.md\n\" if \$on && /^- Depends on:/; \$on = 1 if /^### $s:/; \$on = 0 if /^- Spec:/" "$CW/HANDOFFS.md"
-[[ "$(cj "$s" .areas)" == '["billing"]' ]] || fail "areas from a spec, before any commit: $(cj "$s" .)"
+L sub-all "$CW/HANDOFFS.md" "/(### $s:(?:(?!\n### )[\s\S])*?\n)(- Depends on:)/" $'$1- Spec: specs/pay.md\n$2'
+[[ "$(cj "$s" '$.areas')" == '["billing"]' ]] || fail "areas from a spec, before any commit: $(cj "$s" '$')"
 sed -i.bak 's/^areas: \[billing\]/areas: [billing, nope]/; s/^status: draft/status: ready/' "$CW/specs/pay.md" && rm "$CW/specs/pay.md.bak"
 "$CW/bin/spec.sh" check specs/pay.md | grep -q 'areas names nope, which is no critical area in AGENTS.md' || fail "spec check: an unknown area"
 # Only a command in tools/ runs, never through a shell.
 git -C "$CW" checkout -q -- HANDOFFS.md specs 2>/dev/null || true
-perl -i -pe 's/`tools\/check-billing.sh --fast`/`sh -c "touch pwned"`/' "$CW/AGENTS.md"
+L sub "$CW/AGENTS.md" -- '/`tools\/check-billing.sh --fast`/' '`sh -c "touch pwned"`'
 dr | grep -q "billing: its check is not a command in tools/ that can run" || fail "doctor: a check outside tools/"
 w2="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/w "Refund")"; w2="${w2%% *}"
 rec "$w2" qa "$cb" >/dev/null || true; out="$(rec "$w2" security "$cb")" && fail "record ran a check outside tools/"

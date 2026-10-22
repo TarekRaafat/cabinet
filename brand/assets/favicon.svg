@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" width="32" height="32" role="img" aria-label="cabinet">
-  <!-- The favicon: the plain mark, light seats when the browser is dark. Built by tools/build-brand.py from brand/tokens.json; do not edit by hand. -->
+  <!-- The favicon: the plain mark, light seats when the browser is dark. Built by tools/build-brand.js from brand/tokens.json; do not edit by hand. -->
   <style>circle{fill:#15181E}@media (prefers-color-scheme:dark){circle{fill:#E8EAEE}}</style><circle cx="25.456" cy="-25.456" r="9.5"/><circle cx="0" cy="-36" r="9.5"/><circle cx="-25.456" cy="-25.456" r="9.5"/><circle cx="-36" cy="-0" r="9.5"/><circle cx="-25.456" cy="25.456" r="9.5"/><circle cx="-0" cy="36" r="9.5"/><circle cx="25.456" cy="25.456" r="9.5"/>
 </svg>
