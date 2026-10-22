@@ -32,7 +32,7 @@ Cabinet is for one person or a team of any size, and for anything agents can bui
 
 ## Why Cabinet
 
-Cabinet started as one builder's own setup. Working alone, it filled the skills one person does not have, from development to writing. Working with a team of five on a project that needed three times as many people, it gave each person two more teammates, all following the same guidelines, design system, workflow and process toward one goal. After a year and a half on small, medium and large products in production, it became this kit, so a project can start with it instead of rebuilding it. It is open source.
+Cabinet started as one person's own setup: a product manager, UX/UI designer and developer, with more than ten years in each. For a year and a half, on small, medium and large products in production, it has been how he works. Alone, the agents do most of the work across product, design, development and writing, while he brings the vision and signs off; his output grew about tenfold. With a team of five on a project that needed three times as many people, it gave each person two more teammates, all following the same guidelines, design system, workflow and process toward one goal. A few colleagues who saw the results tried it and found the same. It became this kit so anyone can start with it instead of rebuilding it. It is open source.
 
 What it believes:
 
