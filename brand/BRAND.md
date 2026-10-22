@@ -9,6 +9,7 @@ The rules for the Cabinet mark, name, color, type and words, written for people 
 | `brand/assets/` | Every logo file, built from `tokens.json` by `tools/build-brand.js`. Never edit one by hand. |
 | `brand/index.html` | The visual guide: every rule shown, for people. Open it in a browser. |
 | `brand/motion.html` | The logo animation and its variants, moving. |
+| `brand/promo/` | The promo film, its source, its music and how to render it again. |
 
 To give a project's agents these rules, copy this file to the workspace's `guides/brand.md` and add a row for it in the "Guides" table in `AGENTS.md`.
 
@@ -172,6 +173,7 @@ Cabinet sounds like a capable chief of staff: plain, short, specific, and always
 | Slides | Night, light seats; the outline on a title slide about the owner | `mark-light.svg`, `mark-outlined-light.svg` | Draft |
 | Sticker and print | One color on ink or paper, no brass | `mark.svg`, `mark-light.svg` | Draft |
 | Intros, end cards, launch screens, onboarding | The logo in motion, once; a variant for its own use | (drawn in code, as in `index.html` and `motion.html`) | Draft |
+| Promo film, 32 s, 1920 x 1080 | Night; the logo animation, the team at work, the brief, the guardrails; ends on the lockup and the tagline | `promo/cabinet-promo.mp4` (ends on the address, for sharing), `promo/cabinet-promo-facts.mp4` (ends on what Cabinet is, for the README and the website), and `.webm` of each | Draft |
 | Loading, in an app or a page | The mark, its seats lit in turn | (drawn in code, as in `index.html`) | Draft |
 | Animation, onboarding, posters | The chairs | `chairs.svg`, `chairs-light.svg`, `chairs-owner-light.svg` | Approved |
 

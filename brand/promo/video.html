@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cabinet promo</title>
+<!-- The promo film, 32 s at 1920 x 1080. Open it to preview; render.js renders it. ?end=facts ends on the facts line instead of the address. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* The film: 1920 x 1080, night, mist, the owner's brass. Every frame is render(t), t in ms. */
+html, body { margin: 0; background: #101216; overflow: hidden; }
+#stage { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; background: #101216; color: #E8EAEE; font-family: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif; transform-origin: 0 0; overflow: hidden; }
+#stage > * { position: absolute; will-change: opacity, transform; }
+.head { left: 0; right: 0; text-align: center; font-weight: 700; font-size: 84px; letter-spacing: -0.035em; line-height: 1.05; }
+.sub { left: 0; right: 0; text-align: center; font-size: 38px; letter-spacing: -0.012em; color: #8C93A0; }
+.file { font: 500 22px "JetBrains Mono", monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #6E7684; }
+.line { font: 400 34px/1 "JetBrains Mono", monospace; color: #E8EAEE; white-space: pre; }
+.dim { color: #6E7684; }
+.item { font-size: 40px; letter-spacing: -0.012em; white-space: pre; }
+.item .n { color: #6E7684; }
+.caret { display: inline-block; width: 0.55em; height: 1.05em; background: #E8EAEE; vertical-align: -0.18em; margin-left: 2px; }
+#lockup { left: 0; right: 0; top: 300px; display: flex; justify-content: center; align-items: center; gap: 0.32em; font-size: 210px; font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+#lockup svg { width: 1.1em; height: 1.1em; overflow: visible; flex: none; }
+#tag { left: 0; right: 0; top: 610px; text-align: center; font-weight: 700; font-size: 64px; line-height: 1.1; letter-spacing: -0.03em; }
+#ui { position: fixed; left: 12px; bottom: 12px; font: 12px "JetBrains Mono", monospace; color: #6E7684; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="mark" viewBox="-50 -50 100 100" style="overflow:visible" aria-hidden="true"></svg>
+
+  <div class="head" id="h1" style="top:800px">One person.</div>
+  <div class="head" id="h2" style="top:800px">A whole team.</div>
+  <div class="head" id="h3" style="top:780px">Every seat your work needs.</div>
+  <div class="sub" id="s3a" style="top:890px">Building an app: product, design, code, review.</div>
+  <div class="sub" id="s3b" style="top:890px">Making music or a launch: other seats, drafted for it.</div>
+  <div class="head" id="h4" style="top:780px">They do the work. And check each other.</div>
+  <div class="sub" id="s4" style="top:890px">The agent that built it never verifies it.</div>
+  <div class="head" id="h5" style="top:780px">You decide.</div>
+  <div class="sub" id="s5" style="top:890px">Every decision only you can make, in one morning brief.</div>
+  <div class="head" id="h6" style="top:780px">No agent can push, merge or publish.</div>
+  <div class="sub" id="s6" style="top:890px">Guardrails keep the final say with you.</div>
+
+  <div class="file" id="hf" style="left:900px;top:300px">HANDOFFS.md</div>
+  <div class="line" id="hl1" style="left:900px;top:370px"><span class="dim">design</span>  to code      checkout screens</div>
+  <div class="line" id="hl2" style="left:900px;top:440px"><span class="dim">code</span>    to qa        checkout, ready to verify</div>
+  <div class="line" id="hl3" style="left:900px;top:510px"><span class="dim">qa</span>      to security  payments, verified</div>
+
+  <div class="file" id="bf" style="left:900px;top:250px">BRIEF.md, 8:00 AM</div>
+  <div class="item" id="bh" style="left:900px;top:300px;font-weight:700">Sign-off queue</div>
+  <div class="item" id="b1" style="left:900px;top:380px"><span class="n">1</span>  Publish the release notes?</div>
+  <div class="item" id="b2" style="left:900px;top:440px"><span class="n">2</span>  Spend $40 on launch ads?</div>
+  <div class="item" id="b3" style="left:900px;top:500px"><span class="n">3</span>  Merge the checkout redesign?</div>
+  <div class="line" id="ba" style="left:900px;top:600px"></div>
+
+  <div class="line" id="t1" style="left:330px;top:390px"></div>
+  <div class="line" id="t2" style="left:330px;top:460px">push blocked: pushes need the owner's confirmation at a terminal</div>
+
+  <div id="lockup"><svg id="lmark" viewBox="-50 -50 100 100" aria-hidden="true"></svg><span id="lname">cabinet</span></div>
+  <div id="tag">One person, a whole team.</div>
+  <div class="sub" id="tag2" style="top:706px">Build anything with AI agents, and stay in charge.</div>
+  <div class="sub" id="fact" style="top:850px;font:400 28px 'JetBrains Mono', monospace;letter-spacing:0;color:#8C93A0">github.com/TarekRaafat/cabinet</div>
+</div>
+<div id="ui"></div>
+<script>
+// Cut to the music (take 2, 120 BPM, a hit every 2 bars): scenes at 0, 4, 8 (roles change on the 12 s hit), 16, 20, 24 s; the logo on the rise at 26.8 s, the team complete on the 28 s hit; the film ends at 32 s.
+var END = 32000, MIST = "#E8EAEE", BRASS = "#D7A54B", NS = "http://www.w3.org/2000/svg";
+function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+function ramp(t, a, d) { return clamp((t - a) / d); }
+function out(x) { return 1 - Math.pow(1 - x, 3); }
+function inout(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+function $(id) { return document.getElementById(id); }
+function pos(k, r) { var a = k * Math.PI / 4; return [r * Math.cos(a), -r * Math.sin(a)]; }
+function svgEl(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var a in attrs) e.setAttribute(a, attrs[a]); parent.appendChild(e); return e; }
+
+// A mark: seven seats and the owner's outline. Used twice: the story mark, and the one in the end lockup.
+function makeMark(svg) {
+  var m = { seats: [] };
+  for (var k = 1; k < 8; k++) m.seats[k] = svgEl("circle", { r: 9.5, fill: MIST }, svg);
+  m.owner = svgEl("circle", { r: 8.4, fill: "none", stroke: BRASS, "stroke-width": 2.2 }, svg);
+  return m;
+}
+// The logo animation, from time a: the owner in the middle, the seats fan out (the seat facing it first), the owner moves home.
+function logo(m, t, a) {
+  for (var k = 1; k < 8; k++) {
+    var f = out(ramp(t, a + 200 + 45 * Math.abs(k - 4), 900)), p = pos(k, 36);
+    m.seats[k].setAttribute("cx", (p[0] * f).toFixed(3)); m.seats[k].setAttribute("cy", (p[1] * f).toFixed(3));
+    m.seats[k].setAttribute("r", (9.5 * (0.3 + 0.7 * f)).toFixed(3));
+    m.seats[k].setAttribute("opacity", clamp(f / 0.3).toFixed(3));
+  }
+  m.owner.setAttribute("cx", (36 * inout(ramp(t, a + 400, 900))).toFixed(3));
+}
+
+var mark = makeMark($("mark")), end = makeMark($("lmark"));
+// Role names: two sets, the app's and another kind of work's; "you" by the open place.
+var ROLES = [["you", "you"], ["review", "video"], ["product", "strategy"], ["design", "brand"], ["architecture", "music"], ["code", "mixing"], ["writing", "lyrics"], ["finance", "marketing"]];
+var labels = [];
+for (var k = 0; k < 8; k++) for (var v = 0; v < 2; v++) {
+  if (k === 0 && v === 1) continue;
+  var p = pos(k, k === 0 ? 50 : 57);
+  var tx = svgEl("text", { x: p[0].toFixed(2), y: (p[1] + 3.2).toFixed(2), "text-anchor": p[0] > 5 ? "start" : p[0] < -5 ? "end" : "middle",
+    "font-family": "JetBrains Mono, monospace", "font-size": 6.2, fill: k === 0 ? "#8C93A0" : MIST }, $("mark"));
+  tx.textContent = ROLES[k][v]; labels.push({ el: tx, k: k, v: v });
+}
+
+var t0 = 0;
+// Words rise into place and fade; they leave by fading only.
+function show(id, a, z, rise) {
+  var e = out(ramp(t0, a, 700)), x = 1 - inout(ramp(t0, z, 400)), el = $(id);
+  el.style.opacity = (e * x).toFixed(3);
+  el.style.transform = "translateY(" + ((1 - e) * (rise == null ? 28 : rise)).toFixed(1) + "px)";
+}
+function type(id, text, a, d, prefix) {
+  var n = Math.floor(clamp((t0 - a) / d) * text.length);
+  $(id).innerHTML = (prefix || "") + text.slice(0, n) + (t0 >= a - 400 && (n < text.length || Math.floor((t0 - a) / 500) % 2 === 0) ? '<span class="caret"></span>' : "");
+}
+
+function render(t) {
+  t0 = t;
+  // The story mark: center, then left for the handoffs and the brief, then gone before the push.
+  var toLeft = inout(ramp(t, 16000, 900)), cx = 960 - 400 * toLeft, size = 460 - 90 * toLeft;
+  var svg = $("mark");
+  svg.style.left = (cx - size / 2) + "px"; svg.style.top = (450 - size / 2) + "px"; svg.style.width = svg.style.height = size + "px";
+  svg.style.opacity = (1 - inout(ramp(t, 23500, 450))).toFixed(3);
+
+  logo(mark, t, 4000);
+  // The owner: away while the team works (loading has no owner), back to decide.
+  mark.owner.setAttribute("opacity", Math.min(1, out(ramp(t, 400, 1000)) * (1 - inout(ramp(t, 16000, 400))) + inout(ramp(t, 20200, 600))).toFixed(3));
+  // While working, the seats dim and light up one at a time, counterclockwise from the top (the loading animation).
+  var dim = inout(ramp(t, 16300, 400)) * (1 - inout(ramp(t, 20000, 400)));
+  if (dim > 0) for (k = 1; k < 8; k++) {
+    var beat = (k - 2 + 8) % 8, ph = ((t - 16700) / 1200 - beat / 8) % 1; if (ph < 0) ph += 1;
+    var lit = t < 16700 ? 0.3 : ph < 0.25 ? 1 - 0.7 * out(ph / 0.25) : 0.3;
+    mark.seats[k].setAttribute("opacity", (1 - dim + lit * dim).toFixed(3));
+  }
+
+  // Role names: the app's set in counterclockwise from the top; all leave together; the other set arrives the same way.
+  labels.forEach(function (l) {
+    var order = l.k === 0 ? 7 : (l.k - 2 + 7) % 7, op;
+    if (l.k === 0) op = out(ramp(t, 9300, 500));
+    else if (l.v === 0) op = out(ramp(t, 8200 + 150 * order, 500)) * (1 - inout(ramp(t, 11500, 350)));
+    else op = out(ramp(t, 12000 + 130 * order, 500));
+    var rise = l.v === 1 ? (1 - out(ramp(t, 12000 + 130 * order, 500))) * 3 : 0;
+    l.el.setAttribute("opacity", (op * (1 - inout(ramp(t, 15500, 400)))).toFixed(3));
+    l.el.setAttribute("transform", "translate(0 " + rise.toFixed(2) + ")");
+  });
+
+  show("h1", 900, 3500); show("h2", 5200, 7500);
+  show("h3", 8500, 15500); show("s3a", 8900, 11500, 18); show("s3b", 12100, 15500, 18);
+  show("h4", 16900, 19500); show("s4", 17300, 19500, 18);
+  show("h5", 20600, 23500); show("s5", 21000, 23500, 18);
+  show("h6", 24300, 26300); show("s6", 24600, 26300, 18);
+
+  show("hf", 16900, 19500, 12); show("hl1", 17200, 19500, 12); show("hl2", 17700, 19500, 12); show("hl3", 18200, 19500, 12);
+  show("bf", 20300, 23500, 12); show("bh", 20500, 23500, 12); show("b1", 20700, 23500, 12); show("b2", 20900, 23500, 12); show("b3", 21100, 23500, 12);
+  type("ba", "approve 1 and 3; 2: no", 21800, 1100, '<span class="dim">&gt; </span>'); show("ba", 21400, 23500, 0);
+
+  type("t1", "git push", 24200, 500, '<span class="dim">agent $ </span>'); show("t1", 24000, 26300, 0);
+  show("t2", 24900, 26300, 8);
+
+  // The end: the logo animation in full, then the outline fades, the mark makes room and the name follows.
+  var lk = $("lockup"), name = $("lname"), nameW = name.offsetWidth, gap = 0.32 * 210, room = inout(ramp(t, 28800, 800));
+  lk.style.opacity = t >= 26800 ? 1 : 0;
+  lk.style.transform = "translateX(" + ((nameW + gap) / 2 * (1 - room)).toFixed(1) + "px)";
+  logo(end, t, 26800);
+  end.owner.setAttribute("opacity", (out(ramp(t, 26800, 500)) * (1 - inout(ramp(t, 28600, 400)))).toFixed(3));
+  name.style.opacity = inout(ramp(t, 29000, 600)).toFixed(3);
+  show("tag", 29700, 99999, 16); show("tag2", 30100, 99999, 12); show("fact", 30500, 99999, 8);
+}
+
+// Preview: plays in real time, scaled to the window; space pauses, arrows step, r restarts. Capture: #capture, driven by render(t).
+function fit() { var s = Math.min(innerWidth / 1920, innerHeight / 1080); $("stage").style.transform = "scale(" + s + ")"; }
+if (location.hash !== "#capture") {
+  fit(); addEventListener("resize", fit);
+  var start = null, paused = false, at = 0;
+  addEventListener("keydown", function (e) {
+    if (e.key === " ") { paused = !paused; start = null; }
+    if (e.key === "ArrowRight") at = Math.min(END, at + 500);
+    if (e.key === "ArrowLeft") at = Math.max(0, at - 500);
+    if (e.key === "r") { at = 0; start = null; }
+  });
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(function () {
+    requestAnimationFrame(function loop(now) {
+      if (!paused) { if (start == null) start = now - at; at = (now - start) % (END + 1500); }
+      render(Math.min(at, END)); $("ui").textContent = (Math.min(at, END) / 1000).toFixed(2) + " s   space: pause   arrows: step   r: restart";
+      requestAnimationFrame(loop);
+    });
+  });
+} else { $("ui").style.display = "none"; render(0); }
+// The end line: the repository's address (for sharing), or what Cabinet is (for embedding where the address is already known).
+if (/[?&]end=facts/.test(location.search)) { var fact = $("fact"); fact.textContent = "Open source. Works with any agent tool that reads AGENTS.md."; fact.style.font = ""; fact.style.fontSize = "28px"; }
+</script>
+</body>
+</html>
