@@ -1916,7 +1916,7 @@ EOF
 # terminal, so a script that reads `cabinet version` still gets the one line.
 version_mark() {
   local o=o
-  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="●" ;; esac
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="⬤" ;; esac
   # Seven rows for a radius of three: a terminal cell is about twice as tall as it is wide.
   printf '\n      %s\n  %s       %s\n\n%s               cabinet %s\n                One person, a whole team. You stay in charge.\n  %s       %s\n      %s\n\n' \
     "$o" "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o"

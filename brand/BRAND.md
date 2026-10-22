@@ -119,7 +119,7 @@ Cabinet sounds like a capable chief of staff: plain, short, specific, and always
 | Place | Form | File | Status |
 |---|---|---|---|
 | README, on GitHub and npm | The tile, 96px, above the title | `logo.svg` (also `docs/logo.svg`) | Approved |
-| Terminal (`cabinet version`) | The mark in text: 7 lines, 13 columns, `●` or `o` without UTF-8 | (printed by the kit) | Approved |
+| Terminal (`cabinet version`) | The mark in text: 7 lines, 13 columns, `⬤` (large dots) or `o` without UTF-8 | (printed by the kit) | Approved |
 | Favicon | The plain mark, light seats when the browser is dark | `favicon.svg`; `favicon-16/32/48.png` (the tile, for browsers without SVG favicons) | Approved |
 | Brief and sign-off queue | The outlined mark | `mark-outlined.svg` | Approved |
 | Website or docs header | The plain mark or the side-by-side lockup, with the hover | `mark.svg`, `lockup.svg` | Approved |
