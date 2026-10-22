@@ -56,7 +56,7 @@ Open `AGENTS.md` and replace each `TBD` with a few plain sentences: what Acme is
 Then download the pinned kit, so the workspace keeps its own version, and commit:
 
 ```sh
-npm install                # skip until the package is published to npm
+npm install
 git add -A && git commit -m "Describe Acme"
 ```
 

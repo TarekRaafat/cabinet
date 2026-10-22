@@ -11,7 +11,7 @@ In practice, Cabinet gives a project a small company: roles with clear authority
 Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
-- **Status:** version 0.1.0, not yet published to npm. Until it is, install from a clone (see [Install](#install)).
+- **Status:** version 0.1.0, on npm as `@tarekraafat/cabinet` ([Install](#install)).
 - **Works with:** Claude Code, Codex, Gemini CLI, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, and any other tool that reads `AGENTS.md`.
 - **Set up by your AI agent:** give your agent tool this link with "Set up Cabinet for me, following docs/agent-setup.md". [The guide](docs/agent-setup.md) tells it what to ask you, what to run, and what to show you before anything changes on your machine.
 
@@ -46,7 +46,7 @@ What it believes:
 ## Quick start
 
 ```sh
-npm i -g @tarekraafat/cabinet     # once published; until then see Install
+npm i -g @tarekraafat/cabinet     # the cabinet command, everywhere
 cabinet new                       # answers a few questions, creates and commits the workspace
 cd <your new workspace>
 cabinet next                      # what to do next, in order
@@ -109,7 +109,7 @@ npm i -g @tarekraafat/cabinet     # the short `cabinet` command everywhere
 npx @tarekraafat/cabinet new      # or no install: run it through npx when you need it
 ```
 
-Until the package is published, clone the repository somewhere you keep (the clone is what runs) and link the command into a folder on your PATH:
+To run the newest code from GitHub instead of the released package, clone the repository somewhere you keep (the clone is what runs) and link the command into a folder on your PATH:
 
 ```sh
 git clone https://github.com/TarekRaafat/cabinet.git ~/cabinet-kit
@@ -117,7 +117,7 @@ mkdir -p ~/.local/bin && ln -s ~/cabinet-kit/bin/cabinet ~/.local/bin/cabinet
 command -v cabinet   # nothing printed? add  export PATH="$HOME/.local/bin:$PATH"  to ~/.zshrc or ~/.bashrc
 ```
 
-Update it with `git -C ~/cabinet-kit pull`. Create workspaces elsewhere, never inside the clone, and skip the `npm install` steps until the package is published: Cabinet works without them.
+Update it with `git -C ~/cabinet-kit pull`. Create workspaces elsewhere, never inside the clone. Moving from a clone to the npm package: remove the link first (`rm ~/.local/bin/cabinet`), or the clone keeps running instead (`command -v cabinet` shows which one runs), then install from npm and run `npm install` in each workspace.
 
 Tab completion: add `eval "$(cabinet completion zsh)"` to `~/.zshrc` (or `bash` to `~/.bashrc`).
 
@@ -166,8 +166,6 @@ cd ~/dev/acme-app
 npm i -D @tarekraafat/cabinet
 npx cabinet init
 ```
-
-Until the package is published, run `cabinet init` there from the [clone install](#install) instead.
 
 In a project repo, `cabinet init` asks where the team's files go:
 

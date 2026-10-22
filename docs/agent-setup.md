@@ -23,13 +23,13 @@ If a tool is missing, tell the person how to install it (the README's [Install](
 
 ## 2. Get the `cabinet` command
 
-If the package is published (`npm view @tarekraafat/cabinet version` prints a version):
+Install the package:
 
 ```sh
 npm i -g @tarekraafat/cabinet
 ```
 
-Until then, from a clone the person keeps: it is what runs, so ask where it should live, and reuse the clone you already have if you cloned the repository to read it. Update it later with `git -C <clone> pull`. Linking the command changes the person's machine, so ask first:
+Only if the person wants the newest code from GitHub instead, from a clone they keep: it is what runs, so ask where it should live, and reuse the clone you already have if you cloned the repository to read it. Update it later with `git -C <clone> pull`. Linking the command changes the person's machine, so ask first:
 
 ```sh
 git clone https://github.com/TarekRaafat/cabinet.git ~/cabinet-kit   # or reuse your clone
@@ -39,8 +39,6 @@ command -v cabinet
 ```
 
 If `~/.local/bin` is not on the person's own PATH, ask, then add that `export` line to their `~/.zshrc` or `~/.bashrc`.
-
-While the package is unpublished, skip every `npm install` step: the step `install` from `cabinet next`, and `npm i -D` in the README. They fail until it is published, and Cabinet works without them.
 
 ## 3. Ask the person
 
@@ -138,7 +136,7 @@ cabinet -C ~/dev/taskly doctor --json   # "problems": 0, or each problem with it
 cabinet -C ~/dev/taskly next --json     # the steps left, in order
 ```
 
-`-C` takes the workspace, or for an inside layout the project's top folder (commands find the workspace from there). Fix what you may (a step with a command that changes only the workspace); bring the rest to the person. Skip the step `install` while the package is unpublished.
+`-C` takes the workspace, or for an inside layout the project's top folder (commands find the workspace from there). Fix what you may (a step with a command that changes only the workspace); bring the rest to the person.
 
 ## 7. Tell the person
 
