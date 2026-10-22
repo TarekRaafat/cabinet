@@ -2,9 +2,11 @@
 
 # Cabinet
 
-Build anything with a team of AI agents. You stay in charge and sign off.
+One person, a whole team. Build anything with AI agents, and stay in charge.
 
-Cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+Cabinet is a productivity kit that makes one person a whole team. It does not replace you; it multiplies you. Agents fill every seat your work needs (architecture, design, writing, review, finance, and any specialty you lack), and you stay the one who decides. Alone, you work like a full company. In a team, every member does.
+
+In practice, Cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
 
 Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
@@ -34,6 +36,7 @@ Cabinet started as one builder's own setup. Working alone, it filled the skills 
 
 What it believes:
 
+- **People amplified, not replaced.** Every person becomes a whole team, or a whole company. Agents bring the skills and the hours; the person brings vision, judgment, and the final say.
 - **More output per person, not more headcount.**
 - **A small company, not a corporate org chart.** Every repo and area has exactly one owner, and nothing is done twice.
 - **People decide, agents do the work.** Agents recommend; you sign off on anything irreversible, public or costly, and you always know what is happening.

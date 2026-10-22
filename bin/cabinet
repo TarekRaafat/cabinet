@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cabinet: build anything with a team of AI agents; you stay in charge and sign off.
+# cabinet: one person, a whole team; build anything with AI agents, and stay in charge.
 #
 # Every command and option is in commands_table below: help, per-command --help,
 # help --json and tab completion are all made from it, and the tests check the docs
@@ -227,7 +227,7 @@ cmd_help() {
     echo; echo "Full reference: $KIT/docs/commands.md"
     return 0
   fi
-  echo "cabinet $VERSION: build anything with a team of AI agents; you stay in charge and sign off."
+  echo "cabinet $VERSION: one person, a whole team; build anything with AI agents, and stay in charge."
   commands_table | awk -F'\t' '$1 == "C" { if ($2 != g) { g = $2; print "\n" g }
     printf "  %-34s %s\n", $3 ($4 == "" ? "" : " " $4), $5 }'
   echo
@@ -1918,7 +1918,7 @@ version_mark() {
   local o=o
   case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="●" ;; esac
   # Seven rows for a radius of three: a terminal cell is about twice as tall as it is wide.
-  printf '\n      %s\n  %s       %s\n\n%s               cabinet %s\n                Build anything with a team of AI agents. You sign off.\n  %s       %s\n      %s\n\n' \
+  printf '\n      %s\n  %s       %s\n\n%s               cabinet %s\n                One person, a whole team. You stay in charge.\n  %s       %s\n      %s\n\n' \
     "$o" "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o"
 }
 cmd_version() {

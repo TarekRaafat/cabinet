@@ -100,16 +100,17 @@ function lockupStackedSvg(fill, note) {
 }
 
 function socialSvg(note) {
-  // 1280 x 640, paper: the mark 300px at the left margin, the name and two lines of tagline beside it.
-  const t = textPaths(), W = 1280, H = 640, pad = 102, m = 300, gap = 77;
+  // 1280 x 640, paper: the mark 260px at the left margin, the name and the tagline's lines beside it.
+  const t = textPaths(), W = 1280, H = 640, pad = 96, m = 260, gap = 64;
   let body = `<rect width="${W}" height="${H}" fill="${C.paper}"/>`;
   body += `<g transform="translate(${n(pad + m / 2)} ${n(H / 2)}) scale(${n(m / 100)})">${mark({ fill: C.ink })}</g>`;
+  const lines = Object.keys(t).filter((k) => /^tagline[0-9]+$/.test(k)).sort();
   const ws = 132, ts = 34, lh = 51, between = 18, wb = box(t, ws);
-  const top = (H - (wb[3] + between + lh * 2)) / 2, x = pad + m + gap;
+  const top = (H - (wb[3] + between + lh * lines.length)) / 2, x = pad + m + gap;
   body += text(t, "wordmark", ws, x - wb[0], top + wb[3], C.ink);
-  body += text(t, "tagline1", ts, x, top + wb[3] + between + lh * 0.8, C.slate);
-  body += text(t, "tagline2", ts, x, top + wb[3] + between + lh * 1.8, C.slate);
-  return svg(body, `0 0 ${W} ${H}`, W, H, "Cabinet: build anything with a team of AI agents. You stay in charge and sign off.", note);
+  lines.forEach((k, i) => { body += text(t, k, ts, x, top + wb[3] + between + lh * (i + 0.8), C.slate); });
+  const label = "Cabinet: " + lines.map((k) => t[k].text).join(" ");
+  return svg(body, `0 0 ${W} ${H}`, W, H, label, note);
 }
 
 function faviconSvg() {

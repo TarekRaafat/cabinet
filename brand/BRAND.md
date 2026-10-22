@@ -18,14 +18,15 @@ To give a project's agents these rules, copy this file to the workspace's `guide
 
 ## What Cabinet believes (Approved)
 
-Every rule below follows from these.
+Cabinet is a productivity kit that makes one person a whole team. It does not replace people; it multiplies them. Every rule below follows from these.
 
+- **People amplified, not replaced.** Every person becomes a whole team, or a whole company. Agents bring the skills and the hours; the person brings vision, judgment, and the final say.
 - **More output per person, not more headcount.**
 - **A small company, not a corporate org chart.** Every piece of work has exactly one owner, and nothing is done twice.
 - **People decide, agents do the work.** Agents recommend; you sign off on anything irreversible, public or costly, and you always know what is happening.
 - **For anyone.** One person or a team of any size, building anything (code, apps and websites, design, writing, marketing, music, finance), working their own way.
 
-The tagline: **Build anything with a team of AI agents. You stay in charge and sign off.** (Approved)
+The tagline: **One person, a whole team. Build anything with AI agents, and stay in charge.** (Approved)
 
 ## 1. The idea (Approved)
 

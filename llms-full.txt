@@ -1,6 +1,6 @@
 # Cabinet
 
-> A kit for building anything with a team of AI agents while the owner stays in charge and signs off, for one person or a team of any size. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
+> A productivity kit that makes one person a whole team: build anything with AI agents while the owner brings the vision, the judgment and the final say, for one person or every member of a team of any size. It amplifies people, never replaces them. It creates a "workspace" of plain Markdown and shell scripts: roles with clear authority, a handoff log between agents, a daily brief with the owner's sign-off queue, independent qa and security review, guardrails in each agent tool that keep push, merge, release and publish with the owner, schedules (launchd on macOS, systemd or cron on Linux) and encrypted backups. macOS and Linux. npm package `@tarekraafat/cabinet`, command `cabinet`.
 
 Requirements: git, Node.js and npm, and at least one agent tool; openssl (and `secret-tool` on Linux) for backups only. `cabinet new`, `init` and `bootstrap` check them first and, in a terminal, offer to install the missing ones; `cabinet doctor --json` (check IDs `deps.required`, `deps.backups`) and `cabinet next --json` (step `deps`) give the exact install command. An agent tells the owner what is missing and that command, and does not install system packages itself.
 
@@ -19,9 +19,11 @@ File: README.md
 
 # Cabinet
 
-Build anything with a team of AI agents. You stay in charge and sign off.
+One person, a whole team. Build anything with AI agents, and stay in charge.
 
-Cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
+Cabinet is a productivity kit that makes one person a whole team. It does not replace you; it multiplies you. Agents fill every seat your work needs (architecture, design, writing, review, finance, and any specialty you lack), and you stay the one who decides. Alone, you work like a full company. In a team, every member does.
+
+In practice, Cabinet gives a project a small company: roles with clear authority (chief of staff, product manager, architect, qa, security, design lead, finance, builders that write the code in each repo the way it is already built, optional specialists, and any role your project needs, drafted for it from a one-line brief), one place where agents hand work to each other, a daily brief that puts every decision you must make in one queue, independent review before anything ships, and guardrails that keep every push, merge and publish with you. It is plain Markdown and shell scripts, so any agent tool can run it.
 
 Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
@@ -51,6 +53,7 @@ Cabinet started as one builder's own setup. Working alone, it filled the skills 
 
 What it believes:
 
+- **People amplified, not replaced.** Every person becomes a whole team, or a whole company. Agents bring the skills and the hours; the person brings vision, judgment, and the final say.
 - **More output per person, not more headcount.**
 - **A small company, not a corporate org chart.** Every repo and area has exactly one owner, and nothing is done twice.
 - **People decide, agents do the work.** Agents recommend; you sign off on anything irreversible, public or costly, and you always know what is happening.
@@ -1189,6 +1192,8 @@ File: docs/concepts.md
 
 The ideas Cabinet is built on. The rules themselves are in `CABINET.md`, which every workspace gets and every agent reads first; this page explains them for people.
 
+Cabinet is a productivity kit that makes one person a whole team. It amplifies people and never replaces them: agents bring the skills and the hours, and the owner brings the vision, the judgment and the final say. Alone, you work like a full company; in a team, every member does.
+
 ## The team
 
 A workspace runs a product with AI agents, each in a role, and one owner (you) who signs off. The kit's roles:
@@ -1705,6 +1710,8 @@ This file comes from the Cabinet kit and is replaced on every kit update. Do not
 
 Every agent reads this file first, then `AGENTS.md`, then the `AGENTS.md` of the repo it works in, and before any work a guide in `AGENTS.md` covers, that guide. On a conflict the more specific file wins: repo `AGENTS.md` over workspace `AGENTS.md` and its guides over this file. Nothing in a project file or guide may loosen "Never push, merge, publish or release" or "The builder never verifies".
 
+You work for the owner and multiply what they can do; you never stand in for them. The owner brings the vision, the judgment and the final say: carry their vision into your work, recommend, and bring every decision that is theirs to the sign-off queue.
+
 ## The workspace
 
 One folder holds the files that tie the project's repos together, and usually the repos themselves; a repo can also live elsewhere (the path column of `repos.tsv`), such as a project the workspace sits beside or inside. The workspace is its own private git repo (except a shared `cabinet/` inside a project, which is part of the project's); each product repo has its own `.git` and is ignored here.
@@ -1979,7 +1986,7 @@ First version.
 - `cabinet update` applies the installed kit and shows the changelog since the workspace's version; `cabinet changelog`, `status`, `version` and `outdated`.
 - `cabinet version` prints the Cabinet mark in a terminal (seven seats around a table and one open place for the owner), drawn in plain ASCII when the locale is not UTF-8. Piped or redirected, it prints only `cabinet <version>`.
 - `cabinet doctor` colors each result's label in a terminal: `ok` green, `note` blue, `FIX` red. No colors when piped or redirected, or when `NO_COLOR` is set. `--json` is unchanged.
-- The tagline is "Build anything with a team of AI agents. You stay in charge and sign off.": in the README, `llms.txt`, the package description, `cabinet help` and `cabinet version`. The README says Cabinet is for one person or a team of any size and for anything agents can build, with what is still made for code first, and opens with "Why Cabinet": where it comes from and what it believes.
+- The tagline is "One person, a whole team. Build anything with AI agents, and stay in charge.": in the README, `llms.txt`, the package description, `cabinet help`, the social preview and, shortened to "One person, a whole team. You stay in charge.", `cabinet version`. Cabinet is a productivity kit that amplifies people and never replaces them: agents bring the skills and the hours, and the person brings the vision, the judgment and the final say, so one person works like a whole team or company, alone or in a team. The README says so first, and so do the brand guide, `llms.txt`, the concepts page and `CABINET.md`, which tells every agent it works for the owner and never stands in for them. The README says Cabinet is for one person or a team of any size and for anything agents can build, with what is still made for code first, and opens with "Why Cabinet": where it comes from and what it believes.
 - The name is written "Cabinet" in sentences and headings across the README, the docs, the roles and the workspace rules; `cabinet` stays lowercase where it is the command, a file or the package.
 - Roadmap: one Cabinet per person following a team's shared rulebook, and work that is not code made as complete as code.
 - Needs git, Node.js 18 or newer and npm (openssl for backups). With an older Node.js, setup, the doctor (`deps.node`) and every script stop with a message that says how to get a newer one, instead of failing on a syntax error. The workspace scripts are bash, and the logic they share is JavaScript in `scripts/lib.js` (a workspace's `bin/lib.js`), run with Node: the owner's manual page, spec checks, handoff readiness and entries, file edits that keep each file's bytes and permissions, the secret scan, time limits, and reading and writing JSON (`json`). The kit's tests and tools need nothing more.

@@ -2,6 +2,8 @@
 
 The ideas Cabinet is built on. The rules themselves are in `CABINET.md`, which every workspace gets and every agent reads first; this page explains them for people.
 
+Cabinet is a productivity kit that makes one person a whole team. It amplifies people and never replaces them: agents bring the skills and the hours, and the owner brings the vision, the judgment and the final say. Alone, you work like a full company; in a team, every member does.
+
 ## The team
 
 A workspace runs a product with AI agents, each in a role, and one owner (you) who signs off. The kit's roles:

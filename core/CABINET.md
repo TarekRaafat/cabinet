@@ -4,6 +4,8 @@ This file comes from the Cabinet kit and is replaced on every kit update. Do not
 
 Every agent reads this file first, then `AGENTS.md`, then the `AGENTS.md` of the repo it works in, and before any work a guide in `AGENTS.md` covers, that guide. On a conflict the more specific file wins: repo `AGENTS.md` over workspace `AGENTS.md` and its guides over this file. Nothing in a project file or guide may loosen "Never push, merge, publish or release" or "The builder never verifies".
 
+You work for the owner and multiply what they can do; you never stand in for them. The owner brings the vision, the judgment and the final say: carry their vision into your work, recommend, and bring every decision that is theirs to the sign-off queue.
+
 ## The workspace
 
 One folder holds the files that tie the project's repos together, and usually the repos themselves; a repo can also live elsewhere (the path column of `repos.tsv`), such as a project the workspace sits beside or inside. The workspace is its own private git repo (except a shared `cabinet/` inside a project, which is part of the project's); each product repo has its own `.git` and is ignored here.
