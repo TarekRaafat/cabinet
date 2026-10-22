@@ -42,7 +42,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - **(Approved)** On its own light tile (paper, corner radius 22 units, the mark at 66%) where the page can be light or dark and you cannot choose the file, such as a README. No border.
 - **(Draft)** Clear space: one seat's width on every side. Nothing else enters it, including the name.
 
-### Loading (Draft)
+### Loading (Approved, timings Draft)
 
 - The team at work: the seven seats stay in place and light up one at a time, counterclockwise from the top, like a word passed around the table. The open place is a rest beat: nothing lights there, and the brass outline never appears, because loading is not the owner's moment.
 - Timing: one beat every 150 ms, eight beats a turn (1.2 s), the open place included. The lit seat is at full color and fades back to 30% over two beats, eased out. Seats at rest are at 30%.
@@ -51,6 +51,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - Show it only after 400 ms, so a short wait never flashes. Use it for a wait of unknown length; when the progress is known, show the progress.
 - One at a time on a screen, never the header logo, never in the README, slides or print. It says "Loading" to screen readers (`role="status"`); past a few seconds, a line in words says what is happening.
 - With reduced motion: the plain mark, still, with the word "Loading..." beside it.
+- The one motion without the owner: it loops while you wait, at any size, even under 48px where the outline blurs. A wait that opens something, such as an app's launch screen, plays the logo animation instead, which starts with the owner.
 
 ### The logo in motion (Approved, timings Draft)
 
@@ -63,7 +64,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 
 - Where the owner is the subject (onboarding, a welcome page, the brief), it ends on step 3: the outlined mark, no name.
 - The other ending, for the logo animation or any variant: the name comes out of the owner's place, revealed from beside the open place outward over 750 ms, instead of fading in. Cabinet comes from you. The fade is the default.
-- Every animation of the mark, this one and the variants, starts with the owner in the middle and ends with the owner in the open place.
+- Every animation of the mark that tells its story (this one, the variants and the chairs) starts with the owner in the middle and ends with the owner in the open place. Loading, a loop while you wait, is the one without the owner.
 - In these animations the seats and the outline may move and grow; nothing else does. Nothing turns, no seat ever takes the open place, and brass is only the owner's outline. The one exception is "Echo", where copies of the owner's outline travel out and become the seats: they are the owner's, so brass still means the owner.
 - Use it: video intros and end cards, an app's launch screen, a website's first visit, onboarding. Once; never in a loop, on every page load, with anything else moving, in the README, npm, slides or print, or under 64px.
 - With reduced motion: the last frame, still.
@@ -99,7 +100,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - Use it to tell the story, at 96px or more: animation and video, onboarding and empty states, docs and slides that explain the team (a chair may carry a role's name), a website's opening picture, posters.
 - Never as the logo: not the favicon, app icon, avatar or README logo, not next to the name, not under 96px, never with more or fewer than eight places, and in no color but ink, mist and the owner's brass.
 - The owner's chair: the open place may show an empty chair outlined in brass, where the owner is the subject.
-- In motion: like every animation of the mark, start with the owner in the middle (the brass chair alone) and end on the mark with the owner in the open place; nothing turns; the open place is never taken by an agent's chair, only the owner's; with reduced motion show the last frame.
+- In motion: like the logo animation, start with the owner in the middle (the brass chair alone) and end on the mark with the owner in the open place; nothing turns; the open place is never taken by an agent's chair, only the owner's; with reduced motion show the last frame.
 - **(Draft)** Timing: each step 400 to 800 ms, eased in and out, no bounce. The sequence, the variant "Pull up a chair": the owner's brass chair alone in the middle; the seven chairs slide in from outside to the table, counterclockwise from the top; the brass chair moves to the open place; each chair turns into its dot and the brass chair into the outline; the name may follow.
 
 ## 5. The table (Approved)
