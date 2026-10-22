@@ -214,6 +214,7 @@ a.btn:hover { border-color: var(--muted); }
 /* A line exactly twice as tall as a character is wide (JetBrains Mono is 0.6em wide), as in a terminal, so the mark is round. */
 .term pre { line-height: 1.2; }
 .term .dim { color: var(--term-dim); }
+.term .seat { display: inline-block; width: 1ch; text-align: center; }   /* a font may draw the large dot wider than one column; it never pushes the text */
 
 /* use cases */
 .use { display: grid; gap: 12px; }
@@ -709,13 +710,13 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
         <div class="use">
           <div class="term"><pre><span class="dim">$</span> cabinet version
 
-      ⬤
-  ⬤       ⬤
+      <span class="seat">⬤</span>
+  <span class="seat">⬤</span>       <span class="seat">⬤</span>
 
-⬤               cabinet 0.1.0
+<span class="seat">⬤</span>               cabinet 0.1.0
                 One person, a whole team. You stay in charge.
-  ⬤       ⬤
-      ⬤</pre></div>
+  <span class="seat">⬤</span>       <span class="seat">⬤</span>
+      <span class="seat">⬤</span></pre></div>
           <span class="tag">Text</span><h3>Terminal</h3>
           <p class="muted"><code>cabinet version</code> prints the mark in a terminal: seven lines, because a terminal cell is about twice as tall as it is wide. Without a UTF-8 locale the seats are the letter o.</p>
         </div>
