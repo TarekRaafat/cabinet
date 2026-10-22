@@ -55,7 +55,7 @@ summary.group { cursor: pointer; margin-bottom: 16px; }
     <span class="eyebrow"><a href="index.html">Cabinet brand</a>, motion <span class="tag">Draft</span></span>
     <h1>The mark in motion</h1>
     <p class="muted">Everything starts with you: the owner's outline in the middle, the seed the team grows from, then the owner's own place on the right. The logo animation and its variants, as they move; the rules are in <code>BRAND.md</code>, "The logo in motion". Each plays once in about 3 seconds and ends on the mark or the lockup; nothing turns, and no seat ever takes the open place. Click a stage to play it again.</p>
-    <div class="bar"><button type="button" id="all">Play all</button><button type="button" id="ending" aria-pressed="false">Ending: the name fades in</button></div>
+    <div class="bar"><button type="button" id="all">Play all</button><button type="button" id="ending" aria-pressed="false">Ending: the name fades in (default)</button></div>
   </div>
   <h2 class="group">The logo animation</h2>
   <div class="grid" id="short"></div>
@@ -378,7 +378,7 @@ summary.group { cursor: pointer; margin-bottom: 16px; }
   endBtn.addEventListener("click", function () {
     fromYou = !fromYou;
     endBtn.setAttribute("aria-pressed", fromYou);
-    endBtn.textContent = fromYou ? "Ending: the name comes out of your place" : "Ending: the name fades in";
+    endBtn.textContent = fromYou ? "Ending: the name comes out of your place (the other ending)" : "Ending: the name fades in (default)";
     all();
   });
   (document.fonts ? document.fonts.ready : Promise.resolve()).then(all);

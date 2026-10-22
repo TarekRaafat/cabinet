@@ -62,6 +62,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 4. **Cabinet.** At 2500 ms the outline fades out over 400 ms; the mark slides left over 700 ms to make room, and the name fades in over 500 ms, ending on the side-by-side lockup.
 
 - Where the owner is the subject (onboarding, a welcome page, the brief), it ends on step 3: the outlined mark, no name.
+- The other ending, for the logo animation or any variant: the name comes out of the owner's place, revealed from beside the open place outward over 750 ms, instead of fading in. Cabinet comes from you. The fade is the default.
 - Every animation of the mark, this one and the variants, starts with the owner in the middle and ends with the owner in the open place.
 - In these animations the seats and the outline may move and grow; nothing else does. Nothing turns, no seat ever takes the open place, and brass is only the owner's outline (except "Echo").
 - Use it: video intros and end cards, an app's launch screen, a website's first visit, onboarding. Once; never in a loop, on every page load, with anything else moving, in the README, npm, slides or print, or under 64px.
