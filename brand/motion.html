@@ -236,7 +236,7 @@ summary.group { cursor: pointer; margin-bottom: 16px; }
       title: "13. Pull up a chair",
       says: "Your chair first, in the middle. The team pulls up its chairs around you; you take the place kept for you. Then the furniture becomes the logo.",
       how: "The owner's brass chair in the middle. The brand's chairs slide in from outside, backs outward, counterclockwise from the top. The brass chair moves to the open place. Each chair turns into its dot, the brass chair into the outline. Then the name. For illustration and video, at 96px or more.",
-      rule: "Chairs move (today they only appear in place); the owner's chair starts in the middle.",
+      rule: "Chairs move. This is the chairs' own sequence (BRAND.md, \"The chairs\").",
       play: function (stage) {
         var m = build(stage, {}), w = 14.8;
         var chairs = el("g", {}, m.svg), ch = [];
@@ -331,7 +331,7 @@ summary.group { cursor: pointer; margin-bottom: 16px; }
       title: "19. Echo",
       says: "Every agent carries your intent. The team is you, amplified: echoes of your outline that become the seats.",
       how: "The owner's outline in the middle. One at a time, counterclockwise from the top, a copy of the outline travels out to a place and turns solid as it arrives. Then the owner moves to the open place. Then the name.",
-      rule: "Brass outlines travel out and turn into seats (brass appears on more than the open place, for a moment); the outline starts in the middle and moves.",
+      rule: "Brass outlines travel out and turn into seats (the one place brass leaves the open seat: the copies are the owner's); the outline starts in the middle and moves.",
       play: function (stage) {
         var m = build(stage, {});
         anim(m, m.open, [{ opacity: 0, transform: "translate(-36px, 0)" }, { opacity: 1, transform: "translate(-36px, 0)" }], { duration: 500, easing: INOUT });

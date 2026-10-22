@@ -118,6 +118,8 @@ a { color: inherit; }
 .intro-stage { min-height: 220px; overflow: hidden; }
 .intro-stage .lockup-h { font-size: 64px; }
 .f1 g { display: none; }
+.cf1 svg > g:not(.open) { display: none; }
+.cf1 .open, .cf2 .open { translate: -36px 0; }   /* the owner's chair in the middle; translate adds to its own placement */
 .f1 .open { transform: translateX(-36px); }
 .f2 .open { transform: translateX(-36px); }
 .f2 g > circle { transform-box: fill-box; transform-origin: center; transform: translate(calc(var(--x) * 0.45), calc(var(--y) * 0.45)) scale(0.75); }
@@ -484,7 +486,7 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
       </div>
 
       <div class="block" id="intro">
-        <h3>The logo in motion: one becomes a team <span class="state">Draft</span></h3>
+        <h3>The logo in motion: one becomes a team <span class="state ok">Approved, timings draft</span></h3>
         <p class="muted">Everything starts with you. The owner's outline in the middle, the seed; the team fans out of it to the table, the seat facing the owner first; the owner moves right into the open place; then the name. One person, a whole team, and you stay in charge. About 3.4 seconds, played once.</p>
         <div class="grid2">
           <div class="tile on-white intro-stage"><div class="intro fan lockup-h" role="img" aria-label="Cabinet" style="color:#15181E"><span data-mark='{"fill":"#15181E","open":"ghost","accent":"#A06F17","openClass":"open"}'></span><span class="wordmark">cabinet</span></div></div>
@@ -601,17 +603,17 @@ footer svg { width: 22px; height: 22px; color: var(--ink); }
 
       <div class="block">
         <h3>In motion</h3>
-        <p class="muted">A short sequence for an intro or an explainer. Start and end on the mark, so people recognize the brand at both ends.</p>
+        <p class="muted">A short sequence for an intro or an explainer. Like every animation of the mark, it starts with the owner in the middle and ends on the mark, so people recognize the brand at the end.</p>
         <div class="story">
-          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div><b>1. The mark</b><p>Seven seats and the open place.</p></div>
-          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair"}' style="display:contents"></span></div><b>2. The team sits down</b><p>Each dot turns into a chair in place, counterclockwise from the top.</p></div>
-          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B"}' style="display:contents"></span></div><b>3. A place for the owner</b><p>The brass chair fades in at the open place, last.</p></div>
-          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div><b>4. Back to the mark</b><p>The chairs turn back into dots; the name may follow.</p></div>
+          <div class="frame"><div class="tile on-night"><span class="cf1" data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>1. You</b><p>The owner's brass chair, alone, in the middle.</p></div>
+          <div class="frame"><div class="tile on-night"><span class="cf2" data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>2. The team sits down</b><p>The chairs slide in to the table, counterclockwise from the top.</p></div>
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE","seat":"chair","open":"ghost","accent":"#D7A54B","openClass":"open"}' style="display:contents"></span></div><b>3. Your place</b><p>The brass chair moves to the open place.</p></div>
+          <div class="frame"><div class="tile on-night"><span data-mark='{"fill":"#E8EAEE"}' style="display:contents"></span></div><b>4. Back to the mark</b><p>Each chair turns into its dot, the brass chair into the outline; the name may follow.</p></div>
         </div>
         <ul class="rules">
-          <li><b>Nothing turns.</b> The open place stays on the right in every frame.</li>
-          <li><b>The open place is never taken by an agent's chair.</b> Only the owner's brass outline appears there.</li>
-          <li><b>Calm timing:</b> each step 400 to 800 ms, eased in and out, no bounce.</li>
+          <li><b>Nothing turns.</b> The owner starts in the middle and ends in the open place on the right.</li>
+          <li><b>The open place is never taken by an agent's chair.</b> Only the owner's.</li>
+          <li><b>Calm timing:</b> each step 400 to 800 ms, eased in and out, no bounce. It moves in <a href="motion.html">motion.html</a>, "Pull up a chair".</li>
           <li><b>Reduced motion:</b> where people have turned motion off, show the last frame only.</li>
         </ul>
       </div>

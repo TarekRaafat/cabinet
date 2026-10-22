@@ -52,7 +52,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - One at a time on a screen, never the header logo, never in the README, slides or print. It says "Loading" to screen readers (`role="status"`); past a few seconds, a line in words says what is happening.
 - With reduced motion: the plain mark, still, with the word "Loading..." beside it.
 
-### The logo in motion (Draft)
+### The logo in motion (Approved, timings Draft)
 
 **One becomes a team.** Everything starts with the owner: the seed the team grows from. About 3.4 seconds, played once. `brand/motion.html` shows it moving, with every variant below.
 
@@ -64,7 +64,7 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - Where the owner is the subject (onboarding, a welcome page, the brief), it ends on step 3: the outlined mark, no name.
 - The other ending, for the logo animation or any variant: the name comes out of the owner's place, revealed from beside the open place outward over 750 ms, instead of fading in. Cabinet comes from you. The fade is the default.
 - Every animation of the mark, this one and the variants, starts with the owner in the middle and ends with the owner in the open place.
-- In these animations the seats and the outline may move and grow; nothing else does. Nothing turns, no seat ever takes the open place, and brass is only the owner's outline (except "Echo").
+- In these animations the seats and the outline may move and grow; nothing else does. Nothing turns, no seat ever takes the open place, and brass is only the owner's outline. The one exception is "Echo", where copies of the owner's outline travel out and become the seats: they are the owner's, so brass still means the owner.
 - Use it: video intros and end cards, an app's launch screen, a website's first visit, onboarding. Once; never in a loop, on every page load, with anything else moving, in the README, npm, slides or print, or under 64px.
 - With reduced motion: the last frame, still.
 
@@ -79,9 +79,9 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 | Setting the table | The owner walks around the table counterclockwise, leaving a seat at each place, and arrives at the open place. | Setup: the end of setting up a workspace, explainers about building the team. |
 | Pull back | A close-up on the owner's outline; the view pulls back as the team appears. | Video: intros, the opening of a talk or a launch film. |
 | Roll call | "you" in the middle; each seat arrives with its role's name; the names fade. | Onboarding and explainers, with the project's own roles. |
-| Pull up a chair | The owner's brass chair in the middle; the chairs slide in, then turn into the mark. An exception to the chairs starting on the mark. | Illustration and video, at 96px or more. |
+| Pull up a chair | The owner's brass chair in the middle; the chairs slide in, then turn into the mark. The chairs' own sequence (see "The chairs"). | Illustration and video, at 96px or more. |
 | Your circle | The owner's outline grows into the table's ring, the seats appear on it, and it draws back into the open place. | Talks and slides about vision. |
-| Echo | Copies of the owner's outline travel out one at a time and turn into the seats. The one place brass leaves the open seat. | Marketing about amplification: every agent carries the owner's intent. |
+| Echo | Copies of the owner's outline travel out one at a time and turn into the seats. The one place brass leaves the open seat, because the copies are the owner's. | Marketing about amplification: every agent carries the owner's intent. |
 
 
 ## 3. The open seat in brass
@@ -99,8 +99,8 @@ The tagline: **One person, a whole team. Build anything with AI agents, and stay
 - Use it to tell the story, at 96px or more: animation and video, onboarding and empty states, docs and slides that explain the team (a chair may carry a role's name), a website's opening picture, posters.
 - Never as the logo: not the favicon, app icon, avatar or README logo, not next to the name, not under 96px, never with more or fewer than eight places, and in no color but ink, mist and the owner's brass.
 - The owner's chair: the open place may show an empty chair outlined in brass, where the owner is the subject.
-- In motion: start and end on the mark; nothing turns, so the open place stays on the right; the open place is never taken by an agent's chair, only the owner's brass outline appears there; with reduced motion show the last frame.
-- **(Draft)** Timing: each step 400 to 800 ms, eased in and out, no bounce. The sequence: the mark; each dot turns into a chair, counterclockwise from the top; the brass chair fades in last; back to the mark, the name may follow.
+- In motion: like every animation of the mark, start with the owner in the middle (the brass chair alone) and end on the mark with the owner in the open place; nothing turns; the open place is never taken by an agent's chair, only the owner's; with reduced motion show the last frame.
+- **(Draft)** Timing: each step 400 to 800 ms, eased in and out, no bounce. The sequence, the variant "Pull up a chair": the owner's brass chair alone in the middle; the seven chairs slide in from outside to the table, counterclockwise from the top; the brass chair moves to the open place; each chair turns into its dot and the brass chair into the outline; the name may follow.
 
 ## 5. The table (Approved)
 
@@ -180,7 +180,7 @@ Cabinet sounds like a capable chief of staff: plain, short, specific, and always
 - **(Approved)** Don't fill the open place with a seat, a dot or a symbol; only the owner's brass outline.
 - **(Approved)** Don't stretch it; scale it evenly.
 - **(Approved)** Don't add seats: eight places, always.
-- **(Draft)** Don't use brass anywhere else: not the seats, the name, buttons or links.
+- **(Draft)** Don't use brass anywhere else: not the seats, the name, buttons or links. (The one exception is the "Echo" animation, where the owner's own outline travels out.)
 - **(Draft)** Don't put it on a busy background: paper, white, night or the tile.
 - **(Approved)** Don't put a table in the logo.
 - **(Draft)** Don't add effects: no gradients, shadows, glows or 3D.
