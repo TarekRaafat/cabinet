@@ -427,7 +427,7 @@ s13() {
 tgz="$(ls "$T"/tarekraafat-cabinet-*.tgz)"
 tar -tzf "$tgz" | grep -q 'package/test/' && fail "tests shipped in the package"
 grep -q '"docs/logo.svg"' "$KIT/README.md" && tar -tzf "$tgz" | grep -qx 'package/docs/logo.svg' || fail "the README's logo is not shipped in the package"
-grep -q 'id="status"' "$KIT/brand/index.html" && grep -q 'id="chairs"' "$KIT/brand/index.html" && grep -q 'id="hover"' "$KIT/brand/index.html" && grep -q 'id="loading"' "$KIT/brand/index.html" && grep -q 'id="intro"' "$KIT/brand/index.html" && grep -q 'href="motion.html"' "$KIT/brand/index.html" && [[ -f "$KIT/brand/motion.html" ]] && [[ -f "$KIT/brand/promo/video.html" && -s "$KIT/brand/promo/cabinet-promo.mp4" && -s "$KIT/brand/promo/music.m4a" ]] && grep -q 'id="table-rule"' "$KIT/brand/index.html" && ! tar -tzf "$tgz" | grep -q 'package/brand/' || fail "the brand guide should be in the repository and not shipped in the package"
+grep -q 'id="status"' "$KIT/brand/index.html" && grep -q 'id="chairs"' "$KIT/brand/index.html" && grep -q 'id="hover"' "$KIT/brand/index.html" && grep -q 'id="loading"' "$KIT/brand/index.html" && grep -q 'id="intro"' "$KIT/brand/index.html" && grep -q 'href="motion.html"' "$KIT/brand/index.html" && [[ -f "$KIT/brand/motion.html" ]] && [[ -f "$KIT/brand/promo/video.html" && -s "$KIT/brand/promo/cabinet-promo.mp4" && -s "$KIT/brand/promo/music.m4a" && -f "$KIT/brand/demo/demo.html" && -s "$KIT/brand/demo/captured.js" && -s "$KIT/brand/demo/cabinet-demo.mp4" ]] && grep -q 'id="table-rule"' "$KIT/brand/index.html" && ! tar -tzf "$tgz" | grep -q 'package/brand/' || fail "the brand guide should be in the repository and not shipped in the package"
 (cd "$W" && npm install -D "$tgz" --no-audit --no-fund --silent) || fail "install from the package failed"
 (cd "$W" && npx --no cabinet status) | grep -q 'no kit file edited' || fail "installed command does not work"
 git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not ignored"
@@ -767,7 +767,7 @@ node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of da
 ! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs python3 or perl; move it to scripts/lib.js"
 ! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs jq; use json (scripts/platform.sh)"
 [[ "$(grep -cE "^[^#]*([^a-z.](python3|perl) +-|[^a-z.-]jq +['-])" "$KIT/test/smoke.sh")" == 0 ]] || fail "the tests run python3, perl or jq; use L or j (test/smoke.sh)"
-for f in scripts/lib.js test/docs-check.js tools/build-llms-full.js tools/build-brand.js brand/promo/render.js; do node --check "$KIT/$f" || fail "$f does not parse"; done
+for f in scripts/lib.js test/docs-check.js tools/build-llms-full.js tools/build-brand.js brand/render-film.js brand/demo/captured.js; do node --check "$KIT/$f" || fail "$f does not parse"; done
 # json: options for input and output, and a JavaScript expression.
 [[ "$(printf '{"a":[1,2]}\n' | j -c '$.a')" == "[1,2]" && "$(printf '{"x":1}\n{"x":2}\n' | j -s -c '$.map((v) => v.x)')" == "[1,2]" \
   && "$(printf 'a\tb\n\n' | j -R -c '$')" == '["a\tb",""]' && "$(j -n -c '$args' --args "a b" "")" == '["a b",""]' \

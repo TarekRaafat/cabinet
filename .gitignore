@@ -1,4 +1,5 @@
 .DS_Store
 node_modules/
 *.tgz
-brand/promo/stills/
+brand/*/stills/
+brand/demo/out/

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cabinet demo</title>
+<!-- The demo film, 94.4 s at 1920 x 1080, cut to music.m4a. Open it to preview; node brand/render-film.js demo renders it.
+     Commands and their output are real (captured.js, from capture.sh);
+     what an agent writes (the brief, its reply) is an example in the kit's format, labeled as the agent's. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html, body { margin: 0; background: #101216; overflow: hidden; }
+#stage { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; background: #101216; color: #E8EAEE; font-family: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif; transform-origin: 0 0; overflow: hidden; }
+#stage > * { position: absolute; }
+.cap { left: 0; right: 0; top: 896px; text-align: center; font-weight: 700; font-size: 52px; letter-spacing: -0.03em; }
+.capsub { left: 0; right: 0; top: 968px; text-align: center; font-size: 30px; color: #8C93A0; letter-spacing: -0.01em; }
+.chapter { left: 210px; top: 40px; font: 500 20px "JetBrains Mono", monospace; letter-spacing: 0.12em; text-transform: uppercase; color: #6E7684; }
+.win { left: 210px; top: 90px; width: 1500px; height: 742px; background: #0B0D10; border: 2px solid #23272F; border-radius: 22px; overflow: hidden; }
+.bar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-bottom: 2px solid #1A1D23; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: #2A2F38; }
+.bar .title { margin-left: 14px; font: 400 20px "JetBrains Mono", monospace; color: #6E7684; }
+.bar .tag { margin-left: auto; font: 500 18px "JetBrains Mono", monospace; color: #8C93A0; border: 1.5px solid #2A2F38; border-radius: 8px; padding: 4px 10px; }
+.screen { margin: 22px 30px; height: 646px; overflow: hidden; font: 400 25px/38px "JetBrains Mono", ui-monospace, Menlo, monospace; color: #D5D9E0; white-space: pre-wrap; word-break: break-all; font-variant-ligatures: none; }
+.screen .p { color: #6E7684; }
+.screen .b { font-weight: 700; color: #E8EAEE; }
+.screen .d { color: #6E7684; }
+.screen .green { color: #6CC08B; }
+.screen .blue { color: #7FB0E8; }
+.screen .red { color: #F2867D; }
+.screen .seat { display: inline-block; width: 1ch; text-align: center; }
+.screen h, .screen .hd { font-weight: 700; color: #B9A3FF; }
+/* Terminal syntax: hues the status colors (green, blue, red) and the owner's brass leave free. */
+.screen .prog { color: #B9A3FF; }
+.screen .verb { color: #FFFFFF; font-weight: 700; }
+.screen .flag { color: #F29FD4; }
+.screen .str { color: #73D7E0; }
+.screen .opt { color: #F29FD4; font-weight: 700; }
+.screen .on { color: #FFFFFF; font-weight: 700; }
+.caret { display: inline-block; width: 0.6em; height: 1.1em; background: #D5D9E0; vertical-align: -0.2em; }
+.card { left: 0; right: 0; text-align: center; }
+#cardn { top: 420px; font: 500 34px "JetBrains Mono", monospace; letter-spacing: 0.14em; color: #6E7684; }
+#cardt { top: 480px; font-weight: 700; font-size: 96px; letter-spacing: -0.035em; }
+#lockup { left: 0; right: 0; top: 330px; display: flex; justify-content: center; align-items: center; gap: 0.32em; font-size: 200px; font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+#lockup svg { width: 1.1em; height: 1.1em; overflow: visible; flex: none; }
+#ui { position: fixed; left: 12px; bottom: 12px; font: 12px "JetBrains Mono", monospace; color: #6E7684; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="imark" viewBox="-50 -50 100 100" style="left:810px;top:250px;width:300px;height:300px;overflow:visible" aria-hidden="true"></svg>
+  <div class="cap" id="ititle" style="top:640px;font-size:64px">From an empty folder to a working team.</div>
+  <div class="capsub" id="isub" style="top:730px;font-size:34px">Cabinet, in about 90 seconds.</div>
+
+  <div class="chapter" id="chap"></div>
+  <div class="card" id="cardn"></div>
+  <div class="card" id="cardt"></div>
+  <div class="win" id="win"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title" id="wtitle"></span><span class="tag" id="wtag"></span></div><div class="screen" id="screen"></div></div>
+  <div class="cap" id="cap"></div>
+  <div class="capsub" id="capsub"></div>
+
+  <div id="lockup"><svg id="lmark" viewBox="-50 -50 100 100" aria-hidden="true"></svg><span id="lname">cabinet</span></div>
+  <div class="capsub" id="end1" style="top:640px;font-size:40px;color:#E8EAEE">Set it up in minutes: ask your agent to follow <span style="font-family:'JetBrains Mono',monospace;font-size:36px">docs/agent-setup.md</span></div>
+  <div class="capsub" id="end2" style="top:740px;font:400 28px 'JetBrains Mono',monospace">github.com/TarekRaafat/cabinet</div>
+</div>
+<div id="ui"></div>
+<script src="captured.js"></script>
+<script>
+var END = 96000, MIST = "#E8EAEE", BRASS = "#D7A54B", NS = "http://www.w3.org/2000/svg";
+function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+function ramp(t, a, d) { return clamp((t - a) / d); }
+function out(x) { return 1 - Math.pow(1 - x, 3); }
+function inout(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+function $(id) { return document.getElementById(id); }
+function pos(k, r) { var a = k * Math.PI / 4; return [r * Math.cos(a), -r * Math.sin(a)]; }
+function svgEl(tag, attrs, parent) { var e = document.createElementNS(NS, tag); for (var a in attrs) e.setAttribute(a, attrs[a]); parent.appendChild(e); return e; }
+function makeMark(svg) {
+  var m = { seats: [] };
+  for (var k = 1; k < 8; k++) m.seats[k] = svgEl("circle", { r: 9.5, fill: MIST }, svg);
+  m.owner = svgEl("circle", { r: 8.4, fill: "none", stroke: BRASS, "stroke-width": 2.2 }, svg);
+  return m;
+}
+// The logo animation from time a: the owner in the middle, the seats fan out, the owner moves home.
+function logo(m, t, a) {
+  for (var k = 1; k < 8; k++) {
+    var f = out(ramp(t, a + 800 + 45 * Math.abs(k - 4), 900)), p = pos(k, 36);
+    m.seats[k].setAttribute("cx", (p[0] * f).toFixed(3)); m.seats[k].setAttribute("cy", (p[1] * f).toFixed(3));
+    m.seats[k].setAttribute("r", (9.5 * (0.3 + 0.7 * f)).toFixed(3)); m.seats[k].setAttribute("opacity", clamp(f / 0.3).toFixed(3));
+  }
+  m.owner.setAttribute("cx", (36 * inout(ramp(t, a + 1000, 900))).toFixed(3));
+  m.owner.setAttribute("opacity", out(ramp(t, a, 300)).toFixed(3));
+}
+var imark = makeMark($("imark")), lmark = makeMark($("lmark"));
+
+var C = CAPTURED, seat = '<span class="seat">\u2B24</span>';
+var PROGS = { cabinet: 1, git: 1, cd: 1, npm: 1 };
+function escH(x) { return x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// A command line, possibly typed only in part: the program, its verb, flags, quoted text.
+function hlCmd(text) {
+  var out = "", seen = 0, verbs = 0;
+  (text.match(/"[^"]*"?|'[^']*'?|\S+|\s+/g) || []).forEach(function (tok) {
+    var e = escH(tok);
+    if (/^\s+$/.test(tok)) out += e;
+    else if (!seen++ && Object.keys(PROGS).some(function (p) { return p.indexOf(tok) === 0; })) out += '<span class="prog">' + e + "</span>";
+    else if (/^--?[a-z]/.test(tok)) { verbs = 9; out += '<span class="flag">' + e + "</span>"; }
+    else if (/^["']/.test(tok)) out += '<span class="str">' + e + "</span>";
+    else if (verbs++ < 2 && /^[a-z][a-z-]*$/.test(tok)) out += '<span class="verb">' + e + "</span>";
+    else out += e;
+  });
+  return out;
+}
+// An output line, already HTML: section headings, "Run: <command>", role states, placed and added.
+function hlOut(l) {
+  var m;
+  if ((m = l.match(/^== (.*)$/))) return '<span class="d">== </span><span class="hd">' + m[1] + "</span>";
+  if ((m = l.match(/^(.*Run: )(.*)$/))) return m[1] + hlCmd(m[2].replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+  if ((m = l.match(/^(\S+)(\s+)(kit|optional)(\s+)(on|off)$/))) return '<span class="verb">' + m[1] + "</span>" + m[2] + '<span class="d">' + m[3] + "</span>" + m[4] + (m[5] === "on" ? '<span class="on">on</span>' : '<span class="d">off</span>');
+  if ((m = l.match(/^(\s+)(placed|added|installed|added or reordered)( .*)$/))) return m[1] + '<span class="d">' + m[2] + "</span>" + m[3];
+  if ((m = l.match(/^(Next|Updates|Created)(.*)$/))) return '<span class="verb">' + m[1] + "</span>" + m[2];
+  return l;
+}
+["01-new", "03-roles", "04-next", "05-bootstrap", "06-doctor", "08-handoff", "09-handoffs"].forEach(function (k) { C[k].lines = C[k].lines.map(hlOut); });
+C["07-version"].lines = C["07-version"].lines.map(function (l) { return l.replace(/⬤/g, seat); });
+// cabinet version ends with a blank line; the capture trimmed it.
+C["07-version"].lines.push("");
+function opts(l) { return l.replace(/\b([AB]):/g, '<span class="opt">$1:</span>'); }
+var BRIEF = [
+  "Today: 3 decisions, 1 action, about 5 min.",
+  "",
+  "<h>## Sign-off queue</h>",
+  "1. Spend $40 on search ads for launch week, starting Sunday?",
+  "   A: yes, $40.   B: no ads this month.",
+  "   Finance: A, inside the budget. Product manager: A, launch week.",
+  "   <span class=\"b\">Recommended: A.</span> Undo: no, the money is spent.",
+  "2. Publish the 1.2 release notes today?",
+  "   A: today.   B: after the checkout fix lands tomorrow.",
+  "   <span class=\"b\">Recommended: B,</span> the notes describe the fix. Undo: no.",
+  "3. Merge the checkout redesign? qa and security passed. Evidence: the checkout page.",
+  "   A: merge.   B: hold.   Design lead: A.",
+  "   <span class=\"b\">Recommended: A.</span> Undo: yes.",
+  "",
+  "<h>## Actions for the owner</h>",
+  "Push web, main at 8a71d04: the checkout redesign, ready to push."
+].map(function (l) { return opts(l).replace(/^(\d\.)/, '<span class="verb">$1</span>').replace(/^Today:/, '<span class="verb">Today:</span>'); });
+var REPLY = [
+  '<span class="p">you</span>  approve 1 and 3; 2: no',
+  "",
+  '<span class="hd">chief-of-staff</span>',
+  "Applied. 1: $40 on search ads, approved; the finance note is updated.",
+  "2: the release notes wait for the checkout fix; the handoff says so.",
+  "3: approved. Ready for you: push web, main at 8a71d04.",
+  "Committed: handoffs: apply the owner's answers of 22 Oct 2026."
+];
+var PUSH = [
+  "", "Push to git@github.com:acme/web.git",
+  "refs/heads/main 8a71d04e2c9b6f3d1a5e7c0b4f8d2a6e9c3b1f57 refs/heads/main 3f2c9e1b7a4d8c6e0f2b5a9d3c7e1f4b8a6d2c09",
+  "Type yes to push: "
+];
+// What git prints once the owner types yes.
+var PUSHED = ["To github.com:acme/web.git", "   3f2c9e1..8a71d04  main -> main"];
+
+// The chapters: a window, a caption, and steps that type a command or show lines.
+var CH = [
+  { a: 5000, z: 17000, chap: "1  Create the team", title: "~", cap: "One command makes the workspace.", sub: "Seven roles on by default, with their rules and files. Any seat your project needs can be added.",
+    steps: [{ at: 5800, cmd: C["01-new"].cmd, out: C["01-new"].lines, rate: 70 }, { at: 10200, cmd: "cd acme", out: [], rate: 0, prompt: "~", after: "~/acme" }, { at: 11000, cmd: C["03-roles"].cmd, out: C["03-roles"].lines, rate: 70 }] },
+  { a: 17000, z: 31000, chap: "2  Set up the machine", title: "~/acme", cap: "Guardrails for every agent tool.", sub: "And the morning brief on a schedule. cabinet next always says what is left.",
+    steps: [{ at: 17600, cmd: C["04-next"].cmd, out: C["04-next"].lines, rate: 90 }, { at: 22000, cmd: C["05-bootstrap"].cmd, out: C["05-bootstrap"].lines, rate: 60 }] },
+  { a: 31000, z: 41000, chap: "3  Check everything", title: "~/acme", cap: "The doctor checks everything.", sub: "Repos, roles, guardrails, schedules, secrets, spend. Each problem comes with its fix.",
+    steps: [{ at: 31600, cmd: C["06-doctor"].cmd, out: C["06-doctor"].lines, rate: 70 }] },
+  { a: 41000, z: 56000, chap: "4  Your morning brief", title: "BRIEF.md", tag: "written by the chief-of-staff agent, 7:00 AM", cap: "Every decision only you can make.", sub: "In one brief: plain questions, options, the experts' advice, and whether it can be undone.",
+    steps: [{ at: 41700, out: BRIEF, rate: 260, file: true }] },
+  { a: 56000, z: 64000, chap: "5  Answer in one line", title: "agent session", tag: "the agent's reply", cap: "Answer in one line.", sub: "The agents apply it to the specs and handoffs, and commit.",
+    steps: [{ at: 56600, chat: "approve 1 and 3; 2: no", out: REPLY.slice(1), rate: 260 }] },
+  { a: 64000, z: 76000, chap: "6  The team at work", title: "~/acme", cap: "Agents hand work to each other.", sub: "Every handoff has one owner, and the agent that built it never verifies it.",
+    steps: [{ at: 64600, cmd: 'cabinet handoff add --from design-lead --to qa --changed "Checkout screens: cart, address, payment" --needed "Verify against the spec\'s acceptance criteria" "Checkout screens ready"', out: C["08-handoff"].lines, rate: 80, fast: true }, { at: 68600, cmd: C["09-handoffs"].cmd, out: C["09-handoffs"].lines, rate: 80 }] },
+  { a: 76000, z: 84000, chap: "7  Only you push", title: "~/acme/web", cap: "No agent can push, merge or publish.", sub: "You push, from your own terminal, when the reviews have passed.",
+    steps: [{ at: 76600, cmd: "git push", out: PUSH, rate: 120, prompt: "~/acme/web", typed: { text: "yes", at: 79600, then: PUSHED } }] },
+  { a: 84000, z: 89000, chap: "", title: "~/acme", cap: "", sub: "",
+    cells: true, steps: [{ at: 84500, cmd: C["07-version"].cmd, out: C["07-version"].lines, rate: 60 }] }
+];
+
+// Cut to the music (Clean Final Chord (1), about 110 BPM, 94.4 s): the intro over the guitar alone; chapter 1
+// when the drums come in (8.95 s); each chapter's card before it; cabinet version on the late entrance (83.75 s);
+// the logo animation on the final section (88.15 s); the name as the last chord rings out.
+var CARD = 1600, LENS = [10200, 11000, 8400, 12000, 7400, 8800, 7400], SEGS = [{ kind: "intro", a: 0, z: 7350, shift: 0 }];
+END = 94400;
+(function () {
+  var at = 8950;
+  for (var i = 0; i < LENS.length; i++) {
+    CH[i].z = CH[i].a + LENS[i];
+    SEGS.push({ kind: "card", a: at - CARD, z: at, ch: CH[i] });
+    SEGS.push({ kind: "ch", a: at, z: at + LENS[i], shift: CH[i].a - at });
+    at += LENS[i] + CARD;
+  }
+  SEGS[SEGS.length - 1].z = 83750;
+  SEGS.push({ kind: "ch", a: 83750, z: 87550, shift: 84000 - 83750 });
+  SEGS.push({ kind: "end", a: 87550, z: END + 1, shift: 89000 - 87550 });
+})();
+// Film time to the chapters' own time, and which part of the film it is.
+function timeline(film) {
+  for (var i = 0; i < SEGS.length; i++) {
+    var g = SEGS[i];
+    if (film < g.z) return g.kind === "card" ? { t: -1, card: g.ch, into: film - g.a, kind: "card" } : { t: film + g.shift, card: null, kind: g.kind };
+  }
+  return { t: film, card: null, kind: "end" };
+}
+var t0 = 0;
+function show(id, a, z, rise) {
+  var e = out(ramp(t0, a, 700)), x = 1 - inout(ramp(t0, z, 400)), el = $(id);
+  el.style.opacity = (e * x).toFixed(3);
+  el.style.transform = "translateY(" + ((1 - e) * (rise == null ? 24 : rise)).toFixed(1) + "px)";
+}
+// A chapter's screen at time t: each step types its command (a key every 38 ms, faster for long ones), waits, then prints its lines.
+function screen(ch, t) {
+  var lines = [], caret = false, cwd = ch.title;
+  ch.steps.forEach(function (s) {
+    if (t < s.at) return;
+    var prompt = '<span class="p">' + (s.prompt || cwd) + " $</span> ";
+    if (s.file) { lines = lines.concat(s.out.slice(0, Math.floor((t - s.at) / s.rate) + 1)); return; }
+    var text = s.cmd || s.chat, key = s.fast ? 14 : 38, typedN = Math.min(text.length, Math.floor((t - s.at) / key)), done = s.at + text.length * key;
+    if (s.chat) prompt = '<span class="p">you</span>  ';
+    lines.push(prompt + (s.chat ? escH(text.slice(0, typedN)) : hlCmd(text.slice(0, typedN))));
+    if (t < done + 350) { caret = true; return; }
+    var n = s.rate ? Math.min(s.out.length, Math.floor((t - done - 350) / s.rate) + 1) : 0;
+    var shown = s.out.slice(0, n);
+    if (s.typed && n === s.out.length) {
+      var k = Math.max(0, Math.min(s.typed.text.length, Math.floor((t - s.typed.at) / 120)));
+      shown = shown.slice(); shown[shown.length - 1] += s.typed.text.slice(0, k);
+      if (s.typed.then && t > s.typed.at + 700) shown = shown.concat(s.typed.then.slice(0, Math.floor((t - s.typed.at - 700) / 250) + 1));
+    }
+    lines = lines.concat(shown);
+    if (s.after) cwd = s.after;
+    var finished = n === s.out.length && (!s.typed || t > s.typed.at + 700 + 250 * ((s.typed.then || []).length));
+    if (finished && !s.chat) lines.push('<span class="p">' + cwd + " $</span> ");
+    caret = !finished || !s.chat;
+    if (s.typed && n === s.out.length && !finished) caret = true;
+  });
+  // One prompt at the end at most: drop a ready prompt that a later step replaced.
+  for (var i = lines.length - 2; i >= 0; i--) if (/^<span class="p">[^<]*\$<\/span> $/.test(lines[i])) lines.splice(i, 1);
+  return lines.join("\n") + (caret ? '<span class="caret"></span>' : "");
+}
+
+function render(film) {
+  var tl = timeline(film), t = tl.t;
+  t0 = t;
+  logo(imark, t, 300);
+  var intro = tl.kind === "intro" ? film : 99999;
+  t0 = intro;
+  $("imark").style.opacity = (intro < 99999 ? 1 - inout(ramp(intro, 6500, 500)) : 0).toFixed(3);
+  show("ititle", 2400, 6500); show("isub", 2800, 6500, 16);
+  t0 = t;
+
+  var ch = null; if (tl.kind === "ch") CH.forEach(function (c) { if (t >= c.a && t < c.z) ch = c; });
+  // The card: the number, then the title, rising in; both fade before the chapter starts.
+  var cn = $("cardn"), ct = $("cardt");
+  if (tl.card) {
+    var parts = tl.card.chap.split(/\s+/), num = ("0" + parts.shift()).slice(-2), into = tl.into;
+    cn.textContent = num; ct.textContent = parts.join(" ");
+    var fadeOut = 1 - inout(ramp(into, CARD - 350, 300));
+    cn.style.opacity = (out(ramp(into, 0, 450)) * fadeOut).toFixed(3); cn.style.transform = "translateY(" + ((1 - out(ramp(into, 0, 450))) * 12).toFixed(1) + "px)";
+    ct.style.opacity = (out(ramp(into, 150, 550)) * fadeOut).toFixed(3); ct.style.transform = "translateY(" + ((1 - out(ramp(into, 150, 550))) * 24).toFixed(1) + "px)";
+    ch = null;
+  } else { cn.style.opacity = 0; ct.style.opacity = 0; }
+  var win = $("win"), winOp = tl.kind === "ch" ? 1 : tl.kind === "end" ? 1 - inout(ramp(t, 89000, 600)) : 0;
+  win.style.opacity = winOp.toFixed(3);
+  if (ch) {
+    var fadeIn = ch.chap ? 1 : ramp(t, ch.a, 350), fadeOut = 1 - ramp(t, ch.z - 300, 300);
+    win.style.opacity = (winOp * (ch.chap ? out(ramp(t, ch.a, 400)) : 1)).toFixed(3);
+    var sc = $("screen"); sc.style.lineHeight = ch.cells ? "30px" : ""; sc.innerHTML = screen(ch, t); sc.scrollTop = sc.scrollHeight;
+    $("screen").style.opacity = (fadeIn * fadeOut).toFixed(3);
+    $("wtitle").textContent = ch.title; $("wtag").textContent = ch.tag || ""; $("wtag").style.display = ch.tag ? "" : "none";
+    $("chap").textContent = ch.chap; $("cap").textContent = ch.cap; $("capsub").textContent = ch.sub;
+    show("chap", ch.a + 200, ch.z - 300, 8); show("cap", ch.a + 600, ch.z - 400); show("capsub", ch.a + 1000, ch.z - 400, 14);
+  } else { $("screen").innerHTML = ""; $("chap").style.opacity = 0; $("cap").style.opacity = 0; $("capsub").style.opacity = 0; }
+
+  // The end: the logo animation, the lockup, where to start.
+  var lk = $("lockup"), name = $("lname"), gap = 0.32 * 200, room = inout(ramp(t, 92300, 700));
+  lk.style.opacity = t >= 89600 ? 1 : 0;
+  lk.style.transform = "translateX(" + ((name.offsetWidth + gap) / 2 * (1 - room)).toFixed(1) + "px)";
+  logo(lmark, t, 89600);
+  lmark.owner.setAttribute("opacity", (out(ramp(t, 89600, 300)) * (1 - inout(ramp(t, 92100, 400)))).toFixed(3));
+  name.style.opacity = inout(ramp(t, 92500, 500)).toFixed(3);
+  show("end1", 93300, 999999, 14); show("end2", 93800, 999999, 10);
+}
+
+function fit() { var s = Math.min(innerWidth / 1920, innerHeight / 1080); $("stage").style.transform = "scale(" + s + ")"; }
+if (location.hash !== "#capture") {
+  fit(); addEventListener("resize", fit);
+  var start = null, paused = false, at = 0;
+  addEventListener("keydown", function (e) {
+    if (e.key === " ") { paused = !paused; start = null; }
+    if (e.key === "ArrowRight") at = Math.min(END, at + 2000);
+    if (e.key === "ArrowLeft") at = Math.max(0, at - 2000);
+    if (e.key === "r") { at = 0; start = null; }
+  });
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(function () {
+    requestAnimationFrame(function loop(now) {
+      if (!paused) { if (start == null) start = now - at; at = (now - start) % (END + 1500); }
+      render(Math.min(at, END)); $("ui").textContent = (Math.min(at, END) / 1000).toFixed(1) + " s   space: pause   arrows: 2 s   r: restart";
+      requestAnimationFrame(loop);
+    });
+  });
+} else { $("ui").style.display = "none"; render(0); }
+</script>
+</body>
+</html>
