@@ -31,7 +31,7 @@ for t in launchctl systemctl crontab security secret-tool brew apt-get sudo; do 
 sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
 perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
 # The kit's JavaScript (scripts/lib.js): L runs one of its commands, such as the line edits; j reads
-# JSON (json: jq's options with a JavaScript expression).
+# JSON (json: options for input and output, and a JavaScript expression).
 L() { node "$KIT/scripts/lib.js" "$@"; }
 j() { L json "$@"; }
 # in_tty <command>...: run it with its output on a terminal and print what it wrote, with script (in
@@ -753,11 +753,11 @@ node "$KIT/test/docs-check.js" "$KIT" || fail "the docs fell behind the code (se
 node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of date (npm run docs)"
 # Nothing in the kit, its tests or its tools runs python3, perl or jq (AGENTS.md, rule 3); its JavaScript parses.
 [[ -z "$(find "$KIT" -name node_modules -prune -o \( -name '*.py' -o -name '*.pl' \) -print)" ]] || fail "a Python or perl file is in the kit; write it in JavaScript"
-! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=lib.js --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs python3 or perl; move it to scripts/lib.js"
-! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=lib.js --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs jq; use json (scripts/platform.sh)"
+! grep -rnE "(^|[^a-z.])(python3|perl) +-" --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs python3 or perl; move it to scripts/lib.js"
+! grep -rnE "(^|[^a-z.-])jq( |$)" --exclude=smoke.sh "$KIT/bin" "$KIT/scripts" "$KIT/test" "$KIT/tools" "$KIT/package.json" || fail "the kit runs jq; use json (scripts/platform.sh)"
 [[ "$(grep -cE "^[^#]*([^a-z.](python3|perl) +-|[^a-z.-]jq +['-])" "$KIT/test/smoke.sh")" == 0 ]] || fail "the tests run python3, perl or jq; use L or j (test/smoke.sh)"
 for f in scripts/lib.js test/docs-check.js tools/build-llms-full.js tools/build-brand.js; do node --check "$KIT/$f" || fail "$f does not parse"; done
-# json: jq's options with a JavaScript expression.
+# json: options for input and output, and a JavaScript expression.
 [[ "$(printf '{"a":[1,2]}\n' | j -c '$.a')" == "[1,2]" && "$(printf '{"x":1}\n{"x":2}\n' | j -s -c '$.map((v) => v.x)')" == "[1,2]" \
   && "$(printf 'a\tb\n\n' | j -R -c '$')" == '["a\tb",""]' && "$(j -n -c '$args' --args "a b" "")" == '["a b",""]' \
   && "$(j -n -r --arg v 'x"y' --argjson n 2 '$v + $n')" == 'x"y2' && "$(j -n -r --each '["a", 1]')" == $'a\n1' \

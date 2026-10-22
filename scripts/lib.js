@@ -515,12 +515,12 @@ li.task{list-style:none;margin-left:-1.2rem}li.task input{margin-right:.4rem}
 `);
 }
 
-// ---- Editing files line by line (what perl -i -pe did) ----------------------------------------
+// ---- Editing files line by line, in place ---------------------------------------------------------
 // A pattern is "/source/flags". In the source, ${NAME} is the environment variable NAME as literal
-// text (perl's \Q$ENV{NAME}\E). In a replacement, $1..$9 are the groups, ${NAME} is the variable's
+// text, never as a pattern. In a replacement, $1..$9 are the groups, ${NAME} is the variable's
 // value as it is, and $$ is a $. Each rule applies to each line without its newline, so ^ and $ are
 // the line's start and end.
-// Like perl, the edits work on bytes (latin1 text, one character per byte), so nothing in a file is
+// The edits work on bytes (latin1 text, one character per byte), so nothing in a file is
 // ever re-encoded; the environment's values and the arguments are turned into the same bytes.
 const envBytes = (k) => Buffer.from(env(k), "utf8").toString("latin1");
 const bytes = (s) => Buffer.from(s, "utf8").toString("latin1");
@@ -539,7 +539,7 @@ function lines(file) {
   const end = t.endsWith("\n");
   return { list: (end ? t.slice(0, -1) : t).split("\n"), end };
 }
-function replaceFile(file, text) {  // with the file's own permissions, as perl -i kept them
+function replaceFile(file, text) {  // keeping the file's own permissions
   const mode = fs.statSync(file).mode & 0o7777;
   fs.writeFileSync(file + ".tmp", text, { encoding: "latin1", mode });
   fs.chmodSync(file + ".tmp", mode);
@@ -558,7 +558,7 @@ function sub(...args) {
   for (let i = cut + 1; i < args.length; i += 2) rules.push([pattern(args[i]), args[i + 1]]);
   eachFile(args.slice(0, cut), (list) => list.map((l) => rules.reduce((s, [re, tpl]) => s.replace(re, (...g) => fill(tpl, g)), l)));
 }
-// sub-all <file> </pattern/flags> <replacement>: replace in the whole text at once (perl -0777).
+// sub-all <file> </pattern/flags> <replacement>: replace in the whole text at once, so a pattern can span lines.
 function subAll(file, p, tpl) { replaceFile(file, fs.readFileSync(file, "latin1").replace(pattern(p), (...g) => fill(tpl, g))); }
 // has <file> </pattern/flags>: exit 0 when a line matches, 1 when none does (or there is no file).
 function has(file, p) {
@@ -645,7 +645,7 @@ const SECRETS = [
   ["a password or token", new RegExp("(?<![a-z])(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)(?:_\\w*)?(?![a-z])[\"']?" +
     SP + "*[:=]" + SP + "*[\"']?(?![$<{%(\\[])[^\\t\\n\\v\\f\\r \"'<>`,;]{8,}", "i")],
 ];
-// Like perl's -B: the first 512 bytes hold a NUL, or (when they are not UTF-8 with non-ASCII in
+// A file is binary when the first 512 bytes hold a NUL, or (when they are not UTF-8 with non-ASCII in
 // them) more than a third are odd: control codes other than tab, newline, CR, BS, FF and ESC, or
 // bytes with the high bit set. An empty file counts as binary; it has no lines anyway.
 function isBinary(buf) {
@@ -693,7 +693,7 @@ function secretScan(mode) {
 }
 
 // json [-n] [-R] [-s] [-r] [-c] [-e] [--each] [--arg name text]... [--argjson name json]... <expression> [file]... [--args word...]
-// What jq did for the scripts, with a JavaScript expression in place of a jq program: $ is the input,
+// Reads and writes JSON for the scripts, with a JavaScript expression: $ is the input,
 // --arg x and --argjson x are $x, --args words are $args. Input is each JSON value in the files (or on
 // stdin; a file of JSON lines is one value per line), all of them as one array with -s, its lines as
 // an array with -R, nothing with -n. The result is printed as JSON (one line with -c), a string as it

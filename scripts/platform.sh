@@ -5,7 +5,7 @@
 # never run.
 
 LIBJS="${LIBJS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js}"   # the JavaScript beside this file, run with node
-json() { node "$LIBJS" json "$@"; }   # JSON in and out: jq's options with a JavaScript expression (lib.js, json)
+json() { node "$LIBJS" json "$@"; }   # reads and writes JSON: options for input and output, and a JavaScript expression (lib.js, json)
 
 USER="${USER:-$(id -un)}"   # cron and containers can leave it unset
 if [[ "$(uname)" == Darwin ]]; then
