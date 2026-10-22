@@ -124,7 +124,7 @@ for (const [, , cid, msg] of all(/\b(bad|note) ([a-z.-]+) "((?:[^"\\]|\\.)*)"/g,
 const llms = read("llms.txt");
 const docs = ls("docs").filter((f) => f.endsWith(".md"));
 for (const f of docs) if (!llms.includes(`docs/${f}`)) fail(`llms.txt does not list docs/${f}`);
-const pages = ["README.md", "llms.txt", "AGENTS.md", "core/CABINET.md", ...docs.map((f) => "docs/" + f)];
+const pages = ["README.md", "llms.txt", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "core/CABINET.md", ...docs.map((f) => "docs/" + f)];
 // GitHub's heading anchors: lowercase, punctuation dropped, spaces to dashes.
 const anchors = (file) => {
   const text = fs.readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");

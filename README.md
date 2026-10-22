@@ -219,7 +219,7 @@ npm test -- init                                # only the sections about init, 
 CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your private words is in the kit
 ```
 
-Agents working on the kit: read [AGENTS.md](AGENTS.md) first.
+Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 A release: add its section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set `version` in `package.json`, run `npm test`, then `npm publish`. The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
 

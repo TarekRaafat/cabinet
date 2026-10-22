@@ -2034,6 +2034,23 @@ grep -q '<h2 id="page-test">Page test</h2>' "$h" && "$MW/bin/doctor.sh" 2>&1 | g
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "contributor files: guide, security, conduct, issue forms" ""
+s55() {
+# Where contributions, security reports and conduct reports go; kept in the repository, never shipped.
+repo="$(j -r '$.repository.url' "$KIT/package.json" | sed 's/^git+//; s/\.git$//')"
+for f in CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md .github/PULL_REQUEST_TEMPLATE.md; do [[ -s "$KIT/$f" ]] || fail "$f is missing"; done
+grep -qF '(AGENTS.md)' "$KIT/CONTRIBUTING.md" && grep -qF '(SECURITY.md)' "$KIT/CONTRIBUTING.md" || fail "CONTRIBUTING.md does not send people to AGENTS.md and SECURITY.md"
+grep -q 'Report a vulnerability' "$KIT/SECURITY.md" || fail "SECURITY.md does not say how to report privately"
+for f in bug feature agent-tool; do
+  y="$KIT/.github/ISSUE_TEMPLATE/$f.yml"
+  grep -q '^name: ' "$y" && grep -q '^description: ' "$y" && grep -q '^body:' "$y" || fail "issue form $f.yml lacks name, description or body"
+done
+c="$KIT/.github/ISSUE_TEMPLATE/config.yml"
+grep -qx 'blank_issues_enabled: false' "$c" && grep -qF "url: $repo/security/advisories/new" "$c" && grep -qF "url: $repo/discussions" "$c" || fail "issue config does not match the repository in package.json"
+j -e '!$.files.some((f) => /CONTRIBUTING|SECURITY|CODE_OF_CONDUCT|\.github/.test(f))' "$KIT/package.json" >/dev/null || fail "the package ships contributor files"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

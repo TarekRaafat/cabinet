@@ -1,0 +1,48 @@
+name: Bug
+description: Something in Cabinet does not work the way the docs say
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for reporting. A security problem? Do not file it here: follow SECURITY.md instead."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. cabinet new --yes ...\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cabinet version
+      description: The output of `cabinet version`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Agent tool and its version
+      placeholder: "Claude Code 2.x, Codex, Gemini CLI, ..."
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `cabinet doctor --json`
+      description: Run it from inside the workspace. Remove anything private first.
+      render: json

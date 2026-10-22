@@ -1,0 +1,33 @@
+name: Support for an agent tool
+description: Ask for Cabinet to support another agent tool, with its guardrails
+labels: [agent tool]
+body:
+  - type: markdown
+    attributes:
+      value: "Cabinet supports a tool fully when it can read the workspace rules and when its own deny rules can keep push, merge and publish with the owner (docs/guardrails.md)."
+  - type: input
+    id: tool
+    attributes:
+      label: Tool name and link
+    validations:
+      required: true
+  - type: textarea
+    id: instructions
+    attributes:
+      label: How it loads instructions
+      description: Does it read AGENTS.md, or another file? Link to its docs.
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: Its permission or deny rule format
+      description: Where the rules live, their format, and a link to its docs. Can it block a command by its shape, such as git push?
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Helping
+      options:
+        - label: I use this tool and can test a change with it

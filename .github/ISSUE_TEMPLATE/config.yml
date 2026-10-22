@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: A question or an open idea
+    url: https://github.com/TarekRaafat/cabinet/discussions
+    about: Ask and discuss in GitHub Discussions.
+  - name: A security problem
+    url: https://github.com/TarekRaafat/cabinet/security/advisories/new
+    about: Report it privately, never in a public issue (SECURITY.md).
