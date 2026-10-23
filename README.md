@@ -119,6 +119,8 @@ command -v cabinet   # nothing printed? add  export PATH="$HOME/.local/bin:$PATH
 
 Update it with `git -C ~/cabinet-kit pull`. Create workspaces elsewhere, never inside the clone. Moving from a clone to the npm package: remove the link first (`rm ~/.local/bin/cabinet`), or the clone keeps running instead (`command -v cabinet` shows which one runs), then install from npm and run `npm install` in each workspace.
 
+With a Node.js version manager (nvm, fnm, asdf, volta), a global install belongs to one Node version: after switching versions, `cabinet` is not found until you run `npm i -g @tarekraafat/cabinet` again under the new one. Workspaces and their schedules are not affected: they run their own copy.
+
 Tab completion: add `eval "$(cabinet completion zsh)"` to `~/.zshrc` (or `bash` to `~/.bashrc`).
 
 Every workspace also pins its own copy as a dev dependency. Inside a workspace, the global `cabinet` hands off to that pinned copy, so it always acts with the project's version.

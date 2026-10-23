@@ -292,6 +292,8 @@ command -v cabinet   # nothing printed? add  export PATH="$HOME/.local/bin:$PATH
 
 Update it with `git -C ~/cabinet-kit pull`. Create workspaces elsewhere, never inside the clone. Moving from a clone to the npm package: remove the link first (`rm ~/.local/bin/cabinet`), or the clone keeps running instead (`command -v cabinet` shows which one runs), then install from npm and run `npm install` in each workspace.
 
+With a Node.js version manager (nvm, fnm, asdf, volta), a global install belongs to one Node version: after switching versions, `cabinet` is not found until you run `npm i -g @tarekraafat/cabinet` again under the new one. Workspaces and their schedules are not affected: they run their own copy.
+
 Tab completion: add `eval "$(cabinet completion zsh)"` to `~/.zshrc` (or `bash` to `~/.bashrc`).
 
 Every workspace also pins its own copy as a dev dependency. Inside a workspace, the global `cabinet` hands off to that pinned copy, so it always acts with the project's version.
@@ -2151,6 +2153,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `cabinet role add` and `role remove` commit their change in a workspace with its own git when the files they touch held no uncommitted edits of the owner's; otherwise they say to review and commit it, as `cabinet config` does (before, they said nothing and left it uncommitted).
 - After a release, changes go under the next version: the kit's `AGENTS.md` says a released version is closed and the first change after it opens the next one (patch, minor or major by what changed), and every workspace's builders follow the same rule (`.cabinet/rules/builders.md`), so the owner never tracks it. The tests fail when the kit has changes since a released version that no unreleased section covers.
 - Releases publish from GitHub with provenance: publishing a GitHub release runs `.github/workflows/release.yml`, which checks the tag against `package.json`, runs the tests and publishes to npm with `--provenance`, signing in as the package's trusted publisher, with no stored token. The README's release steps say so.
+- The README says how a Node.js version manager affects a global install: after switching Node versions, install Cabinet again.
 
 ## 0.1.0 - 23 Oct 2026
 
