@@ -2129,6 +2129,8 @@ grep -qx '  release:' "$w" && grep -qx '    types: \[published\]' "$w" && ! grep
 grep -q '^  id-token: write' "$w" && grep -q -- '--provenance --access public' "$w" || fail "the release workflow does not publish with provenance"
 [[ "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" -lt "$(grep -n -- '--provenance' "$w" | cut -d: -f1)" ]] && grep -q 'GITHUB_REF_NAME' "$w" || fail "the release workflow publishes before testing, or without checking the tag"
 ! grep -qi 'secrets\.' "$w" || fail "the release workflow uses a stored secret instead of trusted publishing"
+# The checkout brings the release tags, without which the check on changes after a release passes unseen.
+grep -q '^          fetch-depth: 0' "$w" || fail "the release workflow checks out without the release tags (fetch-depth: 0)"
 # The runner gets every tool the Linux test image installs that a test needs (zsh, for the completion test).
 grep -q 'apt-get install .*zsh' "$w" && [[ "$(grep -n 'apt-get install' "$w" | cut -d: -f1)" -lt "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" ]] || fail "the release workflow runs the tests without zsh"
 grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's release steps do not name the workflow"
