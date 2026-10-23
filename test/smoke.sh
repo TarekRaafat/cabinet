@@ -2106,6 +2106,17 @@ grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's 
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "docs name the current version" ""
+s59() {
+# A doc that shows a Cabinet version shows the one in package.json, so a release cannot leave docs behind.
+# The demo film's captured output (brand/demo/) is a recording and keeps the version it was captured with.
+v="$(j -r '$.version' "$KIT/package.json")"
+stale="$(cd "$KIT" && grep -rnoE 'cabinet [0-9]+\.[0-9]+\.[0-9]+' README.md llms.txt docs brand/index.html 2>/dev/null | grep -vF "cabinet $v" || true)"
+[[ -z "$stale" ]] || fail "docs name an old version (package.json says $v): $stale"
+! grep -qE 'version [0-9]+\.[0-9]+\.[0-9]+' "$KIT/README.md" || fail "the README names a version number: point to the changelog instead"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

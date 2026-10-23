@@ -11,7 +11,7 @@ In practice, Cabinet gives a project a small company: roles with clear authority
 Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
-- **Status:** version 0.1.0, on npm as `@tarekraafat/cabinet` ([Install](#install)).
+- **Status:** on npm as `@tarekraafat/cabinet` ([Install](#install)); every version and what changed is in the [changelog](CHANGELOG.md).
 - **Works with:** Claude Code, Codex, Gemini CLI, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, and any other tool that reads `AGENTS.md`.
 - **Set up by your AI agent:** give your agent tool this link with "Set up Cabinet for me, following docs/agent-setup.md". [The guide](docs/agent-setup.md) tells it what to ask you, what to run, and what to show you before anything changes on your machine.
 

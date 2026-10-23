@@ -2,6 +2,12 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.1.2 - Unreleased
+
+### Docs
+
+- The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.
+
 ## 0.1.1 - 23 Oct 2026
 
 Fixes and release mechanics. Nothing to do by hand after `npx cabinet update`.

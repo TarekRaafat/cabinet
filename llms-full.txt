@@ -184,7 +184,7 @@ In practice, Cabinet gives a project a small company: roles with clear authority
 Cabinet is for one person or a team of any size, and for anything agents can build: code, apps and websites, design, writing, marketing, music, finance. Beyond the core roles, every seat a project needs is drafted for it. Today its defaults are made for code (builders in repos, guardrails on push); other work runs through roles drafted for it and specs on workspace areas, and making that path as complete is on the [roadmap](ROADMAP.md).
 
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
-- **Status:** version 0.1.0, on npm as `@tarekraafat/cabinet` ([Install](#install)).
+- **Status:** on npm as `@tarekraafat/cabinet` ([Install](#install)); every version and what changed is in the [changelog](CHANGELOG.md).
 - **Works with:** Claude Code, Codex, Gemini CLI, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, and any other tool that reads `AGENTS.md`.
 - **Set up by your AI agent:** give your agent tool this link with "Set up Cabinet for me, following docs/agent-setup.md". [The guide](docs/agent-setup.md) tells it what to ask you, what to run, and what to show you before anything changes on your machine.
 
@@ -427,7 +427,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.1.0).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.1.1).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -503,7 +503,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.1.0
+  ok    cabinet 0.1.1
 ...
 ```
 
@@ -2147,6 +2147,12 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.1.2 - Unreleased
+
+### Docs
+
+- The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.
 
 ## 0.1.1 - 23 Oct 2026
 
