@@ -420,7 +420,12 @@ out="$("$K2/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -qF "What changed since $V" && echo "$out" | grep -q 'smoke change' || fail "update did not show the changelog"
 echo "$out" | grep -qF "## $V " && fail "changelog showed the version already installed"
 [[ "$(cat "$W/.cabinet/version")" == "$N" ]] && tail -1 "$W/CABINET.md" | grep -qF "$N" || fail "newer kit not applied"
-"$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+# It commits the update itself, and leaves the owner's own uncommitted edits to the owner.
+echo "$out" | grep -qF "Committed in the workspace: cabinet: update to $N" && git -C "$W" log -1 --format=%s | grep -qxF "cabinet: update to $N" && [[ -z "$(git -C "$W" status --porcelain -- .cabinet CABINET.md bin agents .claude/agents ORG.md)" ]] || fail "update did not commit itself: $out"
+echo "owner note" > "$W/.cabinet/owner-note"; before="$(git -C "$W" rev-parse HEAD)"
+out="$("$KIT/bin/cabinet" -C "$W" update)" || fail "could not go back to the current kit"
+echo "$out" | grep -q 'then commit: git -C' && [[ "$(git -C "$W" rev-parse HEAD)" == "$before" ]] || fail "update committed over the owner's own uncommitted change: $out"
+rm -f "$W/.cabinet/owner-note"; git -C "$W" add -A -- .cabinet CABINET.md bin agents .claude/agents && { git -C "$W" diff --cached --quiet || git -C "$W" commit -qm "back to the current kit"; }
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -632,7 +637,10 @@ git -C "$W" checkout -q -- HANDOFFS.md
 env GIT_CONFIG_GLOBAL="$T/empty-config" "$F" new "$T/noid" --yes >/dev/null
 ! git -C "$T/noid" log >/dev/null 2>&1 || fail "committed without an owner identity"
 # update names only paths that exist; doctor sees a hooks path set in the project around cabinet/.
+# (An uncommitted change of the owner's makes update show the commit instead of making it.)
+touch "$I/cabinet/.cabinet/owner-note"
 (cd "$I" && "$F" update) | grep 'then commit' | grep -qv 'package-lock' || fail "update names a path that does not exist"
+rm -f "$I/cabinet/.cabinet/owner-note"
 git -C "$I" config core.hooksPath .husky
 "$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app sets its own core.hooksPath (.husky)" || fail "doctor missed the project's own hooks path"
 git -C "$I" config --unset core.hooksPath

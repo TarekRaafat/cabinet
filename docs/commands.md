@@ -380,7 +380,7 @@ The guardrails in your agent tools stay, since other workspaces use them. Exit c
 cabinet update
 ```
 
-Copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). It ends with the exact `git add` and `git commit` to run.
+Copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). In a workspace with its own git it then commits the update (`cabinet: update to <version>`, with the pin in `package.json` and its lockfile), unless the files it rewrites (`.cabinet/`, `CABINET.md`, `bin/`, `agents/`, `.claude/agents/`, `ORG.md`) held uncommitted edits of yours: then, and in a shared `cabinet/`, it ends with the exact `git add` and `git commit` to run.
 
 ## cabinet status
 

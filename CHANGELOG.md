@@ -4,6 +4,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.1.2 - Unreleased
 
+### Commands
+
+- `cabinet update` commits the update itself (`cabinet: update to <version>`, with the pin from `npm update`) in a workspace with its own git, unless the files it rewrites held uncommitted edits of the owner's; then it ends with the commit to run, as before. Its last line is now one short sentence instead of a long command.
+
 ### Docs
 
 - The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.

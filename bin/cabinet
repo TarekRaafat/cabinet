@@ -1961,6 +1961,14 @@ cmd_update() {
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
   local old; old="$(cat "$ws/.cabinet/version")"
+  # The update is committed when the workspace has its own git and the files it rewrites held no edits
+  # of the owner's before (the pin in package.json and its lockfile, from npm update, go with it).
+  local pth
+  local kit_paths=()
+  for pth in .cabinet CABINET.md bin agents .claude/agents ORG.md; do [[ -e "$ws/$pth" ]] && kit_paths+=("$pth"); done
+  local clean=0
+  [[ "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
+     -z "$(git -C "$ws" status --porcelain -- "${kit_paths[@]}" 2>/dev/null)" ]] && clean=1
   echo "== cabinet $old -> $VERSION in $ws"
   if sync_kit "$ws"; then
     echo "$VERSION" > "$ws/.cabinet/version"
@@ -1979,11 +1987,20 @@ cmd_update() {
     changelog "$old"
   fi
   echo
-  echo "Review the diff (git -C \"$ws\" diff), do anything the changelog says to do by hand,"
   # Name only the paths that exist here; a pin in the project above is the project's own commit.
-  local paths="" pth
-  for pth in .cabinet CABINET.md bin agents .claude/agents package.json package-lock.json; do [[ -e "$ws/$pth" ]] && paths+=" $pth"; done
-  echo "then commit: git -C \"$ws\" add --$paths && git -C \"$ws\" commit -m \"cabinet: update to $VERSION\""
+  local paths="" f
+  local files=()
+  for pth in .cabinet CABINET.md bin agents .claude/agents ORG.md package.json package-lock.json; do [[ -e "$ws/$pth" ]] && paths+=" $pth"; done
+  while IFS= read -r f; do files+=("$f"); done < <(git -C "$ws" status --porcelain -- $paths 2>/dev/null | cut -c4-)
+  if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
+     git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
+    echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
+  elif ((${#files[@]} == 0)); then
+    echo "Nothing changed: the workspace was already on $VERSION."
+  else
+    echo "Review the diff (git -C \"$ws\" diff), do anything the changelog says to do by hand,"
+    echo "then commit: git -C \"$ws\" add --$paths && git -C \"$ws\" commit -m \"cabinet: update to $VERSION\""
+  fi
   if [[ -f "$ws/../package.json" && ! -f "$ws/package.json" ]] && grep -q '@tarekraafat/cabinet' "$ws/../package.json" 2>/dev/null; then
     echo "The pin lives in the project: commit its package.json and lockfile there."
   fi
