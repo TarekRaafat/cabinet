@@ -618,11 +618,14 @@ function fillTemplate(file) {
 function slug(text) { process.stdout.write(text.replace(/[^A-Za-z0-9]/gu, "-")); }
 
 // ---- Time limits ----------------------------------------------------------------------------
-// watchdog <seconds> <pid>: after the seconds, TERM the process group of <pid>, then KILL it 10
-// seconds later. Stopping this process stops the watch.
-function watchdog(secs, pid) {
+// watchdog <seconds> <pid> [<mark file>]: after the seconds, write "stopped" to the mark file, TERM
+// the process group of <pid>, then KILL it 10 seconds later. Stopping this process stops the watch.
+// Its timer counts only time the machine is awake, so a run is never stopped for a sleep, and the
+// mark, not the clock on the wall, tells the caller whether the run was stopped.
+function watchdog(secs, pid, mark) {
   const group = -Number(pid);
   setTimeout(() => {
+    if (mark) { try { fs.writeFileSync(mark, "stopped\n"); } catch (e) { /* the caller then sees no stop */ } }
     try { process.kill(group, "SIGTERM"); } catch (e) { /* already gone */ }
     setTimeout(() => { try { process.kill(group, "SIGKILL"); } catch (e) { /* gone */ } }, 10000);
   }, Number(secs) * 1000);

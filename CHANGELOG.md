@@ -10,6 +10,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `cabinet config` commits its change (`cabinet config: <the settings changed>`) in a workspace with its own git that had no uncommitted changes before; otherwise it says to review and commit, as before. With `role add`, `role remove`, `update` and `bootstrap`, every command that changes the workspace now commits its own change the same way.
 - `cabinet version`, in a terminal, shows the approved tagline beside the mark ("One person, a whole team. Build anything with AI agents, and stay in charge."), as does the brand guide's sample of it; it showed an older one.
 
+### Schedules
+
+- A scheduled run that finishes on its own is no longer reported as stopped by its time limit when the machine slept during it. The limit counts only time awake, but the report compared the clock on the wall, so a morning brief that ran across a sleep and finished was logged as stopped, with exit 124. Now only a run the time limit actually stopped is reported as stopped.
+
 ### Docs
 
 - The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.

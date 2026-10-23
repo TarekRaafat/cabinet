@@ -531,6 +531,18 @@ sedi 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
 st=0; HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 2)) && ! pgrep -f 'sleep 323' >/dev/null || fail "a TIMEOUT that is not whole minutes was not refused"
 cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
+# A run that ends on its own is never reported as stopped, even when the clock passed its limit while
+# the machine slept: the watchdog's timer counts only time awake. A watchdog that never fires stands
+# in for a sleeping machine; the run then outlasts its limit on the clock, and finishes.
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='sleep 4; :'" >> "$W/cabinet.env"
+sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
+HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!
+dog=""; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do dog="$(pgrep -f "lib.js watchdog 2 " | head -1)"; [[ -n "$dog" ]] && break; sleep 0.2; done
+[[ -n "$dog" ]] && kill -KILL "$dog" || fail "the run's watchdog did not start"
+st=0; wait "$p" || st=$?
+last="$(awk '/^=== / { b = "" } { b = b $0 "\n" } END { printf "%s", b }' "$H/$LOGS/demo-co/brief.log")"
+((st == 0)) && ! grep -q 'stopped after' <<<"$last" || fail "a run that finished on its own was reported as stopped (exit $st): $last"
+cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 "$F" new "$T/c1" --yes --runner custom >/dev/null 2>&1 && fail "custom runner without a command accepted"
 "$F" new "$T/c2" --yes --runner custom --runner-cmd 'mytool --run "$CABINET_PROMPT"' >/dev/null || fail "custom runner option"
 grep -qx "CABINET_RUNNER_CMD='mytool --run \"\$CABINET_PROMPT\"'" "$T/c2/cabinet.env" || fail "runner command not written"

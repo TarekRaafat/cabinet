@@ -131,15 +131,18 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_a
   local limit=$1 why=$2
   ((limit)) || { run_agent; return; }
   local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
+  # Stopped means the watchdog stopped it (it writes the mark), never that the clock moved past the
+  # limit: a machine that sleeps during a run moves the clock, not the watchdog's timer.
+  local mark; mark="$(mktemp "${TMPDIR:-/tmp}/cabinet-run.XXXXXX")"
   set -m; run_agent </dev/null & pid=$!; set +m
-  node "$LIBJS" watchdog "$secs" "$pid" & dog=$!
-  trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; exit 130' INT TERM
-  local start=$SECONDS
+  node "$LIBJS" watchdog "$secs" "$pid" "$mark" & dog=$!
+  trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; rm -f "$mark"; exit 130' INT TERM
   wait "$pid" || st=$?
   trap - INT TERM
   kill "$dog" 2>/dev/null || true
   wait "$dog" 2>/dev/null || true   # collected quietly: no "Terminated" line from the shell
-  if ((SECONDS - start >= secs)); then echo "stopped after $limit min: $why" >&2; return 124; fi
+  if [[ -s "$mark" ]]; then rm -f "$mark"; echo "stopped after $limit min: $why" >&2; return 124; fi
+  rm -f "$mark"
   return "$st"
 }
 
