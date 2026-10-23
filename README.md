@@ -219,7 +219,7 @@ CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your 
 
 Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
-A release: add its section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set `version` in `package.json`, run `npm test`, then `npm publish`. The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
+A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
 
 ## License
 

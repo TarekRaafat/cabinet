@@ -6,6 +6,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - `cabinet role add` and `role remove` commit their change in a workspace with its own git when the files they touch held no uncommitted edits of the owner's; otherwise they say to review and commit it, as `cabinet config` does (before, they said nothing and left it uncommitted).
 - After a release, changes go under the next version: the kit's `AGENTS.md` says a released version is closed and the first change after it opens the next one (patch, minor or major by what changed), and every workspace's builders follow the same rule (`.cabinet/rules/builders.md`), so the owner never tracks it. The tests fail when the kit has changes since a released version that no unreleased section covers.
+- Releases publish from GitHub with provenance: publishing a GitHub release runs `.github/workflows/release.yml`, which checks the tag against `package.json`, runs the tests and publishes to npm with `--provenance`, signing in as the package's trusted publisher, with no stored token. The README's release steps say so.
 
 ## 0.1.0 - 23 Oct 2026
 

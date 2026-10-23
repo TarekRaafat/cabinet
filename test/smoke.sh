@@ -2088,6 +2088,19 @@ grep -q '^7\. \*\*Keeps the changelog by its releases' "$KIT/core/rules/builders
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "release workflow: publish from a GitHub release, with provenance" ""
+s58() {
+# Only a published GitHub release starts it; it tests before publishing, with provenance and no stored token.
+w="$KIT/.github/workflows/release.yml"
+[[ -s "$w" ]] || fail "the release workflow is missing"
+grep -qx '  release:' "$w" && grep -qx '    types: \[published\]' "$w" && ! grep -qE '^  (push|pull_request|schedule|workflow_dispatch):' "$w" || fail "the release workflow starts on something other than a published release"
+grep -q '^  id-token: write' "$w" && grep -q -- '--provenance --access public' "$w" || fail "the release workflow does not publish with provenance"
+[[ "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" -lt "$(grep -n -- '--provenance' "$w" | cut -d: -f1)" ]] && grep -q 'GITHUB_REF_NAME' "$w" || fail "the release workflow publishes before testing, or without checking the tag"
+! grep -qi 'secrets\.' "$w" || fail "the release workflow uses a stored secret instead of trusted publishing"
+grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's release steps do not name the workflow"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

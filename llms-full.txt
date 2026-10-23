@@ -392,7 +392,7 @@ CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your 
 
 Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
-A release: add its section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set `version` in `package.json`, run `npm test`, then `npm publish`. The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
+A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
 
 ## License
 
@@ -2150,6 +2150,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - `cabinet role add` and `role remove` commit their change in a workspace with its own git when the files they touch held no uncommitted edits of the owner's; otherwise they say to review and commit it, as `cabinet config` does (before, they said nothing and left it uncommitted).
 - After a release, changes go under the next version: the kit's `AGENTS.md` says a released version is closed and the first change after it opens the next one (patch, minor or major by what changed), and every workspace's builders follow the same rule (`.cabinet/rules/builders.md`), so the owner never tracks it. The tests fail when the kit has changes since a released version that no unreleased section covers.
+- Releases publish from GitHub with provenance: publishing a GitHub release runs `.github/workflows/release.yml`, which checks the tag against `package.json`, runs the tests and publishes to npm with `--provenance`, signing in as the package's trusted publisher, with no stored token. The README's release steps say so.
 
 ## 0.1.0 - 23 Oct 2026
 

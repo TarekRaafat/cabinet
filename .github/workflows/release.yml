@@ -1,0 +1,29 @@
+# Publishes the package to npm, with provenance, when the maintainer publishes a GitHub release.
+# Nothing else starts it. The release's tag must match the version in package.json.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write   # signs the provenance, and signs in to npm as a trusted publisher
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@latest
+      - name: The tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Test
+        run: npm test
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
