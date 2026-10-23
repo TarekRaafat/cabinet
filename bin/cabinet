@@ -885,6 +885,23 @@ cmd_role() {
   local cur runner; cur="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_ROLES:-}" ) )"
   runner="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_RUNNER:-claude}" ) )"
   local dryflag=(); ((dry)) && dryflag=(--dry-run)
+  # A role change is committed when the workspace has its own git and the files it touches held no
+  # edits of the owner's before; otherwise the owner reviews and commits it, as after cabinet config.
+  local team_paths=(AGENTS.md OPERATIONS.md ORG.md cabinet.env roles agents .claude/agents)
+  local team_clean=0
+  [[ "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
+     -z "$(git -C "$ws" status --porcelain -- "${team_paths[@]}" 2>/dev/null)" ]] && team_clean=1
+  team_commit() {  # team_commit <message>
+    local f
+    local files=()
+    while IFS= read -r f; do files+=("$f"); done < <(git -C "$ws" status --porcelain -- "${team_paths[@]}" 2>/dev/null | cut -c4-)
+    if ((team_clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
+       git -C "$ws" -c commit.gpgsign=false commit -q -m "$1" -- "${files[@]}" >/dev/null 2>&1; then
+      echo "Committed in the workspace: $1"
+    else
+      echo "Review with git -C \"$ws\" diff, then commit."
+    fi
+  }
   if [[ "$sub" == remove ]]; then
     [[ -z "$does$owns$decides$escalates$lead$covers$title$dname$func" ]] && ((draft == 0)) || bad_usage "role remove takes only a name (and --dry-run)"
     [[ "$name" == chief-of-staff ]] && die "chief-of-staff is always on: it writes the brief and routes work"
@@ -893,6 +910,7 @@ cmd_role() {
     ((dry)) && { echo "would turn $name off: its built files and its rows in the team tables go$([[ -f "$ws/roles/$name.md" ]] && echo "; roles/$name.md stays")"; return 0; }
     echo "Turned $name off: its built files and its rows in the team tables are gone.$([[ -f "$ws/roles/$name.md" ]] && echo " roles/$name.md stays; delete it to drop the role for good.")"
     echo "bin/doctor.sh notes any open handoff still addressed to it."
+    team_commit "roles: $name off"
     return 0
   fi
   has "$cur" "$name" && die "$name is already on the team (cabinet role list)"
@@ -907,6 +925,7 @@ cmd_role() {
     "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name on (see above)"
     ((dry)) && { echo "would turn on the kit role $name, with its rows in the team tables"; return 0; }
     echo "Turned on the kit role $name, with its rows in the team tables of AGENTS.md and OPERATIONS.md."
+    team_commit "roles: $name on"
     return 0
   fi
   [[ -e "$ws/roles/$name.md" ]] && die "roles/$name.md exists: turn it on with cabinet config --roles, or redraft it with cabinet role draft $name"
@@ -982,6 +1001,7 @@ ROLE
   team_lines >> "$ws/roles/$name.md"
   "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" >/dev/null || { rm -f "$ws/roles/$name.md"; die "could not add $name to the team (see above)"; }
   echo "Added the $name role: roles/$name.md, and its rows in AGENTS.md and OPERATIONS.md."
+  team_commit "roles: $name added from the owner's brief"
   if ((draft == 0 && tty)); then confirm "Draft it now with $runner? It runs your agent tool for a few minutes, which may cost money" n && draft=1; fi
   ((draft)) && exec "$ws/bin/role.sh" draft "$name"
   echo "Next, draft it from your brief and the project: in your agent session, ask to \"draft the $name role\" (CABINET.md, \"Drafting a role\"),"

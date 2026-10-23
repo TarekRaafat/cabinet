@@ -1212,6 +1212,11 @@ printf 'Weekly growth experiments\n\nWhich experiment runs next\nAny spend\nn\n'
 (cd "$RW" && CABINET_TTY="$T/role-answers" "$F" role add growth) >/dev/null || fail "role add in a terminal"
 grep -qx -- '- What it owns: not said yet' "$RW/roles/growth.md" && grep -qx -- '- What it must bring to the owner: Any spend' "$RW/roles/growth.md" || fail "terminal answers not kept"
 for bad in qa web Bad_Name brand-strategist; do (cd "$RW" && "$F" role add "$bad" --yes) >/dev/null 2>&1 && fail "role add accepted '$bad'"; done
+# A role change commits itself in a workspace with its own git, and never sweeps in the owner's own edits.
+"$F" new "$T/rolecommit" --yes --backup-dir off >/dev/null || fail "new for role commits"
+out="$(cd "$T/rolecommit" && "$F" role add dba)" && echo "$out" | grep -q "Committed in the workspace: roles: dba on" && [[ -z "$(git -C "$T/rolecommit" status --porcelain)" ]] && git -C "$T/rolecommit" log -1 --format=%s | grep -qx "roles: dba on" || fail "role add left its change uncommitted: $out $(git -C "$T/rolecommit" status --porcelain)"
+echo "owner note" >> "$T/rolecommit/AGENTS.md"; before="$(git -C "$T/rolecommit" rev-parse HEAD)"
+out="$(cd "$T/rolecommit" && "$F" role remove dba)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$T/rolecommit" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$T/rolecommit/AGENTS.md" || fail "role remove committed over the owner's own edit: $out"
 # Drafting: the agent tool runs as chief-of-staff on the drafting method; a run that leaves it TBD fails.
 cp "$RW/cabinet.env" "$T/optroles-env.bak"
 printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"

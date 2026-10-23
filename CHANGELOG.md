@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.1.1 - Unreleased
+
+- `cabinet role add` and `role remove` commit their change in a workspace with its own git when the files they touch held no uncommitted edits of the owner's; otherwise they say to review and commit it, as `cabinet config` does (before, they said nothing and left it uncommitted).
+
 ## 0.1.0 - 23 Oct 2026
 
 First version.
