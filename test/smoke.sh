@@ -1328,7 +1328,11 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(j -r '$.version' "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(j -r '$.version' "$KIT/package.json")"
-[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                One person, a whole team. You stay in charge.\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
+[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                One person, a whole team.\n  o       o     Build anything with AI agents, and stay in charge.\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
+# The banner and the brand guide's sample of it carry the tagline BRAND.md approves.
+tag="$(sed -n 's/^The tagline: \*\*\(.*\)\*\* (Approved)$/\1/p' "$KIT/brand/BRAND.md")"
+[[ "$tag" == "One person, a whole team. Build anything with AI agents, and stay in charge." ]] || fail "BRAND.md's approved tagline changed: update the version banner and its sample with it ($tag)"
+grep -qF 'One person, a whole team.' "$KIT/brand/index.html" && grep -qF 'Build anything with AI agents, and stay in charge.' "$KIT/brand/index.html" && ! grep -qF 'You stay in charge.' "$KIT/brand/index.html" || fail "the brand guide's terminal sample does not show the approved tagline"
 LC_ALL=en_US.UTF-8 in_tty "$F" version | grep -q '⬤' || fail "the mark in a UTF-8 terminal should use large dots"
 "$F" version --json | j -e '$.version' >/dev/null && "$F" changelog --json | j -e '!!$[0].version && !!$[0].text' >/dev/null || fail "version or changelog --json"
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
