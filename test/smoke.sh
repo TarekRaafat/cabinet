@@ -539,6 +539,11 @@ grep -qx "CABINET_RUNNER_CMD='mytool --run \"\$CABINET_PROMPT\"'" "$T/c2/cabinet
 
 section "config changes settings after setup" "14"
 s17() {
+# config commits its own change in a clean workspace, and leaves the owner's uncommitted changes alone.
+CC="$T/cfgcommit"; "$F" new "$CC" --yes --backup-dir off >/dev/null || fail "new for config commits"
+out="$(cd "$CC" && "$F" config --yes --writing short 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: writing to the owner" && [[ -z "$(git -C "$CC" status --porcelain)" ]] || fail "config left its change uncommitted: $out"
+echo "owner note" >> "$CC/README.md"; before="$(git -C "$CC" rev-parse HEAD)"
+out="$(cd "$CC" && "$F" config --yes --writing standard 2>&1)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$CC" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$CC/README.md" || fail "config committed over the owner's own change: $out"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
@@ -1493,7 +1498,7 @@ section "spend: what agent runs cost this week, and a budget the doctor warns ab
 s46() {
 "$F" new "$T/spend" --yes >/dev/null
 S="$T/spend"
-sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$S/jobs/brief.job"; git -C "$S" commit -qam "run every time"
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$S/jobs/brief.job"; { git -C "$S" diff --quiet || git -C "$S" commit -qam "run every time"; }
 # A fake claude that answers as claude -p --output-format json does, at $1.50 a run.
 mkdir -p "$T/fakeclaude"
 printf '#!/bin/sh\necho "$*" >> "%s"\nprintf %s > BRIEF.md\nprintf %s\n' "$T/claude.args" "'# Brief\n'" \
@@ -1521,7 +1526,7 @@ git -C "$S" checkout -q -- AGENTS.md
 (cd "$S" && "$F" config --yes --budget 1.8) >/dev/null || fail "config --budget"
 grep -qx 'CABINET_BUDGET="1.8"' "$S/cabinet.env" || fail "budget not written"
 dr | grep -q '^fix agent runs cost \$1.50 this week, 83% of the \$1.8 budget' || fail "no warning at 83%"
-git -C "$S" commit -qam budget; r
+{ git -C "$S" diff --quiet || git -C "$S" commit -qam budget; }; r
 dr | grep -q '^fix agent runs cost \$3.00 this week, over the \$1.8 budget' || fail "no warning over the budget"
 grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" || fail "the log does not name the budget"
 (cd "$S" && "$F" config --yes --budget 20) >/dev/null; dr | grep -q '^ok agent runs cost \$3.00 this week, 15% of the \$20 budget' || fail "under the budget"
@@ -1535,7 +1540,7 @@ grep -q 'this week \$3.00 of the \$1.8 budget$' "$HOME/$LOGS/spend/brief.log" ||
 "$S/bin/doctor.sh" --json | j -e '$.results.findLast((r) => r.id == "spend.unreported")?.message.includes("cabinet config --price")' >/dev/null || fail "an unpriced budget not noted"
 for bad in abc "1" "1 2 3 4" "1 -2"; do (cd "$S" && "$F" config --yes --price "$bad") >/dev/null 2>&1 && fail "the price '$bad' was accepted"; done
 (cd "$S" && "$F" config --yes --price "2 10 0.5") >/dev/null && grep -qx 'CABINET_PRICE="2 10 0.5"' "$S/cabinet.env" || fail "config --price"
-git -C "$S" commit -qam "codex, priced"
+{ git -C "$S" diff --quiet || git -C "$S" commit -qam "codex, priced"; }
 # Each runner's JSON, as seen live (documented, for claude): the reply reaches the log, and the
 # run is recorded in dollars, reported or priced at 2, 10 and 0.5 dollars per million tokens.
 mkdir -p "$T/fakes"

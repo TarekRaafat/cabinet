@@ -7,6 +7,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ### Commands
 
 - `cabinet update` commits the update itself (`cabinet: update to <version>`, with the pin from `npm update`) in a workspace with its own git, unless the files it rewrites held uncommitted edits of the owner's; then it ends with the commit to run, as before. Its last line is now one short sentence instead of a long command.
+- `cabinet config` commits its change (`cabinet config: <the settings changed>`) in a workspace with its own git that had no uncommitted changes before; otherwise it says to review and commit, as before. With `role add`, `role remove`, `update` and `bootstrap`, every command that changes the workspace now commits its own change the same way.
 
 ### Docs
 

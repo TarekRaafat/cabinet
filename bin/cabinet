@@ -906,7 +906,7 @@ cmd_role() {
     [[ -z "$does$owns$decides$escalates$lead$covers$title$dname$func" ]] && ((draft == 0)) || bad_usage "role remove takes only a name (and --dry-run)"
     [[ "$name" == chief-of-staff ]] && die "chief-of-staff is always on: it writes the brief and routes work"
     has "$cur" "$name" || die "$name is not on the team (cabinet role list)"
-    "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$(printf '%s\n' $cur | grep -vxF "$name" | tr '\n' ' ')" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name off (see above)"
+    CABINET_NO_COMMIT=1 "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$(printf '%s\n' $cur | grep -vxF "$name" | tr '\n' ' ')" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name off (see above)"
     ((dry)) && { echo "would turn $name off: its built files and its rows in the team tables go$([[ -f "$ws/roles/$name.md" ]] && echo "; roles/$name.md stays")"; return 0; }
     echo "Turned $name off: its built files and its rows in the team tables are gone.$([[ -f "$ws/roles/$name.md" ]] && echo " roles/$name.md stays; delete it to drop the role for good.")"
     echo "bin/doctor.sh notes any open handoff still addressed to it."
@@ -922,7 +922,7 @@ cmd_role() {
       mkdir -p "$ws/roles"
       if [[ -s "$ws/roles/$name.md" ]]; then team_lines; else team_lines | sed '1{/^$/d;}'; fi >> "$ws/roles/$name.md"
     fi
-    "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name on (see above)"
+    CABINET_NO_COMMIT=1 "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" "${dryflag[@]+"${dryflag[@]}"}" >/dev/null || die "could not turn $name on (see above)"
     ((dry)) && { echo "would turn on the kit role $name, with its rows in the team tables"; return 0; }
     echo "Turned on the kit role $name, with its rows in the team tables of AGENTS.md and OPERATIONS.md."
     team_commit "roles: $name on"
@@ -999,7 +999,7 @@ What the owner said this role is for, kept word for word. It wins over anything 
 - What it must bring to the owner: $(said "$escalates")
 ROLE
   team_lines >> "$ws/roles/$name.md"
-  "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" >/dev/null || { rm -f "$ws/roles/$name.md"; die "could not add $name to the team (see above)"; }
+  CABINET_NO_COMMIT=1 "$KIT/bin/cabinet" -C "$ws" config --yes --roles "$cur $name" >/dev/null || { rm -f "$ws/roles/$name.md"; die "could not add $name to the team (see above)"; }
   echo "Added the $name role: roles/$name.md, and its rows in AGENTS.md and OPERATIONS.md."
   team_commit "roles: $name added from the owner's brief"
   if ((draft == 0 && tty)); then confirm "Draft it now with $runner? It runs your agent tool for a few minutes, which may cost money" n && draft=1; fi
@@ -1268,6 +1268,11 @@ cmd_config() {
   echo; echo "Changes:"; printf '  - %s\n' "${changes[@]}"
   ((dry)) && { echo "(dry run: nothing written)"; return 0; }
   if ((tty)); then confirm "Apply them?" y || die "nothing changed"; fi
+  # Committed at the end when the workspace has its own git and held no uncommitted change before, so
+  # only this change goes in. A command that calls config for its own change sets CABINET_NO_COMMIT.
+  local cfg_clean=0
+  [[ -z "${CABINET_NO_COMMIT:-}" && "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
+     -z "$(git -C "$ws" status --porcelain 2>/dev/null)" ]] && cfg_clean=1
 
   # Write them.
   setenv() {  # setenv <key> <value> [single]: set a cabinet.env line, or add it
@@ -1384,7 +1389,14 @@ JOB
     echo "  $(pass_add_cmd "cabinet.$slug.backup")"
     echo "then remove the old one, cabinet.$o_slug.backup."
   fi
-  echo "Review with git -C \"$ws\" diff, then commit."
+  local keys="" c
+  for c in "${changes[@]}"; do keys+="${keys:+, }${c%%:*}"; done
+  if ((cfg_clean)) && [[ -n "$(git -C "$ws" status --porcelain 2>/dev/null)" ]] && git -C "$ws" add -A 2>/dev/null &&
+     git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet config: $keys" >/dev/null 2>&1; then
+    echo "Committed in the workspace: cabinet config: $keys"
+  else
+    echo "Review with git -C \"$ws\" diff, then commit."
+  fi
 }
 
 # The workspace a command means: <dir> itself, or <dir>/cabinet inside a project. With no
