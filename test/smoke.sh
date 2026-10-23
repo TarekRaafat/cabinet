@@ -409,14 +409,17 @@ git -C "$W" checkout -q -- bin/handoff.sh
 
 section "update to a newer kit shows its changelog" "0"
 s12() {
+# The kit as it is (V), then a copy one patch version ahead (N): works whatever version the kit is at.
+V="$(j -r '$.version' "$KIT/package.json")"
+N="$(node -e 'const v = process.argv[1].split(".").map(Number); v[2]++; console.log(v.join("."))' "$V")"
 K2="$T/kit2"; cp -R "$KIT" "$K2"; rm -rf "$K2/.git"
-j '({...$, version: "0.1.1"})' "$KIT/package.json" > "$K2/package.json"
-{ echo "# Changelog"; echo; echo "## 0.1.1 - test"; echo; echo "- smoke change"; echo; tail -n +2 "$KIT/CHANGELOG.md"; } > "$K2/CHANGELOG.md"
-echo "# 0.1.1" >> "$K2/core/CABINET.md"
+N="$N" j '({...$, version: process.env.N})' "$KIT/package.json" > "$K2/package.json"
+{ echo "# Changelog"; echo; echo "## $N - test"; echo; echo "- smoke change"; echo; tail -n +2 "$KIT/CHANGELOG.md"; } > "$K2/CHANGELOG.md"
+echo "# $N" >> "$K2/core/CABINET.md"
 out="$("$K2/bin/cabinet" -C "$W" update)"
-echo "$out" | grep -q 'What changed since 0.1.0' && echo "$out" | grep -q 'smoke change' || fail "update did not show the changelog"
-echo "$out" | grep -q '^## 0.1.0' && fail "changelog showed the version already installed"
-[[ "$(cat "$W/.cabinet/version")" == 0.1.1 ]] && tail -1 "$W/CABINET.md" | grep -q '0.1.1' || fail "newer kit not applied"
+echo "$out" | grep -qF "What changed since $V" && echo "$out" | grep -q 'smoke change' || fail "update did not show the changelog"
+echo "$out" | grep -qF "## $V " && fail "changelog showed the version already installed"
+[[ "$(cat "$W/.cabinet/version")" == "$N" ]] && tail -1 "$W/CABINET.md" | grep -qF "$N" || fail "newer kit not applied"
 "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -434,7 +437,7 @@ git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not 
 # A "global" newer kit run inside the workspace must defer to the pinned copy.
 out="$(cd "$W" && "$K2/bin/cabinet" status)"
 echo "$out" | grep -q "node_modules/@tarekraafat/cabinet: $(j -r '$.version' "$KIT/package.json")" || fail "global command did not defer to the pinned copy"
-"$K2/bin/cabinet" version | grep -q 0.1.1 || fail "outside a workspace the global command should run itself"
+"$K2/bin/cabinet" version | grep -qF "$N" || fail "outside a workspace the global command should run itself"
   return 0   # a last "check && fail" line must not end the run
 }
 
