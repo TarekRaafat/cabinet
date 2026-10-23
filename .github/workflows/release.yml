@@ -19,6 +19,8 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: The tools the tests use that the runner lacks (as in test/linux/Dockerfile)
+        run: sudo apt-get update -q && sudo apt-get install -y -q zsh
       - name: Use an npm that supports trusted publishing
         run: npm install -g npm@latest
       - name: The tag matches package.json

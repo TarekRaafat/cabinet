@@ -14,6 +14,7 @@ Fixes and release mechanics. Nothing to do by hand after `npx cabinet update`.
 ### Releases
 
 - Releases publish from GitHub with provenance: publishing a GitHub release runs `.github/workflows/release.yml`, which checks the tag against `package.json`, runs the tests and publishes to npm with `--provenance`, signing in as the package's trusted publisher, with no stored token. The README's release steps say so.
+- The release workflow installs zsh before the tests, as the Linux test image does: GitHub's runner has none, and the completion test needs it.
 
 ### Docs
 
