@@ -2074,6 +2074,20 @@ grep -qF "(NOTICE)" "$KIT/README.md" && grep -qF "(brand/LICENSE.md)" "$KIT/READ
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "changelog: after a release, the next version" ""
+s57() {
+# A released version is closed: once its tag exists, changes since it need an unreleased section above it.
+top="$(sed -n 's/^## \([0-9][0-9.]*\) - \(.*\)$/\1 \2/p' "$KIT/CHANGELOG.md" | head -1)"
+ver="${top%% *}"; when="${top#* }"
+[[ -n "$ver" ]] || fail "CHANGELOG.md has no version section"
+if [[ "$when" != Unreleased ]] && git -C "$KIT" rev-parse -q --verify "refs/tags/v$ver" >/dev/null 2>&1; then
+  since="$(git -C "$KIT" diff --name-only "v$ver" -- . 2>/dev/null | head -3 | tr '\n' ' ')"
+  [[ -z "$since" ]] || fail "changes since the released $ver ($since) need a ## <next version> - Unreleased section at the top of CHANGELOG.md"
+fi
+grep -q '^7\. \*\*Keeps the changelog by its releases' "$KIT/core/rules/builders.md" && grep -qF 'A released version (its section dated' "$KIT/AGENTS.md" || fail "the rule for changes after a release is missing from AGENTS.md or the builders' rules"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

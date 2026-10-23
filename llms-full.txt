@@ -2149,6 +2149,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ## 0.1.1 - Unreleased
 
 - `cabinet role add` and `role remove` commit their change in a workspace with its own git when the files they touch held no uncommitted edits of the owner's; otherwise they say to review and commit it, as `cabinet config` does (before, they said nothing and left it uncommitted).
+- After a release, changes go under the next version: the kit's `AGENTS.md` says a released version is closed and the first change after it opens the next one (patch, minor or major by what changed), and every workspace's builders follow the same rule (`.cabinet/rules/builders.md`), so the owner never tracks it. The tests fail when the kit has changes since a released version that no unreleased section covers.
 
 ## 0.1.0 - 23 Oct 2026
 
@@ -2284,7 +2285,7 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 6. **Docs match the code.** A change to a command, option, file, message or behavior updates `docs/` (and `README.md` when it is user-facing) in the same change, then `npm run docs` rebuilds `llms-full.txt`. `npm test` fails when a command, option, script, doctor message or check ID is missing from the docs, a link or heading anchor is broken, or `llms-full.txt` is stale.
 7. **One command table, one set of conventions.** Every `cabinet` command and option is a row in `commands_table` in `bin/cabinet`; help, `--help`, `help --json` and tab completion are made from it. A new command or option follows "Command conventions" below, starts in the table, then gets its parser and dispatcher line; the tests fail when they disagree or a convention is broken.
 8. **Stable IDs for machines.** Each doctor check has an ID (`ok <id> "message"`), and each `cabinet next` step has one. A new check gets a new ID, listed in `docs/troubleshooting.md`; an ID or a JSON field is never renamed or removed without a changelog entry that says so.
-9. **Every change has a test** in `test/smoke.sh`, and an entry in `CHANGELOG.md` under the next version.
+9. **Every change has a test** in `test/smoke.sh`, and an entry in `CHANGELOG.md` under the next version. A released version (its section dated, its tag pushed, the package published) is closed: the first change after it opens `## X.Y.Z - Unreleased` at the top, a patch for fixes, a minor version for new features or commands, a major one for a breaking change, and every later change joins it. The owner never has to track this; the owner only asks for another version when there is a reason.
 10. **Writing.** ASCII punctuation only (no em or en dashes, no curly quotes). Dates people read as `18 Oct 2026`; machine formats stay ISO. No personal or project names, local paths, or comparisons with other products. Name third-party tools only as facts (which tools have guardrails).
 11. **Never push, merge, publish or release.** Only the maintainer does. Commit finished, tested work locally, with no AI or tool attribution lines.
 
