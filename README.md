@@ -201,10 +201,9 @@ cabinet status        # this workspace's version, and any kit file edited here
 cabinet outdated      # is a newer version published?
 npm update            # take a newer version
 cabinet update        # apply it: replace kit files, rebuild roles, print the changelog since your version
-git diff              # review, then commit
 ```
 
-An update never overwrites a kit file you edited in the workspace: it stops and names it. Without a global install, use `npx cabinet` in place of `cabinet`.
+An update never overwrites a kit file you edited in the workspace: it stops and names it. In a workspace with its own git it commits itself (`cabinet: update to <version>`); when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run. Without a global install, use `npx cabinet` in place of `cabinet`.
 
 ## Remove Cabinet
 

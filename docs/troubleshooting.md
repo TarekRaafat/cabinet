@@ -167,7 +167,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 ## Other commands
 
 - **`cabinet: not inside a cabinet workspace, or a project with cabinet/ in it`:** a workspace command (`doctor`, `bootstrap`, `brief`, ...) ran outside any workspace. `cd` into the workspace or its project, or start one with `cabinet new` or `cabinet init`.
-- **`cabinet: unknown command '<...>'`:** exit 2, with the list of commands.
+- **`cabinet: unknown command '<...>'`:** exit 2. A mistyped command gets one short answer: `Did you mean: cabinet <...>` when a command is near, then `Every command: cabinet help`. An unknown verb after a noun (`cabinet role <...>`) shows that noun's commands, and `cabinet help <...>` adds `(see: cabinet help)`.
 - **`Not safe to delete: <...>`:** from `cabinet remove`, when the workspace has uncommitted changes or commits on no remote. Commit and push (or copy) that work first; `--force` deletes it anyway.
 - **`--fix asks before each step: run it in a terminal, or add --yes`:** `cabinet doctor --fix` had no terminal to ask in.
 - **`cabinet: the slug '<...>' is already used by the workspace at <...>`:** choose another with `--slug`. When it says that workspace no longer exists, it lists the steps to free the slug.

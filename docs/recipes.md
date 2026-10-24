@@ -168,10 +168,9 @@ One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has 
 cabinet outdated      # is a newer version published?
 npm update            # take it
 cabinet update        # apply it, and read the changelog since your version
-git diff              # review, then commit
 ```
 
-An update never overwrites a kit file you edited: it stops and names it.
+An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
 
 ## Use Cabinet from a script or an agent
 

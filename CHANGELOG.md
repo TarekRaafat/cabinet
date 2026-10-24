@@ -31,6 +31,7 @@ Fixes and docs. Nothing to do by hand after `npx cabinet update`.
 - The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.
 - The README says Cabinet is built and maintained with Cabinet.
 - The kit's `AGENTS.md` says several sessions may work in the repo at once, and how each commits only its own changes, leaving the rest as they are (rule 12).
+- The README and the recipes no longer end the update steps with `git diff` to review and commit: `cabinet update` commits itself, and prints the commit to run only when it cannot. The commands page says it ends with "Nothing changed" when the workspace was already on that version, and troubleshooting says an unknown command gets one short answer with the closest command, not the list of commands.
 
 ## 0.1.1 - 23 Oct 2026
 
