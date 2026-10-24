@@ -1378,7 +1378,8 @@ JOB
     rn="${row%%$'\t'*}"
     grep -qF "| \`$rn\` |" "$ws/AGENTS.md" || node "$LIBJS" before "$ws/AGENTS.md" '/^\| workspace \(this folder\)/' "| \`$rn\` | TBD | TBD |"
   done
-  [[ "$roles" != "$o_roles" ]] && "$ws/bin/role.sh" build
+  # ORG.md's heading names the project, so a rename rebuilds the roles too.
+  [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] && "$ws/bin/role.sh" build
 
   # Schedules, a new slug and new repos take effect through bootstrap.
   local needs=0 boot=0
@@ -1409,7 +1410,7 @@ JOB
   [[ "$name" != "$o_name" || "$slug" != "$o_slug" || "$roles" != "$o_roles" ]] && wrote+=(OPERATIONS.md)
   ((wpkg)) && wrote+=(package.json)
   wrote+=(${wjobs[@]+"${wjobs[@]}"})
-  [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
+  [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md ORG.md)
   [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
   ((${#newrows[@]})) && wrote+=(repos.tsv)
   # The roles are built by a role change, and by bootstrap when it ran.

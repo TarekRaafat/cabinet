@@ -614,9 +614,10 @@ out="$(cd "$MC" && "$F" config --yes --budget 30 2>&1)" && [[ -f "$MC/jobs/pipel
 # package.json goes in only when this run wrote it: a rename writes only the workspace's own.
 sedi 's/"private": true/"private": false/' "$MC/package.json"; git -C "$MC" commit -qm "a project's package.json" -- package.json
 mid package.json --name "Mid Other"
-# A rename commits the titles in HANDOFFS.md, README.md and specs/ROADMAP.md too, and leaves nothing behind.
+# A rename commits the titles in HANDOFFS.md, README.md and specs/ROADMAP.md too, rebuilds ORG.md's heading, and leaves nothing behind.
 out="$(cd "$MC" && "$F" config --yes --name "Mid Renamed" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: project name" || fail "config --name did not commit: $out"
-for f in HANDOFFS.md README.md specs/ROADMAP.md; do git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "a rename did not commit $f"; done
+grep -qx '# Team: Mid Renamed' "$MC/ORG.md" || fail "a rename did not rebuild ORG.md: $(head -1 "$MC/ORG.md")"
+for f in HANDOFFS.md README.md specs/ROADMAP.md ORG.md; do git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "a rename did not commit $f"; done
 [[ -z "$(git -C "$MC" status --porcelain)" ]] || fail "a rename left changes uncommitted: $(git -C "$MC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
