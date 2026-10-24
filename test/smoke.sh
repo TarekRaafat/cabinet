@@ -619,6 +619,9 @@ out="$(cd "$MC" && "$F" config --yes --name "Mid Renamed" 2>&1)" && echo "$out" 
 grep -qx '# Team: Mid Renamed' "$MC/ORG.md" || fail "a rename did not rebuild ORG.md: $(head -1 "$MC/ORG.md")"
 for f in HANDOFFS.md README.md specs/ROADMAP.md ORG.md; do git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "a rename did not commit $f"; done
 [[ -z "$(git -C "$MC" status --porcelain)" ]] || fail "a rename left changes uncommitted: $(git -C "$MC" status --porcelain)"
+# A role note committed without a build: a rename rebuilds agents/ and .claude/agents/ as well, and commits them.
+printf 'A note for qa.\n' > "$MC/roles/qa.md"; git -C "$MC" add roles/qa.md && git -C "$MC" commit -qm "a qa note, not built" -- roles/qa.md
+out="$(cd "$MC" && "$F" config --yes --name "Mid Noted" 2>&1)" && grep -qx 'A note for qa.' "$MC/agents/qa.md" && [[ -z "$(git -C "$MC" status --porcelain)" ]] || fail "a rename left the rebuilt roles uncommitted: $out $(git -C "$MC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1

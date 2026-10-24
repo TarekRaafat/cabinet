@@ -1410,11 +1410,11 @@ JOB
   [[ "$name" != "$o_name" || "$slug" != "$o_slug" || "$roles" != "$o_roles" ]] && wrote+=(OPERATIONS.md)
   ((wpkg)) && wrote+=(package.json)
   wrote+=(${wjobs[@]+"${wjobs[@]}"})
-  [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md ORG.md)
+  [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
   [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
   ((${#newrows[@]})) && wrote+=(repos.tsv)
-  # The roles are built by a role change, and by bootstrap when it ran.
-  [[ "$roles" != "$o_roles" ]] || ((boot)) && wrote+=(ORG.md agents .claude/agents)
+  # The roles are built by a role change or a rename (ORG.md's heading), and by bootstrap when it ran.
+  [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] || ((boot)) && wrote+=(ORG.md agents .claude/agents)
   if ((cfg_clean)); then
     while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- "${wrote[@]}" 2>/dev/null | cut -c4-)
   fi
