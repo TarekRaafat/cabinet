@@ -2067,6 +2067,15 @@ L sub-all "$CW/HANDOFFS.md" "/(### $s:(?:(?!\n### )[\s\S])*?\n)(- Depends on:)/"
 [[ "$(cj "$s" '$.areas')" == '["billing"]' ]] || fail "areas from a spec, before any commit: $(cj "$s" '$')"
 sed -i.bak 's/^areas: \[billing\]/areas: [billing, nope]/; s/^status: draft/status: ready/' "$CW/specs/pay.md" && rm "$CW/specs/pay.md.bak"
 "$CW/bin/spec.sh" check specs/pay.md | grep -q 'areas names nope, which is no critical area in AGENTS.md' || fail "spec check: an unknown area"
+# An area whose name has spaces stays whole: in the spec check and in what the entry needs.
+L before "$CW/AGENTS.md" '/^\| pricing \|/' '| card data | `api/cards/` | security | a card number masked | none |'
+printf -- '---\nfeature: cards\nstatus: ready\nrepos: [api]\nareas: [billing, Card Data]\n---\n\n# Cards\n' > "$CW/specs/cards.md"
+printf -- '---\nfeature: half\nstatus: ready\nrepos: [api]\nareas: [card]\n---\n\n# Half\n' > "$CW/specs/half.md"; git -C "$CW" add -A && git -C "$CW" commit -qm "cards"
+out="$("$CW/bin/spec.sh" check specs/cards.md)" || true; ! echo "$out" | grep -q 'areas names' || fail "spec check: an area with spaces: $out"
+"$CW/bin/spec.sh" check specs/half.md | grep -q 'areas names card, which is no critical area in AGENTS.md' || fail "spec check: one word of an area with spaces"
+k="$("$CW/bin/handoff.sh" add --from chief-of-staff --to qa --changed x --needed y "Cards")"; k="${k%% *}"
+L sub-all "$CW/HANDOFFS.md" "/(### $k:(?:(?!\n### )[\s\S])*?\n)(- Depends on:)/" $'$1- Spec: specs/cards.md\n$2'
+[[ "$(cj "$k" '[$.areas, $.needs]')" == '[["billing","card data"],["qa","security","finance"]]' ]] || fail "areas with spaces from a spec: $(cj "$k" '[$.areas, $.needs]')"
 # Only a command in tools/ runs, never through a shell.
 git -C "$CW" checkout -q -- HANDOFFS.md specs 2>/dev/null || true
 L sub "$CW/AGENTS.md" -- '/`tools\/check-billing.sh --fast`/' '`sh -c "touch pwned"`'

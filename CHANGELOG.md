@@ -12,6 +12,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `cabinet next` no longer asks to fill the TBDs of a finished `AGENTS.md`: it counted the template's own instructions, which quote `TBD` as code ("write `none` in place of `TBD`"). Only a TBD left to fill counts.
 - `cabinet help` shows each group of commands once, with all its commands under it; "Daily" and "Team" appeared twice.
 - A mistyped command gets a short answer instead of the whole help: `cabinet: unknown command 'docter'`, `Did you mean: cabinet doctor` when one is near, and `Every command: cabinet help`. It still exits 2.
+- A critical area whose name has spaces (`| setup and untrusted values | ...` in `AGENTS.md`) can now be named in a spec's `areas`. `cabinet spec check` split the names into words and refused it as no critical area, and `cabinet handoff list` and the brief did the same with the spec's list, so work routed from that spec missed the area's reviewers. Area names are kept whole, split only on the commas of `areas: [...]`; one-word names work as before.
 
 ### Releases
 

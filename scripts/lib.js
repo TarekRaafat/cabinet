@@ -311,7 +311,7 @@ function specTools(ws) {
     if (left.length) p.push(left.length + " decision(s) not answered");
     const rs = repos(fm);
     if (!rs.length) p.push("no repos or areas named");
-    const known = new Set(words(env("AREAS")));
+    const known = new Set(env("AREAS").split("\n").map((s) => s.trim()).filter(Boolean));  // one name per line: a name can have spaces
     for (const a of (list(fm.areas || "[]") || []).map((x) => x.toLowerCase())) {
       if (!known.has(a)) p.push("areas names " + a + ", which is no critical area in AGENTS.md");
     }

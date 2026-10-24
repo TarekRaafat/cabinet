@@ -57,7 +57,7 @@ local out='[]' n o ui=""
 if has "$(team_roles)" design-lead; then
   for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
 fi
-((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1 | tr '\n' ' ')" spec_py check "${files[@]}")"
+((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1)" spec_py check "${files[@]}")"
 if ((json)); then json '$' <<<"$out"
 else
   json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out"

@@ -293,8 +293,11 @@ readiness() {
     done
     for n in "$WS"/specs/*.md; do
       [[ -f "$n" ]] || continue
-      a="$(awk '/^---$/ { f++; next } f == 1 && /^areas:/ { sub(/^areas: *\[?/, ""); sub(/\].*$/, ""); sub(/ *#.*$/, ""); print; exit }' "$n" | tr ',' ' ')"
-      for c in $a; do sareas+="specs/${n##*/}"$'\t'"$(lc "$c")"$'\n'; done
+      # One area per comma, kept whole: a name can have spaces.
+      while IFS= read -r c; do sareas+="specs/${n##*/}"$'\t'"$c"$'\n'; done < <(awk '/^---$/ { f++; next } f == 1 && /^areas:/ {
+          sub(/^areas: *\[?/, ""); sub(/\].*$/, ""); sub(/ *#.*$/, ""); k = split($0, x, ",")
+          for (i = 1; i <= k; i++) { gsub(/^[ \t]+|[ \t]+$/, "", x[i]); if (x[i] != "") print tolower(x[i]) }
+          exit }' "$n")
     done
   fi
   WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
