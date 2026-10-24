@@ -2250,7 +2250,7 @@ sed 's/@[0-9a-f]\{40\}.*/@v4/' "$w" > "$T/wf/tag/release.yaml"; sed 's/npm@[0-9.
 printf '      - run: npm install -g npm\n      - run: npm i -g npm\n      - run: npm install -g npm@12.2.1\n' > "$T/wf/bare/npm.yml"
 [[ -n "$(unpinned "$T/wf/tag")" && -n "$(unpinned "$T/wf/latest")" ]] || fail "the pin check passes an action by tag (in a .yaml workflow) or npm@latest"
 [[ "$(unpinned "$T/wf/bare" | wc -l | tr -d ' ')" == 2 ]] || fail "the pin check passes npm installed with no version: $(unpinned "$T/wf/bare")"
-[[ -z "$(unpinned "$T/wf/none")" ]] || fail "the pin check found something in a folder with no workflows"
+[[ -z "$(unpinned "$T/wf/none" 2>&1)" ]] || fail "the pin check found something, or failed, in a folder with no workflows: $(unpinned "$T/wf/none" 2>&1)"
 rm -rf "$T/wf"
 grep -q '^          persist-credentials: false' "$w" || fail "the release workflow's checkout leaves its token on disk (persist-credentials: false)"
   return 0   # a last "check && fail" line must not end the run

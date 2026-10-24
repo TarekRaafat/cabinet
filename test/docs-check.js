@@ -124,8 +124,8 @@ for (const [, , cid, msg] of all(/\b(bad|note) ([a-z.-]+) "((?:[^"\\]|\\.)*)"/g,
 const llms = read("llms.txt");
 const docs = ls("docs").filter((f) => f.endsWith(".md"));
 for (const f of docs) if (!llms.includes(`docs/${f}`)) fail(`llms.txt does not list docs/${f}`);
-// Its line for the commands page names every command and noun.
-const llmsCmds = (llms.split("\n").find((l) => l.includes("(docs/commands.md)")) || "").replace(/^[^)]*\)/, "");
+// Its line for the commands page names every command and noun, in its list of commands.
+const llmsCmds = ((llms.split("\n").find((l) => l.includes("(docs/commands.md)")) || "").match(/every `cabinet` command \(([^)]*)\)/) || ["", ""])[1];
 for (const c of known) if (!new RegExp(`\\b${c}\\b`).test(llmsCmds)) fail(`llms.txt: the line for docs/commands.md does not name the command ${c}`);
 const pages = ["README.md", "llms.txt", "AGENTS.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "core/CABINET.md", ...docs.map((f) => "docs/" + f)];
 // GitHub's heading anchors: lowercase, punctuation dropped, spaces to dashes.

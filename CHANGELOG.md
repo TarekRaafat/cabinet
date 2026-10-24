@@ -13,11 +13,12 @@ Each version says what changed and anything a workspace must do by hand after `n
 ### Releases
 
 - The release workflow runs only code pinned to an exact version: `actions/checkout` and `actions/setup-node` by full commit hash (v4.4.0 of each, named in a comment) instead of the `v4` tag, and npm 12.2.1 instead of `npm@latest`. Its checkout no longer leaves a token on disk while the tests run (`persist-credentials: false`). The trigger, permissions, steps and tests are unchanged. The tests fail when a workflow uses an action not pinned to a full commit hash, or installs npm at anything but an exact version.
-- The pin check also fails on npm installed with no version at all (`npm install -g npm`, `npm i -g npm`), and reads workflows named `*.yaml` as well as `*.yml`; a folder with no workflows passes.
+- The pin check also fails on npm installed with no version at all (`npm install -g npm`, `npm i -g npm`), and reads workflows named `*.yaml` as well as `*.yml`; a folder with no workflows passes, and its test fails when the check prints an error there.
 
 ### Docs
 
 - The commands page says `cabinet version` shows the tagline beside the mark, and that `cabinet update` ends with "Nothing changed" whenever the workspace was already on that version, with git or without. The recipes say `config`, `role add`, `role remove` and `update` commit their own change, so committing after each change is for edits by hand. `llms.txt` names every command and every noun. The tests check each of these.
+- The docs check looks for each command and noun only in the list of commands on the `llms.txt` line for the commands page, so one missing from the list is caught even when the same word appears later on that line.
 
 ## 0.1.2 - 24 Oct 2026
 
