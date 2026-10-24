@@ -1286,7 +1286,9 @@ cmd_config() {
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
-  [[ -f "$ws/jobs/brief.job" && "$brief" != "$o_brief" ]] && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
+  # The files under jobs/ and package.json this run writes, so only those are committed.
+  local wjobs=() wpkg=0
+  if [[ -f "$ws/jobs/brief.job" && "$brief" != "$o_brief" ]]; then W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'; wjobs+=(jobs/brief.job); fi
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
   # An AGENTS.md from before the setting gets its line after the week start.
   if [[ "$writing" != "${o_writing:-standard}" ]]; then
@@ -1307,8 +1309,11 @@ MINUTES="many"
 RESULT="PIPELINE.md"
 TIMEOUT="0"
 JOB
+    wjobs+=(jobs/pipeline.job)
   fi
-  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" || "$ptime" == "${o_ptime:-}" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" node "$LIBJS" sub "$ws/jobs/pipeline.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
+  if [[ "$pipe" != off && -f "$ws/jobs/pipeline.job" && "$ptime" != "${o_ptime:-}" ]]; then
+    W="$([[ "$ptime" == off ]] || printf %s "$ptime")" node "$LIBJS" sub "$ws/jobs/pipeline.job" -- '/^WHEN=.*/' 'WHEN="${W}"'; wjobs+=(jobs/pipeline.job)
+  fi
   if [[ -n "$hard" && "$hard" != "$o_hard" ]]; then hard_write "$ws" "$hard" || die "AGENTS.md: could not write the Hard to undo section"; fi
   [[ "$week" == "$o_week" && "$owner" == "$o_owner" && "$email" == "$o_email" ]] || D="$Week" O="$owner" E="$email" node "$LIBJS" sub "$ws/AGENTS.md" -- \
     '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' \
@@ -1318,7 +1323,7 @@ JOB
   # The workspace's own package.json names the workspace (not a project's, which is never touched).
   if [[ "$name" != "$o_name" || "$slug" != "$o_slug" ]] && [[ -f "$ws/package.json" ]] && json -e '$.private === true && String($.name).endsWith("-workspace")' "$ws/package.json" >/dev/null 2>&1; then
     local pj2; pj2="$(json --arg n "$slug-workspace" --arg d "$name workspace, run with the cabinet kit." '({...$, name: $n, description: $d})' "$ws/package.json")" \
-      && [[ -n "$pj2" ]] && printf '%s\n' "$pj2" > "$ws/package.json"
+      && [[ -n "$pj2" ]] && printf '%s\n' "$pj2" > "$ws/package.json" && wpkg=1
   fi
   if [[ "$name" != "$o_name" ]]; then
     # The titles setup wrote; other mentions are the project's own text.
@@ -1342,6 +1347,7 @@ JOB
     [[ -f "$oc" && "$(abspath "$(cat "$oc")")" == "$ws" ]] && rm -f "$oc"
     local sfiles=()
     for f in "$ws/OPERATIONS.md" "$ws/README.md" "$ws"/jobs/*.job; do [[ -f "$f" ]] && sfiles+=("$f"); done
+    for f in "$ws"/jobs/*.job; do [[ -f "$f" ]] && wjobs+=("jobs/${f##*/}"); done
     ((${#sfiles[@]})) && O="$o_slug" N="$slug" node "$LIBJS" sub "${sfiles[@]}" -- \
       '/ai\.cabinet\.${O}\b/g' 'ai.cabinet.${N}' '/(Logs|state)\/cabinet\/${O}\//g' '$1/cabinet/${N}/' \
       '/cabinet\.${O}\.backup/g' 'cabinet.${N}.backup' '/^(git clone <this repo> )${O}( && cd )${O}$/' '$1${N}$2${N}'
@@ -1401,8 +1407,8 @@ JOB
     wrote+=(AGENTS.md)
   fi
   [[ "$name" != "$o_name" || "$slug" != "$o_slug" || "$roles" != "$o_roles" ]] && wrote+=(OPERATIONS.md)
-  [[ "$name" != "$o_name" || "$slug" != "$o_slug" ]] && wrote+=(package.json)
-  [[ "$brief" != "$o_brief" || "$slug" != "$o_slug" || "$pipe" != "$o_pipe" || ( "$pipe" != off && "$ptime" != "${o_ptime:-}" ) ]] && wrote+=(jobs)
+  ((wpkg)) && wrote+=(package.json)
+  wrote+=(${wjobs[@]+"${wjobs[@]}"})
   [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
   [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
   ((${#newrows[@]})) && wrote+=(repos.tsv)

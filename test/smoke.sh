@@ -604,6 +604,16 @@ mid() {  # mid <file another session edits> <config options>
 }
 mid AGENTS.md --brief-time "8:15 AM"; mid AGENTS.md --budget 20
 mid ORG.md --brief-time "9:15 AM"   # schedules change, but bootstrap does not run, so the roles are not rebuilt
+# jobs/ goes in only for the job files that run wrote: the first turn-on commits pipeline.job, a mode change alone writes none.
+mid jobs/brief.job --pipeline small --pipeline-limit 5
+git -C "$MC" show --name-only --format= HEAD | grep -qxF jobs/pipeline.job || fail "turning the runner on did not commit jobs/pipeline.job"
+mid jobs/brief.job --pipeline all; mid jobs/brief.job --pipeline off; mid jobs/brief.job --pipeline small
+# A pipeline.job deleted by hand is made again by the next run, and committed.
+git -C "$MC" rm -q jobs/pipeline.job && git -C "$MC" commit -qm "pipeline.job deleted by hand"
+out="$(cd "$MC" && "$F" config --yes --budget 30 2>&1)" && [[ -f "$MC/jobs/pipeline.job" && -z "$(git -C "$MC" status --porcelain)" ]] || fail "a recreated pipeline.job was left uncommitted: $out $(git -C "$MC" status --porcelain)"
+# package.json goes in only when this run wrote it: a rename writes only the workspace's own.
+sedi 's/"private": true/"private": false/' "$MC/package.json"; git -C "$MC" commit -qm "a project's package.json" -- package.json
+mid package.json --name "Mid Other"
 # A rename commits the titles in HANDOFFS.md, README.md and specs/ROADMAP.md too, and leaves nothing behind.
 out="$(cd "$MC" && "$F" config --yes --name "Mid Renamed" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: project name" || fail "config --name did not commit: $out"
 for f in HANDOFFS.md README.md specs/ROADMAP.md; do git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "a rename did not commit $f"; done
