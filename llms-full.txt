@@ -428,7 +428,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.1.1).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.1.2).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -504,7 +504,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.1.1
+  ok    cabinet 0.1.2
 ...
 ```
 
@@ -2151,7 +2151,9 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.1.2 - Unreleased
+## 0.1.2 - 24 Oct 2026
+
+Fixes and docs. Nothing to do by hand after `npx cabinet update`.
 
 ### Commands
 
