@@ -1255,7 +1255,7 @@ cmd_config() {
   [[ "$pipe" != "$o_pipe" ]] && changes+=("scheduled runner: $o_pipe -> $pipe")
   [[ "$plimit" != "$o_plimit" ]] && changes+=("its cost limit per run: $( [[ -n "$o_plimit" ]] && echo "\$$o_plimit" || echo none) -> $( [[ -n "$plimit" ]] && echo "\$$plimit" || echo none)")
   [[ "$pipe" != off && "$ptime" != "${o_ptime:-}" ]] && changes+=("it runs: ${o_ptime:-not scheduled} -> $ptime")
-  [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(lhas CABINET_BACKUP_DIR && echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)")")
+  [[ "$backup" != "$o_backup" ]] && changes+=("backups: ${o_backup:-off} -> ${backup:-off}$(if lhas CABINET_BACKUP_DIR; then echo " (this machine keeps its own folder from cabinet.local.env; cabinet config --this-machine --clear follows this one)"; fi)")
   [[ -n "$backup" && "$backup_time" != "$o_btime" ]] && changes+=("backup time: $o_btime -> $backup_time")
   [[ "$price" != "$o_price" ]] && changes+=("price per million tokens (input, output, cached input): ${o_price:-off} -> ${price:-off}")
   [[ "$budget" != "$o_budget" ]] && changes+=("budget: $( [[ -n "$o_budget" ]] && echo "\$$o_budget a week" || echo off) -> $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off)")

@@ -574,6 +574,11 @@ s17() {
 # config commits its own change in a clean workspace, and leaves the owner's uncommitted changes alone.
 CC="$T/cfgcommit"; "$F" new "$CC" --yes --backup-dir off >/dev/null || fail "new for config commits"
 out="$(cd "$CC" && "$F" config --yes --writing short 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: writing to the owner" && [[ -z "$(git -C "$CC" status --porcelain)" ]] || fail "config left its change uncommitted: $out"
+# Backups turned on in a workspace with no cabinet.local.env line for them (any new one) are written and committed.
+BC="$T/cfgbackup"; "$F" new "$BC" --yes --backup-dir off >/dev/null || fail "new for config backups"
+bk="$(cd "$T" && pwd -P)/bk-out"; st=0; out="$(cd "$BC" && "$F" config --yes --backup-dir "$bk" 2>&1)" || st=$?
+((st == 0)) && echo "$out" | grep -qxF "  - backups: off -> $bk" && grep -qxF "CABINET_BACKUP_DIR=\"$bk\"" "$BC/cabinet.env" \
+  && echo "$out" | grep -qF "Committed in the workspace: cabinet config: backups" && [[ -z "$(git -C "$BC" status --porcelain)" ]] || fail "config --backup-dir in a new workspace (exit $st): $out"
 echo "owner note" >> "$CC/README.md"; before="$(git -C "$CC" rev-parse HEAD)"
 out="$(cd "$CC" && "$F" config --yes --writing standard 2>&1)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$CC" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$CC/README.md" || fail "config committed over the owner's own change: $out"
 # It commits only the files it writes: a file someone else writes while it runs stays theirs.
