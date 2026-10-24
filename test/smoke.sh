@@ -858,6 +858,11 @@ out="$(cd "$T/nowhere" && "$F" doctor 2>&1)" && fail "doctor outside any workspa
 echo "$out" | grep -q 'not inside a cabinet workspace' || fail "unclear error outside a workspace: $out"
 "$F" help | grep -q '^  next ' || fail "help"
 rc=0; "$F" bogus >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "an unknown command exits $rc, not 2"
+# An unknown command gets a short answer, never the whole help: the closest command when one is near.
+out="$("$F" docter 2>&1 || true)"
+[[ "$(wc -l <<<"$out" | tr -d ' ')" -le 3 ]] && grep -qx "Did you mean: cabinet doctor" <<<"$out" && grep -qx "Every command: cabinet help" <<<"$out" || fail "a mistyped command: $out"
+out="$("$F" 'handoff list' 2>&1 || true)"; grep -qx "Did you mean: cabinet handoff list" <<<"$out" || fail "two words typed as one: $out"
+out="$("$F" zzzzzz 2>&1 || true)"; ! grep -q 'Did you mean' <<<"$out" && [[ "$(wc -l <<<"$out" | tr -d ' ')" -le 2 ]] || fail "a word near no command: $out"
   return 0   # a last "check && fail" line must not end the run
 }
 

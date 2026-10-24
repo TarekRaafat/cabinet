@@ -2080,5 +2080,13 @@ case "${1:-}" in
   version|--version|-v) shift; cmd_version "$@" ;;
   help) shift; cmd_help "$@" ;;
   --help|-h|"") cmd_help ;;
-  *) echo "cabinet: unknown command '$1'" >&2; cmd_help >&2; exit 2 ;;
+  *)
+    # A short answer, not the whole help: the closest command when one is near (two words typed as one
+    # included), and where the full list is.
+    if [[ "$1" == *" "* ]] && is_cmd "$1"; then guess="$1"
+    else guess="$(node "$LIBJS" closest "$1" $(commands_table | awk -F'\t' '$1 == "C" { split($3, w, " "); if (!(w[1] in s)) { s[w[1]] = 1; print w[1] } }'))"; fi
+    echo "cabinet: unknown command '$1'" >&2
+    [[ -z "$guess" ]] || echo "Did you mean: cabinet $guess" >&2
+    echo "Every command: cabinet help" >&2
+    exit 2 ;;
 esac

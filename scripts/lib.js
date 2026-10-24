@@ -796,11 +796,33 @@ function json(...argv) {
   if (o.e && (last === undefined || last === null || last === false)) process.exit(1);
 }
 
+// closest <word> <candidate>...: the candidate nearest the word, printed: within two edits (a typo), or
+// else one the word begins or that begins with the word. Nothing when none is near.
+function closest(word, ...cands) {
+  const dist = (a, b) => {
+    const row = Array.from({length: b.length + 1}, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      let prev = row[0]; row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const t = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = t;
+      }
+    }
+    return row[b.length];
+  };
+  let best = "", bestd = 3;
+  if (word.length >= 2) for (const c of cands) { const d = dist(word, c); if (d < bestd) { bestd = d; best = c; } }
+  if (!best && word.length >= 2) best = cands.find((c) => c.startsWith(word) || word.startsWith(c)) || "";
+  if (best) process.stdout.write(best + "\n");
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
+  closest,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

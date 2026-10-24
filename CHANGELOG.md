@@ -11,6 +11,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `cabinet version`, in a terminal, shows the approved tagline beside the mark ("One person, a whole team. Build anything with AI agents, and stay in charge."), as does the brand guide's sample of it; it showed an older one.
 - `cabinet next` no longer asks to fill the TBDs of a finished `AGENTS.md`: it counted the template's own instructions, which quote `TBD` as code ("write `none` in place of `TBD`"). Only a TBD left to fill counts.
 - `cabinet help` shows each group of commands once, with all its commands under it; "Daily" and "Team" appeared twice.
+- A mistyped command gets a short answer instead of the whole help: `cabinet: unknown command 'docter'`, `Did you mean: cabinet doctor` when one is near, and `Every command: cabinet help`. It still exits 2.
 
 ### Releases
 
