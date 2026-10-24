@@ -257,7 +257,7 @@ cabinet repo list [--json]
 cabinet repo snapshot
 ```
 
-**`add`** adds a product repo: a row in `repos.tsv` and in the team table of `AGENTS.md`, through `cabinet config --repo`, with the same checks as setup. `cabinet bootstrap` then clones it and gives it a builder; `--apply` runs bootstrap right away.
+**`add`** adds a product repo: a row in `repos.tsv` and in the team table of `AGENTS.md`, through `cabinet config --repo`, with the same checks as setup. Like `config`, it commits the change (`cabinet config: add repo`) in a workspace with its own git that had no uncommitted changes. `cabinet bootstrap` then clones it and gives it a builder; `--apply` runs bootstrap right away.
 
 **`remove`** takes a repo out of the workspace: its row in `repos.tsv` and in the team table. Its folder, its history and `local/<name>/` are left as they are. `bin/doctor.sh` then notes any open handoff still addressed to it.
 

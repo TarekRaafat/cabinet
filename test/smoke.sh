@@ -1396,7 +1396,9 @@ cp "$CW/cabinet.env" "$T/conv.env"
 # repo add, list and remove.
 mkrepo "$T/conv-api"
 (cd "$CW" && "$F" repo add "$T/conv-api" --dry-run) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" || fail "repo add --dry-run wrote"
+git -C "$CW" add -A && { git -C "$CW" diff --cached --quiet || git -C "$CW" commit -qm "before repo add"; }
 (cd "$CW" && "$F" repo add "$T/conv-api") >/dev/null && grep -q $'^conv-api\t' "$CW/repos.tsv" && grep -q '| `conv-api` |' "$CW/AGENTS.md" || fail "repo add"
+[[ -z "$(git -C "$CW" status --porcelain)" ]] && git -C "$CW" log -1 --format=%s | grep -qxF "cabinet config: add repo" || fail "repo add did not commit its change in a clean workspace"
 (cd "$CW" && "$F" repo list --json) | j -e '((r) => r.present === false && r.owner == null)($.findLast((r) => r.name == "conv-api"))' >/dev/null || fail "repo list --json"
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" "$CW/AGENTS.md" || fail "repo remove"
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null 2>&1 && fail "removing a repo that is not there succeeded"
