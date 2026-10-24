@@ -588,6 +588,22 @@ git -C "$CC" add -A && git -C "$CC" commit -qm "role.sh that writes meanwhile"
 out="$(cd "$CC" && "$F" config --yes --roles "qa security" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: roles" || fail "config with a role change did not commit: $out"
 git -C "$CC" status --porcelain | grep -qxF "?? notes/meanwhile.md" && ! git -C "$CC" show --stat HEAD | grep -q meanwhile || fail "config committed a file it did not write: $(git -C "$CC" status --porcelain)"
 git -C "$CC" status --porcelain | grep -qxF " M HANDOFFS.md" && ! git -C "$CC" show --name-only --format= HEAD | grep -qxF HANDOFFS.md || fail "config committed a handoff another session wrote while it ran: $(git -C "$CC" status --porcelain)"
+# Each file goes in only for the settings that change it: a git that edits a file just before config
+# lists what to commit stands in for another session editing it while config runs.
+MC="$T/cfgmid"; "$F" new "$MC" --yes --backup-dir off >/dev/null || fail "new for config mid-run edits"
+mkdir -p "$T/gitmid"; printf '#!/bin/bash\ncase " $* " in *" --porcelain -uall "*) [[ -z "${MID_EDIT:-}" ]] || echo "edit by another session" >> "$MID_EDIT" ;; esac\nexec %q "$@"\n' "$(command -v git)" > "$T/gitmid/git"; chmod +x "$T/gitmid/git"
+mid() {  # mid <file another session edits> <config options>
+  local f="$1"; shift
+  out="$(cd "$MC" && MID_EDIT="$MC/$f" PATH="$T/gitmid:$PATH" "$F" config --yes "$@" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config:" || fail "config $1 did not commit: $out"
+  git -C "$MC" status --porcelain | grep -qxF " M $f" && ! git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "config $1 committed an edit another session made to $f: $(git -C "$MC" show --name-only --format= HEAD)"
+  git -C "$MC" checkout -q -- "$f"
+}
+mid AGENTS.md --brief-time "8:15 AM"; mid AGENTS.md --budget 20
+mid ORG.md --brief-time "9:15 AM"   # schedules change, but bootstrap does not run, so the roles are not rebuilt
+# A rename commits the titles in HANDOFFS.md, README.md and specs/ROADMAP.md too, and leaves nothing behind.
+out="$(cd "$MC" && "$F" config --yes --name "Mid Renamed" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: project name" || fail "config --name did not commit: $out"
+for f in HANDOFFS.md README.md specs/ROADMAP.md; do git -C "$MC" show --name-only --format= HEAD | grep -qxF "$f" || fail "a rename did not commit $f"; done
+[[ -z "$(git -C "$MC" status --porcelain)" ]] || fail "a rename left changes uncommitted: $(git -C "$MC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1

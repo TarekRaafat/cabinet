@@ -1286,7 +1286,7 @@ cmd_config() {
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
-  [[ -f "$ws/jobs/brief.job" ]] && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
+  [[ -f "$ws/jobs/brief.job" && "$brief" != "$o_brief" ]] && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   local Week; Week="$(printf %s "${week:0:1}" | tr '[:lower:]' '[:upper:]')${week:1}"
   # An AGENTS.md from before the setting gets its line after the week start.
   if [[ "$writing" != "${o_writing:-standard}" ]]; then
@@ -1308,15 +1308,15 @@ RESULT="PIPELINE.md"
 TIMEOUT="0"
 JOB
   fi
-  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" node "$LIBJS" sub "$ws/jobs/pipeline.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
+  [[ "$pipe" == off || ! -f "$ws/jobs/pipeline.job" || "$ptime" == "${o_ptime:-}" ]] || W="$([[ "$ptime" == off ]] || printf %s "$ptime")" node "$LIBJS" sub "$ws/jobs/pipeline.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   if [[ -n "$hard" && "$hard" != "$o_hard" ]]; then hard_write "$ws" "$hard" || die "AGENTS.md: could not write the Hard to undo section"; fi
-  D="$Week" O="$owner" E="$email" node "$LIBJS" sub "$ws/AGENTS.md" -- \
+  [[ "$week" == "$o_week" && "$owner" == "$o_owner" && "$email" == "$o_email" ]] || D="$Week" O="$owner" E="$email" node "$LIBJS" sub "$ws/AGENTS.md" -- \
     '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' \
     '/^(- \*\*Commits\.\*\* Authored as ).*? <[^>]*>\./' '$1${O} <${E}>.'
   local files=() f
   for f in AGENTS.md HANDOFFS.md OPERATIONS.md README.md specs/ROADMAP.md cabinet.env; do [[ -f "$ws/$f" ]] && files+=("$ws/$f"); done
   # The workspace's own package.json names the workspace (not a project's, which is never touched).
-  if [[ -f "$ws/package.json" ]] && json -e '$.private === true && String($.name).endsWith("-workspace")' "$ws/package.json" >/dev/null 2>&1; then
+  if [[ "$name" != "$o_name" || "$slug" != "$o_slug" ]] && [[ -f "$ws/package.json" ]] && json -e '$.private === true && String($.name).endsWith("-workspace")' "$ws/package.json" >/dev/null 2>&1; then
     local pj2; pj2="$(json --arg n "$slug-workspace" --arg d "$name workspace, run with the cabinet kit." '({...$, name: $n, description: $d})' "$ws/package.json")" \
       && [[ -n "$pj2" ]] && printf '%s\n' "$pj2" > "$ws/package.json"
   fi
@@ -1349,7 +1349,7 @@ JOB
   # Team tables follow the roles: a dropped role's row leaves, a returning one comes back from the kit's template.
   local f row
   for f in AGENTS.md OPERATIONS.md; do
-    [[ -f "$ws/$f" ]] || continue
+    [[ -f "$ws/$f" && "$roles" != "$o_roles" ]] || continue
     for r in $ROLES_ALL $ROLES_OPT; do
       if has "$roles" "$r"; then
         grep -qF "| $r |" "$ws/$f" && continue
@@ -1375,15 +1375,15 @@ JOB
   [[ "$roles" != "$o_roles" ]] && "$ws/bin/role.sh" build
 
   # Schedules, a new slug and new repos take effect through bootstrap.
-  local needs=0
+  local needs=0 boot=0
   [[ "$brief" != "$o_brief" || "$backup" != "$o_backup" || "$backup_time" != "$o_btime" || "$slug" != "$o_slug" ]] && needs=1
   [[ "$pipe" != "$o_pipe" || ( "$pipe" != off && "$ptime" != "${o_ptime:-}" ) ]] && needs=1
   ((${#newrows[@]})) && needs=1
   if ((needs)); then
-    if ((apply)); then "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."
+    if ((apply)); then boot=1; "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."
     elif ((tty)) && confirm "Update schedules and clone new repos now (bin/bootstrap.sh)? It shows the changes first." y; then
       "$ws/bin/bootstrap.sh" --dry-run
-      if confirm "Apply these changes?" y; then "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."; fi
+      if confirm "Apply these changes?" y; then boot=1; "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."; fi
     else echo "Next: cabinet bootstrap (schedules and repos follow the new settings)."; fi
   fi
   if [[ "$slug" != "$o_slug" && -n "$backup" ]]; then
@@ -1393,14 +1393,21 @@ JOB
   fi
   local keys="" c
   for c in "${changes[@]}"; do keys+="${keys:+, }${c%%:*}"; done
-  # Only the files this run wrote, so a change someone else makes meanwhile stays theirs to commit.
+  # Only the files this run wrote, each for the settings that change it, so a change someone else
+  # makes meanwhile to any other file stays theirs to commit.
   local p
-  local cfg_files=() wrote=(cabinet.env AGENTS.md OPERATIONS.md package.json jobs)
+  local cfg_files=() wrote=(cabinet.env)
+  if [[ "$name" != "$o_name" || "$owner" != "$o_owner" || "$email" != "$o_email" || "$week" != "$o_week" || "$writing" != "${o_writing:-standard}" || "$hard" != "$o_hard" || "$roles" != "$o_roles" ]] || ((${#newrows[@]})); then
+    wrote+=(AGENTS.md)
+  fi
+  [[ "$name" != "$o_name" || "$slug" != "$o_slug" || "$roles" != "$o_roles" ]] && wrote+=(OPERATIONS.md)
+  [[ "$name" != "$o_name" || "$slug" != "$o_slug" ]] && wrote+=(package.json)
+  [[ "$brief" != "$o_brief" || "$slug" != "$o_slug" || "$pipe" != "$o_pipe" || ( "$pipe" != off && "$ptime" != "${o_ptime:-}" ) ]] && wrote+=(jobs)
   [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
   [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
   ((${#newrows[@]})) && wrote+=(repos.tsv)
-  # The roles are built by a role change, and by bootstrap.
-  [[ "$roles" != "$o_roles" ]] || ((needs)) && wrote+=(ORG.md agents .claude/agents)
+  # The roles are built by a role change, and by bootstrap when it ran.
+  [[ "$roles" != "$o_roles" ]] || ((boot)) && wrote+=(ORG.md agents .claude/agents)
   if ((cfg_clean)); then
     while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- "${wrote[@]}" 2>/dev/null | cut -c4-)
   fi

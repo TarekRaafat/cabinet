@@ -4,6 +4,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.1.3 - Unreleased
 
+### Commands
+
+- `cabinet config` commits only the files that run wrote, each for the settings that change it, instead of `AGENTS.md`, `OPERATIONS.md`, `package.json` and `jobs/` on every run and the role files whenever setup was due: a brief time or a budget no longer commits `AGENTS.md`, and the role files (`ORG.md`, `agents/`, `.claude/agents/`) go in only when the roles change or `bootstrap` actually ran. A change another session makes while it runs, in a file or folder that run did not write, now stays theirs; one in a file or folder it wrote (a new file under `jobs/` or `agents/` included) still goes into the commit, as `HANDOFFS.md` does after a rename. It still commits only in a workspace with its own git that had no uncommitted changes before, `--backup-dir` included. The commands page lists which setting commits which file.
+
 ### Releases
 
 - The release workflow runs only code pinned to an exact version: `actions/checkout` and `actions/setup-node` by full commit hash (v4.4.0 of each, named in a comment) instead of the `v4` tag, and npm 12.2.1 instead of `npm@latest`. Its checkout no longer leaves a token on disk while the tests run (`persist-credentials: false`). The trigger, permissions, steps and tests are unchanged. The tests fail when a workflow uses an action not pinned to a full commit hash, or installs npm at anything but an exact version.
