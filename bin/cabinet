@@ -1347,10 +1347,12 @@ JOB
     [[ -f "$oc" && "$(abspath "$(cat "$oc")")" == "$ws" ]] && rm -f "$oc"
     local sfiles=()
     for f in "$ws/OPERATIONS.md" "$ws/README.md" "$ws"/jobs/*.job; do [[ -f "$f" ]] && sfiles+=("$f"); done
-    for f in "$ws"/jobs/*.job; do [[ -f "$f" ]] && wjobs+=("jobs/${f##*/}"); done
+    # Only the jobs the rewrite changes are listed, so another session's edit to one it leaves alone stays theirs.
+    local jsum; jsum="$(cksum "$ws"/jobs/*.job 2>/dev/null || true)"
     ((${#sfiles[@]})) && O="$o_slug" N="$slug" node "$LIBJS" sub "${sfiles[@]}" -- \
       '/ai\.cabinet\.${O}\b/g' 'ai.cabinet.${N}' '/(Logs|state)\/cabinet\/${O}\//g' '$1/cabinet/${N}/' \
       '/cabinet\.${O}\.backup/g' 'cabinet.${N}.backup' '/^(git clone <this repo> )${O}( && cd )${O}$/' '$1${N}$2${N}'
+    for f in "$ws"/jobs/*.job; do [[ -f "$f" ]] && ! grep -qxF "$(cksum "$f")" <<<"$jsum" && wjobs+=("jobs/${f##*/}"); done
   fi
   # Team tables follow the roles: a dropped role's row leaves, a returning one comes back from the kit's template.
   local f row
