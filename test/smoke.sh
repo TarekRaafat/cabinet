@@ -569,6 +569,12 @@ CC="$T/cfgcommit"; "$F" new "$CC" --yes --backup-dir off >/dev/null || fail "new
 out="$(cd "$CC" && "$F" config --yes --writing short 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: writing to the owner" && [[ -z "$(git -C "$CC" status --porcelain)" ]] || fail "config left its change uncommitted: $out"
 echo "owner note" >> "$CC/README.md"; before="$(git -C "$CC" rev-parse HEAD)"
 out="$(cd "$CC" && "$F" config --yes --writing standard 2>&1)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$CC" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$CC/README.md" || fail "config committed over the owner's own change: $out"
+# It commits only the files it writes: a file someone else writes while it runs stays theirs.
+git -C "$CC" checkout -q -- README.md; mv "$CC/bin/role.sh" "$CC/bin/role.real"
+printf '#!/bin/bash\nmkdir -p "%s/notes"; echo meanwhile > "%s/notes/meanwhile.md"\nexec "%s/bin/role.real" "$@"\n' "$CC" "$CC" "$CC" > "$CC/bin/role.sh"; chmod +x "$CC/bin/role.sh"
+git -C "$CC" add -A && git -C "$CC" commit -qm "role.sh that writes meanwhile"
+out="$(cd "$CC" && "$F" config --yes --roles "qa security" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: roles" || fail "config with a role change did not commit: $out"
+git -C "$CC" status --porcelain | grep -qxF "?? notes/meanwhile.md" && ! git -C "$CC" show --stat HEAD | grep -q meanwhile || fail "config committed a file it did not write: $(git -C "$CC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
