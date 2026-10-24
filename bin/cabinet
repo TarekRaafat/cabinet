@@ -1393,11 +1393,16 @@ JOB
   fi
   local keys="" c
   for c in "${changes[@]}"; do keys+="${keys:+, }${c%%:*}"; done
-  # Only the files config writes, so a change someone else makes meanwhile stays theirs to commit.
+  # Only the files this run wrote, so a change someone else makes meanwhile stays theirs to commit.
   local p
-  local cfg_files=()
+  local cfg_files=() wrote=(cabinet.env AGENTS.md OPERATIONS.md package.json jobs)
+  [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
+  [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
+  ((${#newrows[@]})) && wrote+=(repos.tsv)
+  # The roles are built by a role change, and by bootstrap.
+  [[ "$roles" != "$o_roles" ]] || ((needs)) && wrote+=(ORG.md agents .claude/agents)
   if ((cfg_clean)); then
-    while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- cabinet.env AGENTS.md HANDOFFS.md OPERATIONS.md OPERATIONS.html README.md ORG.md specs/ROADMAP.md package.json repos.tsv jobs agents .claude/agents 2>/dev/null | cut -c4-)
+    while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- "${wrote[@]}" 2>/dev/null | cut -c4-)
   fi
   if ((${#cfg_files[@]})) && git -C "$ws" add -A -- "${cfg_files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet config: $keys" -- "${cfg_files[@]}" >/dev/null 2>&1; then
@@ -2025,7 +2030,7 @@ cmd_update() {
   if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
     echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
-    ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json package-lock.json"
+    ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json$([[ -f "$ws/package-lock.json" ]] && echo " package-lock.json")"
   elif ((${#files[@]} == 0)) && [[ "$old" == "$VERSION" ]]; then
     echo "Nothing changed: the workspace was already on $VERSION."
   elif ((${#files[@]} == 0)); then

@@ -436,11 +436,16 @@ rm -rf "$T/nogit"
 # package.json goes into the update's commit only when the pin is its one change.
 pkg() { P="$1" X="$2" node -e 'const o = {name: "w", devDependencies: {"@tarekraafat/cabinet": "^" + process.env.P}}; if (process.env.X) o.private = true; console.log(JSON.stringify(o, null, 2))' > "$W/package.json"; }
 pkg "$V" ""; git -C "$W" add package.json && git -C "$W" commit -qm "pin"
-pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
-git -C "$W" status --porcelain -- package.json | grep -q package.json && echo "$out" | grep -qF "package.json has edits of yours besides the pin" || fail "update committed the owner's own edit in package.json: $out"
+pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"; WP="$(cd "$W" && pwd -P)"
+git -C "$W" status --porcelain -- package.json | grep -q package.json && echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json" || fail "update committed the owner's own edit in package.json, or its hint names a file that is not there: $out"
 pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "update left the pin alone uncommitted: $(git -C "$W" status --porcelain)"
-git -C "$W" rm -q package.json && git -C "$W" commit -qm "no pin"
+# With a lockfile, the hint names it too.
+echo '{}' > "$W/package-lock.json"; pkg "$V" ""; git -C "$W" add package.json package-lock.json && git -C "$W" commit -qm "pin and lockfile"
+pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
+echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json package-lock.json" || fail "the update hint did not name the lockfile: $out"
+pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+git -C "$W" rm -q package.json package-lock.json && git -C "$W" commit -qm "no pin"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -573,10 +578,11 @@ echo "owner note" >> "$CC/README.md"; before="$(git -C "$CC" rev-parse HEAD)"
 out="$(cd "$CC" && "$F" config --yes --writing standard 2>&1)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$CC" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$CC/README.md" || fail "config committed over the owner's own change: $out"
 # It commits only the files it writes: a file someone else writes while it runs stays theirs.
 git -C "$CC" checkout -q -- README.md; mv "$CC/bin/role.sh" "$CC/bin/role.real"
-printf '#!/bin/bash\nmkdir -p "%s/notes"; echo meanwhile > "%s/notes/meanwhile.md"\nexec "%s/bin/role.real" "$@"\n' "$CC" "$CC" "$CC" > "$CC/bin/role.sh"; chmod +x "$CC/bin/role.sh"
+printf '#!/bin/bash\nmkdir -p "%s/notes"; echo meanwhile > "%s/notes/meanwhile.md"; echo "### H-other: written by another session" >> "%s/HANDOFFS.md"\nexec "%s/bin/role.real" "$@"\n' "$CC" "$CC" "$CC" "$CC" > "$CC/bin/role.sh"; chmod +x "$CC/bin/role.sh"
 git -C "$CC" add -A && git -C "$CC" commit -qm "role.sh that writes meanwhile"
 out="$(cd "$CC" && "$F" config --yes --roles "qa security" 2>&1)" && echo "$out" | grep -qF "Committed in the workspace: cabinet config: roles" || fail "config with a role change did not commit: $out"
 git -C "$CC" status --porcelain | grep -qxF "?? notes/meanwhile.md" && ! git -C "$CC" show --stat HEAD | grep -q meanwhile || fail "config committed a file it did not write: $(git -C "$CC" status --porcelain)"
+git -C "$CC" status --porcelain | grep -qxF " M HANDOFFS.md" && ! git -C "$CC" show --name-only --format= HEAD | grep -qxF HANDOFFS.md || fail "config committed a handoff another session wrote while it ran: $(git -C "$CC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
@@ -2193,7 +2199,10 @@ s59() {
 # A doc that shows a Cabinet version shows the one in package.json, so a release cannot leave docs behind.
 # The demo film's captured output (brand/demo/) is a recording and keeps the version it was captured with.
 v="$(j -r '$.version' "$KIT/package.json")"
-stale="$(cd "$KIT" && grep -rnoE 'cabinet [0-9]+\.[0-9]+\.[0-9]+' README.md llms.txt docs brand/index.html 2>/dev/null | grep -vF "cabinet $v" || true)"
+# The whole version must match: cabinet 0.1.10 is not the current one on 0.1.1.
+not_current() { grep -vE ":cabinet ${v//./\\.}\$" || true; }
+[[ -n "$(echo "README.md:1:cabinet ${v}0" | not_current)" ]] || fail "the version check takes cabinet ${v}0 for cabinet $v"
+stale="$(cd "$KIT" && grep -rnoE 'cabinet [0-9]+\.[0-9]+\.[0-9]+' README.md llms.txt docs brand/index.html 2>/dev/null | not_current)"
 [[ -z "$stale" ]] || fail "docs name an old version (package.json says $v): $stale"
 ! grep -qE 'version [0-9]+\.[0-9]+\.[0-9]+' "$KIT/README.md" || fail "the README names a version number: point to the changelog instead"
 # The README keeps saying, near the top, that Cabinet is built with Cabinet.
