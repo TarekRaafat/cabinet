@@ -2196,6 +2196,13 @@ rm -rf "$T/broken"
 # The runner gets every tool the Linux test image installs that a test needs (zsh, for the completion test).
 grep -q 'apt-get install .*zsh' "$w" && [[ "$(grep -n 'apt-get install' "$w" | cut -d: -f1)" -lt "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" ]] || fail "the release workflow runs the tests without zsh"
 grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's release steps do not name the workflow"
+# Code the publish identity runs is pinned: every action to a full commit hash, npm to an exact version.
+unpinned() { grep -hE '^[[:space:]-]*uses:' "$@" | grep -vE '^[[:space:]-]*uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}( +# v[0-9][0-9.]*)?$'; grep -hE 'npm@' "$@" | grep -vE 'npm@[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$)'; }
+[[ -z "$(unpinned "$KIT"/.github/workflows/*.yml)" ]] || fail "a workflow uses an action not pinned to a full commit hash, or npm not at an exact version: $(unpinned "$KIT"/.github/workflows/*.yml | head -1)"
+sed 's/@[0-9a-f]\{40\}.*/@v4/' "$w" > "$T/tag.yml"; sed 's/npm@[0-9.]*/npm@latest/' "$w" > "$T/latest.yml"
+[[ -n "$(unpinned "$T/tag.yml")" && -n "$(unpinned "$T/latest.yml")" ]] || fail "the pin check passes an action by tag or npm@latest"
+rm -f "$T/tag.yml" "$T/latest.yml"
+grep -q '^          persist-credentials: false' "$w" || fail "the release workflow's checkout leaves its token on disk (persist-credentials: false)"
   return 0   # a last "check && fail" line must not end the run
 }
 
