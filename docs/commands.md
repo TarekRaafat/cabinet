@@ -382,7 +382,7 @@ The guardrails in your agent tools stay, since other workspaces use them. Exit c
 cabinet update
 ```
 
-Copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). In a workspace with its own git it then commits the update (`cabinet: update to <version>`, with the pin in `package.json` and its lockfile; when `package.json` holds other edits of yours, it leaves `package.json` and its lockfile out and prints the commit for them, naming `package-lock.json` only when git tracks it), unless the files it rewrites (`.cabinet/`, `CABINET.md`, `bin/`, `agents/`, `.claude/agents/`, `ORG.md`) held uncommitted edits of yours: then, and in a shared `cabinet/`, it ends with the exact `git add` and `git commit` to run. With nothing to commit (no git of its own, or a private `cabinet/` the project ignores) it ends with `Updated to <version>.`, or, when the workspace was already on that version, `Nothing changed: the workspace was already on <version>.`
+Copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). In a workspace with its own git it then commits the update (`cabinet: update to <version>`, with the pin in `package.json` and its lockfile; when `package.json` holds other edits of yours, it leaves `package.json` and its lockfile out and prints the commit for them, naming `package-lock.json` only when git tracks it), unless the files it rewrites (`.cabinet/`, `CABINET.md`, `bin/`, `agents/`, `.claude/agents/`, `ORG.md`) held uncommitted edits of yours: then, and in a shared `cabinet/`, it ends with the exact `git add` and `git commit` to run. When the workspace was already on that version and nothing changed, it ends with `Nothing changed: the workspace was already on <version>.`, git or not. Otherwise, with nothing to commit (no git of its own, or a private `cabinet/` the project ignores), it ends with `Updated to <version>.`
 
 ## cabinet status
 
@@ -423,7 +423,7 @@ Tab completion for commands, their verbs and options, and the job names of the n
 cabinet version [--json]
 ```
 
-Prints the installed kit's version. In a terminal it prints the Cabinet mark beside it: seven seats around a table, with the eighth left open for the owner. It draws the seats as dots when the terminal's locale is UTF-8, and as the letter `o` otherwise. When the output goes to a script or a file, it prints only `cabinet <version>`.
+Prints the installed kit's version. In a terminal it prints the Cabinet mark with the version and the tagline beside it ("One person, a whole team. Build anything with AI agents, and stay in charge."): seven seats around a table, with the eighth left open for the owner. It draws the seats as dots when the terminal's locale is UTF-8, and as the letter `o` otherwise. When the output goes to a script or a file, it prints only `cabinet <version>`.
 
 ## Which copy of Cabinet runs
 

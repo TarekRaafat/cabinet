@@ -838,6 +838,11 @@ section "docs match the code" ""
 s23() {
 node "$KIT/test/docs-check.js" "$KIT" || fail "the docs fell behind the code (see above)"
 node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of date (npm run docs)"
+# What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
+# changed" with git or without, and the commands that commit themselves.
+grep -qF "In a terminal it prints the Cabinet mark with the version and the tagline beside it" "$KIT/docs/commands.md" || fail "docs/commands.md does not say cabinet version shows the tagline"
+grep -qF "already on that version and nothing changed, it ends with \`Nothing changed: the workspace was already on <version>.\`, git or not." "$KIT/docs/commands.md" || fail "docs/commands.md does not say when update ends with Nothing changed"
+sed -n 3p "$KIT/docs/recipes.md" | grep -qF "\`cabinet config\`, \`role add\`, \`role remove\` and \`update\` commit their own change" || fail "docs/recipes.md does not say which commands commit themselves"
 # An agent asked to set Cabinet up finds its guide from every way in: the root AGENTS.md (which agent
 # tools load first) says so before anything else, and so do the README and llms.txt.
 [[ -f "$KIT/docs/agent-setup.md" ]] && head -3 "$KIT/AGENTS.md" | grep -q '(docs/agent-setup.md)' && grep -q '(docs/agent-setup.md)' "$KIT/README.md" \

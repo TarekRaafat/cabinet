@@ -13,6 +13,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - The release workflow runs only code pinned to an exact version: `actions/checkout` and `actions/setup-node` by full commit hash (v4.4.0 of each, named in a comment) instead of the `v4` tag, and npm 12.2.1 instead of `npm@latest`. Its checkout no longer leaves a token on disk while the tests run (`persist-credentials: false`). The trigger, permissions, steps and tests are unchanged. The tests fail when a workflow uses an action not pinned to a full commit hash, or installs npm at anything but an exact version.
 
+### Docs
+
+- The commands page says `cabinet version` shows the tagline beside the mark, and that `cabinet update` ends with "Nothing changed" whenever the workspace was already on that version, with git or without. The recipes say `config`, `role add`, `role remove` and `update` commit their own change, so committing after each change is for edits by hand. `llms.txt` names every command and every noun. The tests check each of these.
+
 ## 0.1.2 - 24 Oct 2026
 
 Fixes and docs. Nothing to do by hand after `npx cabinet update`.

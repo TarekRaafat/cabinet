@@ -1,6 +1,6 @@
 # Recipes
 
-Short answers to common tasks. Every command runs from anywhere inside the workspace, or the project around a `cabinet/` workspace. Commit the workspace after each change.
+Short answers to common tasks. Every command runs from anywhere inside the workspace, or the project around a `cabinet/` workspace. `cabinet config`, `role add`, `role remove` and `update` commit their own change; commit the workspace after each change you make by hand.
 
 ## Contents
 
