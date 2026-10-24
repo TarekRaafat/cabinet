@@ -627,6 +627,9 @@ os="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$MC/cabinet.env")"
 printf '# Reads Logs/cabinet/%s/ and state/cabinet/%s/.\nCOMMAND="true"\nWHEN=""\n' "$os" "$os" > "$MC/jobs/logs.job"; git -C "$MC" add jobs/logs.job && git -C "$MC" commit -qm "a job that names the slug" -- jobs/logs.job
 mid jobs/brief.job --slug "$os-2"
 git -C "$MC" show --name-only --format= HEAD | grep -qxF jobs/logs.job && grep -qF "Logs/cabinet/$os-2/" "$MC/jobs/logs.job" || fail "a slug change did not commit the job it rewrote: $(git -C "$MC" show --name-only --format= HEAD)"
+# bootstrap links CLAUDE.md again when it is missing, and config commits the link with the rest.
+git -C "$MC" rm -q CLAUDE.md && git -C "$MC" commit -qm "CLAUDE.md removed"
+out="$(cd "$MC" && "$F" config --yes --brief-time "7:45 AM" --apply 2>&1)" && [[ -L "$MC/CLAUDE.md" && -z "$(git -C "$MC" status --porcelain)" ]] || fail "config left the CLAUDE.md bootstrap linked uncommitted: $out $(git -C "$MC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1

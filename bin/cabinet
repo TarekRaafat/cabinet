@@ -1417,6 +1417,8 @@ JOB
   ((${#newrows[@]})) && wrote+=(repos.tsv)
   # The roles are built by a role change or a rename (ORG.md's heading), and by bootstrap when it ran.
   [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] || ((boot)) && wrote+=(ORG.md agents .claude/agents)
+  # bootstrap also links CLAUDE.md when it is missing.
+  ((boot)) && wrote+=(CLAUDE.md)
   if ((cfg_clean)); then
     while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- "${wrote[@]}" 2>/dev/null | cut -c4-)
   fi
