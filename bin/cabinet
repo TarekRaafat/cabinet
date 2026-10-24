@@ -2037,7 +2037,7 @@ cmd_update() {
   if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
     echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
-    ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json$([[ -f "$ws/package-lock.json" ]] && echo " package-lock.json")"
+    ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json$([[ -n "$(git -C "$ws" ls-files -- package-lock.json 2>/dev/null)" ]] && echo " package-lock.json")"
   elif ((${#files[@]} == 0)) && [[ "$old" == "$VERSION" ]]; then
     echo "Nothing changed: the workspace was already on $VERSION."
   elif ((${#files[@]} == 0)); then

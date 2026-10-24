@@ -440,6 +440,10 @@ pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"; WP="$(cd "$W" && pwd -P
 git -C "$W" status --porcelain -- package.json | grep -q package.json && echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json" || fail "update committed the owner's own edit in package.json, or its hint names a file that is not there: $out"
 pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "update left the pin alone uncommitted: $(git -C "$W" status --porcelain)"
+# A lockfile git does not track stays out of the hint, which would fail on it.
+echo '{}' > "$W/package-lock.json"; pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
+echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json" || fail "the update hint names a lockfile git does not track: $out"
+rm -f "$W/package-lock.json"; pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
 # With a lockfile, the hint names it too.
 echo '{}' > "$W/package-lock.json"; pkg "$V" ""; git -C "$W" add package.json package-lock.json && git -C "$W" commit -qm "pin and lockfile"
 pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"

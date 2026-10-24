@@ -7,6 +7,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ### Commands
 
 - `cabinet config` commits only the files that run wrote, each for the settings that change it, instead of `AGENTS.md`, `OPERATIONS.md`, `package.json` and `jobs/` on every run and the role files whenever setup was due: a brief time or a budget no longer commits `AGENTS.md`, and the role files (`ORG.md`, `agents/`, `.claude/agents/`) go in only when the roles change or `bootstrap` actually ran. A change another session makes while it runs, in a file or folder that run did not write, now stays theirs; one in a file or folder it wrote (a new file under `jobs/` or `agents/` included) still goes into the commit, as `HANDOFFS.md` does after a rename. It still commits only in a workspace with its own git that had no uncommitted changes before, `--backup-dir` included. The commands page lists which setting commits which file.
+- The commit `cabinet update` prints when `package.json` holds edits of yours names `package-lock.json` only when git tracks it. With a lockfile that was never committed, it named it anyway, and the printed `git commit` failed on it.
 
 ### Releases
 
