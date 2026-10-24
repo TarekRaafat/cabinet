@@ -27,6 +27,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - The docs no longer show 0.1.0 as the current version: the README's status line points to the changelog instead of naming a version, and the tutorial and the brand guide show the current one. The tests fail when a doc shows a Cabinet version other than the one in `package.json`, so a release cannot leave the docs behind.
 - The README says Cabinet is built with Cabinet: its own team keeps the roadmap, writes the specs and reviews every change, and nothing ships until the maintainer signs off. 0.1.2 is the first release made that way.
+- The kit's `AGENTS.md` says several sessions may work in the repo at once, and how each commits only its own changes, leaving the rest as they are (rule 12).
 
 ## 0.1.1 - 23 Oct 2026
 
