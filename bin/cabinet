@@ -228,8 +228,10 @@ cmd_help() {
     return 0
   fi
   echo "cabinet $VERSION: one person, a whole team; build anything with AI agents, and stay in charge."
-  commands_table | awk -F'\t' '$1 == "C" { if ($2 != g) { g = $2; print "\n" g }
-    printf "  %-34s %s\n", $3 ($4 == "" ? "" : " " $4), $5 }'
+  # One heading per group, in the order each group first appears; its commands in table order.
+  commands_table | awk -F'\t' '$1 == "C" { if (!($2 in rows)) order[++n] = $2
+      rows[$2] = rows[$2] sprintf("  %-34s %s\n", $3 ($4 == "" ? "" : " " $4), $5) }
+    END { for (i = 1; i <= n; i++) printf "\n%s\n%s", order[i], rows[order[i]] }'
   echo
   echo "Every command works from any folder inside a workspace or its project; cabinet -C <dir> <command> runs it as if started in <dir>."
   echo "cabinet <command> --help shows its options. Full reference: $KIT/docs/commands.md"

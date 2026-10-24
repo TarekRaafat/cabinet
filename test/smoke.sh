@@ -949,6 +949,10 @@ printf '#!/bin/sh\nexit 1\n' > "$T/npmshim/npm"; PATH="$T/npmshim:$PATH" "$F" -C
 
 section "help, --help and help --json come from one command table" ""
 s31() {
+# The full help shows each group once, every command under its own group.
+heads="$("$F" help | grep -E '^[A-Z][a-z]+$')"
+[[ "$(sort <<<"$heads" | uniq -d)" == "" ]] || fail "help shows a group twice: $(tr '\n' ' ' <<<"$heads")"
+[[ "$(wc -l <<<"$heads" | tr -d ' ')" == "$(commands_table_groups="$(sed -n '/^commands_table() {/,/^TABLE$/p' "$KIT/bin/cabinet" | awk -F'\t' '$1 == "C" {print $2}' | sort -u)"; wc -l <<<"$commands_table_groups" | tr -d ' ')" ]] || fail "help leaves a group out"
 mkdir -p "$T/plain"
 (cd "$T/plain" && "$F" doctor --help) | grep -q -- '--fix' || fail "doctor --help outside a workspace"
 "$F" remove -h | grep -q '^Usage: cabinet remove \[options\]' || fail "remove -h"
