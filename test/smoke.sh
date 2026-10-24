@@ -8,6 +8,8 @@
 #   test/smoke.sh
 # No pipefail: "cmd | grep -q" checks would fail at random when grep exits early.
 set -eu
+# A syntax error further down would end the run through the EXIT trap, with success.
+bash -n "$0" || { echo "FAIL: $0 does not parse"; exit 1; }
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 F="$KIT/bin/cabinet"
@@ -2167,6 +2169,10 @@ grep -q '^  id-token: write' "$w" && grep -q -- '--provenance --access public' "
 ! grep -qi 'secrets\.' "$w" || fail "the release workflow uses a stored secret instead of trusted publishing"
 # The checkout brings the release tags, without which the check on changes after a release passes unseen.
 grep -q '^          fetch-depth: 0' "$w" || fail "the release workflow checks out without the release tags (fetch-depth: 0)"
+# The tests the release runs fail, not pass, when the test file does not parse.
+mkdir -p "$T/broken/test"; awk '{ print } /^T=.*trap/ { print "f() {"; print "if then"; print "}" }' "$KIT/test/smoke.sh" > "$T/broken/test/smoke.sh"
+bash "$T/broken/test/smoke.sh" >/dev/null 2>&1 && fail "a test file that does not parse passed"
+rm -rf "$T/broken"
 # The runner gets every tool the Linux test image installs that a test needs (zsh, for the completion test).
 grep -q 'apt-get install .*zsh' "$w" && [[ "$(grep -n 'apt-get install' "$w" | cut -d: -f1)" -lt "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" ]] || fail "the release workflow runs the tests without zsh"
 grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's release steps do not name the workflow"

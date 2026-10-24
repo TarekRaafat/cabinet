@@ -2165,6 +2165,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ### Releases
 
 - The release workflow checks out the full history with its tags, so the check on changes after a release runs on GitHub too; without the tags it passed unseen.
+- The tests fail when the test file itself does not parse. Before, a syntax error in it ended the run with success, so a release could have published with no tests run.
 
 ### Schedules
 
