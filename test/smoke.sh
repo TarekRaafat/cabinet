@@ -2160,6 +2160,8 @@ v="$(j -r '$.version' "$KIT/package.json")"
 stale="$(cd "$KIT" && grep -rnoE 'cabinet [0-9]+\.[0-9]+\.[0-9]+' README.md llms.txt docs brand/index.html 2>/dev/null | grep -vF "cabinet $v" || true)"
 [[ -z "$stale" ]] || fail "docs name an old version (package.json says $v): $stale"
 ! grep -qE 'version [0-9]+\.[0-9]+\.[0-9]+' "$KIT/README.md" || fail "the README names a version number: point to the changelog instead"
+# The README keeps saying, near the top, that Cabinet is built with Cabinet.
+grep -n '^- \*\*Built with Cabinet:\*\*' "$KIT/README.md" | cut -d: -f1 | awk '{ exit !($1 <= 20) }' || fail "the README's 'Built with Cabinet' line is gone, or no longer near the top"
   return 0   # a last "check && fail" line must not end the run
 }
 
