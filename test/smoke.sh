@@ -2222,11 +2222,25 @@ rm -rf "$T/broken"
 grep -q 'apt-get install .*zsh' "$w" && [[ "$(grep -n 'apt-get install' "$w" | cut -d: -f1)" -lt "$(grep -n 'run: npm test' "$w" | cut -d: -f1)" ]] || fail "the release workflow runs the tests without zsh"
 grep -qF '.github/workflows/release.yml' "$KIT/README.md" || fail "the README's release steps do not name the workflow"
 # Code the publish identity runs is pinned: every action to a full commit hash, npm to an exact version.
-unpinned() { grep -hE '^[[:space:]-]*uses:' "$@" | grep -vE '^[[:space:]-]*uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}( +# v[0-9][0-9.]*)?$'; grep -hE 'npm@' "$@" | grep -vE 'npm@[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$)'; }
-[[ -z "$(unpinned "$KIT"/.github/workflows/*.yml)" ]] || fail "a workflow uses an action not pinned to a full commit hash, or npm not at an exact version: $(unpinned "$KIT"/.github/workflows/*.yml | head -1)"
-sed 's/@[0-9a-f]\{40\}.*/@v4/' "$w" > "$T/tag.yml"; sed 's/npm@[0-9.]*/npm@latest/' "$w" > "$T/latest.yml"
-[[ -n "$(unpinned "$T/tag.yml")" && -n "$(unpinned "$T/latest.yml")" ]] || fail "the pin check passes an action by tag or npm@latest"
-rm -f "$T/tag.yml" "$T/latest.yml"
+# unpinned <folder>: every line of its workflows (*.yml and *.yaml) that is not; a folder with none has none.
+unpinned() {
+  local f
+  for f in "$1"/*.yml "$1"/*.yaml; do
+    [[ -f "$f" ]] || continue
+    grep -E '^[[:space:]-]*uses:' "$f" | grep -vE '^[[:space:]-]*uses: [A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}( +# v[0-9][0-9.]*)?$'
+    grep -E 'npm@' "$f" | grep -vE 'npm@[0-9]+\.[0-9]+\.[0-9]+([[:space:]]|$)'
+    grep -E 'npm +(install|i)( +-[-a-z]+)* +npm([[:space:]]|$)' "$f"
+  done
+  return 0
+}
+[[ -z "$(unpinned "$KIT/.github/workflows")" ]] || fail "a workflow uses an action not pinned to a full commit hash, or npm not at an exact version: $(unpinned "$KIT/.github/workflows" | head -1)"
+mkdir -p "$T/wf/tag" "$T/wf/latest" "$T/wf/bare" "$T/wf/none"
+sed 's/@[0-9a-f]\{40\}.*/@v4/' "$w" > "$T/wf/tag/release.yaml"; sed 's/npm@[0-9.]*/npm@latest/' "$w" > "$T/wf/latest/release.yml"
+printf '      - run: npm install -g npm\n      - run: npm i -g npm\n      - run: npm install -g npm@12.2.1\n' > "$T/wf/bare/npm.yml"
+[[ -n "$(unpinned "$T/wf/tag")" && -n "$(unpinned "$T/wf/latest")" ]] || fail "the pin check passes an action by tag (in a .yaml workflow) or npm@latest"
+[[ "$(unpinned "$T/wf/bare" | wc -l | tr -d ' ')" == 2 ]] || fail "the pin check passes npm installed with no version: $(unpinned "$T/wf/bare")"
+[[ -z "$(unpinned "$T/wf/none")" ]] || fail "the pin check found something in a folder with no workflows"
+rm -rf "$T/wf"
 grep -q '^          persist-credentials: false' "$w" || fail "the release workflow's checkout leaves its token on disk (persist-credentials: false)"
   return 0   # a last "check && fail" line must not end the run
 }
