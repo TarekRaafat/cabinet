@@ -426,6 +426,11 @@ echo "owner note" > "$W/.cabinet/owner-note"; before="$(git -C "$W" rev-parse HE
 out="$("$KIT/bin/cabinet" -C "$W" update)" || fail "could not go back to the current kit"
 echo "$out" | grep -q 'then commit: git -C' && [[ "$(git -C "$W" rev-parse HEAD)" == "$before" ]] || fail "update committed over the owner's own uncommitted change: $out"
 rm -f "$W/.cabinet/owner-note"; git -C "$W" add -A -- .cabinet CABINET.md bin agents .claude/agents && { git -C "$W" diff --cached --quiet || git -C "$W" commit -qm "back to the current kit"; }
+# With no git of its own, a real update does not end with "Nothing changed".
+cp -R "$W" "$T/nogit"; rm -rf "$T/nogit/.git"
+out="$("$K2/bin/cabinet" -C "$T/nogit" update)" || fail "update failed in a workspace with no git"
+echo "$out" | tail -1 | grep -qxF "Updated to $N. Anything to do by hand is in the changelog above." || fail "update did not say it updated: $out"
+rm -rf "$T/nogit"
   return 0   # a last "check && fail" line must not end the run
 }
 

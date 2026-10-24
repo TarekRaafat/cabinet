@@ -2011,8 +2011,11 @@ cmd_update() {
   if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
     echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
-  elif ((${#files[@]} == 0)); then
+  elif ((${#files[@]} == 0)) && [[ "$old" == "$VERSION" ]]; then
     echo "Nothing changed: the workspace was already on $VERSION."
+  elif ((${#files[@]} == 0)); then
+    # No git of its own here (or a private cabinet/ the project ignores): nothing to commit.
+    echo "Updated to $VERSION. Anything to do by hand is in the changelog above."
   else
     echo "Review the diff (git -C \"$ws\" diff), do anything the changelog says to do by hand,"
     echo "then commit: git -C \"$ws\" add --$paths && git -C \"$ws\" commit -m \"cabinet: update to $VERSION\""
