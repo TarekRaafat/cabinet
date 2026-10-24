@@ -1471,8 +1471,9 @@ cmd_next() {
   miss="$(deps_missing)"
   [[ -z "$miss" ]] || step deps "Install the tools cabinet needs: ${miss// /, } (sudo asks for your password on Linux)." "$(deps_cmd "$miss" || echo "")"
   envget() { ( set +u; source "$env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
-  # What the project says about itself.
-  heads="$(awk '/^## / {h = substr($0, 4)} /TBD/ && h != "" && !(h in seen) {seen[h] = 1; printf "%s%s", (n++ ? ", " : ""), h}' "$ws/AGENTS.md" 2>/dev/null)"
+  # What the project says about itself: a TBD left to fill, not one quoted as code in the template's own
+  # instructions (`TBD`).
+  heads="$(awk '/^## / {h = substr($0, 4)} {l = $0; gsub(/`[^`]*`/, "", l)} l ~ /TBD/ && h != "" && !(h in seen) {seen[h] = 1; printf "%s%s", (n++ ? ", " : ""), h}' "$ws/AGENTS.md" 2>/dev/null)"
   [[ -n "$heads" ]] && step tbd "Fill the TBDs in AGENTS.md: $heads." ""
   # The workspace's own history.
   if [[ -e "$ws/.git" ]] && ! git -C "$ws" rev-parse -q --verify HEAD >/dev/null 2>&1; then

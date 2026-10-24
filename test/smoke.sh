@@ -868,6 +868,12 @@ out="$(cd "$W" && "$F" next)"
 echo "$out" | grep -q '^Next in Demo Co' && echo "$out" | grep -q 'Fill the TBDs in AGENTS.md' && echo "$out" | grep -q 'cabinet bootstrap' || { echo "$out"; fail "next"; }
 (cd "$T" && "$F" next) | grep -q 'Not inside a cabinet workspace' || fail "next outside a workspace"
 (cd "$W/specs" && "$F" next --json) | j -e '$.project == "Demo Co" && $.steps.some((s) => s.id == "tbd") && $.steps.find((s) => s.id == "bootstrap")?.command == "cabinet bootstrap"' >/dev/null || fail "next --json"
+# Once every TBD is filled, the template's own instructions, which quote `TBD` as code, ask for nothing.
+cp "$W/AGENTS.md" "$T/agents-tbd.bak"
+node -e 'const fs = require("fs"); const f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").map((l) => l.split(/(`[^`]*`)/).map((p) => p.startsWith("`") ? p : p.replaceAll("TBD", "filled")).join("")).join("\n"))' "$W/AGENTS.md"
+grep -qF '`TBD`' "$W/AGENTS.md" || fail "next test setup: the template no longer quotes TBD"
+(cd "$W" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "tbd")' >/dev/null || fail "next asks to fill TBDs that are only quoted in the template's instructions"
+cp "$T/agents-tbd.bak" "$W/AGENTS.md"
 (cd "$T" && "$F" next --json) | j -e '$.workspace == null && $.steps[0].id == "start"' >/dev/null || fail "next --json outside a workspace"
 [[ "$(git -C "$W" status --porcelain)" == "$before" ]] || fail "next changed the workspace"
   return 0   # a last "check && fail" line must not end the run
