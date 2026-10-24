@@ -12,7 +12,7 @@ Cabinet is for one person or a team of any size, and for anything agents can bui
 
 - **Platform:** macOS and Linux ([what differs](docs/concepts.md#macos-and-linux)). Windows through WSL is on the [roadmap](ROADMAP.md).
 - **Status:** on npm as `@tarekraafat/cabinet` ([Install](#install)); every version and what changed is in the [changelog](CHANGELOG.md).
-- **Built with Cabinet:** Cabinet runs its own development: its team keeps the roadmap, writes the specs and reviews every change, and nothing ships until the maintainer signs off.
+- **Built with Cabinet:** Cabinet is built and maintained with Cabinet.
 - **Works with:** Claude Code, Codex, Gemini CLI, Antigravity, Qwen Code, Grok, opencode, the Cursor CLI, and any other tool that reads `AGENTS.md`.
 - **Set up by your AI agent:** give your agent tool this link with "Set up Cabinet for me, following docs/agent-setup.md". [The guide](docs/agent-setup.md) tells it what to ask you, what to run, and what to show you before anything changes on your machine.
 
