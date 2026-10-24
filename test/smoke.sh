@@ -431,6 +431,14 @@ cp -R "$W" "$T/nogit"; rm -rf "$T/nogit/.git"
 out="$("$K2/bin/cabinet" -C "$T/nogit" update)" || fail "update failed in a workspace with no git"
 echo "$out" | tail -1 | grep -qxF "Updated to $N. Anything to do by hand is in the changelog above." || fail "update did not say it updated: $out"
 rm -rf "$T/nogit"
+# package.json goes into the update's commit only when the pin is its one change.
+pkg() { P="$1" X="$2" node -e 'const o = {name: "w", devDependencies: {"@tarekraafat/cabinet": "^" + process.env.P}}; if (process.env.X) o.private = true; console.log(JSON.stringify(o, null, 2))' > "$W/package.json"; }
+pkg "$V" ""; git -C "$W" add package.json && git -C "$W" commit -qm "pin"
+pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
+git -C "$W" status --porcelain -- package.json | grep -q package.json && echo "$out" | grep -qF "package.json has edits of yours besides the pin" || fail "update committed the owner's own edit in package.json: $out"
+pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+[[ -z "$(git -C "$W" status --porcelain)" ]] || fail "update left the pin alone uncommitted: $(git -C "$W" status --porcelain)"
+git -C "$W" rm -q package.json && git -C "$W" commit -qm "no pin"
   return 0   # a last "check && fail" line must not end the run
 }
 

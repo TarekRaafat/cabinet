@@ -2008,9 +2008,18 @@ cmd_update() {
   local files=()
   for pth in .cabinet CABINET.md bin agents .claude/agents ORG.md package.json package-lock.json; do [[ -e "$ws/$pth" ]] && paths+=" $pth"; done
   while IFS= read -r f; do files+=("$f"); done < <(git -C "$ws" status --porcelain -- $paths 2>/dev/null | cut -c4-)
+  # package.json goes in only when the pin is its one change; any other edit there is the owner's to commit.
+  local own_pkg=0
+  if [[ -n "$(git -C "$ws" diff HEAD -U0 -- package.json 2>/dev/null | grep '^[-+][^-+]' | grep -vF '"@tarekraafat/cabinet"')" ]]; then
+    own_pkg=1
+    local kept=()
+    for f in ${files[@]+"${files[@]}"}; do [[ "$f" == package.json || "$f" == package-lock.json ]] || kept+=("$f"); done
+    files=(${kept[@]+"${kept[@]}"})
+  fi
   if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
     echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
+    ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json package-lock.json"
   elif ((${#files[@]} == 0)) && [[ "$old" == "$VERSION" ]]; then
     echo "Nothing changed: the workspace was already on $VERSION."
   elif ((${#files[@]} == 0)); then
