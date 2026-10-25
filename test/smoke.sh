@@ -2381,7 +2381,16 @@ cp "$T/llms.txt" "$C/llms.txt"; b || fail "the copy does not build again once th
 printf '// H-20261025-99\n' >> "$C/site/copy.js"; [[ -n "$(leaks "$C")" ]] || fail "the check misses a handoff ID in site/"
 sedi '$d' "$C/site/copy.js"; [[ -z "$(leaks "$C")" ]] || fail "the leak check finds something in an unchanged site/"
 printf '// Zyxwordq\n' >> "$C/site/copy.js"; [[ -n "$(CABINET_PRIVATE_WORDS="zyxwordq" leaks "$C")" ]] || fail "the check misses a private word in site/"
-rm -rf "$C" "$T/web" "$T/web2" "$T/mine" "$T/backups.md" "$T/llms.txt" "$T/site.css"
+# The site's own words name only commands and options the docs have: an unknown one in copy.js, or a
+# command whose section is gone from docs/commands.md, fails the check, naming it.
+cp "$KIT/site/copy.js" "$C/site/copy.js"; b || fail "the copy does not build with the kit's copy.js"
+sedi 's/run `cabinet bootstrap`, which/run `cabinet nosuchcommand`, which/' "$C/site/copy.js"
+! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >"$T/sc.out" && grep -q 'cabinet nosuchcommand' "$T/sc.out" || fail "a command the docs lack in copy.js passed the check"
+cp "$KIT/site/copy.js" "$C/site/copy.js"; sedi 's/run `cabinet bootstrap`, which/run `cabinet bootstrap --no-such-option`, which/' "$C/site/copy.js"
+! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >"$T/sc.out" && grep -q -e '--no-such-option' "$T/sc.out" || fail "an option the docs lack in copy.js passed the check"
+cp "$KIT/site/copy.js" "$C/site/copy.js"; awk '/^## cabinet bootstrap$/{skip=1; next} /^## /{skip=0} !skip' "$KIT/docs/commands.md" > "$C/docs/commands.md"
+! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >"$T/sc.out" && grep -q 'cabinet bootstrap' "$T/sc.out" || fail "copy.js naming a command with no section in docs/commands.md passed the check"
+rm -rf "$C" "$T/web" "$T/web2" "$T/mine" "$T/backups.md" "$T/llms.txt" "$T/site.css" "$T/sc.out"
   return 0   # a last "check && fail" line must not end the run
 }
 

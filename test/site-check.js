@@ -183,6 +183,15 @@ if (!/\.search-results \.search-help \{[^}]*margin: 0 0 16px; font-size: 14px; c
   const strings = []; (function walk(o) { for (const v of Object.values(o)) typeof v === "string" ? strings.push(v) : v && typeof v === "object" && walk(v); })(words);
   for (const s of strings) if (/(X\.Y\.Z|\d+\.\d+\.\d+)\.(\s|$)/.test(s)) fail(`site/copy.js: a version is followed by a period: "${s}"`);
   for (const f of html) for (const m of text(f).matchAll(/<p class="(?:foot-version|built)">([^<]*)<\/p>/g)) if (/\d+\.\d+\.\d+\./.test(m[1])) fail(`${f}: "${m[1]}" puts a period after the version`);
+  // The site's own words name only commands, options and check IDs the docs have. Lowercase cabinet only, so
+  // Cabinet in prose is never read as a command; only the first word after it (not subcommands).
+  const cmds = read("docs/commands.md"), trouble = read("docs/troubleshooting.md");
+  const has = (doc, w) => new RegExp(`(^|[^a-z0-9.-])${w.replace(/\./g, "\\.")}([^a-z0-9-]|$)`, "m").test(doc);
+  for (const s of strings) {
+    for (const m of s.matchAll(/(?:^|[\s`(])cabinet ([a-z][a-z-]*)/g)) if (!new RegExp(`^## cabinet ${m[1]}$`, "m").test(cmds)) fail(`site/copy.js: cabinet ${m[1]} has no section in docs/commands.md: "${s}"`);
+    for (const m of s.matchAll(/(?:^|[\s`(])(--[a-z][a-z0-9-]*)/g)) if (!has(cmds, m[1])) fail(`site/copy.js: ${m[1]} is not in docs/commands.md: "${s}"`);
+    for (const m of s.matchAll(/check ID such as ([a-z][a-z0-9.-]*[a-z0-9])/g)) if (!has(trouble, m[1])) fail(`site/copy.js: the check ID ${m[1]} is not in docs/troubleshooting.md: "${s}"`);
+  }
 }
 
 // The current item in "On this page" and the docs sidebar: text color, weight 700, a 2 px bar in the text color; nested items 16 px in.
