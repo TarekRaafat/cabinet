@@ -2283,6 +2283,101 @@ grep -n '^- \*\*Built with Cabinet:\*\*' "$KIT/README.md" | cut -d: -f1 | awk '{
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "website: built from the repo, served under /cabinet/, never shipped" ""
+s60() {
+# The site (site/build.js) is built from the repo's own docs, changelog, roles, captures and brand, into a folder
+# it is given; test/site-check.js checks the result (links under /cabinet/, colors from tokens, no outside
+# request, escaped Markdown, the search and lookup data, fonts with their licenses, the 404 page).
+O="$T/web/cabinet"
+node "$KIT/site/build.js" "$O" --ref v9.9.9 >/dev/null || fail "the site does not build (node site/build.js <folder>)"
+node "$KIT/test/site-check.js" "$KIT" "$O" v9.9.9 || fail "the built site (see above)"
+grep -qF 'node site/build.js' "$KIT/README.md" && grep -q '^| `site/` |' "$KIT/AGENTS.md" || fail "the README does not say how to build the site, or AGENTS.md does not list site/"
+# Plain tools: the site's JavaScript loads only Node's own modules or files under site/; no dependencies.
+for f in "$KIT"/site/*.js; do
+  ! grep -oE 'require\([^)]*\)|import[^;]* from ' "$f" | grep -vE '^require\("(node:[a-z_/]+|\./[a-z.-]+)"\)$' || fail "${f#$KIT/} loads something other than node: modules or site/ files"
+done
+j -e '!$.dependencies && !$.devDependencies' "$KIT/package.json" >/dev/null || fail "package.json has dependencies"
+# Never shipped: npm pack lists nothing under site/, and files (an allowlist) has no site/.
+p="$(cd "$KIT" && npm pack --dry-run --json 2>/dev/null | j -r --each '$[0].files.map((f) => f.path)')"
+[[ -n "$p" ]] && ! grep -qE '^(site/|_site/|\.github/)' <<<"$p" && j -e '!$.files.some((f) => /site/.test(f))' "$KIT/package.json" >/dev/null || fail "the package would ship the site or its source"
+# Text written for the site holds no handoff ID and none of the owner's private words (CABINET_PRIVATE_WORDS, as
+# "no project data in the kit" does, so this file names none); the check catches either placed there.
+leaks() {
+  local w
+  grep -rIlE 'H-[0-9]{8}-[0-9]{2}' "$1/site" || true
+  for w in ${CABINET_PRIVATE_WORDS:-}; do grep -rIilw -e "$w" "$1/site" || true; done
+}
+[[ -z "$(leaks "$KIT")" ]] || fail "site/ holds a handoff ID or a private word: $(leaks "$KIT")"
+# The Pages workflow: a published release or a manual run only, deploying in the github-pages environment
+# (the owner approves each run there), with no permission beyond these three. Its actions are pinned like
+# every workflow's (the release workflow section checks the pins).
+w="$KIT/.github/workflows/pages.yml"
+[[ "$(sed -n '/^on:/,/^[a-z]/p' "$w" | grep -E '^  [a-z_]+:' | tr -d ' \n')" == "release:workflow_dispatch:" ]] && grep -qx '    types: \[published\]' "$w" || fail "the Pages workflow starts on something other than a published release and a manual run"
+grep -A1 '^    environment:' "$w" | grep -qx '      name: github-pages' || fail "the Pages workflow does not deploy in the github-pages environment"
+perms="$(grep -E '^ +(actions|attestations|checks|contents|deployments|discussions|id-token|issues|models|packages|pages|pull-requests|repository-projects|security-events|statuses): ' "$w" | sed 's/ *#.*//; s/^ *//' | sort -u | tr '\n' ';')"
+[[ "$perms" == "contents: read;id-token: write;pages: write;" ]] && ! grep -qE 'permissions: *(write-all|read-all)' "$w" || fail "the Pages workflow asks for other permissions: $perms"
+grep -q '^          persist-credentials: false' "$w" && ! grep -qE 'run:.*\$\{\{' "$w" || fail "the Pages workflow leaves its token on disk, or puts \${{ }} inside a script"
+# The changelog names the site under the open version.
+awk '/^## [0-9]+\.[0-9]+\.[0-9]+ - Unreleased/{on=1; next} /^## /{on=0} on' "$KIT/CHANGELOG.md" | grep -q 'website' || fail "CHANGELOG.md has no entry for the website under the open version"
+
+# In a copy of the kit: what changes in the repo changes on the rebuilt site.
+C="$T/web-kit"; mkdir -p "$C"; (cd "$KIT" && tar cf - --exclude=./.git --exclude=./node_modules .) | (cd "$C" && tar xf -)
+b() { node "$C/site/build.js" "$T/web2/cabinet" --ref v9.9.9 >/dev/null 2>"$T/web2.err"; }
+sedi 's/^Each version says what changed/Each version says what drifted/' "$C/CHANGELOG.md"
+sedi 's/^description: Quality lead\./description: Quality lead, drifted./' "$C/roles/qa.md"
+sedi 's/^| Grok | yes, in folders you trust |/| Grokdrift | yes, in folders you trust |/' "$C/docs/guardrails.md"
+sedi "s/^| Slug | The workspace's short name/| Slug | A drifted short name/" "$C/README.md"
+sedi 's/^- macOS: `brew install node`/- macOS: `brew install node-drift`/; s/^- \*\*A secrets check\*\* before each commit/- **A secrets check** before each drifted commit/' "$C/README.md"
+sedi 's/^- \*\*Gemini:\*\* delete/- **Gemini:** drift-delete/' "$C/docs/guardrails.md"
+sedi 's/"Created acme-app at/"Created drift-app at/' "$C/brand/demo/captured.js"
+printf '\n| Option | Values |\n|---|---|\n| `--x` | `a\\|b` |\n' >> "$C/docs/commands.md"
+printf '\nA drifted doc line.\n\n<script>alert(1)</script>\n\nRun `cabinet role add` <role> here.\n\n| Name | What |\n|---|---|\n| <role> cell | y |\n\n## Twice\n\nOne.\n\n## Twice\n\nTwo: [first](#twice), [second](#twice-1).\n' >> "$C/docs/backups.md"
+b || { cat "$T/web2.err"; fail "the copy of the kit does not build"; }
+W2="$T/web2/cabinet"
+node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 || fail "the site built from a changed kit (see above)"
+grep -q 'A drifted doc line' "$W2/docs/backups/index.html" && grep -q 'what drifted' "$W2/changelog/index.html" || fail "a changed doc or changelog line is not on the rebuilt site"
+grep -q 'Quality lead, drifted' "$W2/index.html" && grep -q 'Grokdrift' "$W2/faq/index.html" || fail "a changed role description or agent tool is not on the rebuilt site"
+grep -q 'A drifted short name' "$W2/docs/commands/index.html" && grep -q 'drift-app at' "$W2/index.html" || fail "a changed glossary meaning or captured line is not on the rebuilt site"
+grep -q 'brew install node-drift' "$W2/index.html" && grep -q 'before each drifted commit' "$W2/index.html" && grep -q 'drift-delete' "$W2/index.html" || fail "a changed install or setup line is not in the rebuilt install block"
+grep -qF '&lt;script&gt;alert(1)&lt;/script&gt;' "$W2/docs/backups/index.html" && grep -qF '&lt;script&gt;alert(1)' "$W2/search.json" || fail "a script tag in a doc is not shown as text"
+grep -qF '&lt;role&gt; here' "$W2/docs/backups/index.html" && grep -qF '<td>&lt;role&gt; cell</td>' "$W2/docs/backups/index.html" || fail "<role> in running text or a table cell is not shown as text"
+grep -qF '<code><span class="nw">a|b</span></code>' "$W2/docs/commands/index.html" && ! grep -qF 'a\|b' "$W2/docs/commands/index.html" || fail "an escaped pipe in a table cell's code does not show as |"
+grep -q 'id="twice"' "$W2/docs/backups/index.html" && grep -q 'id="twice-1"' "$W2/docs/backups/index.html" || fail "a repeated heading does not get GitHub's -1 anchor"
+# A doc with no place in the sidebar, or a changelog with no released version, stops the build with a message.
+echo '# New' > "$C/docs/new.md"; b && fail "a doc with no page built"; grep -q 'docs/new.md has no place' "$T/web2.err" || fail "no message for a doc with no page"
+rm "$C/docs/new.md"
+awk '/^## [0-9.]+ - Unreleased/{skip=1; next} /^## /{skip=0} !skip' "$KIT/CHANGELOG.md" > "$C/CHANGELOG.md"
+b && node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >/dev/null || fail "a changelog with no Unreleased section does not build or check"
+awk '/^## /{exit} {print}' "$KIT/CHANGELOG.md" > "$C/CHANGELOG.md"; printf '## 0.9.0 - Unreleased\n\n- Next.\n' >> "$C/CHANGELOG.md"
+b && fail "a changelog with no released version built"; grep -q 'no released version' "$T/web2.err" || fail "no message for a changelog with no released version"
+# Never written into a path the package ships, and never over a folder of someone else's files.
+node "$C/site/build.js" "$C/docs/web" >/dev/null 2>&1 && fail "the site was built into docs/, which the package ships"
+[[ ! -e "$C/docs/web" ]] || fail "a refused build left files in docs/"
+mkdir -p "$T/mine"; echo keep > "$T/mine/note.txt"
+node "$C/site/build.js" "$T/mine" >/dev/null 2>&1 && fail "the site was built over a folder of other files"
+[[ "$(cat "$T/mine/note.txt")" == keep ]] || fail "a refused build changed a folder of other files"
+# GitHub's mark: the reference file comes with its source, and #000000 anywhere but on the mark fails the check.
+[[ -s "$KIT/site/github-mark/GitHub_Invertocat_Black.svg" ]] && grep -q 'https://brand.github.com/GitHub_Logos.zip' "$KIT/site/github-mark/SOURCE.txt" || fail "site/github-mark/ lacks GitHub's mark or the note of where it came from"
+cp "$KIT/CHANGELOG.md" "$C/CHANGELOG.md"; cp "$C/site/site.css" "$T/site.css"; printf '.x { color: #000000; }\n' >> "$C/site/site.css"
+b && ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >/dev/null || fail "#000000 outside GitHub's mark passed the color check"
+cp "$T/site.css" "$C/site/site.css"; sedi 's/aria-label="\${NAV.github}"/aria-label="Git"/' "$C/site/build.js"
+b && ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >/dev/null || fail "a GitHub mark without the name GitHub passed the check"
+cp "$KIT/site/build.js" "$C/site/build.js"
+# A link with any scheme but https:, http: or mailto: stops the build, and so does an llms.txt link outside the kit.
+cp "$KIT/CHANGELOG.md" "$C/CHANGELOG.md"; cp "$C/docs/backups.md" "$T/backups.md"
+printf '\n[x](javascript:alert(1))\n' >> "$C/docs/backups.md"; b && fail "a javascript: link in a doc built"; grep -q 'only https:, http:, mailto: and # links' "$T/web2.err" || fail "no message for a javascript: link"
+cp "$T/backups.md" "$C/docs/backups.md"; printf '\n[x](DATA:text/html,x)\n' >> "$C/docs/backups.md"; b && fail "a data: link in a doc built"
+cp "$T/backups.md" "$C/docs/backups.md"; cp "$C/llms.txt" "$T/llms.txt"
+printf -- '- [Out](../outside.md): no\n' >> "$C/llms.txt"; b && fail "an llms.txt link outside the kit built"; grep -q 'outside the kit' "$T/web2.err" || fail "no message for an llms.txt link outside the kit"
+cp "$T/llms.txt" "$C/llms.txt"; b || fail "the copy does not build again once the bad links are gone"
+# The leak check catches a handoff ID, or a private word, placed in the site's own text.
+printf '// H-20261025-99\n' >> "$C/site/copy.js"; [[ -n "$(leaks "$C")" ]] || fail "the check misses a handoff ID in site/"
+sedi '$d' "$C/site/copy.js"; [[ -z "$(leaks "$C")" ]] || fail "the leak check finds something in an unchanged site/"
+printf '// Zyxwordq\n' >> "$C/site/copy.js"; [[ -n "$(CABINET_PRIVATE_WORDS="zyxwordq" leaks "$C")" ]] || fail "the check misses a private word in site/"
+rm -rf "$C" "$T/web" "$T/web2" "$T/mine" "$T/backups.md" "$T/llms.txt" "$T/site.css"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

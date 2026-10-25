@@ -19,7 +19,8 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `brand/` | The brand: `BRAND.md` (every rule with its status, the source of truth), `tokens.json` (the same as data), `assets/` (every logo file), `index.html` (the visual guide). Not shipped | |
 | `tools/build-llms-full.js` | Builds `llms-full.txt` (`npm run docs`; not shipped) | |
 | `tools/build-brand.js` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
-| `test/smoke.sh` | The whole test suite (not shipped) | |
+| `site/` | The website: `build.js` builds it from `docs/`, `README.md`, `CHANGELOG.md`, `roles/`, `brand/demo/captured.js` and `brand/` (`node site/build.js <folder>`), `copy.js` holds its own wording, `site.css` and `site.js` run in the browser, `fonts/` holds the fonts with their licenses, `github-mark/` GitHub's mark for the header link, with where it came from. `.github/workflows/pages.yml` publishes it to GitHub Pages. Not shipped | |
+| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
 

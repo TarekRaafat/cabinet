@@ -392,6 +392,8 @@ npm test -- init                                # only the sections about init, 
 CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your private words is in the kit
 ```
 
+The website is built from this repository: `site/build.js` reads the docs, `CHANGELOG.md`, the roles, the demo's captured output and `brand/` (its own wording is in `site/copy.js`), and `node site/build.js <folder>/cabinet` writes the whole site into that folder (a new or empty one). Serve `<folder>` with any static file server and open `/cabinet/`, where the site lives on GitHub Pages. `.github/workflows/pages.yml` publishes it when the maintainer publishes a GitHub release, or on a manual run for a fix; each run deploys only after the maintainer approves it in the repository's `github-pages` environment. The site is not part of the npm package.
+
 Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
@@ -2163,6 +2165,27 @@ Each version says what changed and anything a workspace must do by hand after `n
 - The release workflow runs only code pinned to an exact version: `actions/checkout` and `actions/setup-node` by full commit hash (v4.4.0 of each, named in a comment) instead of the `v4` tag, and npm 12.2.1 instead of `npm@latest`. Its checkout no longer leaves a token on disk while the tests run (`persist-credentials: false`). The trigger, permissions, steps and tests are unchanged. The tests fail when a workflow uses an action not pinned to a full commit hash, or installs npm at anything but an exact version.
 - The pin check also fails on npm installed with no version at all (`npm install -g npm`, `npm i -g npm`), and reads workflows named `*.yaml` as well as `*.yml`; a folder with no workflows passes, and its test fails when the check prints an error there.
 
+### Website
+
+- A website for Cabinet, built from this repository by `node site/build.js <folder>` and published to GitHub Pages at `/cabinet/` by a new workflow, `.github/workflows/pages.yml`, only when the maintainer publishes a GitHub release or starts a run by hand, and only after the maintainer approves each deploy in the `github-pages` environment. It carries the docs (with search, a copy button on every code block, and a lookup for `cabinet doctor` messages), the changelog of released versions (with upgrade notes between two versions), a tour (the real output of `cabinet init`, the team, one piece of work from handoff to push, the demo film), pages by kind of work, and questions and answers. `llms.txt`, `llms-full.txt` and the files they link are served as they are. It sets no cookie, has no analytics, and loads nothing from another site: its fonts are served with their SIL Open Font License texts. It is not part of the npm package. The tests build it and check its links, colors, escaping, data and workflow.
+- The website's links: navigation, menus, the footer's row, the docs sidebar and button-like links have no underline, with a tint on hover and the focus ring; links in running text keep a quieter 1 px underline; the current page is bold and marked for screen readers; each use-case card is one link, and the other kinds of work are chips. The header links to the repository with GitHub's own mark, unaltered (`site/github-mark/`, with where it came from), and with the word GitHub in the menu on small screens.
+- The demo film's play button reads just "Play the demo", with no length or file size; the player shows the length once it plays.
+- On the website, the Use cases label above a kind-of-work page is a navigation link, the docs sidebar's hover tint has room left of its text, the Use cases items in the small-screen menu are 44 px tall, and the changelog's version pickers show one chevron at the same place in each, centred, drawn by the site in place of the browser's own arrow.
+- The website's six use-case cards share one layout: the title, the description, and the "Cabinet for <kind>" link at the bottom of every card, lined up across each row; no Cabinet word is marked inside a card, which reads as one link.
+- The website's Use cases menu shows a chevron, down when closed and up when open, in place of + and -.
+- The website's word cards (the meaning of a Cabinet word on hover or focus) open at the line of the word, even when it wraps, stay 16 px inside the window, open above the word when there is no room below, and are never wider than the window allows; one ran off the page.
+- The website's footer spreads across the full width: the lockup and tagline on the left, the six links in two columns on the right, then one line: "Open source under the Apache 2.0 license." and the version; it stacks into one column on small screens, with 44 px links on phones. The footer no longer credits the fonts; each font is still served with its license text beside it.
+- Without JavaScript, a word card on the website opens at the foot of the window, 16 px inside every edge, instead of running past the right edge on narrow screens.
+- The website's search, before you type, shows its hint as small help text set apart from the four suggestions, which look and move like search results.
+- On the website, no version number is followed by a period: "Built from version X.Y.Z", and the upgrade notes say "Both are X.Y.Z, so nothing changed between them."
+- In the website's docs, the section you are reading in "On this page", and the page in the sidebar, show in the text color and bold with a bar beside them, and nested sections are indented further.
+- Every button, tab, chip, copy button, picker and disclosure on the website answers the pointer: a tint and a text-colored border on outline controls, a lighter fill on filled and selected ones, a pointer cursor, a short color fade (none with reduced motion), only on devices that can hover; disabled controls do not change.
+- On small screens the website's team picture and the names under it are centred.
+- In the website's small-screen menu, every row's separator is one straight line across the full width.
+- On the website, the film's play button and a code block's copy button stay solid on hover, so nothing shows through them.
+- The demo's capture (`brand/demo/capture.sh`) also runs `cabinet init` in a small project repo, for the website's terminal.
+- The brand guide (`brand/BRAND.md`, and its visual guide) marks as approved the rules the website relies on: the colors and their shares, type, the wordmark and side-by-side lockup, clear space, the hover, logo animation, chairs and loading timings, the demo film, the app icon and social preview, and the don'ts. It adds how a page looks in light and dark, from the same colors at an opacity.
+
 ### Docs
 
 - The commands page says `cabinet version` shows the tagline beside the mark, and that `cabinet update` ends with "Nothing changed" whenever the workspace was already on that version, with git or without. The recipes say `config`, `role add`, `role remove` and `update` commit their own change, so committing after each change is for edits by hand. `llms.txt` names every command and every noun. The tests check each of these.
@@ -2337,7 +2360,8 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `brand/` | The brand: `BRAND.md` (every rule with its status, the source of truth), `tokens.json` (the same as data), `assets/` (every logo file), `index.html` (the visual guide). Not shipped | |
 | `tools/build-llms-full.js` | Builds `llms-full.txt` (`npm run docs`; not shipped) | |
 | `tools/build-brand.js` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
-| `test/smoke.sh` | The whole test suite (not shipped) | |
+| `site/` | The website: `build.js` builds it from `docs/`, `README.md`, `CHANGELOG.md`, `roles/`, `brand/demo/captured.js` and `brand/` (`node site/build.js <folder>`), `copy.js` holds its own wording, `site.css` and `site.js` run in the browser, `fonts/` holds the fonts with their licenses, `github-mark/` GitHub's mark for the header link, with where it came from. `.github/workflows/pages.yml` publishes it to GitHub Pages. Not shipped | |
+| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
 

@@ -194,5 +194,24 @@ var CAPTURED = {
   "lines": [
    "  0d  open          H-20261022-01   qa                        Checkout screens ready"
   ]
+ },
+ "10-init": {
+  "cmd": "cabinet init --yes",
+  "lines": [
+   "== Project files",
+   "  placed: 16 files",
+   "== Kit files",
+   "  the project's git ignores cabinet/ and the pointers setup adds; no tracked file of the project changes",
+   "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
+   "== Committed the new workspace as Maya",
+   "",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.1.2).",
+   "Next:",
+   "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
+   "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",
+   "  - Set up this machine: cabinet bootstrap --dry-run, then cabinet bootstrap.",
+   "  - cabinet next shows what is left, at any time, from anywhere in /Users/maya/acme-app/cabinet.",
+   "Updates: npm update, then cabinet update (npx cabinet update without a global install)."
+  ]
  }
 };

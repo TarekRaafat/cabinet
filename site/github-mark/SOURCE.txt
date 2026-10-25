@@ -1,0 +1,8 @@
+GitHub_Invertocat_Black.svg is GitHub's own mark, unchanged.
+
+Downloaded on 25 Oct 2026 from https://brand.github.com/GitHub_Logos.zip (file GitHub Logos/SVG/GitHub_Invertocat_Black.svg),
+the logo files linked from https://github.com/logos.
+
+The website's header links to the repository with this mark, drawn inline by site/build.js: the path is copied
+byte for byte, in GitHub's black on light and white on dark, at 20 px, as GitHub's logo rules allow for a link to
+a project. It is GitHub's logo, not Cabinet's, and not covered by this repository's license.

@@ -12,7 +12,7 @@ What is real and what is an example:
 |---|---|
 | `cabinet-demo.mp4`, `.webm` | The film. |
 | `demo.html` | The film itself: every frame is `render(t)`. Open it in a browser to watch it (space pauses, the arrows step, r restarts). |
-| `captured.js` | The commands' real output, made by `capture.sh`. |
+| `captured.js` | The commands' real output, made by `capture.sh`; it also holds `cabinet init` in a project repo, which the website's hero terminal replays. |
 | `capture.sh` | Runs the commands in a sandbox (macOS). |
 | `music.m4a` | The music, made with Suno. |
 | `suno-prompt.md` | The prompt that made it. |

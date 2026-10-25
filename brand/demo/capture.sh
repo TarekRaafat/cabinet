@@ -43,6 +43,10 @@ rec 09-handoffs cabinet handoff list
 cp "$W/AGENTS.md" "$OUT/AGENTS.md"; cp "$W/OPERATIONS.md" "$OUT/OPERATIONS.md" 2>/dev/null || true
 ls "$W/.cabinet/rules" > "$OUT/rules.txt" 2>/dev/null || true
 find "$W" -maxdepth 2 -not -path '*/.git*' | sed "s|$W|acme|" | sort > "$OUT/tree.txt"
+# cabinet init in a small project repo, for the website's hero terminal: --yes asks nothing (no npm install, no bootstrap).
+P="$HOME/acme-app"; mkdir -p "$P"; cd "$P"
+git init -q -b main; printf '{"name":"acme-app","version":"1.0.0"}\n' > package.json; git add -A; git commit -qm init
+rec 10-init cabinet init --yes
 cp "$T/fake.log" "$OUT/fake.log" 2>/dev/null || true
 # Paths as a person sees them: the sandbox's home is shown as /Users/maya.
 for f in "$OUT"/*.raw; do L="$(printf '%s' "$HOME" | sed 's/[.[\*^$/]/\\&/g')"; sed -i.bak -e "s/\/private$L/\/Users\/maya/g" -e "s/$L/\/Users\/maya/g" -e "s/\/private\/var\/folders\/[^ ]*\/T\/tmp\.[A-Za-z0-9]*\/shim/\/opt\/homebrew\/bin/g" -e "s/\/var\/folders\/[^ ]*\/T\/tmp\.[A-Za-z0-9]*\/shim/\/opt\/homebrew\/bin/g" "$f"; rm -f "$f.bak"; done

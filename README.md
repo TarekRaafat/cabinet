@@ -219,6 +219,8 @@ npm test -- init                                # only the sections about init, 
 CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your private words is in the kit
 ```
 
+The website is built from this repository: `site/build.js` reads the docs, `CHANGELOG.md`, the roles, the demo's captured output and `brand/` (its own wording is in `site/copy.js`), and `node site/build.js <folder>/cabinet` writes the whole site into that folder (a new or empty one). Serve `<folder>` with any static file server and open `/cabinet/`, where the site lives on GitHub Pages. `.github/workflows/pages.yml` publishes it when the maintainer publishes a GitHub release, or on a manual run for a fix; each run deploys only after the maintainer approves it in the repository's `github-pages` environment. The site is not part of the npm package.
+
 Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
