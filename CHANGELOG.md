@@ -34,6 +34,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - On small screens the website's team picture and the names under it are centred.
 - In the website's small-screen menu, every row's separator is one straight line across the full width.
 - On the website, the film's play button and a code block's copy button stay solid on hover, so nothing shows through them.
+- The copy button in the website's install command fills the box to its rounded right edge, so its hover follows the box's shape.
 - The demo's capture (`brand/demo/capture.sh`) also runs `cabinet init` in a small project repo, for the website's terminal.
 - The brand guide (`brand/BRAND.md`, and its visual guide) marks as approved the rules the website relies on: the colors and their shares, type, the wordmark and side-by-side lockup, clear space, the hover, logo animation, chairs and loading timings, the demo film, the app icon and social preview, and the don'ts. It adds how a page looks in light and dark, from the same colors at an opacity.
 

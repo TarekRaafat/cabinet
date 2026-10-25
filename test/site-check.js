@@ -227,6 +227,9 @@ if (!/\.js \.nav > a, \.js \.uses > summary \{[^}]*border-top: 1px solid var\(--
 if (!/--play-hover: color-mix\(in srgb, #E8EAEE 85%, #101216\);/i.test(css) || !/--copy-hover: color-mix\(in srgb, #15181E 6%, #F3F4F6\);/i.test(css) || !/--copy-hover: color-mix\(in srgb, #E8EAEE 8%, #101216\);/i.test(css)
   || !/\.code \.copy:hover \{ background-color: var\(--copy-hover\);/.test(css) || !/\.btn\.primary:not\(\.play-film\):not\(:disabled\):hover/.test(css)) fail("site.css: a control on top of content (code copy, film play) is not opaque on hover");
 
+// The install chip's copy button fills the chip's height to its right edge, with the chip's rounding (owner finding).
+if (!/\.cmd \{[^}]*padding: 0 0 0 14px;/.test(css) || !/\.cmd \.copy \{ align-self: stretch;[^}]*border-radius: 0 7px 7px 0;/.test(css)) fail("site.css: the install chip's copy button does not fill the chip to its rounded right edge");
+
 // 11. Every <pre> on a docs page has a copy button.
 for (const f of html.filter((f) => f.startsWith("docs/"))) {
   const pres = (text(f).match(/<pre/g) || []).length, btns = (text(f).match(/<pre[^>]*>[\s\S]*?<\/pre><button type="button" class="copy"/g) || []).length;

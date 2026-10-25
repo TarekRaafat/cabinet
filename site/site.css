@@ -131,9 +131,10 @@ code { font-size: 0.88em; overflow-wrap: break-word; }
 .code pre, pre.example { margin: 0; padding: 16px 20px; overflow-x: auto; white-space: pre; background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; font-size: 14px; line-height: 1.6; }
 .code .copy { position: absolute; top: 8px; right: 8px; font-family: var(--font-body); font-size: 13px; min-height: 32px; padding: 0 10px; border: 1px solid var(--control); border-radius: 8px; background: var(--bg); color: var(--text); cursor: pointer; }
 .code pre { padding-right: 96px; }
-.cmd { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--control); border-radius: 8px; padding: 0 4px 0 14px; min-height: 44px; background: var(--card); max-width: 100%; }
+.cmd { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--control); border-radius: 8px; padding: 0 0 0 14px; min-height: 44px; background: var(--card); max-width: 100%; }
 .cmd code { white-space: nowrap; overflow-x: auto; font-size: 14px; }
-.cmd .copy { font: inherit; font-size: 13px; min-height: 36px; padding: 0 10px; border: 0; border-left: 1px solid var(--divider); background: transparent; color: var(--text); cursor: pointer; }
+.cmd .copy { align-self: stretch; font: inherit; font-size: 13px; min-height: 36px; padding: 0 12px; border: 0; border-left: 1px solid var(--divider); border-radius: 0 7px 7px 0; background: transparent; color: var(--text); cursor: pointer; }
+/* The install chip's copy button fills the chip to its right edge, rounded to match the 8 px chip inside its 1 px border, so its hover tint follows the chip. */
 .copy-error { color: var(--muted); font-size: 14px; }
 
 /* Tables */
