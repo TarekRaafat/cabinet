@@ -1380,11 +1380,15 @@ JOB
     rn="${row%%$'\t'*}"
     grep -qF "| \`$rn\` |" "$ws/AGENTS.md" || node "$LIBJS" before "$ws/AGENTS.md" '/^\| workspace \(this folder\)/' "| \`$rn\` | TBD | TBD |"
   done
+  # The role files as they were, so only those the build (or bootstrap) changes are committed.
+  local rsum; rsum="$(cksum "$ws/ORG.md" "$ws"/agents/*.md "$ws"/.claude/agents/*.md 2>/dev/null || true)"
   # ORG.md's heading names the project, so a rename rebuilds the roles too.
   [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] && "$ws/bin/role.sh" build
 
   # Schedules, a new slug and new repos take effect through bootstrap.
-  local needs=0 boot=0
+  local needs=0 boot=0 noclaude=0
+  # bootstrap links CLAUDE.md when it is missing: only then is the link this run's to commit.
+  [[ -e "$ws/CLAUDE.md" || -L "$ws/CLAUDE.md" ]] || noclaude=1
   [[ "$brief" != "$o_brief" || "$backup" != "$o_backup" || "$backup_time" != "$o_btime" || "$slug" != "$o_slug" ]] && needs=1
   [[ "$pipe" != "$o_pipe" || ( "$pipe" != off && "$ptime" != "${o_ptime:-}" ) ]] && needs=1
   ((${#newrows[@]})) && needs=1
@@ -1415,10 +1419,15 @@ JOB
   [[ "$name" != "$o_name" ]] && wrote+=(HANDOFFS.md README.md specs/ROADMAP.md)
   [[ "$slug" != "$o_slug" ]] && wrote+=(README.md)
   ((${#newrows[@]})) && wrote+=(repos.tsv)
-  # The roles are built by a role change or a rename (ORG.md's heading), and by bootstrap when it ran.
-  [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] || ((boot)) && wrote+=(ORG.md agents .claude/agents)
-  # bootstrap also links CLAUDE.md when it is missing.
-  ((boot)) && wrote+=(CLAUDE.md)
+  # The roles are built by a role change or a rename (ORG.md's heading), and by bootstrap when it ran:
+  # only the role files that changed, appeared or went since before the build, as for jobs.
+  if [[ "$roles" != "$o_roles" || "$name" != "$o_name" ]] || ((boot)); then
+    for p in "$ws/ORG.md" "$ws"/agents/*.md "$ws"/.claude/agents/*.md; do
+      [[ -f "$p" ]] && ! grep -qxF "$(cksum "$p")" <<<"$rsum" && wrote+=("${p#"$ws/"}")
+    done
+    while read -r _ _ p; do [[ -n "$p" && ! -e "$p" ]] && wrote+=("${p#"$ws/"}"); done <<<"$rsum"
+  fi
+  ((boot && noclaude)) && wrote+=(CLAUDE.md)
   if ((cfg_clean)); then
     while IFS= read -r p; do cfg_files+=("$p"); done < <(git -C "$ws" status --porcelain -uall -- "${wrote[@]}" 2>/dev/null | cut -c4-)
   fi

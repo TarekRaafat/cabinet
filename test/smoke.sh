@@ -622,14 +622,21 @@ for f in HANDOFFS.md README.md specs/ROADMAP.md ORG.md; do git -C "$MC" show --n
 # A role note committed without a build: a rename rebuilds agents/ and .claude/agents/ as well, and commits them.
 printf 'A note for qa.\n' > "$MC/roles/qa.md"; git -C "$MC" add roles/qa.md && git -C "$MC" commit -qm "a qa note, not built" -- roles/qa.md
 out="$(cd "$MC" && "$F" config --yes --name "Mid Noted" 2>&1)" && grep -qx 'A note for qa.' "$MC/agents/qa.md" && [[ -z "$(git -C "$MC" status --porcelain)" ]] || fail "a rename left the rebuilt roles uncommitted: $out $(git -C "$MC" status --porcelain)"
+# Only the role files the build changed: a new file another session writes under agents/ during a rename stays theirs.
+out="$(cd "$MC" && MID_EDIT="$MC/agents/other.md" PATH="$T/gitmid:$PATH" "$F" config --yes --name "Mid Third" 2>&1)" && git -C "$MC" show --name-only --format= HEAD | grep -qxF ORG.md || fail "a rename did not commit ORG.md: $out"
+[[ "$(git -C "$MC" status --porcelain)" == "?? agents/other.md" ]] || fail "a rename committed a role file another session wrote: $(git -C "$MC" show --name-only --format= HEAD)"
+rm "$MC/agents/other.md"
 # A slug change commits only the job files its rewrite changed: brief.job names no slug, so another session's edit to it stays theirs.
 os="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$MC/cabinet.env")"
 printf '# Reads Logs/cabinet/%s/ and state/cabinet/%s/.\nCOMMAND="true"\nWHEN=""\n' "$os" "$os" > "$MC/jobs/logs.job"; git -C "$MC" add jobs/logs.job && git -C "$MC" commit -qm "a job that names the slug" -- jobs/logs.job
 mid jobs/brief.job --slug "$os-2"
 git -C "$MC" show --name-only --format= HEAD | grep -qxF jobs/logs.job && grep -qF "Logs/cabinet/$os-2/" "$MC/jobs/logs.job" || fail "a slug change did not commit the job it rewrote: $(git -C "$MC" show --name-only --format= HEAD)"
+# A plain CLAUDE.md is not bootstrap's to commit: another session's edit to it while config runs bootstrap stays theirs.
+rm "$MC/CLAUDE.md" && echo "# Plain notes" > "$MC/CLAUDE.md" && git -C "$MC" commit -qm "CLAUDE.md as a plain file" -- CLAUDE.md
+mid CLAUDE.md --brief-time "7:30 AM" --apply
 # bootstrap links CLAUDE.md again when it is missing, and config commits the link with the rest.
 git -C "$MC" rm -q CLAUDE.md && git -C "$MC" commit -qm "CLAUDE.md removed"
-out="$(cd "$MC" && "$F" config --yes --brief-time "7:45 AM" --apply 2>&1)" && [[ -L "$MC/CLAUDE.md" && -z "$(git -C "$MC" status --porcelain)" ]] || fail "config left the CLAUDE.md bootstrap linked uncommitted: $out $(git -C "$MC" status --porcelain)"
+out="$(cd "$MC" && "$F" config --yes --brief-time "7:45 AM" --apply 2>&1)" && [[ "$(readlink "$MC/CLAUDE.md")" == AGENTS.md && -z "$(git -C "$MC" status --porcelain)" ]] || fail "config left the CLAUDE.md bootstrap linked uncommitted: $out $(git -C "$MC" status --porcelain)"
 C="$T/cfg"; "$F" new "$C" --name Acme --yes >/dev/null
 cfg() { (cd "$C" && HOME="$H" PATH="$T/shim:$PATH" "$F" config "$@" 2>&1); }
 HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
