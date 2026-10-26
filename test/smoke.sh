@@ -2324,8 +2324,6 @@ grep -A1 '^    environment:' "$w" | grep -qx '      name: github-pages' || fail 
 perms="$(grep -E '^ +(actions|attestations|checks|contents|deployments|discussions|id-token|issues|models|packages|pages|pull-requests|repository-projects|security-events|statuses): ' "$w" | sed 's/ *#.*//; s/^ *//' | sort -u | tr '\n' ';')"
 [[ "$perms" == "contents: read;id-token: write;pages: write;" ]] && ! grep -qE 'permissions: *(write-all|read-all)' "$w" || fail "the Pages workflow asks for other permissions: $perms"
 grep -q '^          persist-credentials: false' "$w" && ! grep -qE 'run:.*\$\{\{' "$w" || fail "the Pages workflow leaves its token on disk, or puts \${{ }} inside a script"
-# The changelog names the site under the open version.
-awk '/^## [0-9]+\.[0-9]+\.[0-9]+ - /{if (seen++) exit; on=1; next} on' "$KIT/CHANGELOG.md" | grep -q 'website' || fail "CHANGELOG.md has no entry for the website under the open version"
 
 # In a copy of the kit: what changes in the repo changes on the rebuilt site.
 C="$T/web-kit"; mkdir -p "$C"; (cd "$KIT" && tar cf - --exclude=./.git --exclude=./node_modules .) | (cd "$C" && tar xf -)

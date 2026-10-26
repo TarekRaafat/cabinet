@@ -14,7 +14,7 @@ Thank you for helping. Cabinet is plain Markdown, bash and JavaScript run with N
 
 Read [AGENTS.md](AGENTS.md) before changing anything: it holds every rule for working on the kit. What reviews check most:
 
-- Every change has a test in `test/smoke.sh` and an entry in `CHANGELOG.md` under the next version.
+- Every change has a test in `test/smoke.sh`. A change to what the package ships, or that users see, also has an entry in `CHANGELOG.md` under the next version; the website gets at most one line per release, for a new page or section, never for polish or layout fixes.
 - The docs match the code: a change to a command, option, file, message or behavior updates `docs/` (and `README.md` when people see it) in the same change, then `npm run docs` rebuilds `llms-full.txt`.
 - Commands follow the conventions in `AGENTS.md`: one command table in `bin/cabinet`, one list of verbs, the same options everywhere.
 - Scripts run on bash 3.2. New logic is JavaScript in `scripts/lib.js`, never TypeScript, with Node's own modules only: no npm packages and no build step.

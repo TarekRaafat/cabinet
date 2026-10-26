@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.1.4 - Unreleased
+
+- The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.
+
 ## 0.1.3 - 26 Oct 2026
 
 Commands, a website, and pinned releases. Nothing to do by hand after `npx cabinet update`.
