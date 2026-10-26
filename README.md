@@ -148,6 +148,7 @@ It asks, each with a default you keep by pressing Enter:
 - the project name, folder, and owner name and email (defaults from your git config);
 - which roles to enable (chief-of-staff is always on: it writes the brief and routes work);
 - the agent tool that runs scheduled jobs, the brief time (`7 AM`, days and a time like `fri 4 PM`, or `off`), and the first day of the week;
+- whether a commit a role makes in a Cabinet run credits that role beside you, with one `Co-authored-by` line that shows the Cabinet Team avatar on GitHub (`app`, the default, or `off`; [credit roles](docs/concepts.md#credit-roles));
 - a folder for the encrypted daily backup, outside the workspace (or `off`);
 - the product repos, as git URLs.
 
@@ -157,7 +158,7 @@ Every answer is also an option, and `--yes` skips the questions:
 
 ```sh
 cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
-  --brief-time "7 AM" --week-start sunday --writing standard --backup-dir off --repo git@github.com:acme/api.git --yes
+  --brief-time "7 AM" --week-start sunday --writing standard --credit-roles app --backup-dir off --repo git@github.com:acme/api.git --yes
 ```
 
 All options: [commands](docs/commands.md#cabinet-new).

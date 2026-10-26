@@ -102,6 +102,38 @@ How agents write to you is a house rule in `AGENTS.md`, asked at setup and by `c
 - The brief opens with what waits today ("Today: 2 decisions, 1 action, about 5 min."). The sign-off queue stays complete, and no warning about anything irreversible, money, security or data loss is ever cut.
 
 The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. Ask any agent for details on a point and it gives them.
+
+## Credit roles
+
+A commit a role makes in a Cabinet run can credit that role beside you. Its message then ends with one line:
+
+```
+Co-authored-by: Cabinet backend <347351783+cabinet-team[bot]@users.noreply.github.com>
+```
+
+GitHub links that email to the Cabinet Team app, so the commit shows you and `cabinet-team[bot]` with the Cabinet Team avatar; the role's name is in the message. You stay the author and the committer, and you still push. Nothing is set up on GitHub, and nothing is paid for.
+
+- **On for a new workspace** (`app`), asked at setup; `cabinet config --credit-roles off|app` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|app`), so a teammate's runs credit nothing until they say so.
+- **Only commits made in a Cabinet run:** scheduled jobs, `cabinet handoff run`, `cabinet spec run` and `cabinet role draft`, which tell the agent tool the role (`CABINET_AGENT`). Your own commits, and the ones `cabinet` makes for you, get nothing. A session you open in an agent tool yourself is not credited yet.
+- **Only new commits:** never an amend, a merge or a squash, nor a commit that a rebase or cherry-pick replays. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
+- **Your own app:** `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` shows your GitHub App instead; `off` goes back to the Cabinet Team.
+- **The house rule follows it:** the "Commits." line in `AGENTS.md` allows this one line while credit is on, and no other attribution.
+
+The line is added by the credit hook, `prepare-commit-msg` in the global hooks folder ([guardrails](guardrails.md#what-bootstrap-installs)), which `cabinet bootstrap` places. It needs git 2.15 or later. A `prepare-commit-msg` of your own there is left as it is, and then nothing is credited on that machine: `cabinet doctor` says so and why (`credit.hook`).
+
+Each runner must pass the role on to the commands its agent runs. Whether each does is confirmed live by the owner on a real tool, as the guardrails are:
+
+| Runner | Credit confirmed live |
+|---|---|
+| `claude` | not yet |
+| `codex` | not yet |
+| `antigravity` | not yet |
+| `qwen` | not yet |
+| `grok` | not yet |
+| `opencode` | not yet |
+| `cursor` | not yet |
+| `custom` | depends on your command; Cabinet sets the variables for it |
+
 ## What agent runs cost
 
 Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), from what the agent tool reports, in `spend.tsv` in the workspace's log folder (time, job, runner, dollars, then uncached input, cached input and output tokens), on this machine only. Each built-in runner prints JSON for this; the reply still goes to the job's log, and output that is not that JSON (an error, a different version) goes there as it is.
@@ -175,6 +207,6 @@ Cabinet works through agent tools, so it works with any model they offer. Everyt
 | `grok` | `grok -p "<role instruction> <prompt>" --permission-mode auto --output-format json` |
 | `opencode` | `opencode run --format json "<role instruction> <prompt>"` |
 | `cursor` | `cursor-agent -p --force --output-format json "<role instruction> <prompt>"` (run live) |
-| `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` |
+| `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` (every runner gets `CABINET_AGENT`, for [credit roles](#credit-roles)) |
 
 The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end as scheduled jobs (`grok`, `opencode`, `codex` and `antigravity` answered a one-line prompt in that mode; `qwen` needs an auth type set in its settings); Codex's default sandbox may not let a scheduled brief write its file. Headless Antigravity denies any tool it would ask about, and `--mode auto` is not open to every plan, so its runner skips the prompts: its deny rules are then the guardrail ([guardrails](guardrails.md)). Gemini CLI is no longer a runner: Google moved its users to Antigravity. A workspace still set to `gemini` is told to run `cabinet config --runner antigravity`; Gemini CLI keeps its guardrails for interactive use. Scheduled jobs get a PATH with the runner's and Node's folders.

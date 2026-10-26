@@ -35,6 +35,22 @@ CABINET_SCHEDULES="$(local_get CABINET_SCHEDULES)"
 BACKUP_DIR_LOCAL=0
 if local_has CABINET_BACKUP_DIR; then CABINET_BACKUP_DIR="$(local_get CABINET_BACKUP_DIR)"; BACKUP_DIR_LOCAL=1; fi
 if local_has CABINET_BACKUP_TIME; then CABINET_BACKUP_TIME="$(local_get CABINET_BACKUP_TIME)"; fi
+# Credit roles (cabinet config --credit-roles off|app): a commit made in a Cabinet run credits its role
+# (guardrails/prepare-commit-msg). Read as written; only an exact "app" turns it on.
+CREDIT_KIT_EMAIL="347351783+cabinet-team[bot]@users.noreply.github.com"
+credit_email_ok() {   # a GitHub App's bot noreply email, exactly
+  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
+  [[ "$1" =~ $re ]]
+}
+credit_shared() { [[ "${CABINET_LAYOUT:-}" == inside && "${CABINET_VISIBILITY:-}" == shared ]]; }
+# Answered on this machine: cabinet.local.env's line, else cabinet.env's, except in a shared workspace,
+# where each machine answers for itself (cabinet config --this-machine --credit-roles).
+credit_answered() { local_has CABINET_CREDIT_ROLES || { ! credit_shared && grep -q '^CABINET_CREDIT_ROLES=' "$WS/cabinet.env"; }; }
+credit_value() {   # the answer as written, or nothing
+  if local_has CABINET_CREDIT_ROLES; then local_get CABINET_CREDIT_ROLES
+  elif credit_answered; then printf '%s' "${CABINET_CREDIT_ROLES-}"; fi
+}
+credit_mode() { [[ "$(credit_value)" == app ]] && credit_email_ok "${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}" && echo app || echo off; }
 
 K="$WS/.cabinet"                                   # kit-managed files
 LABEL="ai.cabinet.$CABINET_SLUG"                   # schedule labels: $LABEL.<job>
@@ -151,17 +167,23 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_a
 run_agent() {
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
+  # Every runner gets the role in $CABINET_AGENT and the credit its commits carry (credit roles):
+  # CABINET_CREDIT, app or off, and CABINET_CREDIT_ADDRESS, the email; the credit hook reads them.
+  local credit address=""; credit="$(credit_mode)"
+  [[ "$credit" == app ]] && address="${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}"
   # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
   # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
   if [[ "$CABINET_RUNNER" == custom ]]; then
     [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
-    CABINET_AGENT="$AGENT" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD"; return
+    CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD"; return
   fi
   [[ "$CABINET_RUNNER" != gemini ]] || { echo "CABINET_RUNNER=gemini is no longer a runner (Gemini CLI users moved to Antigravity): cabinet config --runner antigravity" >&2; return 2; }
   has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
   # Each built-in runner prints JSON, for the cost it reports: the reply goes on to the log as
   # before, the cost to $SPEND (spend_report).
   local out st=0; out="$(mktemp)"
+  # In a subshell, so the caller keeps none of the run's variables.
+  ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"
   case "$CABINET_RUNNER" in
     claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" ;;
     codex)    codex exec --json "$as_role" ;;
@@ -173,7 +195,7 @@ run_agent() {
     opencode) opencode run --format json "$as_role" ;;
     # --force lets print mode write files (the brief); deny rules are the guardrail.
     cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json "$as_role" ;;
-  esac > "$out" || st=$?
+  esac ) > "$out" || st=$?
   spend_report "$out"; rm -f "$out"; return "$st"
 }
 

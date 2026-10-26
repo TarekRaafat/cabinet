@@ -62,6 +62,22 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)` | `schedules.node` | Node is not on the PATH scheduled jobs get (the PATH found when `bin/bootstrap.sh` last ran), so the brief, handoff and spec steps of a job would fail. | Install Node.js where your shell finds it, then `bin/bootstrap.sh` saves the new PATH into the schedules. |
 | `note the custom runner '<...>' has no cabinet guardrails: only the git push gate covers its scheduled runs` | `runner.custom-unguarded` | A custom runner the kit does not know. | Add its own deny rules by hand. |
 
+## Credit roles
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `ok credit roles: <...>` | `credit.setting` | The setting is `app` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
+| `FIX CABINET_CREDIT_ROLES is "<...>", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `app` turns credit on. | `cabinet config --credit-roles off` or `app`. |
+| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `app`. |
+| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `app`. |
+| `ok credit names the app of <...>` | `credit.email` | `CABINET_CREDIT_EMAIL` names your own GitHub App. | Nothing. |
+| `FIX CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)` | `credit.email` | The email is not `<user ID>+<app>[bot]@users.noreply.github.com` exactly, in lower case. | `cabinet config --credit-email <email>`, or `off` for the Cabinet Team app. |
+| `ok credit installed: the credit hook is at <...>` | `credit.hook` | The global hooks folder holds the kit's credit hook. | Nothing. |
+| `note credit not installed: git has no global hooks path (run bin/bootstrap.sh)` | `credit.hook` | Bootstrap has not run on this machine. | `bin/bootstrap.sh`. |
+| `note credit not installed: the global hooks path is <...>, which bootstrap leaves as it is, and it holds no credit hook` | `credit.hook` | Your global `core.hooksPath` points to a folder of your own. | Keep it (no credit on this machine), or copy `.cabinet/guardrails/prepare-commit-msg` into that folder yourself. |
+| `note credit not installed: no prepare-commit-msg in <...> (run bin/bootstrap.sh)` | `credit.hook` | The hook is missing. | `bin/bootstrap.sh`. |
+| `note credit not installed: <...> is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks, delete it there, then run bin/bootstrap.sh)` | `credit.hook` | A `prepare-commit-msg` of your own, or an edited copy of the kit's, is in the global hooks folder. Bootstrap never replaces it. | Keep it (no credit on this machine), or move it as the message says and run `bin/bootstrap.sh`. |
+
 ## Skills and plugins
 
 | Message | ID | Cause | Fix |

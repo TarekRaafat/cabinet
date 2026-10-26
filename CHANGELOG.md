@@ -2,7 +2,15 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.1.4 - Unreleased
+## 0.2.0 - Unreleased
+
+### Credit roles
+
+- A commit a role makes in a Cabinet run can credit that role beside you: its message ends with one `Co-authored-by: Cabinet <role> <347351783+cabinet-team[bot]@users.noreply.github.com>` line, which GitHub shows with the Cabinet Team avatar. You stay the author and still push. New options for `cabinet new`, `init` and `config`: `--credit-roles off|app` (on, `app`, for a new workspace, and asked at setup) and `--credit-email <email>|off` (your own GitHub App's bot noreply email). `cabinet config --this-machine --credit-roles off|app` answers for one machine; in a shared `cabinet/`, each machine answers for itself. Only commits made in a Cabinet run are credited (scheduled jobs, `handoff run`, `spec run`, `role draft`), and only new ones: never an amend, merge or squash, nor a commit a rebase or cherry-pick replays. The "Commits." house rule in `AGENTS.md` follows the setting; the concepts page explains it.
+- Bootstrap places the credit hook as `prepare-commit-msg` in the global hooks folder, in place of the pass-through stub there (it still runs a repo's own `prepare-commit-msg`, whose failure still stops the commit). A hook of your own there is never replaced. New doctor checks `credit.setting`, `credit.email` and `credit.hook`; new `cabinet next` step `credit-roles`. Every runner now gets the role in `CABINET_AGENT`, not only `custom`.
+- After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles app`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
+
+### Rules
 
 - The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.
 

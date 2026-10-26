@@ -603,6 +603,21 @@ function afterLast(file, add, ...names) {
     return list;
   });
 }
+// credit-line <file> on|off: the "- **Commits.**" house rule follows credit roles. One sentence of it
+// changes, to the other, and nothing else on the line. Exit 0 when the line says it now (changed or
+// already so), 3 when it holds neither sentence (the owner rewrote it: theirs to edit).
+const CREDIT_OFF = "No AI or tool attribution of any kind (no `Co-Authored-By`, no \"Generated with\" line).";
+const CREDIT_ON = "No AI or tool attribution of any kind except Cabinet's role credit (one `Co-authored-by: Cabinet <role>` line, added by Cabinet to a commit made in a Cabinet run; no other `Co-Authored-By`, no \"Generated with\" line).";
+function creditLine(file, mode) {
+  if (mode !== "on" && mode !== "off") die("usage: node lib.js credit-line <file> on|off", 2);
+  const [want, other] = mode === "on" ? [CREDIT_ON, CREDIT_OFF] : [CREDIT_OFF, CREDIT_ON];
+  const l = lines(file), i = l.list.findIndex((x) => x.startsWith("- **Commits.**"));
+  if (i < 0) process.exit(3);
+  if (l.list[i].includes(want)) return;
+  if (!l.list[i].includes(other)) process.exit(3);
+  l.list[i] = l.list[i].replace(other, () => want);
+  save(file, l.list, l.end);
+}
 // fill-template <file>: the template with its markers (PROJECT, SLUG, OWNER_NAME, OWNER_EMAIL and
 // KIT_VERSION, each between two pairs of at signs) replaced by P, S, O, E and V from the environment,
 // on stdout. The marker is built, not written out, so a workspace's copy of this file holds none.
@@ -821,7 +836,7 @@ const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
-  "after-last": afterLast, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
+  "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest,
 };
 const [cmd, ...args] = process.argv.slice(2);

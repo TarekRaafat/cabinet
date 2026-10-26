@@ -115,6 +115,7 @@ while IFS= read -r d; do
   lh="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
   [[ -n "$lh" ]] && bad guardrails.repo-hookspath "$d sets its own core.hooksPath ($lh), which bypasses the push gate"
 done < <(data_dirs | awk '!seen[$0]++')
+
 # Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
 missing="$(json -s "$deny_missing" ~/.claude/settings.json "$K/guardrails/claude-permissions.json" 2>/dev/null || echo all)"
@@ -189,6 +190,27 @@ else bad schedules.node "scheduled jobs cannot find node, which the workspace sc
 if [[ "$CABINET_RUNNER" == custom ]] && ! has "claude codex gemini qwen grok opencode agy cursor-agent agent" "$c"; then
   note runner.custom-unguarded "the custom runner '$c' has no cabinet guardrails: only the git push gate covers its scheduled runs"
 fi
+
+section "Credit roles"
+# Read as written (lib.sh, credit_value): only an exact app or off is a setting.
+cv="$(credit_value)"
+if credit_answered; then
+  case "$cv" in
+    app|off) ok credit.setting "credit roles: $cv" ;;
+    *) bad credit.setting "CABINET_CREDIT_ROLES is \"$cv\", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)" ;;
+  esac
+elif credit_shared; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)"
+else note credit.setting "credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)"; fi
+if [[ -n "${CABINET_CREDIT_EMAIL:-}" ]]; then
+  credit_email_ok "$CABINET_CREDIT_EMAIL" && ok credit.email "credit names the app of $CABINET_CREDIT_EMAIL" \
+    || bad credit.email "CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)"
+fi
+pcm="$hooks/prepare-commit-msg"
+if [[ -n "$hooks" && -f "$pcm" ]] && cmp -s "$K/guardrails/prepare-commit-msg" "$pcm"; then ok credit.hook "credit installed: the credit hook is at $pcm"
+elif [[ -z "$hooks" ]]; then note credit.hook "credit not installed: git has no global hooks path (run bin/bootstrap.sh)"
+elif [[ "$hooks" != "$HOME/.config/git/hooks" && ! -e "$pcm" ]]; then note credit.hook "credit not installed: the global hooks path is $hooks, which bootstrap leaves as it is, and it holds no credit hook"
+elif [[ ! -e "$pcm" && ! -L "$pcm" ]]; then note credit.hook "credit not installed: no prepare-commit-msg in $hooks (run bin/bootstrap.sh)"
+else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks, delete it there, then run bin/bootstrap.sh)"; fi
 
 section "Skills and plugins"
 for s in ${CABINET_SKILLS:-}; do [[ -e ~/.claude/skills/$s ]] || note skills.skill "skill '$s' not installed"; done

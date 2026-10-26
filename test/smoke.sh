@@ -108,9 +108,9 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 section "new, answered at the prompts" ""
 s2() {
 # Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, brief,
-# budget and price (antigravity reports only tokens), week, writing, backup, one repo then done, create, no npm install,
+# budget and price (antigravity reports only tokens), week, writing, credit roles (Enter: app), backup, one repo then done, create, no npm install,
 # no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity 5 "1  2" "8:30 am" sunday short off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity 5 "1  2" "8:30 am" sunday short "" off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
@@ -119,11 +119,11 @@ grep -qx 'CABINET_RUNNER="antigravity"' "$A/cabinet.env" && grep -qx 'WHEN="8:30
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$A/AGENTS.md" || fail "prompted writing"
 # With claude (the fake comes first on PATH) setup asks for a budget, and no price: claude reports dollars.
-printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" y n n > "$T/answers"
+printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_BUDGET="15"' "$T/budgeted/cabinet.env" || fail "prompted budget with claude"
 grep -qx 'CABINET_BUDGET="5"' "$A/cabinet.env" && grep -qx 'CABINET_PRICE="1 2"' "$A/cabinet.env" || fail "prompted budget and price with antigravity"
 grep -qx 'CABINET_PRICE=""' "$T/budgeted/cabinet.env" || fail "a price was set with claude"
-printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
+printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
 [[ ! -e "$T/nope" ]] || fail "declined setup created files"
 
@@ -659,7 +659,7 @@ cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
 # Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), budget, scheduled runner (off), brief, week, writing,
 # hard to undo (Enter: not set, no repos), backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 "" off "" short "" off "" y n > "$T/answers"
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 "" off "" short "" "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" && grep -qx 'CABINET_BUDGET="25"' "$C/cabinet.env" || fail "prompted writing or budget not written by config"
@@ -1072,7 +1072,7 @@ git -C "$P" add -A; git -C "$P" commit -qm "the project's builder"   # the first
 (cd "$P" && "$F" doctor --json) | j -e '$.results.filter((r) => r.id == "schedules.off").length == 1 && !$.results.some((r) => r.id == "schedules.job")' >/dev/null || fail "doctor with schedules off"
 (cd "$P" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "bootstrap")' >/dev/null || fail "next asks for bootstrap on a machine that schedules nothing"
 (cd "$P" && "$F" bootstrap --schedules) >/dev/null 2>&1 || true
-[[ -f "$LA" && ! -e "$P/cabinet/cabinet.local.env" ]] || fail "--schedules"
+[[ -f "$LA" ]] && ! grep -q '^CABINET_SCHEDULES=' "$P/cabinet/cabinet.local.env" || fail "--schedules"
 rc=0; (cd "$P" && "$F" bootstrap --nope) >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "bootstrap with an unknown option exits $rc, not 2"
 # Backups for this machine only: cabinet.local.env, never cabinet.env, never in git.
 BL="$HOME/$SD/ai.cabinet.team-app.backup$SX"
@@ -1087,7 +1087,7 @@ grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && gr
 [[ ! -f "$BL" ]] || fail "--this-machine --backup-dir off kept the backup schedule"
 (cd "$P" && "$F" doctor --json) | j -e '$.results.findLast((r) => r.id == "backups.enabled")?.message.includes("on this machine")' >/dev/null || fail "doctor with backups off on this machine"
 (cd "$P" && "$F" config --this-machine --clear) >/dev/null 2>&1 || true
-[[ ! -e "$P/cabinet/cabinet.local.env" ]] || { cat "$P/cabinet/cabinet.local.env"; fail "--clear left backup lines"; }
+! grep -q '^CABINET_BACKUP_' "$P/cabinet/cabinet.local.env" || { cat "$P/cabinet/cabinet.local.env"; fail "--clear left backup lines"; }
 (cd "$P" && "$F" config --this-machine --clear) | grep -q 'already follows cabinet.env' || fail "a second --clear"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -2393,6 +2393,220 @@ cp "$KIT/site/copy.js" "$C/site/copy.js"; sedi 's/run `cabinet bootstrap`, which
 cp "$KIT/site/copy.js" "$C/site/copy.js"; awk '/^## cabinet bootstrap$/{skip=1; next} /^## /{skip=0} !skip' "$KIT/docs/commands.md" > "$C/docs/commands.md"
 ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >"$T/sc.out" && grep -q 'cabinet bootstrap' "$T/sc.out" || fail "copy.js naming a command with no section in docs/commands.md passed the check"
 rm -rf "$C" "$T/web" "$T/web2" "$T/mine" "$T/backups.md" "$T/llms.txt" "$T/site.css" "$T/sc.out"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "credit roles: a commit made in a Cabinet run credits its role" ""
+s61() {
+# Its own HOME and global git config, so the global hooks path, and the credit hook in it, are this
+# section's only. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+CH="$T/credit-home"; mkdir -p "$CH"
+export HOME="$CH" GIT_CONFIG_GLOBAL="$CH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+KM='347351783+cabinet-team[bot]@users.noreply.github.com' PM='123+my-app[bot]@users.noreply.github.com'
+KH="$KIT/guardrails/prepare-commit-msg" HK="$CH/.config/git/hooks"
+# A fake for each runner: in the scratch repo $CR_REPO it runs $CR_DO, a commit with git commit -m by default.
+mkdir -p "$T/credit-shim"
+for t in claude codex agy qwen grok opencode cursor-agent; do
+  printf '#!/bin/sh\ncd "$CR_REPO" || exit 1\neval "${CR_DO:-echo x >> f && git add f && git commit -q -m work}"\n' > "$T/credit-shim/$t"; chmod +x "$T/credit-shim/$t"
+done
+CR="$T/credit-repo"; git init -q -b main "$CR"; echo a > "$CR/f"; git -C "$CR" add f; git -C "$CR" commit -qm "the owner's first"
+# crun <workspace> <runner> <role> [prompt]: one run through run_agent, as a job or handoff run starts it.
+crun() {
+  (cd "$1" && PATH="$T/credit-shim:$PATH" CR_REPO="$CR" bash -c 'source bin/lib.sh
+    CABINET_RUNNER="$1"; [[ "$1" == custom ]] && CABINET_RUNNER_CMD="$2/credit-shim/codex"
+    AGENT="$3" PROMPT="${4:-work}" run_agent' _ "$2" "$T" "$3" "${4:-}") >/dev/null 2>&1 || true
+}
+msg() { git -C "$CR" log -1 --format=%B "${1:-HEAD}"; }
+cab() { msg "${1:-HEAD}" | grep -c '^Co-authored-by: Cabinet ' || true; }
+anyco() { msg "${1:-HEAD}" | grep -ci 'co-authored-by' || true; }
+lastline() { msg "${1:-HEAD}" | sed '/^$/d' | tail -1; }
+
+# Settings and setup (criteria 1 to 5).
+CW="$T/credit-ws"; "$F" new "$CW" --yes >/dev/null || fail "new"
+grep -qx 'CABINET_CREDIT_ROLES="app"' "$CW/cabinet.env" || fail "new does not write credit roles app by default"
+mkdir -p "$T/credit-init"; "$F" init "$T/credit-init" --yes >/dev/null || fail "init"
+grep -qx 'CABINET_CREDIT_ROLES="app"' "$T/credit-init/cabinet.env" || fail "init does not write credit roles app by default"
+# Prompted: new with Enter keeps app; new answering off; init answering off; config with Enter keeps the value.
+printf '%s\n' "Cr One" "$T/credit-p1" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" y n n > "$T/credit-answers"
+CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="app"' "$T/credit-p1/cabinet.env" || fail "prompted new: Enter does not keep app"
+printf '%s\n' "Cr Two" "$T/credit-p2" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted new: off not written"
+mkdir -p "$T/credit-p3"
+printf '%s\n' "Cr Three" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+CABINET_TTY="$T/credit-answers" "$F" init "$T/credit-p3" >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p3/cabinet.env" || fail "prompted init: off not written"
+printf '\n%.0s' $(seq 40) > "$T/credit-answers"
+(cd "$T/credit-p2" && CABINET_TTY="$T/credit-answers" "$F" config >/dev/null 2>&1); grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted config: Enter did not keep off"
+(cd "$T/credit-p1" && CABINET_TTY="$T/credit-answers" "$F" config >/dev/null 2>&1); grep -qx 'CABINET_CREDIT_ROLES="app"' "$T/credit-p1/cabinet.env" || fail "prompted config: Enter did not keep app"
+cfg() { (cd "$CW" && "$F" config --yes "$@" 2>&1); }
+cfg --credit-roles off >/dev/null && grep -qx 'CABINET_CREDIT_ROLES="off"' "$CW/cabinet.env" || fail "--credit-roles off"
+cfg --credit-roles app >/dev/null && grep -qx 'CABINET_CREDIT_ROLES="app"' "$CW/cabinet.env" || fail "--credit-roles app"
+cp "$CW/cabinet.env" "$T/credit-env"
+refused() { local rc=0; cfg "$@" >/dev/null || rc=$?; ((rc)) && cmp -s "$T/credit-env" "$CW/cabinet.env" || fail "config $* was not refused, or changed cabinet.env"; }
+for v in name APP on ""; do refused --credit-roles "$v"; done
+cfg --credit-roles app --credit-email "$PM" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$PM\"" "$CW/cabinet.env" || fail "--credit-email not written"
+cp "$CW/cabinet.env" "$T/credit-env"
+for v in '123+my-app@users.noreply.github.com' 'abc+my-app[bot]@users.noreply.github.com' '123+my-app[bot]@example.com' \
+  '123+My-App[bot]@users.noreply.github.com' '123+-app[bot]@users.noreply.github.com' '123+my-app[bot]@users.noreply. github.com' \
+  "$PM"$'\nCo-authored-by: x <x@x.com>' "${PM}x" ""; do
+  refused --credit-roles app --credit-email "$v"
+done
+refused --credit-roles off --credit-email "$PM"
+cfg --credit-roles off >/dev/null; cp "$CW/cabinet.env" "$T/credit-env"
+grep -qx 'CABINET_CREDIT_EMAIL=""' "$CW/cabinet.env" || fail "credit off kept an email it does not use"
+refused --credit-email "$PM"
+sedi '/^CABINET_CREDIT_ROLES=/d' "$CW/cabinet.env"; cp "$CW/cabinet.env" "$T/credit-env"
+refused --credit-email "$PM"
+cfg --credit-roles app --credit-email "$PM" >/dev/null || fail "app with an email"
+
+# Credit on commits (criteria 6 to 15).
+HOME="$CH" "$CW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not place the credit hook where none was"
+for r in claude codex antigravity qwen grok opencode cursor custom; do
+  h="$(git -C "$CR" rev-parse HEAD)"; crun "$CW" "$r" backend
+  [[ "$(git -C "$CR" rev-parse HEAD)" != "$h" ]] || fail "the $r run made no commit"
+  [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$PM>" && "$(cab)" == 1 ]] || fail "$r: the commit does not end with one credit line for its own app: $(msg)"
+done
+cfg --credit-email off >/dev/null; grep -qx 'CABINET_CREDIT_EMAIL=""' "$CW/cabinet.env" || fail "--credit-email off did not remove it"
+for r in claude codex antigravity qwen grok opencode cursor custom; do
+  crun "$CW" "$r" backend
+  [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "$r: the commit does not end with one credit line: $(msg)"
+done
+on_ident="$(git -C "$CR" log -1 --format='%an %ae %cn %ce')"
+cfg --credit-roles off >/dev/null; crun "$CW" codex backend
+[[ "$(anyco)" == 0 ]] || fail "credit off still credited: $(msg)"
+[[ "$(git -C "$CR" log -1 --format='%an %ae %cn %ce')" == "$on_ident" ]] || fail "credit changed the author or committer"
+cfg --credit-roles app >/dev/null
+CR_DO='echo x >> f && git add f && git commit -q --no-verify -m work' crun "$CW" codex backend
+[[ "$(cab)" == 1 ]] || fail "--no-verify skipped the credit"
+crun "$CW" codex backend "Build H-20261024-01 from specs/x.md for qa, security and product-manager"
+[[ "$(cab)" == 1 && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" ]] || fail "a run credited another role than its own"
+CR_DO="echo x >> f && git add f && git commit -q -m 'work
+
+Co-authored-by: Cabinet backend <$KM>'" crun "$CW" codex backend
+[[ "$(cab)" == 1 ]] || fail "a credit line already there was added twice"
+CR_DO="echo x >> f && git add f && git commit -q -m 'work
+
+Co-authored-by: Tool <tool@example.com>'" crun "$CW" codex backend
+msg | grep -qx 'Co-authored-by: Tool <tool@example.com>' && [[ "$(cab)" == 1 ]] || fail "another trailer was not kept, or the credit line not added once"
+CR_DO='git checkout -q -b side && echo y >> f && git add f && git commit -q -m side && git checkout -q main && git merge -q --no-ff side -m merged && git branch -q -D side' crun "$CW" codex backend
+[[ "$(msg)" == merged && "$(cab)" == 0 ]] || fail "a merge commit was credited: $(msg)"
+h="$(git -C "$CR" rev-parse HEAD)"
+CR_DO='echo x >> f && git add f && git commit -q -m ""' crun "$CW" codex backend
+[[ "$(git -C "$CR" rev-parse HEAD)" == "$h" ]] || fail "an empty message made a commit"
+git -C "$CR" checkout -q HEAD -- f
+
+# The owner's own commits (criteria 16 to 19).
+echo z >> "$CR/f"; git -C "$CR" commit -qam "the owner's"
+[[ "$(anyco)" == 0 ]] || fail "a commit made outside a run was credited (app)"
+cfg --credit-roles off >/dev/null; echo z >> "$CR/f"; git -C "$CR" commit -qam "the owner's, off"; [[ "$(anyco)" == 0 ]] || fail "a commit made outside a run was credited (off)"
+cfg --credit-roles app >/dev/null
+"$F" new "$T/credit-own" --yes >/dev/null; (cd "$T/credit-own" && "$F" config --yes --writing short >/dev/null)
+"$T/credit-own/bin/handoff.sh" add --from qa --to owner --changed x --needed y "credit check" >/dev/null
+[[ "$(git -C "$T/credit-own" log --format=%B | grep -ci co-authored-by)" == 0 && "$(git -C "$CW" log --format=%B | grep -ci co-authored-by)" == 0 ]] \
+  || fail "a commit cabinet made outside a run was credited"
+before="$(msg)"; CR_DO='git commit -q --amend --no-edit' crun "$CW" codex backend
+[[ "$(msg)" == "$before" ]] || fail "an amend in a run credited the owner's commit"
+git -C "$CR" checkout -q -b own; for i in 1 2; do echo "o$i" >> "$CR/o$i"; git -C "$CR" add "o$i"; git -C "$CR" commit -qm "owner $i"; done; git -C "$CR" checkout -q main
+echo m >> "$CR/f"; git -C "$CR" commit -qam "main moves"
+CR_DO='git checkout -q own && git rebase -q main && git checkout -q main' crun "$CW" codex backend
+[[ "$(git -C "$CR" log --format=%B main..own | grep -c 'Co-authored-by')" == 0 && "$(git -C "$CR" rev-list --count main..own)" == 2 ]] || fail "a rebase in a run credited the owner's commits"
+CR_DO='git cherry-pick own >/dev/null' crun "$CW" codex backend
+[[ "$(msg)" == "owner 2" ]] || fail "a cherry-pick in a run credited the owner's commit: $(msg)"
+
+# Untrusted values (criteria 20 to 22).
+for a in 'back end' $'backend\nCo-authored-by: x <x@x.com>' '$(touch pwned)'; do
+  crun "$CW" codex "$a"
+  [[ "$(msg)" == work ]] || fail "an agent name that is not a role name added a line: $(msg)"
+done
+[[ ! -e "$CR/pwned" && ! -e "$CW/pwned" && ! -e pwned ]] || fail "an agent name ran"
+for v in 'app; touch pwned' name APP; do
+  sedi "s/^CABINET_CREDIT_ROLES=.*/CABINET_CREDIT_ROLES=\"$v\"/" "$CW/cabinet.env"
+  crun "$CW" codex backend; [[ "$(msg)" == work ]] || fail "CABINET_CREDIT_ROLES=$v credited a commit"
+  (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.setting" && r.level == "fix" && r.message.includes("CABINET_CREDIT_ROLES"))' >/dev/null || fail "the doctor did not report CABINET_CREDIT_ROLES=$v"
+  cfg | grep -qF "\"$v\"" || fail "config did not show the value it found: $v"
+done
+[[ ! -e "$CR/pwned" && ! -e "$CW/pwned" && ! -e pwned ]] || fail "a credit setting ran"
+sedi 's/^CABINET_CREDIT_ROLES=.*/CABINET_CREDIT_ROLES="app"/' "$CW/cabinet.env"
+for v in 'x@example.com' "$PM"$'\nCo-authored-by: x <x@x.com>'; do
+  grep -v '^CABINET_CREDIT_EMAIL=' "$CW/cabinet.env" > "$T/credit-env"; printf 'CABINET_CREDIT_EMAIL="%s"\n' "$v" >> "$T/credit-env"; cp "$T/credit-env" "$CW/cabinet.env"
+  crun "$CW" codex backend; [[ "$(cab)" == 0 ]] || fail "a bad CABINET_CREDIT_EMAIL credited a commit: $(msg)"
+  (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "fix" && r.message.includes("CABINET_CREDIT_EMAIL"))' >/dev/null || fail "the doctor did not report a bad CABINET_CREDIT_EMAIL"
+done
+grep -v '^CABINET_CREDIT_EMAIL=\|^Co-authored-by' "$CW/cabinet.env" > "$T/credit-env"; echo 'CABINET_CREDIT_EMAIL=""' >> "$T/credit-env"; cp "$T/credit-env" "$CW/cabinet.env"
+# Every Cabinet line any of these runs wrote carries the kit's email or the project's (criterion 8).
+[[ -z "$(git -C "$CR" log --all --format=%B | grep '^Co-authored-by: Cabinet ' | grep -vF -e "<$KM>" -e "<$PM>")" ]] || fail "a credit line carries another email"
+
+# The hook on the machine (criteria 23 to 26).
+boot() { HOME="$CH" "$CW/bin/bootstrap.sh" >/dev/null 2>&1 || true; }
+cp "$KIT/guardrails/hook-passthrough" "$HK/prepare-commit-msg"; boot
+cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the pass-through stub with the credit hook"
+touch -t 202001010000 "$HK/prepare-commit-msg"; boot
+cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -newer "$CW/cabinet.env")" == "" ]] || fail "bootstrap rewrote the current credit hook"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed"
+sed '2s/.*/# cabinet credit hook v0/' "$KH" > "$HK/prepare-commit-msg"; boot
+cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
+printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-mine"; boot
+cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the owner's own prepare-commit-msg"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level != "ok" && r.message.includes("not the kit"))' >/dev/null || fail "the doctor did not say why credit is not installed"
+cp "$KH" "$HK/prepare-commit-msg"
+git config --global core.hooksPath "$T/credit-other-hooks"; boot
+[[ "$(git config --global core.hooksPath)" == "$T/credit-other-hooks" ]] || fail "bootstrap changed a global hooks path of the owner's"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level != "ok" && r.message.includes("credit-other-hooks"))' >/dev/null || fail "the doctor did not name the other hooks path"
+git config --global core.hooksPath "$HK"
+printf '#!/bin/sh\necho "$@" >> "%s"\n[ -e "%s" ] && exit 1\nexit 0\n' "$T/credit-own-args" "$T/credit-own-fail" > "$CR/.git/hooks/prepare-commit-msg"; chmod +x "$CR/.git/hooks/prepare-commit-msg"
+echo q >> "$CR/f"; git -C "$CR" commit -qam "with the repo's hook"
+grep -qx '.git/COMMIT_EDITMSG message' "$T/credit-own-args" || fail "the repo's own prepare-commit-msg did not run with git's arguments: $(cat "$T/credit-own-args" 2>/dev/null)"
+touch "$T/credit-own-fail"; h="$(git -C "$CR" rev-parse HEAD)"; echo q >> "$CR/f"
+git -C "$CR" commit -qam "refused" 2>/dev/null && fail "the repo's own hook failing did not stop the commit"
+[[ "$(git -C "$CR" rev-parse HEAD)" == "$h" ]] || fail "a commit went in though the repo's hook failed"
+rm -f "$CR/.git/hooks/prepare-commit-msg"; git -C "$CR" checkout -q -- f
+
+# Existing and shared workspaces (criteria 27 to 29).
+OW="$T/credit-old"; "$F" new "$OW" --yes >/dev/null
+sedi '/^CABINET_CREDIT_/d' "$OW/cabinet.env"; git -C "$OW" commit -qam "a workspace from before credit roles"
+cp "$OW/cabinet.env" "$T/credit-env"; "$F" -C "$OW" update >/dev/null 2>&1 || true
+cmp -s "$T/credit-env" "$OW/cabinet.env" || fail "update changed cabinet.env"
+crun "$OW" codex backend; [[ "$(msg)" == work ]] || fail "a workspace from before credit roles credited a commit"
+(cd "$OW" && "$F" next --json) | j -e '$.steps.some((s) => s.id == "credit-roles")' >/dev/null || fail "next does not ask the credit roles question"
+(cd "$OW" && "$F" config --yes --credit-roles off) >/dev/null; "$F" -C "$OW" update >/dev/null 2>&1 || true
+(cd "$OW" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "credit-roles")' >/dev/null || fail "next still asks once it is answered"
+grep -q 'while `cabinet.env` has no `CABINET_CREDIT_ROLES` line' "$KIT/roles/chief-of-staff.md" && grep -q 'Once it has a value, never ask again' "$KIT/roles/chief-of-staff.md" || fail "the brief does not ask the credit roles question once"
+SP="$T/credit-shared"; git init -q -b main "$SP"; echo x > "$SP/f"; git -C "$SP" add f; git -C "$SP" commit -qm init
+(cd "$SP" && "$F" init --yes --inside --shared) >/dev/null; git -C "$SP" add -A; git -C "$SP" commit -qm cabinet
+grep -qx 'CABINET_CREDIT_ROLES="app"' "$SP/cabinet/cabinet.local.env" || fail "shared init did not keep this machine's answer"
+SC="$T/credit-clone"; git clone -q "$SP" "$SC"
+grep -qx 'CABINET_CREDIT_ROLES="app"' "$SC/cabinet/cabinet.env" && [[ ! -e "$SC/cabinet/cabinet.local.env" ]] || fail "the clone is not as a teammate gets it"
+crun "$SC/cabinet" codex backend; [[ "$(msg)" == work ]] || fail "a teammate's machine credited before it answered"
+(cd "$SC" && "$F" next --json) | j -e '$.steps.some((s) => s.id == "credit-roles" && s.command.includes("--this-machine"))' >/dev/null || fail "next does not ask the teammate"
+(cd "$SC" && "$F" config --this-machine --credit-roles app) >/dev/null || fail "config --this-machine --credit-roles"
+grep -qx 'CABINET_CREDIT_ROLES="app"' "$SC/cabinet/cabinet.local.env" && [[ -z "$(git -C "$SC" status --porcelain)" ]] || fail "the answer is not in cabinet.local.env only"
+crun "$SC/cabinet" codex backend; [[ "$(cab)" == 1 ]] || fail "the teammate's run was not credited after the answer"
+(cd "$SC" && "$F" config --this-machine --credit-email "$PM") >/dev/null 2>&1 && fail "--this-machine took --credit-email"
+
+# House rules and docs (criteria 30 to 34).
+cl() { grep '^- \*\*Commits\.\*\*' "$1/AGENTS.md"; }
+at=@@; tl="$(sed -n 's/^- \*\*Commits\.\*\*/&/p' "$KIT/templates/workspace/AGENTS.md" | sed "s/${at}OWNER_NAME${at}/Test/; s/${at}OWNER_EMAIL${at}/test@example.com/")"
+ON="No AI or tool attribution of any kind except Cabinet's role credit (one \`Co-authored-by: Cabinet <role>\` line, added by Cabinet to a commit made in a Cabinet run; no other \`Co-Authored-By\`, no \"Generated with\" line)."
+cl "$CW" | grep -qF "$ON" || fail "credit on: the Commits line does not hold the credit sentence"
+"$F" new "$T/credit-offws" --yes --credit-roles off >/dev/null
+[[ "$(cl "$T/credit-offws")" == "$tl" ]] || fail "credit off: the Commits line is not the template's"
+sedi 's/"Generated with" line)\./& Sign each commit./' "$T/credit-offws/AGENTS.md"; git -C "$T/credit-offws" commit -qam "the owner's words"
+was="$(cl "$T/credit-offws")"
+(cd "$T/credit-offws" && "$F" config --yes --credit-roles app >/dev/null && "$F" config --yes --credit-roles off >/dev/null)
+[[ "$(cl "$T/credit-offws")" == "$was" ]] || fail "app then off did not give the line back: $(cl "$T/credit-offws")"
+sedi 's/^- \*\*Commits\.\*\*.*/- **Commits.** Authored as Test <test@example.com>. Anything goes./' "$T/credit-offws/AGENTS.md"; git -C "$T/credit-offws" commit -qam "rewritten"
+was="$(cl "$T/credit-offws")"
+(cd "$T/credit-offws" && "$F" config --yes --credit-roles app) | grep -q 'needs your own edit' || fail "config did not say the rewritten house rule needs the owner's edit"
+[[ "$(cl "$T/credit-offws")" == "$was" ]] || fail "config changed a Commits line it does not know"
+grep -q 'no AI or tool attribution lines except Cabinet.s role credit' "$KIT/AGENTS.md" && grep -q 'No other `Co-Authored-By`, no "Generated with" line' "$KIT/AGENTS.md" || fail "the kit's rule 11 does not allow only the role credit"
+for d in docs/commands.md README.md docs/concepts.md CHANGELOG.md; do grep -q 'credit-roles\|Credit roles' "$KIT/$d" || fail "$d does not describe credit roles"; done
+grep -q 'CABINET_CREDIT_ROLES' "$KIT/docs/commands.md" && grep -q 'CABINET_CREDIT_EMAIL' "$KIT/docs/commands.md" || fail "the cabinet.env table lacks the credit settings"
+sec="$(awk '/^## Credit roles$/{on=1; next} /^## /{on=0} on' "$KIT/docs/concepts.md")"
+! sed 's/\[bot\]//g' <<<"$sec" | grep -qiw 'bot' || fail "the credit roles docs call a role a bot"
+for r in claude codex antigravity qwen grok opencode cursor; do grep -q "^| \`$r\` | not yet |\|^| \`$r\` | yes" <<<"$sec" || fail "the docs do not say whether $r was confirmed live"; done
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 

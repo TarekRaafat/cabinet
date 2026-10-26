@@ -152,11 +152,24 @@ echo "== Git push gate"
 # Not push-to-checkout or fsmonitor-watchman: git changes its behavior when those merely exist.
 hooks="$HOME/.config/git/hooks"
 place "$G/pre-push" "$hooks/pre-push"
-for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit prepare-commit-msg commit-msg \
+for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg \
          post-commit pre-rebase post-checkout post-merge post-rewrite pre-auto-gc reference-transaction \
          post-index-change sendemail-validate; do
   place "$G/hook-passthrough" "$hooks/$h"
 done
+# prepare-commit-msg is the credit hook (credit roles): it passes the call on too, then credits the role
+# of a Cabinet run. It replaces only what the kit put there: no file, the pass-through stub, or an
+# earlier credit hook (its line 2, "# cabinet credit hook v<N>", with a lower N). Anything else is yours.
+credit_v() { sed -n '2s/^# cabinet credit hook v\([0-9][0-9]*\)$/\1/p' "$1" 2>/dev/null; }
+pcm="$hooks/prepare-commit-msg" old=""
+[[ -f "$pcm" && ! -L "$pcm" ]] && old="$(credit_v "$pcm")"
+if [[ -f "$pcm" && ! -L "$pcm" ]] && cmp -s "$G/prepare-commit-msg" "$pcm"; then :
+elif [[ ! -e "$pcm" && ! -L "$pcm" ]] || { [[ -f "$pcm" && ! -L "$pcm" ]] && { cmp -s "$G/hook-passthrough" "$pcm" || [[ -n "$old" && "$old" -lt "$(credit_v "$G/prepare-commit-msg")" ]]; }; }; then
+  if ((DRY)); then echo "  would place the credit hook at $pcm"
+  else mkdir -p "$hooks"; cp "$G/prepare-commit-msg" "$pcm.cabinet-new" && chmod +x "$pcm.cabinet-new" && mv -f "$pcm.cabinet-new" "$pcm" && echo "  placed the credit hook at $pcm"; fi
+else
+  echo "  differs, left as is: $pcm (credit roles cannot add their line on this machine; cabinet doctor says why)"
+fi
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done
 current="$(git config --global core.hooksPath || true)"
 if [[ -z "$current" ]]; then

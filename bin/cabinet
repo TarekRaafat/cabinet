@@ -132,6 +132,8 @@ O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, us
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
+O	new,init,config	--credit-roles	off|app	Credit roles: each commit a role makes in a Cabinet run credits it beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: app; asked once in a workspace from before it).
+O	new,init,config	--credit-email	<email>|off	With --credit-roles app: your own GitHub App's bot noreply email instead of the Cabinet Team's; off goes back to it.
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
 O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
@@ -147,7 +149,7 @@ O	init	--shared		With --inside: cabinet/ is committed with the project.
 O	init	--beside		In a project repo: the workspace is a folder next to it.
 O	init	--workspace	<folder>	With --beside: where that folder goes (default: <project>-hq).
 O	config	--apply		Run bootstrap after the change without asking.
-O	config	--this-machine		With --backup-dir or --backup-time: set them for this machine only, in cabinet.local.env (not committed).
+O	config	--this-machine		With --backup-dir, --backup-time or --credit-roles: set them for this machine only, in cabinet.local.env (not committed).
 O	config	--clear		With --this-machine: this machine follows the backup settings in cabinet.env again.
 O	repo add	--apply		Run bootstrap right after, which clones the repo and gives it a builder.
 O	bootstrap	--no-schedules		From now on, schedule no jobs on this machine: another machine runs them (saved in cabinet.local.env, not committed).
@@ -393,6 +395,24 @@ check_answers() {
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
 
+# Credit roles, for setup and config: the mode is exactly off or app, and a project's own app is
+# named by its bot noreply email, exactly (scripts/lib.sh and the credit hook check the same).
+credit_email_ok() {
+  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
+  [[ "$1" =~ $re ]]
+}
+check_credit() {   # check_credit <the mode the result has>: credit and cemail (cemail_given) can be written
+  [[ -z "$credit" || "$credit" == off || "$credit" == app ]] || die "--credit-roles must be off or app"
+  ((cemail_given)) || return 0
+  [[ "$cemail" == off ]] || credit_email_ok "$cemail" || die "--credit-email must be a GitHub App's bot noreply email, like 123+my-app[bot]@users.noreply.github.com, or off"
+  [[ "$1" == app ]] || die "--credit-email goes with --credit-roles app: with credit off, no email is used"
+}
+credit_question() {   # the setup question, the offered answer in $credit
+  echo "  Credit roles: each commit a role makes in a Cabinet run credits that role beside you, with one Co-authored-by line"
+  echo "  that shows the Cabinet Team avatar on GitHub. app, or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
+  credit="$(ask "Credit roles" "$credit")"
+}
+
 # The backup folder must be outside every folder the workspace holds data in.
 check_backup_outside() {
   local d
@@ -415,7 +435,7 @@ cmd_init() { setup init "$@"; }
 setup() {
   local how=$1; shift
   local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" price="" backup="" yes=0 repos=() r
-  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0
+  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="app" cemail="" cemail_given=0
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; shift 2 ;;
@@ -428,6 +448,8 @@ setup() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
+      --credit-roles) need "--credit-roles needs off or app" "$@"; credit="$2"; shift 2 ;;
+      --credit-email) need "--credit-email needs an email, or off" "$@"; cemail="$2"; cemail_given=1; shift 2 ;;
       --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; shift 2 ;;
       --price) need "--price needs dollars per million tokens, like \"1.25 10\", or off" "$@"; price="$2"; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; shift 2 ;;
@@ -544,6 +566,7 @@ setup() {
     week="$(ask "Week starts on" "$week")"
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
     writing="$(ask "Writing" "$writing")"
+    credit_question; credit="$(printf %s "$credit" | tr '[:upper:]' '[:lower:]')"
     echo "  Daily encrypted backup: a folder outside the workspace (a synced drive works well), or off."
     backup="$(ask "Backup folder" "${backup:-off}")"
     if [[ "$place" != inside ]]; then
@@ -573,6 +596,8 @@ setup() {
   fi
   [[ "$layout" != inside ]] || has "private shared" "$visibility" || die "inside is private or shared, not '$visibility'"
   check_answers
+  check_credit "$credit"
+  [[ "$cemail" == off ]] && cemail=""
   if [[ -z "$slug" ]]; then
     if [[ "$layout" == inside ]]; then slug="$(slugify "$hostname")"; else slug="$(slugify "$(basename "$ws")")"; fi
   fi
@@ -650,7 +675,7 @@ setup() {
     elif [[ "$owner" == TBD || "$email" == TBD ]]; then echo "  - git init, but no commit (no owner identity yet)"
     else echo "  - git init and one commit as $owner"; fi
     echo "  - record the slug in $LOGROOT_SHOWN/$slug/workspace"
-    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, writing $writing, budget $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off), backups ${backup:-off}."
+    echo "  Settings: runner $runner, brief ${brief:-off}, week starts $week, writing $writing, credit roles $credit${cemail:+ ($cemail)}, budget $( [[ -n "$budget" ]] && echo "\$$budget a week" || echo off), backups ${backup:-off}."
     echo "Nothing was written."
     return 0
   fi
@@ -669,6 +694,7 @@ setup() {
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
     echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week, writing $writing"
+    echo "  Credit    roles credited on commits from Cabinet runs: $credit${cemail:+, as $cemail}"
     [[ -n "$budget" ]] && echo "  Budget    \$$budget a week${price:+, priced at $price per million tokens}"
     echo "  Backups   ${backup:-off}"
     local listed="none yet"; ((${#rows[@]})) && listed="$(printf '%s\n' "${rows[@]}" | cut -f1 | tr '\n' ' ')"
@@ -717,7 +743,12 @@ setup() {
       '/^CABINET_RUNNER_CMD=.*/' "CABINET_RUNNER_CMD='\${C}'" \
       '/^CABINET_BACKUP_DIR=.*/' 'CABINET_BACKUP_DIR="${B}"' '/^CABINET_BUDGET=.*/' 'CABINET_BUDGET="${U}"' '/^CABINET_PRICE=.*/' 'CABINET_PRICE="${P}"' \
       '/^CABINET_LAYOUT=.*/' 'CABINET_LAYOUT="${L}"' '/^CABINET_VISIBILITY=.*/' 'CABINET_VISIBILITY="${V}"'
+    CR="$credit" CE="$cemail" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_CREDIT_ROLES=.*/' 'CABINET_CREDIT_ROLES="${CR}"' '/^CABINET_CREDIT_EMAIL=.*/' 'CABINET_CREDIT_EMAIL="${CE}"'
+    # Shared, each machine answers for itself (cabinet.local.env, never committed): this one just did.
+    [[ "$layout" == inside && "$visibility" == shared ]] && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit" >> "$ws/cabinet.local.env"
   fi
+  # The "Commits." house rule allows the role credit only while it is on.
+  [[ "$credit" == app ]] && is_placed AGENTS.md && { node "$LIBJS" credit-line "$ws/AGENTS.md" on || true; }
   is_placed jobs/brief.job && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   is_placed AGENTS.md && D="$Week" G="$writing" node "$LIBJS" sub "$ws/AGENTS.md" -- \
     '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' '/^(- \*\*Writing to the owner:\*\*) \w+\./' '$1 ${G}.'
@@ -1056,6 +1087,7 @@ cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
   local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
+  local credit="" cemail="" set_credit=0 cemail_given=0
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1069,6 +1101,8 @@ cmd_config() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
+      --credit-roles) need "--credit-roles needs off or app" "$@"; credit="$2"; set_credit=1; shift 2 ;;
+      --credit-email) need "--credit-email needs an email, or off" "$@"; cemail="$2"; cemail_given=1; shift 2 ;;
       --pipeline) need "--pipeline needs off, small or all" "$@"; pipe="$2"; set_pipe=1; shift 2 ;;
       --pipeline-limit) need "--pipeline-limit needs dollars, like 5" "$@"; plimit="$2"; set_plimit=1; shift 2 ;;
       --pipeline-time) need "--pipeline-time needs a time, like 10 PM, or off" "$@"; ptime="$2"; set_ptime=1; shift 2 ;;
@@ -1088,10 +1122,11 @@ cmd_config() {
     esac
   done
   if ((this_machine)); then
-    # Only the backup settings are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || ${#repos[@]} )) \
-      && die "--this-machine sets only --backup-dir and --backup-time: the other settings are shared by every machine"
-    (( set_backup || set_btime || clear )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, or --clear"
+    # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
+      && die "--this-machine sets only --backup-dir, --backup-time and --credit-roles: the other settings are shared by every machine"
+    (( set_backup || set_btime || clear || set_credit )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|app, or --clear"
+    (( clear && set_credit )) && die "--clear cannot be combined with --credit-roles"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
     yes=1
   else
@@ -1118,6 +1153,18 @@ cmd_config() {
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
   ((set_writing)) || writing="${o_writing:-standard}"
   o_hard="$(hard_now "$ws")"; ((set_hard)) || hard="$o_hard"
+  # Credit roles: this machine's answer, as written: cabinet.local.env's line, else cabinet.env's, except in a
+  # shared workspace, where each machine answers for itself. Nothing is set until it is answered (--yes keeps it).
+  local lenv="$ws/cabinet.local.env" shared=0 o_credit="" o_credit_set=0 o_cfile="" o_cfile_set=0 o_cemail credit_bad=0
+  [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared ]] && shared=1
+  if grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.env"; then o_cfile="$(envget CABINET_CREDIT_ROLES)"; o_cfile_set=1; fi
+  if grep -q '^CABINET_CREDIT_ROLES=' "$lenv" 2>/dev/null; then
+    o_credit="$(sed -n 's/^CABINET_CREDIT_ROLES="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$lenv" | tail -1)"; o_credit_set=1
+  elif ((shared == 0 && o_cfile_set)); then o_credit="$o_cfile"; o_credit_set=1; fi
+  o_cemail="$(envget CABINET_CREDIT_EMAIL)"
+  if ((o_credit_set)) && [[ "$o_credit" != off && "$o_credit" != app ]]; then credit_bad=1; fi
+  local credit_offer=app
+  ((o_credit_set)) && credit_offer="$o_credit"; ((credit_bad)) && credit_offer=off; ((set_credit)) && credit_offer="$credit"
   o_pipe="$(envget CABINET_PIPELINE)"; o_pipe="${o_pipe:-off}"; o_plimit="$(envget CABINET_PIPELINE_LIMIT)"
   o_ptime=""   # empty: no pipeline job yet; off: one that runs only by hand
   if [[ -f "$ws/jobs/pipeline.job" ]]; then
@@ -1165,6 +1212,10 @@ cmd_config() {
     week="$(ask "Week starts on" "$week")"
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
     writing="$(ask "Writing" "$writing")"
+    local cnote=""
+    ((credit_bad)) && cnote="Now: \"$o_credit\", which is not off or app, so nothing is credited."
+    ((shared && !o_credit_set)) && cnote="This machine has not answered yet: its runs credit nothing until it does."
+    credit="$credit_offer"; credit_question "$cnote"; credit="$(printf %s "$credit" | tr '[:upper:]' '[:lower:]')"; set_credit=1
     local guess; guess="$(hard_guesses "$ws")"; guess="${guess% }"
     echo "  Paths where a change is hard to undo (migrations, public API files): a small task never touches them. <repo>/<path>, space separated, or off.${guess:+ Found in the repos: $guess}"
     hard="$(ask "Hard to undo" "${hard:-$guess}")"
@@ -1194,6 +1245,12 @@ cmd_config() {
     || die "the pipeline time must be a time like \"10 PM\", days and a time like \"fri 9 PM\", or off"
   [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] || runner_cmd=""
   check_answers
+  local credit_after="$o_credit"; ((set_credit)) && credit_after="$credit"
+  check_credit "$credit_after"
+  ((set_credit || !credit_bad)) || echo "Note: CABINET_CREDIT_ROLES is \"$o_credit\", which is not off or app, so no commit is credited. It stays until you set it: cabinet config --credit-roles off|app"
+  if ((!cemail_given)) && [[ -n "$o_cemail" ]] && ! credit_email_ok "$o_cemail"; then
+    echo "Note: CABINET_CREDIT_EMAIL is \"$o_cemail\", which is not a GitHub App's bot noreply email, so no commit is credited. It stays until you set it: cabinet config --credit-email <email>|off"
+  fi
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
   backup_time="$(when_time_only "$backup_time")" || die "the backup time must be a time like \"1 PM\" or \"1:30 PM\", with no day: backups run every day"
   if [[ "$slug" != "$o_slug" ]]; then
@@ -1224,18 +1281,23 @@ cmd_config() {
       ((set_backup)) && new_b="$backup"; ((set_btime)) && new_t="$backup_time"
       ((set_backup)) && { [[ "$new_b" != "$cur_b" ]] || ! lhas CABINET_BACKUP_DIR; } && lchanges+=("this machine: backups ${cur_b:-off} -> ${new_b:-off}")
       ((set_btime)) && { [[ "$new_t" != "$cur_t" ]] || ! lhas CABINET_BACKUP_TIME; } && lchanges+=("this machine: backup time $cur_t -> $new_t")
+      ((set_credit)) && { [[ "$credit" != "$o_credit" ]] || ! lhas CABINET_CREDIT_ROLES; } \
+        && lchanges+=("this machine: credit roles $( ((o_credit_set)) && printf %s "$o_credit" || echo "not answered") -> $credit")
     fi
     if ((${#lchanges[@]} == 0)); then echo "Nothing to change."; return 0; fi
     echo; echo "Changes (cabinet.local.env, this machine only; not committed):"; printf '  - %s\n' "${lchanges[@]}"
     ((dry)) && { echo "(dry run: nothing written)"; return 0; }
+    local keep=(-e '^CABINET_BACKUP_DIR=' -e '^CABINET_BACKUP_TIME='); ((set_credit)) && keep+=(-e '^CABINET_CREDIT_ROLES=')
     {
-      grep -v -e '^CABINET_BACKUP_DIR=' -e '^CABINET_BACKUP_TIME=' "$lenv" 2>/dev/null || true
+      grep -v "${keep[@]}" "$lenv" 2>/dev/null || true
+      ((set_credit)) && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit"
       if ((clear == 0)); then
         if ((set_backup)) || lhas CABINET_BACKUP_DIR; then printf 'CABINET_BACKUP_DIR="%s"\n' "$new_b"; fi
         if ((set_btime)) || lhas CABINET_BACKUP_TIME; then printf 'CABINET_BACKUP_TIME="%s"\n' "$new_t"; fi
       fi
     } > "$lenv.new"
     if [[ -s "$lenv.new" ]]; then mv "$lenv.new" "$lenv"; else rm -f "$lenv.new" "$lenv"; fi
+    (( set_backup || set_btime || clear )) || return 0
     if ((apply)); then "$ws/bin/bootstrap.sh" || echo "bin/bootstrap.sh reported a problem: see above."
     else echo "Next: cabinet bootstrap (this machine's backup schedule follows the new setting)."; fi
     return 0
@@ -1251,6 +1313,15 @@ cmd_config() {
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
   [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
+  # Credit roles: cabinet.env, and this machine's answer too when it keeps one (always, in a shared workspace).
+  local credit_w=0 l_credit="" l_credit_set=0 new_cemail="$o_cemail" agents_credit=0
+  if lhas CABINET_CREDIT_ROLES; then l_credit="$(lget CABINET_CREDIT_ROLES)"; l_credit_set=1; fi
+  if ((set_credit)) && { ((!o_cfile_set)) || [[ "$credit" != "$o_cfile" ]] || { ((l_credit_set || shared)) && [[ "$credit" != "$l_credit" ]]; }; }; then
+    credit_w=1; changes+=("credit roles: $( ((o_credit_set)) && printf %s "$o_credit" || echo "not set") -> $credit")
+  fi
+  ((cemail_given)) && { [[ "$cemail" == off ]] && new_cemail="" || new_cemail="$cemail"; }
+  ((set_credit)) && [[ "$credit" == off ]] && new_cemail=""   # off uses no email, so none is kept
+  [[ "$new_cemail" != "$o_cemail" ]] && changes+=("credit email: ${o_cemail:-the Cabinet Team app} -> ${new_cemail:-the Cabinet Team app}")
   [[ "$hard" != "$o_hard" ]] && changes+=("hard to undo: ${o_hard:-not set} -> ${hard:-not set}")
   [[ "$pipe" != "$o_pipe" ]] && changes+=("scheduled runner: $o_pipe -> $pipe")
   [[ "$plimit" != "$o_plimit" ]] && changes+=("its cost limit per run: $( [[ -n "$o_plimit" ]] && echo "\$$o_plimit" || echo none) -> $( [[ -n "$plimit" ]] && echo "\$$plimit" || echo none)")
@@ -1286,6 +1357,18 @@ cmd_config() {
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
+  if ((credit_w)); then
+    setenv CABINET_CREDIT_ROLES "$credit"
+    if ((l_credit_set || shared)); then
+      { grep -v '^CABINET_CREDIT_ROLES=' "$lenv" 2>/dev/null || true; printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit"; } > "$lenv.new" && mv "$lenv.new" "$lenv"
+    fi
+    # The "Commits." house rule follows it: one sentence changes, the owner's other words stay.
+    local asum; asum="$(cksum < "$ws/AGENTS.md" 2>/dev/null || true)"
+    node "$LIBJS" credit-line "$ws/AGENTS.md" "$([[ "$credit" == app ]] && echo on || echo off)" \
+      || echo "AGENTS.md: the \"Commits.\" house rule holds neither of the kit's attribution sentences, so it was left as it is. It needs your own edit to say whether the Cabinet role credit line is allowed."
+    [[ "$(cksum < "$ws/AGENTS.md" 2>/dev/null || true)" == "$asum" ]] || agents_credit=1
+  fi
+  [[ "$new_cemail" == "$o_cemail" ]] || setenv CABINET_CREDIT_EMAIL "$new_cemail"
   # The files under jobs/ and package.json this run writes, so only those are committed.
   local wjobs=() wpkg=0
   if [[ -f "$ws/jobs/brief.job" && "$brief" != "$o_brief" ]]; then W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'; wjobs+=(jobs/brief.job); fi
@@ -1410,7 +1493,7 @@ JOB
   # makes meanwhile to any other file stays theirs to commit.
   local p
   local cfg_files=() wrote=(cabinet.env)
-  if [[ "$name" != "$o_name" || "$owner" != "$o_owner" || "$email" != "$o_email" || "$week" != "$o_week" || "$writing" != "${o_writing:-standard}" || "$hard" != "$o_hard" || "$roles" != "$o_roles" ]] || ((${#newrows[@]})); then
+  if [[ "$name" != "$o_name" || "$owner" != "$o_owner" || "$email" != "$o_email" || "$week" != "$o_week" || "$writing" != "${o_writing:-standard}" || "$hard" != "$o_hard" || "$roles" != "$o_roles" ]] || ((${#newrows[@]} || agents_credit)); then
     wrote+=(AGENTS.md)
   fi
   [[ "$name" != "$o_name" || "$slug" != "$o_slug" || "$roles" != "$o_roles" ]] && wrote+=(OPERATIONS.md)
@@ -1535,6 +1618,15 @@ cmd_next() {
     [[ -n "$when" && "$SCHEDULER" != none && ! -f "$(sched_file "$label.$(basename "$jf" .job)")" ]] && missing=1
   done
   ((missing)) && step bootstrap "Set up this machine: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
+  # Credit roles, asked once until answered: in cabinet.env, or this machine's cabinet.local.env (the only
+  # place that counts in a shared workspace). Nothing is credited until then.
+  if ! grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.local.env" 2>/dev/null; then
+    if [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared ]]; then
+      step credit-roles "Credit roles: say whether commits made in this machine's Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (app), or not (off). Nothing is credited until you answer." "cabinet config --this-machine --credit-roles app"
+    elif ! grep -q '^CABINET_CREDIT_ROLES=' "$env" 2>/dev/null; then
+      step credit-roles "Credit roles: say whether commits made in Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (app), or not (off). Nothing is credited until you answer." "cabinet config --credit-roles app"
+    fi
+  fi
   # Work waiting on the owner.
   local waiting
   waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"

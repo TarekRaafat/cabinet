@@ -73,6 +73,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | When should the daily brief with your decisions arrive? | `--brief-time "7 AM"`, or `off` | 7:00 AM every day |
 | Which day does your week start? | `--week-start sunday` | `sunday` |
 | Short or standard messages from the team? | `--writing short\|standard` | `standard` |
+| Should each commit a role makes in a Cabinet run credit that role beside them, with the Cabinet Team avatar on GitHub? | `--credit-roles app\|off` | `app` |
 | A weekly spending limit for the agents' runs? Scheduled runs use the person's own agent tool account and its plan or usage costs. | `--budget <dollars>\|off` (and `--price "<in> <out>"` for codex, cursor, qwen or antigravity) | off |
 | Encrypted daily backups, and to which folder (outside the project)? | `--backup-dir <folder>\|off` | off |
 
@@ -321,6 +322,7 @@ It asks, each with a default you keep by pressing Enter:
 - the project name, folder, and owner name and email (defaults from your git config);
 - which roles to enable (chief-of-staff is always on: it writes the brief and routes work);
 - the agent tool that runs scheduled jobs, the brief time (`7 AM`, days and a time like `fri 4 PM`, or `off`), and the first day of the week;
+- whether a commit a role makes in a Cabinet run credits that role beside you, with one `Co-authored-by` line that shows the Cabinet Team avatar on GitHub (`app`, the default, or `off`; [credit roles](docs/concepts.md#credit-roles));
 - a folder for the encrypted daily backup, outside the workspace (or `off`);
 - the product repos, as git URLs.
 
@@ -330,7 +332,7 @@ Every answer is also an option, and `--yes` skips the questions:
 
 ```sh
 cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
-  --brief-time "7 AM" --week-start sunday --writing standard --backup-dir off --repo git@github.com:acme/api.git --yes
+  --brief-time "7 AM" --week-start sunday --writing standard --credit-roles app --backup-dir off --repo git@github.com:acme/api.git --yes
 ```
 
 All options: [commands](docs/commands.md#cabinet-new).
@@ -800,10 +802,14 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs Cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
 | `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `antigravity`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
+| `--credit-roles off\|app` | `app` | [Credit roles](concepts.md#credit-roles): each commit a role makes in a Cabinet run ends with one line crediting that role beside you, `Co-authored-by: Cabinet <role> <email>`, which shows the Cabinet Team avatar on GitHub. Exactly `off` or `app`. Written into `cabinet.env`; the "Commits." house rule in `AGENTS.md` follows it. |
+| `--credit-email <email>\|off` | none | With `--credit-roles app`: your own GitHub App's bot noreply email (`<user ID>+<app>[bot]@users.noreply.github.com`, lower case) in place of the Cabinet Team app's; `off` goes back to it. Refused with credit off. |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
 | `--dry-run` | | Prints everything setup would write and change, then stops: `Nothing was written.` |
 | `--yes`, `-y` | | No questions: defaults and options only. |
+
+In a shared `cabinet/` (`init --inside --shared`), the credit roles answer is also kept in this machine's `cabinet.local.env`: each teammate answers for their own machine.
 
 Values written into `cabinet.env` (name, owner, email, backup folder) cannot contain `$`, a backtick, a backslash, a double quote or a line break.
 
@@ -852,7 +858,7 @@ In every case, existing files are kept and reported, never replaced. Around a fo
 cabinet next [--json]
 ```
 
-Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools Cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a machine without the push gate or schedules (`cabinet bootstrap`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
+Says what to do next in the workspace you are in, as a numbered list, and changes nothing: missing tools Cabinet needs (step `deps`, with the install command), the `TBD` headings left in `AGENTS.md`, a workspace with no commits, a pinned kit not yet downloaded, a machine without the push gate or schedules (`cabinet bootstrap`), the credit roles question while it is not answered (`cabinet config --credit-roles`), handoffs waiting on the owner, today's brief (with when it was written) or when the first one comes, and how many problems the doctor finds. Outside a workspace it says how to start one. When nothing waits: `Nothing waits on you.` Each step ends with the command that does it, when there is one.
 
 ## cabinet brief
 
@@ -1059,11 +1065,11 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|app` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
-**Committing the change.** In a workspace with its own git that had no uncommitted changes before, `config` commits what it changed (`cabinet config: <the settings changed>`): only the files that run wrote, each for the settings that change it. `cabinet.env` always; `AGENTS.md` for the project name, the owner, the week start, writing to the owner, hard to undo, the roles or a new repo; `OPERATIONS.md` for the name, the slug or the roles; `package.json` for the name or the slug, when it is the workspace's own (`private`, named `<slug>-workspace`); under `jobs/`, the job files it wrote: `brief.job` for the brief time, `pipeline.job` when the scheduled runner is first turned on, when its time changes or when it was deleted (a mode change alone writes none), and for the slug each job that names it (the rewrite changes no other); `HANDOFFS.md`, `README.md` and `specs/ROADMAP.md` for the name (`README.md` for the slug too); `repos.tsv` for a new repo; the role files under `ORG.md`, `agents/` and `.claude/agents/` that the role build changed, added or removed, for the roles or the name, or when `bootstrap` ran; and `CLAUDE.md` only when that `bootstrap` linked it because it was missing (a `CLAUDE.md` that was already there, a plain file included, is left alone). A change someone else makes while it runs, in one of the files that run wrote, goes into that commit; a change anywhere else stays theirs to commit. When the workspace already held uncommitted changes, or the workspace is committed with a project (a shared `cabinet/`), it leaves the change for you: review with `git diff`, then commit.
+**Committing the change.** In a workspace with its own git that had no uncommitted changes before, `config` commits what it changed (`cabinet config: <the settings changed>`): only the files that run wrote, each for the settings that change it. `cabinet.env` always; `AGENTS.md` for the project name, the owner, the week start, writing to the owner, credit roles (when its house rule changes), hard to undo, the roles or a new repo; `OPERATIONS.md` for the name, the slug or the roles; `package.json` for the name or the slug, when it is the workspace's own (`private`, named `<slug>-workspace`); under `jobs/`, the job files it wrote: `brief.job` for the brief time, `pipeline.job` when the scheduled runner is first turned on, when its time changes or when it was deleted (a mode change alone writes none), and for the slug each job that names it (the rewrite changes no other); `HANDOFFS.md`, `README.md` and `specs/ROADMAP.md` for the name (`README.md` for the slug too); `repos.tsv` for a new repo; the role files under `ORG.md`, `agents/` and `.claude/agents/` that the role build changed, added or removed, for the roles or the name, or when `bootstrap` ran; and `CLAUDE.md` only when that `bootstrap` linked it because it was missing (a `CLAUDE.md` that was already there, a plain file included, is left alone). A change someone else makes while it runs, in one of the files that run wrote, goes into that commit; a change anywhere else stays theirs to commit. When the workspace already held uncommitted changes, or the workspace is committed with a project (a shared `cabinet/`), it leaves the change for you: review with `git diff`, then commit.
 
-**For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
+**For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --credit-roles off|app` answers the credit roles question for this machine; in a shared workspace a machine credits nothing until it has answered. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
 **What it changes:**
 
@@ -1077,6 +1083,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Brief | `WHEN` in `jobs/brief.job` |
 | Week start | the house rule in `AGENTS.md` |
 | Writing | the "Writing to the owner" house rule in `AGENTS.md` (added after the week start when an older `AGENTS.md` lacks it) |
+| Credit roles | `CABINET_CREDIT_ROLES`, `CABINET_CREDIT_EMAIL` (dropped when credit turns off), this machine's answer in `cabinet.local.env` when it keeps one (always, in a shared workspace), and one sentence of the "Commits." house rule in `AGENTS.md`: the kit's two wordings swap, and the rest of the line stays. A line that holds neither is left as it is, with a message: it needs your own edit |
 | Hard to undo | the list under "Hard to undo" in `AGENTS.md`, keeping the section's other text (the section is added before "House rules" when an older `AGENTS.md` lacks it); `off` writes `- none` |
 | Backups | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` |
 | Budget and price | `CABINET_BUDGET`, `CABINET_PRICE` |
@@ -1200,7 +1207,7 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | Command | Prints |
 |---|---|
 | `cabinet help --json`, `cabinet help <command> --json` | `{name, version, docs, commands: [{name, group, usage, summary, options: [{name, value, text}]}]}` |
-| `cabinet next --json` | `{workspace, project, steps: [{id, text, command}], optional: [...]}`. Step IDs: `deps`, `tbd`, `commit`, `install`, `bootstrap`, `handoffs`, `brief`, `doctor`; `command` is empty when the step is not a command. Outside a workspace, `workspace` is `null` and the one step is `start`. |
+| `cabinet next --json` | `{workspace, project, steps: [{id, text, command}], optional: [...]}`. Step IDs: `deps`, `tbd`, `commit`, `install`, `bootstrap`, `credit-roles`, `handoffs`, `brief`, `doctor`; `command` is empty when the step is not a command. Outside a workspace, `workspace` is `null` and the one step is `start`. |
 | `cabinet doctor --json` | `{workspace, problems, notes, can_fix, results: [{level, section, id, message}]}`. `level` is `ok`, `fix` or `note`; `id` names the check (every ID is in [troubleshooting](troubleshooting.md)) and does not change when its message is reworded. Exit 1 when `problems` is above 0. |
 | `cabinet handoff list --json` | The open and acknowledged entries, oldest first: `[{id, status, status_line, date, age_days, from, to, title, verdicts, needs, missing, blocking, stale, ready, unread_verdicts}]`. `date` and `age_days` are `null` when the status line has no date. `verdicts` is `[{role, verdict, date, commits, note}]` (`commits` empty for `none`); `needs`, `missing`, `blocking` and `stale` are role names (where a sub-team role covers the sender's work, it is named in place of its lead, and both during its trial); `ready` is `true`, `false`, or `null` when the entry needs no review; `unread_verdicts` lists lines with PASS, BLOCK or CHANGES outside a Verdict line. `areas` are the critical areas it touches, by its commits or its spec; `depends_on` is the entry's "Depends on" line, `small` and `spec` say how it was filed, and `cost_usd` is what the agent runs recorded under its ID cost (`handoff run`), or `null`. `--ready` keeps only the entries with `ready` true. |
 | `cabinet handoff list <name> --json` | Every entry addressed to that repo or role and not closed, with its full `text`. `owner` and `founder` are the same person. |
@@ -1235,6 +1242,8 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
 | `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs Cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
 | `CABINET_PRICE` | Dollars per million tokens, `"<input> <output> [<cached input>]"`, to count runs of a runner that reports only tokens; empty for none. |
+| `CABINET_CREDIT_ROLES` | [Credit roles](concepts.md#credit-roles): `app` or `off`. Missing (a workspace from before it): off, and `cabinet next` and the brief ask once. Any other value is off, and the doctor reports it (`credit.setting`). |
+| `CABINET_CREDIT_EMAIL` | With `app`: your own GitHub App's bot noreply email; empty for the Cabinet Team app's. A value that is not that format credits nothing, and the doctor reports it (`credit.email`). |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job
@@ -1251,6 +1260,7 @@ Settings for this machine only. Git never tracks it (the workspace's `.gitignore
 |---|---|
 | `CABINET_SCHEDULES` | `off`: this machine schedules none of the jobs in `jobs/` (another machine runs them). Set and cleared with `cabinet bootstrap --no-schedules` and `--schedules`. Jobs still run by hand with `cabinet job run <job>`. |
 | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` | When present, they replace `cabinet.env`'s on this machine; an empty `CABINET_BACKUP_DIR` turns backups off here. Set with `cabinet config --this-machine`, removed with `cabinet config --this-machine --clear`. |
+| `CABINET_CREDIT_ROLES` | This machine's credit roles answer, `app` or `off`, in place of `cabinet.env`'s. In a shared workspace it is the only answer that counts: until it is there, this machine credits nothing. Set with `cabinet config --this-machine --credit-roles off\|app`, and by `config --credit-roles` and `init` in a shared workspace. |
 
 ### Schedule times
 
@@ -1278,7 +1288,9 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 |---|---|---|
 | `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain, the secret store or the passphrase file. Never put it in `cabinet.env`, which git tracks. |
 | `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one Cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
-| `CABINET_PROMPT`, `CABINET_AGENT` | the `custom` runner | The prompt and role, for `CABINET_RUNNER_CMD`. |
+| `CABINET_PROMPT` | the `custom` runner | The prompt, for `CABINET_RUNNER_CMD`. |
+| `CABINET_AGENT` | every runner | The role of the run, set for the agent tool and everything it starts; the credit hook reads it. |
+| `CABINET_CREDIT`, `CABINET_CREDIT_ADDRESS` | every runner | Set by a run for the credit hook: `app` or `off`, and the email its line carries ([credit roles](concepts.md#credit-roles)). |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
 
@@ -1470,6 +1482,38 @@ How agents write to you is a house rule in `AGENTS.md`, asked at setup and by `c
 - The brief opens with what waits today ("Today: 2 decisions, 1 action, about 5 min."). The sign-off queue stays complete, and no warning about anything irreversible, money, security or data loss is ever cut.
 
 The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. Ask any agent for details on a point and it gives them.
+
+## Credit roles
+
+A commit a role makes in a Cabinet run can credit that role beside you. Its message then ends with one line:
+
+```
+Co-authored-by: Cabinet backend <347351783+cabinet-team[bot]@users.noreply.github.com>
+```
+
+GitHub links that email to the Cabinet Team app, so the commit shows you and `cabinet-team[bot]` with the Cabinet Team avatar; the role's name is in the message. You stay the author and the committer, and you still push. Nothing is set up on GitHub, and nothing is paid for.
+
+- **On for a new workspace** (`app`), asked at setup; `cabinet config --credit-roles off|app` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|app`), so a teammate's runs credit nothing until they say so.
+- **Only commits made in a Cabinet run:** scheduled jobs, `cabinet handoff run`, `cabinet spec run` and `cabinet role draft`, which tell the agent tool the role (`CABINET_AGENT`). Your own commits, and the ones `cabinet` makes for you, get nothing. A session you open in an agent tool yourself is not credited yet.
+- **Only new commits:** never an amend, a merge or a squash, nor a commit that a rebase or cherry-pick replays. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
+- **Your own app:** `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` shows your GitHub App instead; `off` goes back to the Cabinet Team.
+- **The house rule follows it:** the "Commits." line in `AGENTS.md` allows this one line while credit is on, and no other attribution.
+
+The line is added by the credit hook, `prepare-commit-msg` in the global hooks folder ([guardrails](guardrails.md#what-bootstrap-installs)), which `cabinet bootstrap` places. It needs git 2.15 or later. A `prepare-commit-msg` of your own there is left as it is, and then nothing is credited on that machine: `cabinet doctor` says so and why (`credit.hook`).
+
+Each runner must pass the role on to the commands its agent runs. Whether each does is confirmed live by the owner on a real tool, as the guardrails are:
+
+| Runner | Credit confirmed live |
+|---|---|
+| `claude` | not yet |
+| `codex` | not yet |
+| `antigravity` | not yet |
+| `qwen` | not yet |
+| `grok` | not yet |
+| `opencode` | not yet |
+| `cursor` | not yet |
+| `custom` | depends on your command; Cabinet sets the variables for it |
+
 ## What agent runs cost
 
 Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), from what the agent tool reports, in `spend.tsv` in the workspace's log folder (time, job, runner, dollars, then uncached input, cached input and output tokens), on this machine only. Each built-in runner prints JSON for this; the reply still goes to the job's log, and output that is not that JSON (an error, a different version) goes there as it is.
@@ -1543,7 +1587,7 @@ Cabinet works through agent tools, so it works with any model they offer. Everyt
 | `grok` | `grok -p "<role instruction> <prompt>" --permission-mode auto --output-format json` |
 | `opencode` | `opencode run --format json "<role instruction> <prompt>"` |
 | `cursor` | `cursor-agent -p --force --output-format json "<role instruction> <prompt>"` (run live) |
-| `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` |
+| `custom` | `CABINET_RUNNER_CMD`, with the prompt in `$CABINET_PROMPT` and the role in `$CABINET_AGENT` (every runner gets `CABINET_AGENT`, for [credit roles](#credit-roles)) |
 
 The role instruction is "Act as the <role> role: read agents/<role>.md and follow it as your instructions". Runners other than `claude` and `cursor` follow each tool's documented headless mode and are untested end to end as scheduled jobs (`grok`, `opencode`, `codex` and `antigravity` answered a one-line prompt in that mode; `qwen` needs an auth type set in its settings); Codex's default sandbox may not let a scheduled brief write its file. Headless Antigravity denies any tool it would ask about, and `--mode auto` is not open to every plan, so its runner skips the prompts: its deny rules are then the guardrail ([guardrails](guardrails.md)). Gemini CLI is no longer a runner: Google moved its users to Antigravity. A workspace still set to `gemini` is told to run `cabinet config --runner antigravity`; Gemini CLI keeps its guardrails for interactive use. Scheduled jobs get a PATH with the runner's and Node's folders.
 
@@ -1582,7 +1626,7 @@ Together they are a strong speed bump, not a boundary. For a hard boundary, prot
 
 Two more machine-wide settings come with the push gate:
 
-- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
+- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. `prepare-commit-msg` is the credit hook instead ([credit roles](concepts.md#credit-roles)): it runs the repo's own `prepare-commit-msg` in the same way, whose failure still stops the commit, then adds the role's line to a commit made in a Cabinet run. Bootstrap places it where there is no hook, or where the stub or an earlier credit hook is, and never replaces a hook of yours; `--no-verify` does not skip it. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
 - **The workspace's secrets check,** a `pre-commit` hook in the workspace's own `.git/hooks` (bootstrap runs it through the pass-through stub). It runs `bin/secret.sh check --staged` and refuses a commit that adds a likely key, token or password, naming the file and line, never the value. A false alarm passes once its line has `not-a-secret` on it. An existing `pre-commit` hook is left as it is (the doctor notes it; your hook can call `bin/secret.sh check --staged` itself). A shared `cabinet/` inside a project gets none, since the project's own hooks run there; `bin/doctor.sh` still scans its files. It is a safety net, not a guarantee: it knows common key formats, not every secret.
 - **Gemini CLI's `context.fileName`** is set to read `AGENTS.md` everywhere, so Gemini also loads `AGENTS.md` in folders that are not Cabinet workspaces.
 
@@ -1626,7 +1670,7 @@ These are on the [roadmap](../ROADMAP.md):
 The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
-- **The push gate and hook stubs:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
+- **The push gate, the hook stubs and the credit hook:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
 - **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules`.
 - **Gemini:** delete `~/.gemini/policies/owner-control.toml` and remove `context.fileName` from `~/.gemini/settings.json`.
 
@@ -1761,6 +1805,22 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `ok scheduled jobs find node` | `schedules.node` | Node is on the PATH scheduled jobs get, so the workspace scripts' JavaScript (`bin/lib.js`) runs in them. | Nothing. |
 | `FIX scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)` | `schedules.node` | Node is not on the PATH scheduled jobs get (the PATH found when `bin/bootstrap.sh` last ran), so the brief, handoff and spec steps of a job would fail. | Install Node.js where your shell finds it, then `bin/bootstrap.sh` saves the new PATH into the schedules. |
 | `note the custom runner '<...>' has no cabinet guardrails: only the git push gate covers its scheduled runs` | `runner.custom-unguarded` | A custom runner the kit does not know. | Add its own deny rules by hand. |
+
+## Credit roles
+
+| Message | ID | Cause | Fix |
+|---|---|---|---|
+| `ok credit roles: <...>` | `credit.setting` | The setting is `app` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
+| `FIX CABINET_CREDIT_ROLES is "<...>", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `app` turns credit on. | `cabinet config --credit-roles off` or `app`. |
+| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `app`. |
+| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `app`. |
+| `ok credit names the app of <...>` | `credit.email` | `CABINET_CREDIT_EMAIL` names your own GitHub App. | Nothing. |
+| `FIX CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)` | `credit.email` | The email is not `<user ID>+<app>[bot]@users.noreply.github.com` exactly, in lower case. | `cabinet config --credit-email <email>`, or `off` for the Cabinet Team app. |
+| `ok credit installed: the credit hook is at <...>` | `credit.hook` | The global hooks folder holds the kit's credit hook. | Nothing. |
+| `note credit not installed: git has no global hooks path (run bin/bootstrap.sh)` | `credit.hook` | Bootstrap has not run on this machine. | `bin/bootstrap.sh`. |
+| `note credit not installed: the global hooks path is <...>, which bootstrap leaves as it is, and it holds no credit hook` | `credit.hook` | Your global `core.hooksPath` points to a folder of your own. | Keep it (no credit on this machine), or copy `.cabinet/guardrails/prepare-commit-msg` into that folder yourself. |
+| `note credit not installed: no prepare-commit-msg in <...> (run bin/bootstrap.sh)` | `credit.hook` | The hook is missing. | `bin/bootstrap.sh`. |
+| `note credit not installed: <...> is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks, delete it there, then run bin/bootstrap.sh)` | `credit.hook` | A `prepare-commit-msg` of your own, or an edited copy of the kit's, is in the global hooks folder. Bootstrap never replaces it. | Keep it (no credit on this machine), or move it as the message says and run `bin/bootstrap.sh`. |
 
 ## Skills and plugins
 
@@ -2151,6 +2211,18 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.2.0 - Unreleased
+
+### Credit roles
+
+- A commit a role makes in a Cabinet run can credit that role beside you: its message ends with one `Co-authored-by: Cabinet <role> <347351783+cabinet-team[bot]@users.noreply.github.com>` line, which GitHub shows with the Cabinet Team avatar. You stay the author and still push. New options for `cabinet new`, `init` and `config`: `--credit-roles off|app` (on, `app`, for a new workspace, and asked at setup) and `--credit-email <email>|off` (your own GitHub App's bot noreply email). `cabinet config --this-machine --credit-roles off|app` answers for one machine; in a shared `cabinet/`, each machine answers for itself. Only commits made in a Cabinet run are credited (scheduled jobs, `handoff run`, `spec run`, `role draft`), and only new ones: never an amend, merge or squash, nor a commit a rebase or cherry-pick replays. The "Commits." house rule in `AGENTS.md` follows the setting; the concepts page explains it.
+- Bootstrap places the credit hook as `prepare-commit-msg` in the global hooks folder, in place of the pass-through stub there (it still runs a repo's own `prepare-commit-msg`, whose failure still stops the commit). A hook of your own there is never replaced. New doctor checks `credit.setting`, `credit.email` and `credit.hook`; new `cabinet next` step `credit-roles`. Every runner now gets the role in `CABINET_AGENT`, not only `custom`.
+- After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles app`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
+
+### Rules
+
+- The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.
+
 ## 0.1.3 - 26 Oct 2026
 
 Commands, a website, and pinned releases. Nothing to do by hand after `npx cabinet update`.
@@ -2384,9 +2456,9 @@ Kit files are replaced on every `cabinet update` and must never be edited in a w
 6. **Docs match the code.** A change to a command, option, file, message or behavior updates `docs/` (and `README.md` when it is user-facing) in the same change, then `npm run docs` rebuilds `llms-full.txt`. The website matches the docs: a change that adds, renames or removes a feature, command or option also updates `site/copy.js` wherever the site's own words describe it. `npm test` fails when a command, option, script, doctor message or check ID is missing from the docs, `site/copy.js` names a command, option or check ID the docs lack, a link or heading anchor is broken, or `llms-full.txt` is stale.
 7. **One command table, one set of conventions.** Every `cabinet` command and option is a row in `commands_table` in `bin/cabinet`; help, `--help`, `help --json` and tab completion are made from it. A new command or option follows "Command conventions" below, starts in the table, then gets its parser and dispatcher line; the tests fail when they disagree or a convention is broken.
 8. **Stable IDs for machines.** Each doctor check has an ID (`ok <id> "message"`), and each `cabinet next` step has one. A new check gets a new ID, listed in `docs/troubleshooting.md`; an ID or a JSON field is never renamed or removed without a changelog entry that says so.
-9. **Every change has a test** in `test/smoke.sh`, and an entry in `CHANGELOG.md` under the next version. A released version (its section dated, its tag pushed, the package published) is closed: the first change after it opens `## X.Y.Z - Unreleased` at the top, a patch for fixes, a minor version for new features or commands, a major one for a breaking change, and every later change joins it. The owner never has to track this; the owner only asks for another version when there is a reason.
+9. **Every change has a test** in `test/smoke.sh`. Every change to what the package ships, or that users see, also has an entry in `CHANGELOG.md` under the next version; the website gets at most one line per release, only when visitors see something new (a new page or section), and none for polish or layout fixes. A released version (its section dated, its tag pushed, the package published) is closed: the first change after it opens `## X.Y.Z - Unreleased` at the top, a patch for fixes, a minor version for new features or commands, a major one for a breaking change, and every later change joins it. The owner never has to track this; the owner only asks for another version when there is a reason.
 10. **Writing.** ASCII punctuation only (no em or en dashes, no curly quotes). Dates people read as `18 Oct 2026`; machine formats stay ISO. No personal or project names, local paths, or comparisons with other products. Name third-party tools only as facts (which tools have guardrails).
-11. **Never push, merge, publish or release.** Only the maintainer does. Commit finished, tested work locally, with no AI or tool attribution lines.
+11. **Never push, merge, publish or release.** Only the maintainer does. Commit finished, tested work locally, with no AI or tool attribution lines except Cabinet's role credit: the one `Co-authored-by: Cabinet <role>` line the credit hook adds to a commit made in a Cabinet run. No other `Co-Authored-By`, no "Generated with" line.
 12. **Several sessions work in this repo at once.** The maintainer and other agent sessions may have uncommitted work here while you work, so leave every change you did not make as it is. A file that holds only your changes is committed by path (`git commit -- <paths>`). A file another session is also changing is not: `git commit -- <path>` commits the whole file as it is on disk, their changes too. Stage only your hunks (`git apply --cached` with a patch of just them), check `git diff --cached`, then commit with `git commit` and no paths. Before each commit, check what is staged (`git status --short`, `git diff --cached --name-only`); to undo your own staging, `git restore --staged <path>` changes only what is staged and is safe. Never run `git commit --amend`, `git commit -a`, `git add -A`, `git add .`, `git stash` or `git reset`, and never check out or restore the contents of a file you did not change. The tests may see other sessions' work in progress: a failure in a file you did not touch is reported, not "fixed".
 
 ## Command conventions
