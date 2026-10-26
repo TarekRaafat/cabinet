@@ -228,6 +228,15 @@ if (!/\.toc a\.here \{ color: var\(--text\); font-weight: 700; \}/.test(css) || 
 
 // Under 700 px the team picture and its row of names share one centred axis (owner finding).
 if (!/@media \(max-width: 700px\) \{[^@]*\.chairs-ring \{ width: 300px; height: auto; margin-inline: auto; \}[^@]*\.seats \{[^}]*justify-content: center;/.test(css)) fail("site.css: the team picture is not centred under 700 px");
+// The ring is tall enough for the names around it, so the picture starts level with the role panel (owner finding):
+// the top name sits LABEL_R (the open place's --x) above the center, the bottom one as far below, each a seat tall.
+{
+  const labelR = Number((text("index.html").match(/class="seat at0 you"[^>]*--x:([\d.]+)px/) || [])[1]);
+  const ringH = Number((css.match(/(?:^|\n)\.chairs-ring \{[^}]*height: (\d+)px/) || [])[1]);
+  const seatH = Number((css.match(/(?:^|\n)\.seat \{[^}]*min-height: (\d+)px/) || [])[1]);
+  if (!labelR || !ringH || !seatH) fail("site-check: the team ring's height, the seat's min-height or LABEL_R is not where the check reads it");
+  else if (ringH < 2 * (labelR + seatH)) fail(`site.css: .chairs-ring is ${ringH}px tall, under 2 * (LABEL_R ${labelR} + seat ${seatH}) = ${2 * (labelR + seatH)}px, so the names run past the picture`);
+}
 
 // The menu sheet's separators: straight (no radius) and full width on every row (owner finding).
 if (!/\.js \.nav > a, \.js \.uses > summary \{[^}]*border-top: 1px solid var\(--divider\);[^}]*border-radius: 0; \}/.test(css) || !/\.js \.uses, \.js \.uses > summary \{ display: flex; width: 100%; \}/.test(css)) fail("site.css: the menu sheet's row separators are rounded or not full width");

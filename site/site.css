@@ -187,8 +187,8 @@ blockquote { margin-left: 0; padding-left: 16px; border-left: 2px solid var(--di
 
 /* Tour */
 .team-grid { display: grid; grid-template-columns: 620px minmax(0, 1fr); gap: 32px; align-items: start; margin-top: 16px; }
-/* The chairs at 360 px, each name outside its chair at the same distance from the center (site/build.js, LABEL_R). */
-.chairs-ring { position: relative; width: 620px; max-width: 100%; height: 440px; color: var(--text); }
+/* The chairs at 360 px, each name outside its chair at the same distance from the center (site/build.js, LABEL_R); the ring is 2 * (LABEL_R + the seat min-height) tall, so the top and bottom names stay inside it. */
+.chairs-ring { position: relative; width: 620px; max-width: 100%; height: 452px; color: var(--text); }
 .chairs-pic { position: absolute; left: 50%; top: 50%; width: 360px; height: 360px; transform: translate(-50%, -50%); }
 .seats { position: absolute; inset: 0; }
 .chairs-pic .owner-chair, .kind-pic .owner-chair { stroke: var(--brass); }
