@@ -210,7 +210,7 @@ if [[ -n "$hooks" && -f "$pcm" ]] && cmp -s "$K/guardrails/prepare-commit-msg" "
 elif [[ -z "$hooks" ]]; then note credit.hook "credit not installed: git has no global hooks path (run bin/bootstrap.sh)"
 elif [[ "$hooks" != "$HOME/.config/git/hooks" && ! -e "$pcm" ]]; then note credit.hook "credit not installed: the global hooks path is $hooks, which bootstrap leaves as it is, and it holds no credit hook"
 elif [[ ! -e "$pcm" && ! -L "$pcm" ]]; then note credit.hook "credit not installed: no prepare-commit-msg in $hooks (run bin/bootstrap.sh)"
-else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks, delete it there, then run bin/bootstrap.sh)"; fi
+else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks and remove it from $hooks, then run bin/bootstrap.sh)"; fi
 
 section "Skills and plugins"
 for s in ${CABINET_SKILLS:-}; do [[ -e ~/.claude/skills/$s ]] || note skills.skill "skill '$s' not installed"; done

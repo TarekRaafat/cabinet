@@ -115,13 +115,13 @@ GitHub links that email to the Cabinet Team app, so the commit shows you and `ca
 
 - **On for a new workspace** (`app`), asked at setup; `cabinet config --credit-roles off|app` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|app`), so a teammate's runs credit nothing until they say so.
 - **Only commits made in a Cabinet run:** scheduled jobs, `cabinet handoff run`, `cabinet spec run` and `cabinet role draft`, which tell the agent tool the role (`CABINET_AGENT`). Your own commits, and the ones `cabinet` makes for you, get nothing. A session you open in an agent tool yourself is not credited yet.
-- **Only new commits:** never an amend, a merge or a squash, nor a commit that a rebase or cherry-pick replays. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
+- **Only new commits:** never an amend that keeps its message, a merge or a squash, nor a commit that a rebase or cherry-pick replays. An amend that writes a new message (`git commit --amend -m` or `-F`) counts as a new message from the role, and is credited. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
 - **Your own app:** `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` shows your GitHub App instead; `off` goes back to the Cabinet Team.
 - **The house rule follows it:** the "Commits." line in `AGENTS.md` allows this one line while credit is on, and no other attribution.
 
 The line is added by the credit hook, `prepare-commit-msg` in the global hooks folder ([guardrails](guardrails.md#what-bootstrap-installs)), which `cabinet bootstrap` places. It needs git 2.15 or later. A `prepare-commit-msg` of your own there is left as it is, and then nothing is credited on that machine: `cabinet doctor` says so and why (`credit.hook`).
 
-Each runner must pass the role on to the commands its agent runs. Whether each does is confirmed live by the owner on a real tool, as the guardrails are:
+Each runner must pass the role on to the commands its agent runs. Whether each does is confirmed by a run on the real tool, as the guardrails are:
 
 | Runner | Credit confirmed live |
 |---|---|

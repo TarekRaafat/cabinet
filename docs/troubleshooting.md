@@ -76,7 +76,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `note credit not installed: git has no global hooks path (run bin/bootstrap.sh)` | `credit.hook` | Bootstrap has not run on this machine. | `bin/bootstrap.sh`. |
 | `note credit not installed: the global hooks path is <...>, which bootstrap leaves as it is, and it holds no credit hook` | `credit.hook` | Your global `core.hooksPath` points to a folder of your own. | Keep it (no credit on this machine), or copy `.cabinet/guardrails/prepare-commit-msg` into that folder yourself. |
 | `note credit not installed: no prepare-commit-msg in <...> (run bin/bootstrap.sh)` | `credit.hook` | The hook is missing. | `bin/bootstrap.sh`. |
-| `note credit not installed: <...> is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks, delete it there, then run bin/bootstrap.sh)` | `credit.hook` | A `prepare-commit-msg` of your own, or an edited copy of the kit's, is in the global hooks folder. Bootstrap never replaces it. | Keep it (no credit on this machine), or move it as the message says and run `bin/bootstrap.sh`. |
+| `note credit not installed: <...> is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks and remove it from <...>, then run bin/bootstrap.sh)` | `credit.hook` | A `prepare-commit-msg` of your own, or an edited copy of the kit's, is in the global hooks folder. Bootstrap never replaces it. | Keep it (no credit on this machine), or move it as the message says and run `bin/bootstrap.sh`. |
 
 ## Skills and plugins
 

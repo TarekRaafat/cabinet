@@ -132,7 +132,7 @@ O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, us
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
-O	new,init,config	--credit-roles	off|app	Credit roles: each commit a role makes in a Cabinet run credits it beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: app; asked once in a workspace from before it).
+O	new,init,config	--credit-roles	off|app	Credit roles: each commit a role makes in a Cabinet run credits that role beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: app; asked once in an older workspace).
 O	new,init,config	--credit-email	<email>|off	With --credit-roles app: your own GitHub App's bot noreply email instead of the Cabinet Team's; off goes back to it.
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
@@ -409,7 +409,7 @@ check_credit() {   # check_credit <the mode the result has>: credit and cemail (
 }
 credit_question() {   # the setup question, the offered answer in $credit
   echo "  Credit roles: each commit a role makes in a Cabinet run credits that role beside you, with one Co-authored-by line"
-  echo "  that shows the Cabinet Team avatar on GitHub. app, or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
+  echo "  that shows the Cabinet Team avatar on GitHub. app (on, as the Cabinet Team app), or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
   credit="$(ask "Credit roles" "$credit")"
 }
 
@@ -1156,10 +1156,11 @@ cmd_config() {
   # Credit roles: this machine's answer, as written: cabinet.local.env's line, else cabinet.env's, except in a
   # shared workspace, where each machine answers for itself. Nothing is set until it is answered (--yes keeps it).
   local lenv="$ws/cabinet.local.env" shared=0 o_credit="" o_credit_set=0 o_cfile="" o_cfile_set=0 o_cemail credit_bad=0
+  lhas() { grep -q "^$1=" "$lenv" 2>/dev/null; }
+  lget() { sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$lenv" 2>/dev/null | tail -1 || true; }
   [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared ]] && shared=1
   if grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.env"; then o_cfile="$(envget CABINET_CREDIT_ROLES)"; o_cfile_set=1; fi
-  if grep -q '^CABINET_CREDIT_ROLES=' "$lenv" 2>/dev/null; then
-    o_credit="$(sed -n 's/^CABINET_CREDIT_ROLES="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$lenv" | tail -1)"; o_credit_set=1
+  if lhas CABINET_CREDIT_ROLES; then o_credit="$(lget CABINET_CREDIT_ROLES)"; o_credit_set=1
   elif ((shared == 0 && o_cfile_set)); then o_credit="$o_cfile"; o_credit_set=1; fi
   o_cemail="$(envget CABINET_CREDIT_EMAIL)"
   if ((o_credit_set)) && [[ "$o_credit" != off && "$o_credit" != app ]]; then credit_bad=1; fi
@@ -1266,9 +1267,6 @@ cmd_config() {
   check_backup_outside "${dd[@]}"
 
   # This machine only: the backup lines of cabinet.local.env, which git never tracks.
-  local lenv="$ws/cabinet.local.env"
-  lhas() { grep -q "^$1=" "$lenv" 2>/dev/null; }
-  lget() { sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$lenv" 2>/dev/null | tail -1 || true; }
   if ((this_machine)); then
     local cur_b="$o_backup" cur_t="$o_btime" new_b new_t lchanges=()
     lhas CABINET_BACKUP_DIR && cur_b="$(lget CABINET_BACKUP_DIR)"

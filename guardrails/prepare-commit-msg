@@ -4,9 +4,11 @@
 #   Co-authored-by: Cabinet <role> <email>
 # naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
 # (run_agent in bin/lib.sh); a commit made anywhere else has none of them, so it gets nothing. Each value
-# is checked here and none reaches a shell. Only new commits: never an amend, merge or squash, nor a
-# commit a rebase or cherry-pick replays. First, as the pass-through stub does, the repo's own
-# prepare-commit-msg runs with the same arguments, and its failure still stops the commit.
+# is checked here and none reaches a shell. Only new commits: never an amend that keeps its message, merge
+# or squash, nor a commit a rebase or cherry-pick replays. An amend with -m or -F gives git's source
+# "message", as a new commit does, so it counts as a new message from the role and is credited. First,
+# as the pass-through stub does, the repo's own prepare-commit-msg runs with the same arguments, and its
+# failure still stops the commit.
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
 # replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"

@@ -2508,6 +2508,11 @@ cfg --credit-roles app >/dev/null
   || fail "a commit cabinet made outside a run was credited"
 before="$(msg)"; CR_DO='git commit -q --amend --no-edit' crun "$CW" codex backend
 [[ "$(msg)" == "$before" ]] || fail "an amend in a run credited the owner's commit"
+# An amend that writes a new message is a new message from the role, and is credited (git gives it source "message").
+CR_DO='git commit -q --amend -m amended' crun "$CW" codex backend
+[[ "$(msg | head -1)" == amended && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "an amend with a new message in a run was not credited: $(msg)"
+CR_DO='git revert --no-edit HEAD >/dev/null' crun "$CW" codex backend
+[[ "$(msg | head -1)" == 'Revert "amended"' && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "a revert in a run was not credited: $(msg)"
 git -C "$CR" checkout -q -b own; for i in 1 2; do echo "o$i" >> "$CR/o$i"; git -C "$CR" add "o$i"; git -C "$CR" commit -qm "owner $i"; done; git -C "$CR" checkout -q main
 echo m >> "$CR/f"; git -C "$CR" commit -qam "main moves"
 CR_DO='git checkout -q own && git rebase -q main && git checkout -q main' crun "$CW" codex backend
