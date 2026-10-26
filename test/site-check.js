@@ -228,6 +228,8 @@ if (!/\.toc a\.here \{ color: var\(--text\); font-weight: 700; \}/.test(css) || 
 
 // Under 700 px the team picture and its row of names share one centred axis (owner finding).
 if (!/@media \(max-width: 700px\) \{[^@]*\.chairs-ring \{ width: 300px; height: auto; margin-inline: auto; \}[^@]*\.seats \{[^}]*justify-content: center;/.test(css)) fail("site.css: the team picture is not centred under 700 px");
+// From 700 to 1099 px the grid is one column, and the ring sits in its middle, not at its left (owner finding).
+if (!/@media \(max-width: 1099px\) \{[^@]*\.chairs-ring \{ margin-inline: auto; \}/.test(css)) fail("site.css: the team picture is not centred in the one-column layout under 1100 px");
 // The ring is tall enough for the names around it, so the picture starts level with the role panel (owner finding):
 // the top name sits LABEL_R (the open place's --x) above the center, the bottom one as far below, each a seat tall.
 {

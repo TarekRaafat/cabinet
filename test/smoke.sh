@@ -2370,6 +2370,10 @@ b && ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >/dev/null || fail "#000
 cp "$T/site.css" "$C/site/site.css"; sedi 's/aria-label="\${NAV.github}"/aria-label="Git"/' "$C/site/build.js"
 b && ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >/dev/null || fail "a GitHub mark without the name GitHub passed the check"
 cp "$KIT/site/build.js" "$C/site/build.js"
+# The team picture is centred in the one-column layout (701 to 1099 px): without the rule the check fails.
+sedi "/^  \\.chairs-ring { margin-inline: auto; }\$/d" "$C/site/site.css"
+b && ! node "$KIT/test/site-check.js" "$C" "$W2" v9.9.9 >"$T/sc.out" && grep -q "not centred in the one-column layout" "$T/sc.out" || fail "a team picture left of the one-column layout passed the check"
+cp "$T/site.css" "$C/site/site.css"
 # A link with any scheme but https:, http: or mailto: stops the build, and so does an llms.txt link outside the kit.
 cp "$KIT/CHANGELOG.md" "$C/CHANGELOG.md"; cp "$C/docs/backups.md" "$T/backups.md"
 printf '\n[x](javascript:alert(1))\n' >> "$C/docs/backups.md"; b && fail "a javascript: link in a doc built"; grep -q 'only https:, http:, mailto: and # links' "$T/web2.err" || fail "no message for a javascript: link"
