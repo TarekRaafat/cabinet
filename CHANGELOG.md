@@ -2,7 +2,9 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.1.3 - Unreleased
+## 0.1.3 - 26 Oct 2026
+
+Commands, a website, and pinned releases. Nothing to do by hand after `npx cabinet update`.
 
 ### Commands
 
