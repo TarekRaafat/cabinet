@@ -38,6 +38,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - The copy button in the website's install command fills the box to its rounded right edge, so its hover follows the box's shape.
 - On the website's home page, the team picture starts level with the role panel beside it: the ring is tall enough for the names above and below the chairs, which ran 6 px past it at the top and bottom. The site check fails when the ring is shorter than its names need.
 - On the website's home page, between 701 and 1099 px wide, where the team picture and the role panel stack in one column, the picture sits in the middle of the column; it sat at the left. The site check fails when the rule that centres it is missing.
+- The tests' check that the changelog names the website reads the newest version section, so it passes on a release commit too; before, it read only a version not yet dated.
 - The demo's capture (`brand/demo/capture.sh`) also runs `cabinet init` in a small project repo, for the website's terminal.
 - The brand guide (`brand/BRAND.md`, and its visual guide) marks as approved the rules the website relies on: the colors and their shares, type, the wordmark and side-by-side lockup, clear space, the hover, logo animation, chairs and loading timings, the demo film, the app icon and social preview, and the don'ts. It adds how a page looks in light and dark, from the same colors at an opacity.
 
