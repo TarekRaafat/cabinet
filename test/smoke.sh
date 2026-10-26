@@ -2305,7 +2305,7 @@ for f in "$KIT"/site/*.js; do
 done
 j -e '!$.dependencies && !$.devDependencies' "$KIT/package.json" >/dev/null || fail "package.json has dependencies"
 # Never shipped: npm pack lists nothing under site/, and files (an allowlist) has no site/.
-p="$(cd "$KIT" && npm pack --dry-run --json 2>/dev/null | j -r --each '$[0].files.map((f) => f.path)')"
+p="$(cd "$KIT" && npm pack --dry-run --json 2>/dev/null | j -r --each 'Object.values($)[0].files.map((f) => f.path)')"
 [[ -n "$p" ]] && ! grep -qE '^(site/|_site/|\.github/)' <<<"$p" && j -e '!$.files.some((f) => /site/.test(f))' "$KIT/package.json" >/dev/null || fail "the package would ship the site or its source"
 # Text written for the site holds no handoff ID and none of the owner's private words (CABINET_PRIVATE_WORDS, as
 # "no project data in the kit" does, so this file names none); the check catches either placed there.
