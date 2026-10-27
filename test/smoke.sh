@@ -2637,6 +2637,10 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
 
 section "color in a terminal: styled for people only, plain text unchanged" ""
 s62() {
+# Its own HOME and global git config, so list and digest see only this section's workspaces. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+export HOME="$T/color-home" GIT_CONFIG_GLOBAL="$T/color-home/.gitconfig"
+mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 # tt: run it in a terminal (in_tty) with a TERM that styles (TT_TERM to choose), \r removed. nc: every code removed.
 tt() { TERM="${TT_TERM:-xterm}" in_tty "$@" | tr -d '\r'; }
 nc() { sed $'s/\033\\[[0-9;]*m//g'; }
@@ -2706,8 +2710,8 @@ for c in "next" "list" "digest" "status" "changelog" "doctor" "handoff list" "ha
   # shellcheck disable=SC2086
   p="$(cd "$CW" && "$F" $c 2>&1 || true)"
   [[ -n "$p" && "$p" != *$'\033['* ]] || fail "piped $c is empty or styled: $p"
-  [[ "$(cd "$CW" && NO_COLOR=1 tt "$F" $c)" == "$p" ]] || fail "$c in a terminal with NO_COLOR is not its piped output"
-  [[ "$(cd "$CW" && TT_TERM=dumb tt "$F" $c)" == "$p" ]] || fail "$c in a terminal with TERM=dumb is not its piped output"
+  o="$(cd "$CW" && NO_COLOR=1 tt "$F" $c)"; [[ "$o" == "$p" ]] || { diff <(echo "$p") <(echo "$o"); fail "$c in a terminal with NO_COLOR is not its piped output"; }
+  o="$(cd "$CW" && TT_TERM=dumb tt "$F" $c)"; [[ "$o" == "$p" ]] || { diff <(echo "$p") <(echo "$o"); fail "$c in a terminal with TERM=dumb is not its piped output"; }
   s="$(cd "$CW" && tt "$F" $c)"
   [[ "$s" == *$'\033['* || "$c" == "handoff list owner" ]] || fail "$c in a terminal is not styled"   # the full form styles only verdicts
   printf '%s\n' "$s" >> "$T/color-styled"
@@ -2829,6 +2833,7 @@ grep -qxF -- "- **(Approved)** In a terminal, what waits on the owner is the ter
   && grep -qF "<li><b>In a terminal,</b> use the terminal's own red, green and blue, and never yellow for a status: yellow stands in for brass and marks only what waits on the owner. Color only when the output is a terminal, and none when <code>NO_COLOR</code> is set.</li>" "$KIT/brand/index.html" || fail "the brand does not hold the yellow rule word for word"
 for x in "$CW" "$CO" "$T/color-nobrief" "$U" "$T/color-base"; do [[ -d "$x" ]] && "$F" -C "$x" remove --yes --force >/dev/null 2>&1; rm -rf "$x"; done
 rm -rf "$HOME/$LOGS/color" "$HOME/$LOGS/color-gone" "$CK"
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
