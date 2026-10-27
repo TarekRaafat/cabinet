@@ -2444,7 +2444,7 @@ cfg --credit-roles off >/dev/null && grep -qx 'CABINET_CREDIT_ROLES="off"' "$CW/
 cfg --credit-roles on >/dev/null && grep -qx 'CABINET_CREDIT_ROLES="on"' "$CW/cabinet.env" || fail "--credit-roles on"
 cp "$CW/cabinet.env" "$T/credit-env"
 refused() { local rc=0; cfg "$@" >/dev/null || rc=$?; ((rc)) && cmp -s "$T/credit-env" "$CW/cabinet.env" || fail "config $* was not refused, or changed cabinet.env"; }
-for v in name ON app ""; do refused --credit-roles "$v"; done
+for v in name app APP ON ""; do refused --credit-roles "$v"; done
 cfg --credit-roles on --credit-email "$PM" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$PM\"" "$CW/cabinet.env" || fail "--credit-email not written"
 cp "$CW/cabinet.env" "$T/credit-env"
 for v in '123+my-app@users.noreply.github.com' 'abc+my-app[bot]@users.noreply.github.com' '123+my-app[bot]@example.com' \
