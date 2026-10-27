@@ -626,6 +626,10 @@ out="$(cd "$MC" && "$F" config --yes --name "Mid Noted" 2>&1)" && grep -qx 'A no
 out="$(cd "$MC" && MID_EDIT="$MC/agents/other.md" PATH="$T/gitmid:$PATH" "$F" config --yes --name "Mid Third" 2>&1)" && git -C "$MC" show --name-only --format= HEAD | grep -qxF ORG.md || fail "a rename did not commit ORG.md: $out"
 [[ "$(git -C "$MC" status --porcelain)" == "?? agents/other.md" ]] || fail "a rename committed a role file another session wrote: $(git -C "$MC" show --name-only --format= HEAD)"
 rm "$MC/agents/other.md"
+# A role turned off: its role files go in as removals, and no other role file, so another session's edit to one stays theirs.
+r="$(sed -n 's/^CABINET_ROLES="\(.*\)"$/\1/p' "$MC/cabinet.env")"; mid agents/qa.md --roles "${r/ finance/}"
+[[ "$(git -C "$MC" show --name-status --format= HEAD -- agents .claude/agents)" == $'D\t.claude/agents/finance.md\nD\tagents/finance.md' ]] \
+  || fail "turning a role off did not commit only its removal: $(git -C "$MC" show --name-status --format= HEAD)"
 # A slug change commits only the job files its rewrite changed: brief.job names no slug, so another session's edit to it stays theirs.
 os="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$MC/cabinet.env")"
 printf '# Reads Logs/cabinet/%s/ and state/cabinet/%s/.\nCOMMAND="true"\nWHEN=""\n' "$os" "$os" > "$MC/jobs/logs.job"; git -C "$MC" add jobs/logs.job && git -C "$MC" commit -qm "a job that names the slug" -- jobs/logs.job
@@ -2514,8 +2518,12 @@ before="$(msg)"; CR_DO='git commit -q --amend --no-edit' crun "$CW" codex backen
 # An amend that writes a new message is a new message from the role, and is credited (git gives it source "message").
 CR_DO='git commit -q --amend -m amended' crun "$CW" codex backend
 [[ "$(msg | head -1)" == amended && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "an amend with a new message in a run was not credited: $(msg)"
+# A commit from a template (git gives it source "template") is credited once.
+printf 'from a template\n' > "$T/credit-template"
+CR_DO="echo x >> f && git add f && GIT_EDITOR='sed -i.bak 1s/^/edited\ /' git commit -q -t '$T/credit-template'" crun "$CW" codex backend
+[[ "$(msg | head -1)" == "edited from a template" && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "a commit from a template in a run was not credited once: $(msg)"
 CR_DO='git revert --no-edit HEAD >/dev/null' crun "$CW" codex backend
-[[ "$(msg | head -1)" == 'Revert "amended"' && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "a revert in a run was not credited: $(msg)"
+[[ "$(msg | head -1)" == 'Revert "edited from a template"' && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "a revert in a run was not credited: $(msg)"
 git -C "$CR" checkout -q -b own; for i in 1 2; do echo "o$i" >> "$CR/o$i"; git -C "$CR" add "o$i"; git -C "$CR" commit -qm "owner $i"; done; git -C "$CR" checkout -q main
 echo m >> "$CR/f"; git -C "$CR" commit -qam "main moves"
 CR_DO='git checkout -q own && git rebase -q main && git checkout -q main' crun "$CW" codex backend
@@ -2553,7 +2561,9 @@ cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the pas
 touch -t 202001010000 "$HK/prepare-commit-msg"; boot
 cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -newer "$CW/cabinet.env")" == "" ]] || fail "bootstrap rewrote the current credit hook"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed"
-sed '2s/.*/# cabinet credit hook v0/' "$KH" > "$HK/prepare-commit-msg"; boot
+# The hook one version back, a comment apart, as a machine set up before this kit has it: bootstrap replaces it.
+v="$(sed -n '2s/^# cabinet credit hook v//p' "$KH")"; ((v > 1)) || fail "the credit hook's version is not above 1: $v"
+{ sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"; boot
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
 printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-mine"; boot
 cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the owner's own prepare-commit-msg"
@@ -2592,6 +2602,11 @@ crun "$SC/cabinet" codex backend; [[ "$(msg)" == work ]] || fail "a teammate's m
 grep -qx 'CABINET_CREDIT_ROLES="on"' "$SC/cabinet/cabinet.local.env" && [[ -z "$(git -C "$SC" status --porcelain)" ]] || fail "the answer is not in cabinet.local.env only"
 crun "$SC/cabinet" codex backend; [[ "$(cab)" == 1 ]] || fail "the teammate's run was not credited after the answer"
 (cd "$SC" && "$F" config --this-machine --credit-email "$PM") >/dev/null 2>&1 && fail "--this-machine took --credit-email"
+cp "$SC/cabinet/cabinet.local.env" "$T/credit-local"
+(cd "$SC" && "$F" config --yes --this-machine --credit-roles app) >/dev/null 2>&1 && fail "--this-machine took --credit-roles app"
+cmp -s "$T/credit-local" "$SC/cabinet/cabinet.local.env" && [[ -z "$(git -C "$SC" status --porcelain)" ]] || fail "--this-machine --credit-roles app changed something"
+touch "$T/credit-mark"; "$F" new "$T/credit-app" --yes --credit-roles app >/dev/null 2>&1 && fail "new took --credit-roles app"
+[[ ! -e "$T/credit-app" && -z "$(find "$T" -mindepth 1 -newer "$T/credit-mark" 2>/dev/null)" ]] || fail "new --credit-roles app changed something: $(find "$T" -mindepth 1 -newer "$T/credit-mark" 2>/dev/null | head -5)"
 
 # House rules and docs (criteria 30 to 34).
 cl() { grep '^- \*\*Commits\.\*\*' "$1/AGENTS.md"; }
