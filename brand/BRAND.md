@@ -163,6 +163,7 @@ A page follows the reader's light or dark setting, with no toggle. Every color i
 - The word always comes with the color; color never replaces it.
 - Status colors only mark status: never buttons, links, headings or decoration. One status color per line.
 - In a terminal: the terminal's own red, green and blue, only when the output is a terminal, and none when `NO_COLOR` is set. `cabinet doctor` does this.
+- **(Approved)** In a terminal, what waits on the owner is the terminal's yellow, standing in for brass. It is the owner's color, not a status.
 
 ## 8. Type (Approved)
 
