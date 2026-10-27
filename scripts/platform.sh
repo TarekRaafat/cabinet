@@ -24,14 +24,17 @@ ERR_TAG="cabinet:"; styled 2 && ERR_TAG=$'\033[31m'"cabinet:"$'\033[0m'
 # fd 3, the stream being written, else on stdin; never tput, which can miss a change), else 80.
 term_width() {
   local w="${COLUMNS:-}"
-  [[ "$w" =~ ^[1-9][0-9]*$ ]] || { w="$(stty size <&3 2>/dev/null || stty size 2>/dev/null)"; w="${w#* }"; }
+  [[ "$w" =~ ^[1-9][0-9]*$ ]] || { w="$(stty size 2>/dev/null <&3 || stty size 2>/dev/null)"; w="${w#* }"; }
   [[ "$w" =~ ^[1-9][0-9]*$ ]] || w=80
   printf '%s' "$w"
 }
 # changelog_show: changelog text on stdin, rendered for the terminal (lib.js, changelog-render)
-# only when stdout is styled; otherwise as it is.
+# only when stdout is styled; otherwise as it is. Should the renderer fail (it prints only at its
+# end), the text is printed as it is: a display helper never stops a command such as update.
 changelog_show() {
-  if [[ -n "$S_Z" ]]; then { node "$LIBJS" changelog-render "$(term_width)"; } 3>&1; else cat; fi
+  if [[ -z "$S_Z" ]]; then cat; return 0; fi
+  local t; t="$(cat; echo .)"; t="${t%.}"
+  { printf '%s' "$t" | node "$LIBJS" changelog-render "$(term_width)" 2>/dev/null; } 3>&1 || printf '%s' "$t"
 }
 
 USER="${USER:-$(id -un)}"   # cron and containers can leave it unset

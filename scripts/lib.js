@@ -872,10 +872,11 @@ function changelogRender(width) {
   };
   const out = fs.readFileSync(0, "utf8").split("\n").map((l) => {
     let m;
-    if ((m = /^## (\S+)( - .*)?$/.exec(l))) return paint(m[1], "bold") + paint(m[2] || "", "dim");
-    if ((m = /^#+ (.*)$/.exec(l))) return runs(m[1]).map((r) => paint(r.text, "bold")).join("");
-    if ((m = /^(\s*)(- |\d+\. )(.*)$/.exec(l))) return wrap(m[1] + m[2], " ".repeat([...m[1] + m[2]].length), wordsIn(runs(m[3])));
-    m = /^(\s*)(.*)$/.exec(l);
+    // [\s\S], not ".": a line holding \r, U+2028 or U+2029 still matches, so the last one always does.
+    if ((m = /^## (\S+)( - [\s\S]*)?$/.exec(l))) return paint(m[1], "bold") + paint(m[2] || "", "dim");
+    if ((m = /^#+ ([\s\S]*)$/.exec(l))) return runs(m[1]).map((r) => paint(r.text, "bold")).join("");
+    if ((m = /^(\s*)(- |\d+\. )([\s\S]*)$/.exec(l))) return wrap(m[1] + m[2], " ".repeat([...m[1] + m[2]].length), wordsIn(runs(m[3])));
+    m = /^(\s*)([\s\S]*)$/.exec(l);
     return m[2] ? wrap(m[1], m[1], wordsIn(runs(m[2]))) : l;
   });
   process.stdout.write(out.join("\n"));

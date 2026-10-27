@@ -2674,6 +2674,7 @@ CC="$CK/bin/cabinet"
 "$F" new "$T/color-nobrief" --yes >/dev/null
 "$F" new "$T/color-gone" --yes >/dev/null; rm -rf "$T/color-gone"
 echo 0.0.1 > "$CO/.cabinet/version"; rm "$CO/agents/qa.md"
+printf '#!/bin/sh\necho "{\\"problems\\": 0}"\n' > "$T/color-nobrief/bin/doctor.sh"   # a doctor that finds nothing: list shows "all good"
 printf '# Brief\n\nOld.\n' > "$CO/BRIEF.md"; touch -t 202001010700 "$CO/BRIEF.md"
 printf '# Brief\n\n## Sign-off queue\n\n1. **Publish?** A. now. B. later. $(touch pwned)\n\n## Actions for the owner\n\n- Push api main.\n' > "$CW/BRIEF.md"
 cat >> "$CW/HANDOFFS.md" <<'EOF'
@@ -2752,6 +2753,10 @@ head -1 <<<"$o" | grep -q "^${ER}1mNext in Color Co" && head -1 <<<"$o" | grep -
 grep -qF "  ${E}33m1.${E}0m " <<<"$o" && grep -qF "Run: ${E}1mcabinet bootstrap" <<<"$o" || fail "next: the step number yellow, the command bold"
 grep -q 'Optional:' <<<"$o" && ! grep 'Optional:' <<<"$o" | grep -qF "${E}33m" && grep 'Optional:' <<<"$o" | grep -qF "Run: ${E}1m" || fail "next: the Optional line has yellow, or its command is not bold"
 
+o="$(cd "$T" && tt "$F" next)"
+head -1 <<<"$o" | grep -q "^${ER}1mNot inside a cabinet workspace.${ER}0m$" && grep -qF "  ${E}33m1.${E}0m Start one" <<<"$o" || fail "next outside a workspace: the first line bold, the step number yellow"
+[[ "$(nc <<<"$o")" == "$(cd "$T" && "$F" next)" ]] || fail "next outside a workspace, styled with codes removed, is not its piped text"
+
 # Criteria 7 and 19: digest.
 o="$(cd "$CW" && tt "$F" digest)"
 head -1 <<<"$o" | grep -q "^${ER}1m" || fail "digest: the first line is not bold"
@@ -2772,7 +2777,7 @@ grep -E "^  color " <<<"$o" | grep -qF "${E}33m2 handoff(s)${E}0m" || fail "list
 grep -E "^  color " <<<"$o" | grep -Eq "${ER}2m[0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, .*${ER}0m +${ER}2m/.*color${ER}0m$" || fail "list: LATEST BRIEF and FOLDER are not dim"
 grep -E "^  color-old " <<<"$o" | grep -Eq "^  color-old +color-old +0\.0\.1\* " && grep -E "^  color-old " <<<"$o" | grep -Eq "${ER}31m[0-9]+ to fix${ER}0m" || fail "list: the KIT value styled, or the problem not red"
 grep -E "^  color-gone " <<<"$o" | grep -qF "${E}31mfolder gone${E}0m" || fail "list: folder gone is not red"
-grep -E "^  color " <<<"$o" | grep -qF "${E}32mall good" || true
+grep -E "^  color-nobrief " <<<"$o" | grep -qF "${E}32mall good${E}0m" || fail "list: all good is not green"
 
 # Criterion 9: handoff list.
 o="$(cd "$CW" && tt "$F" handoff list)"
@@ -2831,6 +2836,17 @@ grep -q 'NO_COLOR=1' "$KIT/docs/commands.md" && awk '/^## 0\.2\.0 - /{on=1; next
 grep -qxF -- "- **(Approved)** In a terminal, what waits on the owner is the terminal's yellow, standing in for brass. It is the owner's color, not a status." "$KIT/brand/BRAND.md" \
   && j -e '$.color.brass.terminal == "yellow" && $.color.brass.use == "The owner'"'"'s open seat, on light backgrounds; in a terminal, yellow marks what waits on the owner. Nothing else."' "$KIT/brand/tokens.json" >/dev/null \
   && grep -qF "<li><b>In a terminal,</b> use the terminal's own red, green and blue, and never yellow for a status: yellow stands in for brass and marks only what waits on the owner. Color only when the output is a terminal, and none when <code>NO_COLOR</code> is set.</li>" "$KIT/brand/index.html" || fail "the brand does not hold the yellow rule word for word"
+# A changelog line ending in \r, or holding U+2028, renders, and changelog in a terminal exits 0.
+printf '\n- A line from another editor\r\n- A line with a separator\342\200\250in it\n' >> "$CK/CHANGELOG.md"
+o="$(tt bash -c '"$0" changelog; echo "exit=$?"' "$CC")"
+grep -qx 'exit=0' <<<"$o" && grep -qF "${E}1m9.9.9${E}0m" <<<"$o" && grep -q 'A line from another editor' <<<"$o" || fail "changelog with \\r or U+2028 in a terminal failed: $o"
+# A renderer that fails leaves the changelog as written, and update goes on to its end.
+CB="$T/color-kit-broken"; cp -R "$CK" "$CB"
+sedi 's/^function changelogRender(width) {$/& throw new Error("broken");/' "$CB/scripts/lib.js"
+grep -q 'throw new Error("broken")' "$CB/scripts/lib.js" || fail "color test setup: the renderer was not broken"
+fresh; o="$(tt bash -c '"$0" -C "$1" update; echo "exit=$?"' "$CB/bin/cabinet" "$U")"
+grep -qx 'exit=0' <<<"$o" && grep -q '^## 9.9.9 - 1 Jan 2030$' <<<"$o" && grep -qF "${E}32mCommitted in the workspace" <<<"$o" || fail "a failing renderer stopped update: $o"
+rm -rf "$CB"
 for x in "$CW" "$CO" "$T/color-nobrief" "$U" "$T/color-base"; do [[ -d "$x" ]] && "$F" -C "$x" remove --yes --force >/dev/null 2>&1; rm -rf "$x"; done
 rm -rf "$HOME/$LOGS/color" "$HOME/$LOGS/color-gone" "$CK"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
