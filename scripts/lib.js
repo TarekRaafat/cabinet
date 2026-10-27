@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual, json, and the line edits and helpers below.
+// Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -832,12 +832,61 @@ function closest(word, ...cands) {
   if (best) process.stdout.write(best + "\n");
 }
 
+// changelog-render <width>: changelog Markdown on stdin, for a terminal. The shell calls it only when its
+// output is styled (styled in platform.sh) and passes the width. A "## <version> - <date>" heading shows
+// the version bold and the date dim, other headings bold; code shows without its backticks in the normal
+// weight, **text** bold without its asterisks; list items keep their "- " and wrap at words under their
+// text, paragraphs wrap the same way, and a word longer than the width stays whole on its own line. Every
+// line in is one or more lines out: none is added or removed. The text is only printed, never run.
+const STYLE = { bold: "\x1b[1m", dim: "\x1b[2m", reset: "\x1b[0m" };   // the only codes here (Rule 3)
+function changelogRender(width) {
+  const w = parseInt(width, 10) > 0 ? parseInt(width, 10) : 80;
+  const paint = (t, st) => (t ? STYLE[st] + t + STYLE.reset : "");
+  // Runs of text, bold or not: code spans first, so ** inside code stays as it is.
+  const runs = (t) => t.split(/(`[^`]*`)/).flatMap((part, i) => (i % 2 ? [{ text: part.slice(1, -1), bold: false }]
+    : part.split(/\*\*(?=\S)(.+?)(?<=\S)\*\*/).map((p, j) => ({ text: p, bold: j % 2 === 1 }))));
+  // Words, each a list of runs, split at spaces.
+  const wordsIn = (rs) => {
+    const out = []; let cur = [];
+    for (const r of rs) r.text.split(/ +/).forEach((p, k) => {
+      if (k > 0 && cur.length) { out.push(cur); cur = []; }
+      if (p) cur.push({ text: p, bold: r.bold });
+    });
+    if (cur.length) out.push(cur);
+    return out;
+  };
+  // A line's runs, neighbours of one weight joined, so a bold phrase is one styled span on each line.
+  const show = (rs) => rs.reduce((a, r) => (a.length && a[a.length - 1].bold === r.bold
+    ? (a[a.length - 1] = { text: a[a.length - 1].text + r.text, bold: r.bold }, a) : [...a, r]), [])
+    .map((r) => (r.bold ? paint(r.text, "bold") : r.text)).join("");
+  const wrap = (first, rest, ws) => {
+    const lines = []; let line = [{ text: first, bold: false }], len = [...first].length, empty = true;
+    for (const word of ws) {
+      const n = word.reduce((a, r) => a + [...r.text].length, 0);
+      if (!empty && len + 1 + n > w) { lines.push(show(line)); line = [{ text: rest, bold: false }]; len = [...rest].length; empty = true; }
+      if (!empty) line.push({ text: " ", bold: line[line.length - 1].bold && word[0].bold });
+      line.push(...word); len += (empty ? 0 : 1) + n; empty = false;
+    }
+    lines.push(show(line));
+    return lines.join("\n");
+  };
+  const out = fs.readFileSync(0, "utf8").split("\n").map((l) => {
+    let m;
+    if ((m = /^## (\S+)( - .*)?$/.exec(l))) return paint(m[1], "bold") + paint(m[2] || "", "dim");
+    if ((m = /^#+ (.*)$/.exec(l))) return runs(m[1]).map((r) => paint(r.text, "bold")).join("");
+    if ((m = /^(\s*)(- |\d+\. )(.*)$/.exec(l))) return wrap(m[1] + m[2], " ".repeat([...m[1] + m[2]].length), wordsIn(runs(m[3])));
+    m = /^(\s*)(.*)$/.exec(l);
+    return m[2] ? wrap(m[1], m[1], wordsIn(runs(m[2]))) : l;
+  });
+  process.stdout.write(out.join("\n"));
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
-  closest,
+  closest, "changelog-render": changelogRender,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

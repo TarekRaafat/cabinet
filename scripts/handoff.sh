@@ -341,7 +341,8 @@ if [[ $# -gt 0 ]]; then
   ((ready == 0)) || { echo "--ready lists every entry ready to push; it takes no name (or add --json)" >&2; exit 2; }
   # "owner" and "founder" name the same person.
   who="$1"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
-  awk -v who="$who" '
+  # Styled (platform.sh): on a Verdict line, PASS green, BLOCK and CHANGES red.
+  awk -v who="$who" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
   function flush() { if (e != "" && to ~ ("(^|[^a-z-])(" who ")([^a-z-]|$)") && st !~ /^(done|rejected)/) printf "%s\n", e; e=""; to=""; st="" }
   /^## / && $0 !~ /^## Open/ { flush(); on=0; if ($0 ~ /^## Archive/) on=1; next }
   /^## Open/ { flush(); on=1; next }
@@ -349,6 +350,8 @@ if [[ $# -gt 0 ]]; then
   /^### H-/ { flush() }
   /^- From:/ && to == "" { to=$0; sub(/.*-> To: /, "", to) }
   /^- Status:/ && st == "" { st=$0; sub(/^- Status: /, "", st) }
+  z != "" && /^- Verdict: / && $4 ~ /^(PASS|BLOCK|CHANGES)$/ && index($0, "- Verdict: " $3 " " $4) == 1 { p = length("- Verdict: " $3 " ")
+    $0 = substr($0, 1, p) ($4 == "PASS" ? g : r) $4 z substr($0, p + length($4) + 1) }
   e != "" || /^### H-/ { e = e $0 "\n" }
   END { flush() }
   ' "$WS/HANDOFFS.md"
@@ -370,7 +373,10 @@ awk '
   ((ready == 0)) || json -e --arg i "$id" '$[$i]?.ready === true' <<<"$rd" >/dev/null || continue
   if [[ "$d" == 9999-99-99 ]]; then age="?"
   else age=$(( (today - $(epoch "$d") + 43200) / 86400 )); fi  # rounded, so a DST day still counts as one
-  printf '%3sd  %-12s  %-14s  %-24s  %s\n' "$age" "$st" "$id" "$to" "$title"
+  # Styled (platform.sh): the age and ID dim, the owner yellow; padded from the plain text.
+  printf -v pto '%-24s' "$to"
+  [[ "$to" == owner || "$to" == founder ]] && pto="$S_Y$to$S_Z${pto:${#to}}"
+  printf '%s%3sd%s  %-12s  %s%-14s%s  %s  %s\n' "$S_D" "$age" "$S_Z" "$st" "$S_D" "$id" "$S_Z" "$pto" "$title"
 done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || { ((ready)) && echo "No handoffs ready to push." || echo "No open handoffs."; }; }
 }
 

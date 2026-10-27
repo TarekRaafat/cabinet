@@ -7,6 +7,33 @@
 LIBJS="${LIBJS:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js}"   # the JavaScript beside this file, run with node
 json() { node "$LIBJS" json "$@"; }   # reads and writes JSON: options for input and output, and a JavaScript expression (lib.js, json)
 
+# Styled output for people (brand/BRAND.md, "Status colors"): the one place in the shell that
+# writes escape codes. A stream is styled only when it is a terminal, NO_COLOR is unset or empty
+# and TERM is not dumb; unstyled output is the plain text, byte for byte. styles <fd>|off sets
+# S_B bold, S_D dim, S_R red, S_G green, S_Y yellow (what waits on the owner), S_U blue and
+# S_Z reset, all empty when not styled; it runs once for stdout here. ERR_TAG starts an error.
+styled() { [[ -t $1 && -z "${NO_COLOR:-}" && "${TERM:-}" != dumb ]]; }
+styles() {
+  if [[ "$1" != off ]] && styled "$1"; then
+    S_B=$'\033[1m' S_D=$'\033[2m' S_R=$'\033[31m' S_G=$'\033[32m' S_Y=$'\033[33m' S_U=$'\033[34m' S_Z=$'\033[0m'
+  else S_B="" S_D="" S_R="" S_G="" S_Y="" S_U="" S_Z=""; fi
+}
+styles 1
+ERR_TAG="cabinet:"; styled 2 && ERR_TAG=$'\033[31m'"cabinet:"$'\033[0m'
+# term_width: the width to wrap at: COLUMNS when it is above 0, else the terminal's own (stty on
+# fd 3, the stream being written, else on stdin; never tput, which can miss a change), else 80.
+term_width() {
+  local w="${COLUMNS:-}"
+  [[ "$w" =~ ^[1-9][0-9]*$ ]] || { w="$(stty size <&3 2>/dev/null || stty size 2>/dev/null)"; w="${w#* }"; }
+  [[ "$w" =~ ^[1-9][0-9]*$ ]] || w=80
+  printf '%s' "$w"
+}
+# changelog_show: changelog text on stdin, rendered for the terminal (lib.js, changelog-render)
+# only when stdout is styled; otherwise as it is.
+changelog_show() {
+  if [[ -n "$S_Z" ]]; then { node "$LIBJS" changelog-render "$(term_width)"; } 3>&1; else cat; fi
+}
+
 USER="${USER:-$(id -un)}"   # cron and containers can leave it unset
 if [[ "$(uname)" == Darwin ]]; then
   OS=mac LOGROOT="$HOME/Library/Logs/cabinet" PASS_STORE="keychain"

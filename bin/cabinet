@@ -20,8 +20,8 @@ source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase,
 # -C <dir>, before the command: run as if started in <dir>, as git does. Commands find the
 # workspace from the current folder upward, so this is how any of them names another workspace.
 if [[ "${1:-}" == -C ]]; then
-  [[ -n "${2:-}" ]] || { echo "cabinet: -C needs a folder" >&2; exit 2; }
-  cd "$2" 2>/dev/null || { echo "cabinet: -C $2: no such folder" >&2; exit 2; }
+  [[ -n "${2:-}" ]] || { echo "$ERR_TAG -C needs a folder" >&2; exit 2; }
+  cd "$2" 2>/dev/null || { echo "$ERR_TAG -C $2: no such folder" >&2; exit 2; }
   shift 2
 fi
 
@@ -46,7 +46,7 @@ case "${1:-}" in update|status|config)
   done ;;
 esac
 
-die() { echo "cabinet: $*" >&2; exit 1; }
+die() { echo "$ERR_TAG $*" >&2; exit 1; }
 # need_deps <yes>: stop unless the tools cabinet needs are here. In a terminal, offers to install
 # the missing ones and shows the command first; with --yes (scripts, agents) it never installs.
 need_deps() {
@@ -71,7 +71,7 @@ deps_gate() {
   for x in "$@"; do case "$x" in --help|-h) return 0 ;; --yes|-y|--dry-run) quiet=1 ;; esac; done
   need_deps "$quiet"
 }
-bad_usage() { echo "cabinet: $*" >&2; exit 2; }   # wrong usage: an unknown command or option, a missing value
+bad_usage() { echo "$ERR_TAG $*" >&2; exit 2; }   # wrong usage: an unknown command or option, a missing value
 need() { [[ $# -ge 3 && -n "$3" ]] || bad_usage "$1"; }   # need "<message>" "$@": the option's value is there
 
 # Tab separated. C: group, command (a word, or a noun and a verb), arguments, summary.
@@ -711,8 +711,8 @@ setup() {
     SETUP_WS="$ws" SETUP_HOST="$host"
     trap 'if [[ -n "${SETUP_WS:-}" ]]; then
             if ((SETUP_KEEP)); then find "$SETUP_WS" -mindepth 1 -delete 2>/dev/null; else rm -rf "$SETUP_WS"; fi
-            echo "cabinet: setup did not finish; undid $SETUP_WS" >&2
-            [[ -n "${SETUP_HOST:-}" ]] && echo "cabinet: check the project for lines setup may have added: the Agent team section in AGENTS.md, CLAUDE.local.md or QWEN.local.md, and cabinet entries in .git/info/exclude" >&2
+            echo "$ERR_TAG setup did not finish; undid $SETUP_WS" >&2
+            [[ -n "${SETUP_HOST:-}" ]] && echo "$ERR_TAG check the project for lines setup may have added: the Agent team section in AGENTS.md, CLAUDE.local.md or QWEN.local.md, and cabinet entries in .git/info/exclude" >&2
           fi' EXIT
   fi
   mkdir -p "$ws"; ws="$(cd "$ws" && pwd -P)"; [[ -n "${SETUP_WS:-}" ]] && SETUP_WS="$ws"
@@ -882,7 +882,7 @@ cmd_role() {
     add|remove) ;;
     list|draft|build) ws_script role.sh "$sub" "$@" ;;
     "") cmd_help role; exit 0 ;;
-    *) echo "cabinet: unknown command 'role $sub'" >&2; cmd_help role >&2; exit 2 ;;
+    *) echo "$ERR_TAG unknown command 'role $sub'" >&2; cmd_help role >&2; exit 2 ;;
   esac
   local name="" does="" owns="" decides="" escalates="" lead="" covers="" title="" dname="" func="" draft=0 yes=0 dry=0
   while (($#)); do
@@ -1546,7 +1546,7 @@ need_ws() {
 noun_script() {
   local noun=$1; shift
   [[ -n "${1:-}" ]] || { cmd_help "$noun"; exit 0; }
-  is_cmd "$noun $1" || { echo "cabinet: unknown command '$noun $1'" >&2; cmd_help "$noun" >&2; exit 2; }
+  is_cmd "$noun $1" || { echo "$ERR_TAG unknown command '$noun $1'" >&2; cmd_help "$noun" >&2; exit 2; }
   ws_script "$noun.sh" "$@"
 }
 # cabinet repo add through config (the same checks as setup); the rest through bin/repo.sh.
@@ -1579,8 +1579,8 @@ cmd_next() {
   local ws; ws="$(find_ws_up)" || {
     if ((json)); then json -n '({workspace: null, steps: [{id: "start", text: "Start a workspace: cabinet new (a new folder), or cabinet init (an existing project or folder of repos).", command: "cabinet new"}], optional: []})'
     else
-      echo "Not inside a cabinet workspace."
-      echo "  1. Start one: cabinet new (a new folder), or cabinet init (an existing project or folder of repos)."
+      echo "${S_B}Not inside a cabinet workspace.${S_Z}"
+      echo "  ${S_Y}1.${S_Z} Start one: cabinet new (a new folder), or cabinet init (an existing project or folder of repos)."
       ls "$LOGROOT"/*/workspace >/dev/null 2>&1 && echo "  Or cd into one of yours: cabinet list shows them."
     fi
     return 0
@@ -1650,14 +1650,16 @@ cmd_next() {
       ((s) => s.split("\n").filter(Boolean).map((l) => l.split("\t")).map((r) => ({id: r[0], text: r[1], command: r[2]})))'
     return 0
   fi
-  echo "Next in $(envget CABINET_PROJECT) ($ws):"
+  # Styled (platform.sh): the first line bold with its folder dim, step numbers yellow (they wait on
+  # the owner), the command to run bold.
+  echo "${S_B}Next in $(envget CABINET_PROJECT)${S_Z} ${S_D}($ws)${S_Z}${S_B}:${S_Z}"
   local n=0 id text cmd
   while IFS=$'\t' read -r id text cmd; do
     [[ -n "$id" ]] || continue
-    n=$((n + 1)); echo "  $n. $text${cmd:+ Run: $cmd}"
+    n=$((n + 1)); echo "  ${S_Y}$n.${S_Z} $text${cmd:+ Run: ${S_B}$cmd${S_Z}}"
   done <<<"$steps"
-  while IFS=$'\t' read -r id text cmd; do [[ -n "$id" ]] && echo "  Optional: $text Run: $cmd"; done <<<"$optional"
-  ((n)) || echo "  Nothing waits on you. cabinet doctor checks everything; cabinet outdated looks for a newer kit."
+  while IFS=$'\t' read -r id text cmd; do [[ -n "$id" ]] && echo "  Optional: $text Run: ${S_B}$cmd${S_Z}"; done <<<"$optional"
+  ((n)) || echo "  ${S_G}Nothing waits on you.${S_Z} cabinet doctor checks everything; cabinet outdated looks for a newer kit."
   return 0
 }
 
@@ -1747,19 +1749,20 @@ cmd_digest() {
   ((reported)) && summary+=" Agent runs cost \$$total this week in all."
 
   if [[ -n "$write" ]]; then
+    styles off   # a file is never styled
     write="$(abspath "$write")"
     mkdir -p "$(dirname "$write")" || die "cannot make the folder for $write"
     { echo "# cabinet digest, $(LC_ALL=C date "+%-d %b %Y, %-I:%M %p")"; echo; echo "$summary"; echo; digest_text "$n" "$rows"; } > "$write.new" && mv "$write.new" "$write" \
       || die "cannot write $write"
     echo "Wrote the digest to $write"
   else
-    ((n)) && { echo "$summary"; echo; }
+    ((n)) && { echo "${S_B}$summary${S_Z}"; echo; }
     digest_text "$n" "$rows"
     digest_schedule_line
   fi
   if ((notify)); then
     notify "$summary" "${write:+Open $write}" >/dev/null 2>&1 \
-      || echo "cabinet: the notification could not be shown ($( if [[ $OS == mac ]]; then echo "System Settings > Notifications"; elif [[ -n "$(deps_missing notify-send)" ]]; then deps_hint notify-send; else echo "notify-send failed"; fi))" >&2
+      || echo "$ERR_TAG the notification could not be shown ($( if [[ $OS == mac ]]; then echo "System Settings > Notifications"; elif [[ -n "$(deps_missing notify-send)" ]]; then deps_hint notify-send; else echo "notify-send failed"; fi))" >&2
   fi
   return 0
 }
@@ -1774,28 +1777,34 @@ budget_pct() { awk -v w="$1" -v b="$2" 'BEGIN { printf "%d", (b > 0 ? w * 100 / 
 
 digest_text() {  # digest_text <count> <rows>
   local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting spent budget pct
-  ((n)) || { echo "No cabinet workspaces on this machine yet. Start one: cabinet new, or cabinet init in an existing project."; return 0; }
+  ((n)) || { echo "${S_B}No cabinet workspaces on this machine yet.${S_Z} Start one: cabinet new, or cabinet init in an existing project."; return 0; }
+  # Styled (platform.sh): headings bold without "== " and their folders dim, the date of the brief dim,
+  # what waits on the owner yellow, notes blue.
+  local hd="== " h
+  [[ -z "$S_B" ]] || hd=""
   while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget; do
     [[ -n "$slug" ]] || continue
-    if [[ "$exists" != ok ]]; then echo "== $slug: folder gone (${ws/#$HOME/$TILDE}); cabinet list says how to free the slug"; echo; continue; fi
-    echo "== ${project:-$slug} (${ws/#$HOME/$TILDE})"
-    if [[ -z "$written" ]]; then echo "No brief yet. Write one: cd ${ws/#$HOME/$TILDE} && cabinet brief"
+    h="${S_D}(${ws/#$HOME/$TILDE})${S_Z}"
+    if [[ "$exists" != ok ]]; then echo "$hd${S_B}$slug: folder gone${S_Z} $h${S_B}; cabinet list says how to free the slug${S_Z}"; echo; continue; fi
+    echo "$hd${S_B}${project:-$slug}${S_Z} $h"
+    if [[ -z "$written" ]]; then echo "${S_U}No brief yet${S_Z}. Write one: cd ${ws/#$HOME/$TILDE} && cabinet brief"
     else
-      echo "Brief of $written$( [[ -n "$stale" ]] && echo ". Older than a day and a half: is the brief job running? cabinet doctor there")"
+      echo "Brief of ${S_D}$written${S_Z}$( [[ -n "$stale" ]] && echo ". ${S_U}Older than a day and a half${S_Z}: is the brief job running? cabinet doctor there")"
       echo
       if [[ "$queue" == $'\001' ]]; then echo "This brief has no \"## Sign-off queue\" heading: read BRIEF.md there."
       else
-        echo "Sign-off queue:"; printf '%s\n' "${queue//$'\002'/$'\n'}" | sed '/./s/^/  /'
-        if [[ -n "$actions" && "$actions" != None. ]]; then echo; echo "Actions for you:"; printf '%s\n' "${actions//$'\002'/$'\n'}" | sed '/./s/^/  /'; fi
+        echo "${S_Y}Sign-off queue:${S_Z}"; printf '%s\n' "${queue//$'\002'/$'\n'}" | sed '/./s/^/  /'
+        if [[ -n "$actions" && "$actions" != None. ]]; then echo; echo "${S_Y}Actions for you:${S_Z}"; printf '%s\n' "${actions//$'\002'/$'\n'}" | sed '/./s/^/  /'; fi
       fi
     fi
-    ((${waiting:-0})) && { echo; echo "$waiting handoff(s) wait on you: cd ${ws/#$HOME/$TILDE} && cabinet handoff list owner"; }
+    ((${waiting:-0})) && { echo; echo "${S_Y}$waiting handoff(s) wait on you${S_Z}: cd ${ws/#$HOME/$TILDE} && cabinet handoff list owner"; }
     if [[ -n "$spent" ]]; then
       echo
       if [[ -z "$budget" ]]; then echo "Agent runs this week: \$$spent, no budget set."
       else
         pct="$(budget_pct "$spent" "$budget")"
-        echo "Agent runs this week: \$$spent of the \$$budget budget ($pct%).$( ((pct >= 80)) && echo " What each job cost: cd ${ws/#$HOME/$TILDE} && cabinet job list")"
+        if ((pct >= 80)); then echo "Agent runs this week: ${S_U}\$$spent of the \$$budget budget ($pct%)${S_Z}. What each job cost: cd ${ws/#$HOME/$TILDE} && cabinet job list"
+        else echo "Agent runs this week: \$$spent of the \$$budget budget ($pct%)."; fi
       fi
     fi
     echo
@@ -1881,11 +1890,11 @@ cmd_list() {
     return 0
   fi
   if ((n == 0)); then
-    echo "No cabinet workspaces on this machine yet. Start one: cabinet new, or cabinet init in an existing project."
+    echo "${S_B}No cabinet workspaces on this machine yet.${S_Z} Start one: cabinet new, or cabinet init in an existing project."
     return 0
   fi
   local gone="" newer=0 v w p b
-  echo "Workspaces on this machine ($n):"
+  echo "${S_B}Workspaces on this machine ($n):${S_Z}"
   # The table is built first, in this shell: a pipe would lose what the loop learns.
   {
     printf 'SLUG\tPROJECT\tKIT\tWAITING ON YOU\tDOCTOR\tLATEST BRIEF\tFOLDER\n'
@@ -1900,9 +1909,20 @@ cmd_list() {
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slug" "${project:--}" "$v" "$w" "$p" "$b" "${ws/#$HOME/$TILDE}"
     done < "$tmp/all"
   } > "$tmp/table"
-  # Aligned columns (column(1) is not on every Linux).
-  awk -F'\t' '{ for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n[NR] = NF }
-    END { for (r = 1; r <= NR; r++) { l = "  "; for (i = 1; i < n[r]; i++) l = l sprintf("%-" w[i] "s  ", c[r, i]); print l c[r, n[r]] } }' "$tmp/table"
+  # Aligned columns (column(1) is not on every Linux), padded from the plain text. Styled (platform.sh):
+  # the header row, LATEST BRIEF and FOLDER dim, WAITING ON YOU yellow when something waits, DOCTOR
+  # green or red; the codes sit outside the padding.
+  awk -F'\t' -v d="$S_D" -v y="$S_Y" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
+    function st(row, i, v) { if (z == "" || row == 1) return ""
+      if (i == 4) return (v != "nothing" && v != "-") ? y : ""
+      if (i == 5) return v == "all good" ? g : (v ~ / to fix$/ || v == "folder gone") ? r : ""
+      return i >= 6 ? d : "" }
+    function cell(row, i, v,   s) { s = st(row, i, v); return s == "" ? v : s v z }
+    { for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n[NR] = NF }
+    END { for (row = 1; row <= NR; row++) { l = "  "
+      for (i = 1; i < n[row]; i++) l = l cell(row, i, c[row, i]) sprintf("%" (w[i] - length(c[row, i]) + 2) "s", "")
+      l = l cell(row, n[row], c[row, n[row]])
+      print (row == 1 && z != "" ? "  " d substr(l, 3) z : l) } }' "$tmp/table"
   ((newer)) && echo "* not the installed kit ($VERSION): cabinet update in that workspace (after npm update there)."
   for slug in $gone; do
     echo "Folder gone for $slug: if it moved, run cabinet bootstrap in its new place; if it is deleted, free the slug with: rm -r $LOGROOT_SHOWN/$slug"
@@ -2098,7 +2118,7 @@ cmd_changelog() {
       | json -R '$.map((l) => l.split("\t")).map((r) => ({version: r[0], date: r[1], text: r[2].replaceAll("\u0001", "\n").replace(/^\n+/, "").replace(/\n+$/, "")}))'
     return 0
   fi
-  changelog "$from"
+  changelog "$from" | changelog_show
 }
 cmd_update() {
   [[ $# -eq 0 ]] || bad_usage "cabinet update takes no arguments (to name a workspace: cabinet -C <dir> update)"
@@ -2113,12 +2133,13 @@ cmd_update() {
   local clean=0
   [[ "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
      -z "$(git -C "$ws" status --porcelain -- "${kit_paths[@]}" 2>/dev/null)" ]] && clean=1
-  echo "== cabinet $old -> $VERSION in $ws"
+  local hd="== "; [[ -z "$S_B" ]] || hd=""   # styled: headings bold, without "== "
+  echo "$hd${S_B}cabinet $old -> $VERSION in $ws${S_Z}"
   if sync_kit "$ws"; then
     echo "$VERSION" > "$ws/.cabinet/version"
   else
     echo
-    echo "Some kit files were edited here and were not replaced, so the version stays $old."
+    echo "${S_R}Some kit files were edited here${S_Z} and were not replaced, so the version stays $old."
     echo "Move each change into a project file (AGENTS.md, roles/, jobs/) or into the kit, restore the file"
     echo "(git -C \"$ws\" checkout -- <file>), then run cabinet update again."
     exit 1
@@ -2127,8 +2148,8 @@ cmd_update() {
   [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "OPERATIONS.html not built (bin/manual.sh build)"
   if [[ "$old" != "$VERSION" ]]; then
     echo
-    echo "== What changed since $old"
-    changelog "$old"
+    echo "$hd${S_B}What changed since $old${S_Z}"
+    changelog "$old" | changelog_show
   fi
   echo
   # Name only the paths that exist here; a pin in the project above is the project's own commit.
@@ -2146,13 +2167,13 @@ cmd_update() {
   fi
   if ((clean)) && ((${#files[@]})) && git -C "$ws" add -A -- "${files[@]}" 2>/dev/null &&
      git -C "$ws" -c commit.gpgsign=false commit -q -m "cabinet: update to $VERSION" -- "${files[@]}" >/dev/null 2>&1; then
-    echo "Committed in the workspace: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
+    echo "${S_G}Committed in the workspace${S_Z}: cabinet: update to $VERSION. Anything to do by hand is in the changelog above."
     ((own_pkg)) && echo "package.json has edits of yours besides the pin, so it was left out: git -C \"$ws\" commit -- package.json$([[ -n "$(git -C "$ws" ls-files -- package-lock.json 2>/dev/null)" ]] && echo " package-lock.json")"
   elif ((${#files[@]} == 0)) && [[ "$old" == "$VERSION" ]]; then
-    echo "Nothing changed: the workspace was already on $VERSION."
+    echo "${S_G}Nothing changed${S_Z}: the workspace was already on $VERSION."
   elif ((${#files[@]} == 0)); then
     # No git of its own here (or a private cabinet/ the project ignores): nothing to commit.
-    echo "Updated to $VERSION. Anything to do by hand is in the changelog above."
+    echo "${S_G}Updated to${S_Z} $VERSION. Anything to do by hand is in the changelog above."
   else
     echo "Review the diff (git -C \"$ws\" diff), do anything the changelog says to do by hand,"
     echo "then commit: git -C \"$ws\" add --$paths && git -C \"$ws\" commit -m \"cabinet: update to $VERSION\""
@@ -2179,7 +2200,7 @@ cmd_status() {
     return 0
   fi
   echo "workspace $ws: cabinet $(cat "$ws/.cabinet/version"); kit at $KIT: $VERSION"
-  ((${#edited[@]})) && printf '  edited here: %s\n' "${edited[@]}" || echo "  no kit file edited"
+  ((${#edited[@]})) && printf "  ${S_U}edited here${S_Z}: %s\n" "${edited[@]}" || echo "  ${S_G}no kit file edited${S_Z}"
 }
 
 # --help (or -h) after any command: its usage and options, from the table. A noun alone, or a
@@ -2225,7 +2246,7 @@ case "${1:-}" in
     # included), and where the full list is.
     if [[ "$1" == *" "* ]] && is_cmd "$1"; then guess="$1"
     else guess="$(node "$LIBJS" closest "$1" $(commands_table | awk -F'\t' '$1 == "C" { split($3, w, " "); if (!(w[1] in s)) { s[w[1]] = 1; print w[1] } }'))"; fi
-    echo "cabinet: unknown command '$1'" >&2
+    echo "$ERR_TAG unknown command '$1'" >&2
     [[ -z "$guess" ]] || echo "Did you mean: cabinet $guess" >&2
     echo "Every command: cabinet help" >&2
     exit 2 ;;

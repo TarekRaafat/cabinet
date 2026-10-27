@@ -155,7 +155,7 @@ Every workspace on this machine, from anywhere: its slug, project name, kit vers
 cabinet doctor [--fix [--yes]] [--json]
 ```
 
-Checks everything: repos, kit files, roles, guardrails for every installed tool, the manual, handoff IDs, secrets in the workspace's files, uncommitted work, schedules, backups. It starts with a summary (`N thing(s) need attention:` and the list, or `All good.`), then the full report. In a terminal the report colors each result's label: `ok` green, `note` blue, `FIX` red. Output to a script or a file has no colors, and none are printed when `NO_COLOR` is set. Changes nothing in the workspace or your settings (it runs `opencode debug` and `grok inspect`, which may write their own caches). `--fix` then runs the fixes it knows (`bin/bootstrap.sh`, `bin/role.sh build`, `bin/repo.sh snapshot`, and installing missing tools), asking before each unless `--yes`, and checks again. Installing tools always asks in a terminal, even with `--yes`: it changes the machine and can need your password. `--json` prints the results for scripts (see [Output for agents and scripts](#output-for-agents-and-scripts)). Every message is explained in [troubleshooting](troubleshooting.md). Exit 0, or 1 when anything says FIX.
+Checks everything: repos, kit files, roles, guardrails for every installed tool, the manual, handoff IDs, secrets in the workspace's files, uncommitted work, schedules, backups. It starts with a summary (`N thing(s) need attention:` and the list, or `All good.`), then the full report. In a terminal the report colors each result's label: `ok` green, `note` blue, `FIX` red. Output to a script or a file has no colors, and none are printed when `NO_COLOR` is set or `TERM` is `dumb` ([color in a terminal](#output-for-agents-and-scripts)); section headings show in bold. Changes nothing in the workspace or your settings (it runs `opencode debug` and `grok inspect`, which may write their own caches). `--fix` then runs the fixes it knows (`bin/bootstrap.sh`, `bin/role.sh build`, `bin/repo.sh snapshot`, and installing missing tools), asking before each unless `--yes`, and checks again. Installing tools always asks in a terminal, even with `--yes`: it changes the machine and can need your password. `--json` prints the results for scripts (see [Output for agents and scripts](#output-for-agents-and-scripts)). Every message is explained in [troubleshooting](troubleshooting.md). Exit 0, or 1 when anything says FIX.
 
 ## cabinet role
 
@@ -411,7 +411,7 @@ Compares the workspace's kit version, the installed kit and the newest version o
 cabinet changelog [from-version] [--json]
 ```
 
-Prints the changelog sections newer than `from-version` (all of them when it is left out).
+Prints the changelog sections newer than `from-version` (all of them when it is left out). In a terminal it shows them for reading, as `cabinet update` does: versions and headings in bold, without the Markdown marks, wrapped at words to the terminal's width; piped, or with `NO_COLOR` set, it prints the Markdown as written.
 
 ## cabinet completion
 
@@ -456,6 +456,8 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 ## Output for agents and scripts
 
 Text output is for people and may be reworded at any time. For a script or an agent, use JSON: a field or ID is never renamed or removed without a changelog entry that says so.
+
+In a terminal, text output is styled for people, in the terminal's own colors: headings, first lines and the command to run next in bold; folders, dates and handoff IDs dim; `ok` green, notes blue, problems and errors (`cabinet:`) red; and what waits on you in yellow, never as a status. `cabinet update` and `cabinet changelog` show the changelog without its Markdown marks, wrapped at words to the terminal's width (`COLUMNS` when set, else 80 when the width is unknown). Output is styled only when it goes to a terminal, `NO_COLOR` is unset or empty and `TERM` is not `dumb`. Piped, written to a file, with `--json`, or with color turned off, it is plain text with no escape codes. To turn it off: `NO_COLOR=1 cabinet next` for one command, or `export NO_COLOR=1` in your shell's profile for all of them.
 
 | Command | Prints |
 |---|---|
@@ -546,6 +548,9 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CABINET_CREDIT`, `CABINET_CREDIT_ADDRESS` | every runner | Set by a run for the credit hook: `on` or `off`, and the email its line carries ([credit roles](concepts.md#credit-roles)). |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
+| `NO_COLOR` | every command | Set to anything but empty: plain text with no color, bold or dim, even in a terminal ([output](#output-for-agents-and-scripts)). |
+| `TERM` | every command | `dumb`: the same as `NO_COLOR`. |
+| `COLUMNS` | update, changelog | The width the changelog wraps at in a terminal; default: the terminal's own width, else 80. |
 
 ## Removing a workspace
 

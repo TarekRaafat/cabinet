@@ -10,6 +10,12 @@ Each version says what changed and anything a workspace must do by hand after `n
 - Bootstrap places the credit hook as `prepare-commit-msg` in the global hooks folder, in place of the pass-through stub there (it still runs a repo's own `prepare-commit-msg`, whose failure still stops the commit). A hook of your own there is never replaced. New doctor checks `credit.setting`, `credit.email` and `credit.hook`; new `cabinet next` step `credit-roles`. Every runner now gets the role in `CABINET_AGENT`, not only `custom`.
 - After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles on`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
 
+### Color in a terminal
+
+- The `cabinet` command's output is easier to scan in a terminal, in the terminal's own colors: headings, first lines and the command to run next in bold; folders, dates and handoff IDs dim; ok green, notes blue, problems and errors (`cabinet:`) red; and what waits on you in yellow, the terminal's stand-in for the owner's brass: `next`'s step numbers, the digest's sign-off queue and actions, `list`'s WAITING ON YOU, and `owner` in `handoff list`. On a Verdict line of `handoff list <name>`, PASS is green and BLOCK and CHANGES red. `cabinet doctor` keeps its colors and shows its section headings in bold.
+- `cabinet update` and `cabinet changelog` show the changelog for reading in a terminal: versions and headings in bold, no `##`, backticks or asterisks, list items and paragraphs wrapped at words to the terminal's width (`COLUMNS` when set, else 80 when the width is unknown), and a word longer than the line kept whole.
+- Output is styled only when it goes to a terminal, `NO_COLOR` is unset or empty and `TERM` is not `dumb`. Piped, written to a file (`digest --write`), with `--json`, or with `NO_COLOR=1`, every command prints the same text as in 0.1.3, byte for byte, so agents and scripts read what they always did. `cabinet doctor` now also leaves color out with `TERM=dumb`.
+
 ### Rules
 
 - The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.

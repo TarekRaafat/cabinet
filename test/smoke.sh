@@ -29,6 +29,8 @@ for t in launchctl systemctl security secret-tool osascript notify-send claude b
 done
 printf '#!/bin/sh\ncase "$1" in -l) cat "%s" 2>/dev/null ;; -) cat > "%s" ;; *) exit 1 ;; esac\n' "$T/crontab" "$T/crontab" > "$T/shim/crontab"; chmod +x "$T/shim/crontab"
 export PATH="$T/shim:$PATH"
+# A run in a terminal (in_tty) styles its output only when TERM is not dumb: give it one that does.
+[[ -n "${TERM:-}" && "$TERM" != dumb ]] || export TERM=xterm
 for t in launchctl systemctl crontab security secret-tool brew apt-get sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || fail "the fake $t is not first on PATH"; done
 sedi() { if [[ "$(uname)" == Darwin ]]; then sed -i "" "$@"; else sed -i "$@"; fi; }
 perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
@@ -2630,6 +2632,203 @@ sec="$(awk '/^## Credit roles$/{on=1; next} /^## /{on=0} on' "$KIT/docs/concepts
 ! sed 's/\[bot\]//g' <<<"$sec" | grep -qiw 'bot' || fail "the credit roles docs call a role a bot"
 for r in claude codex antigravity qwen grok opencode cursor; do grep -q "^| \`$r\` | not yet |\|^| \`$r\` | yes" <<<"$sec" || fail "the docs do not say whether $r was confirmed live"; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "color in a terminal: styled for people only, plain text unchanged" ""
+s62() {
+# tt: run it in a terminal (in_tty) with a TERM that styles (TT_TERM to choose), \r removed. nc: every code removed.
+tt() { TERM="${TT_TERM:-xterm}" in_tty "$@" | tr -d '\r'; }
+nc() { sed $'s/\033\\[[0-9;]*m//g'; }
+E=$'\033[' ER=$'\033\\['   # ER in a regular expression
+# A kit at 9.9.9 whose changelog holds what the renderer must show (criteria 10, 11 and 15).
+CK="$T/color-kit"; cp -R "$KIT" "$CK"; rm -rf "$CK/.git"
+j '({...$, version: "9.9.9"})' "$KIT/package.json" > "$CK/package.json"
+LW="/a/path/that/is/much/longer/than/forty/characters/to/test.txt"
+cat > "$CK/CHANGELOG.md" <<EOF
+# Changelog
+
+## 9.9.9 - 1 Jan 2030
+
+### Docs
+
+- Run \`cabinet next\` for **bold words** first.
+- A list item with several lines' worth of words, and one long path, $LW, that stays whole on its own line however narrow the terminal is, and then more words after it, so this item still wraps past a hundred characters.
+- Text is printed, never run: \$(touch pwned)
+
+A plain paragraph longer than forty characters, wrapping at words.
+
+## 0.0.1 - 1 Jan 2020
+
+- The first one.
+EOF
+CC="$CK/bin/cabinet"
+# Workspaces: one with handoffs, a brief and spend; one on an older kit with a problem and a stale brief;
+# one with no brief; one whose folder is gone.
+"$F" new "$T/color" --name "Color Co" --yes >/dev/null; CW="$T/color"
+"$F" new "$T/color-old" --yes >/dev/null; CO="$T/color-old"
+"$F" new "$T/color-nobrief" --yes >/dev/null
+"$F" new "$T/color-gone" --yes >/dev/null; rm -rf "$T/color-gone"
+echo 0.0.1 > "$CO/.cabinet/version"; rm "$CO/agents/qa.md"
+printf '# Brief\n\nOld.\n' > "$CO/BRIEF.md"; touch -t 202001010700 "$CO/BRIEF.md"
+printf '# Brief\n\n## Sign-off queue\n\n1. **Publish?** A. now. B. later. $(touch pwned)\n\n## Actions for the owner\n\n- Push api main.\n' > "$CW/BRIEF.md"
+cat >> "$CW/HANDOFFS.md" <<'EOF'
+
+### H-20260101-01: A decision for the owner
+- From: qa -> To: owner
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+
+### H-20260101-02: Another for the founder
+- From: qa -> To: founder
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+
+### H-20260101-03: Review of a change
+- From: backend -> To: qa
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+- Verdict: security PASS 2026-01-02 abc1234 specs/security/n.md
+- Verdict: code-reviewer BLOCK 2026-01-02 abc1234 specs/reviews/n.md
+EOF
+git -C "$CW" commit -qam "handoffs for the color test"
+(cd "$CW" && "$F" config --yes --budget 4) >/dev/null
+mkdir -p "$HOME/$LOGS/color"; printf '%s\tbrief\tclaude\t3.5\n' "$(date +%s)" > "$HOME/$LOGS/color/spend.tsv"
+mkdir -p "$T/color-npm"; printf '#!/bin/sh\nexit 1\n' > "$T/color-npm/npm"; chmod +x "$T/color-npm/npm"   # outdated stays offline
+
+# Criteria 1 and 2, and the same lines styled: piped has no code; NO_COLOR and TERM=dumb in a terminal print
+# exactly the piped output; styled with codes removed is the piped output (headings without "== ").
+: > "$T/color-styled"
+for c in "next" "list" "digest" "status" "changelog" "doctor" "handoff list" "handoff list owner" "handoff list qa"; do
+  # shellcheck disable=SC2086
+  p="$(cd "$CW" && "$F" $c 2>&1 || true)"
+  [[ -n "$p" && "$p" != *$'\033['* ]] || fail "piped $c is empty or styled: $p"
+  [[ "$(cd "$CW" && NO_COLOR=1 tt "$F" $c)" == "$p" ]] || fail "$c in a terminal with NO_COLOR is not its piped output"
+  [[ "$(cd "$CW" && TT_TERM=dumb tt "$F" $c)" == "$p" ]] || fail "$c in a terminal with TERM=dumb is not its piped output"
+  s="$(cd "$CW" && tt "$F" $c)"
+  [[ "$s" == *$'\033['* || "$c" == "handoff list owner" ]] || fail "$c in a terminal is not styled"   # the full form styles only verdicts
+  printf '%s\n' "$s" >> "$T/color-styled"
+  [[ "$c" == changelog ]] && continue
+  [[ "$(nc <<<"$s")" == "$(sed 's/^== //' <<<"$p")" ]] || { diff <(nc <<<"$s") <(sed 's/^== //' <<<"$p"); fail "$c styled, with codes removed, is not its piped text"; }
+done
+"$F" changelog 0.1.0 | cmp -s - <(awk -v from=0.1.0 -v to="$(j -r '$.version' "$KIT/package.json")" '
+  function newer(a, b,   x, y, i, n) { n = split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) if (x[i] + 0 != y[i] + 0) return x[i] + 0 > y[i] + 0; return 0 }
+  /^## [0-9]+\.[0-9]+\.[0-9]+/ { v = $2; on = (from == "" || newer(v, from)) && !newer(v, to) }
+  /^## / && !/^## [0-9]/ { on = 0 }
+  on { print }' "$KIT/CHANGELOG.md") || fail "piped changelog is not the changelog's own lines"
+for x in NO_COLOR=1 TERM=dumb; do
+  o="$(if [[ $x == NO_COLOR=1 ]]; then NO_COLOR=1 tt "$CC" changelog; else TT_TERM=dumb tt "$CC" changelog; fi)"
+  [[ "$o" == "$("$CC" changelog)" ]] && grep -q '^## 9.9.9' <<<"$o" && grep -q '^### Docs' <<<"$o" && grep -qF '`cabinet next`' <<<"$o" || fail "changelog with $x in a terminal is not the raw Markdown"
+done
+# Criterion 2 on update: a fresh copy of one workspace for each run, at the same path.
+cp -R "$CW" "$T/color-base"; U="$T/color-up"
+fresh() { rm -rf "$U"; cp -R "$T/color-base" "$U"; }
+fresh; p="$("$CC" -C "$U" update 2>&1)"; [[ "$p" != *$'\033['* ]] || fail "piped update is styled"
+fresh; [[ "$(NO_COLOR=1 tt "$CC" -C "$U" update)" == "$p" ]] || fail "update in a terminal with NO_COLOR is not its piped output"
+fresh; [[ "$(TT_TERM=dumb tt "$CC" -C "$U" update)" == "$p" ]] || fail "update in a terminal with TERM=dumb is not its piped output"
+
+# Criterion 3: --json in a terminal is plain JSON.
+for c in "next --json" "list --json" "digest --json" "status --json" "handoff list --json" "changelog --json" "doctor --json" "version --json" "outdated --json"; do
+  o="$(cd "$CW" && PATH="$T/color-npm:$PATH" tt "$F" $c)"
+  [[ "$o" != *$'\033['* ]] && j -e 'true' <<<"$o" >/dev/null || fail "$c in a terminal is not plain JSON: $o"
+done
+
+# Criterion 5: errors, and each stream on its own.
+tt "$F" nosuchcommand | grep -qF "${E}31mcabinet:" || fail "an error in a terminal does not start with a red cabinet:"
+in_tty bash -c '"$0" nosuchcommand 2>"$1"' "$F" "$T/color-err" >/dev/null
+grep -q 'cabinet:' "$T/color-err" && ! grep -qF "$E" "$T/color-err" || fail "an error to a file is styled"
+o="$(tt bash -c 'cd "$1" && "$0" next | cat' "$F" "$CW")"; [[ -n "$o" && "$o" != *$'\033['* ]] || fail "next piped inside a terminal is styled"
+
+# Criterion 6: next.
+o="$(cd "$CW" && tt "$F" next)"
+head -1 <<<"$o" | grep -q "^${ER}1mNext in Color Co" && head -1 <<<"$o" | grep -qF "${E}2m(" || fail "next: the first line bold, its folder dim"
+grep -qF "  ${E}33m1.${E}0m " <<<"$o" && grep -qF "Run: ${E}1mcabinet bootstrap" <<<"$o" || fail "next: the step number yellow, the command bold"
+grep -q 'Optional:' <<<"$o" && ! grep 'Optional:' <<<"$o" | grep -qF "${E}33m" && grep 'Optional:' <<<"$o" | grep -qF "Run: ${E}1m" || fail "next: the Optional line has yellow, or its command is not bold"
+
+# Criteria 7 and 19: digest.
+o="$(cd "$CW" && tt "$F" digest)"
+head -1 <<<"$o" | grep -q "^${ER}1m" || fail "digest: the first line is not bold"
+grep -qF "${E}1mColor Co${E}0m ${E}2m(" <<<"$o" && ! nc <<<"$o" | grep -q '^== ' || fail "digest: the heading bold without ==, its folder dim"
+grep -qF "Brief of ${E}2m" <<<"$o" && grep -qF "${E}33mSign-off queue:" <<<"$o" && grep -qF "${E}33mActions for you:" <<<"$o" || fail "digest: the date dim, the queue and actions yellow"
+grep -qF "${E}33m2 handoff(s) wait on you${E}0m: cd" <<<"$o" || fail "digest: only the words of the waiting handoffs yellow"
+grep -qF "${E}34mOlder than a day and a half" <<<"$o" && grep -qF "${E}34mNo brief yet" <<<"$o" || fail "digest: a stale or missing brief is not blue"
+grep -qF "Agent runs this week: ${E}34m\$3.50 of the \$4 budget (87%)" <<<"$o" || fail "digest: a spend at 80% is not blue"
+# Criterion 16.
+tt "$F" digest --write "$T/color-digest.md" >/dev/null
+grep -q 'Sign-off queue:' "$T/color-digest.md" && ! grep -qF "$E" "$T/color-digest.md" || fail "digest --write in a terminal wrote codes"
+
+# Criterion 8: list.
+o="$(cd "$CW" && tt "$F" list)"
+head -1 <<<"$o" | grep -q "^${ER}1mWorkspaces on this machine" || fail "list: the first line is not bold"
+grep -q "^  ${ER}2mSLUG " <<<"$o" || fail "list: the header row is not dim"
+grep -E "^  color " <<<"$o" | grep -qF "${E}33m2 handoff(s)${E}0m" || fail "list: what waits on you is not yellow"
+grep -E "^  color " <<<"$o" | grep -Eq "${ER}2m[0-9]{1,2} [A-Z][a-z]{2} [0-9]{4}, .*${ER}0m +${ER}2m/.*color${ER}0m$" || fail "list: LATEST BRIEF and FOLDER are not dim"
+grep -E "^  color-old " <<<"$o" | grep -Eq "^  color-old +color-old +0\.0\.1\* " && grep -E "^  color-old " <<<"$o" | grep -Eq "${ER}31m[0-9]+ to fix${ER}0m" || fail "list: the KIT value styled, or the problem not red"
+grep -E "^  color-gone " <<<"$o" | grep -qF "${E}31mfolder gone${E}0m" || fail "list: folder gone is not red"
+grep -E "^  color " <<<"$o" | grep -qF "${E}32mall good" || true
+
+# Criterion 9: handoff list.
+o="$(cd "$CW" && tt "$F" handoff list)"
+grep -qF "${E}33mowner${E}0m" <<<"$o" && grep -qF "${E}33mfounder${E}0m" <<<"$o" && grep -qF "${E}2mH-20260101-01" <<<"$o" && grep -Eq "^${ER}2m *[0-9?]+d${ER}0m" <<<"$o" || fail "handoff list: the owner yellow, IDs and ages dim"
+o="$(cd "$CW" && tt "$F" handoff list qa)"
+grep -qF -- "- Verdict: security ${E}32mPASS${E}0m 2026-01-02" <<<"$o" && grep -qF -- "- Verdict: code-reviewer ${E}31mBLOCK${E}0m" <<<"$o" || fail "handoff list qa: PASS green, BLOCK red"
+
+# Criterion 19: status, the rest of update.
+o="$(cd "$CW" && tt "$F" status)"; grep -qF "${E}32mno kit file edited" <<<"$o" || fail "status: no kit file edited is not green"
+echo "# edit" >> "$CW/bin/handoff.sh"; o="$(cd "$CW" && tt "$F" status)"; git -C "$CW" checkout -q -- bin/handoff.sh
+grep -qF "${E}34medited here${E}0m: bin/handoff.sh" <<<"$o" || fail "status: edited here is not blue"
+fresh; o="$(tt "$CC" -C "$U" update)"; printf '%s\n' "$o" >> "$T/color-styled"
+grep -q "^${ER}1mcabinet .* -> 9.9.9 in " <<<"$o" && grep -qF "${E}1mWhat changed since" <<<"$o" && ! nc <<<"$o" | grep -q '^== ' || fail "update: headings not bold, or == left"
+grep -qF "${E}32mCommitted in the workspace${E}0m: cabinet: update to 9.9.9" <<<"$o" || fail "update: Committed in the workspace is not green"
+grep -qF "${E}1m9.9.9${E}0m${E}2m - 1 Jan 2030${E}0m" <<<"$o" && ! nc <<<"$o" | grep -q '^#' || fail "update: the changelog is not rendered"
+o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mNothing changed${E}0m" <<<"$o" || fail "update: Nothing changed is not green"
+fresh; echo "# edit" >> "$U/bin/handoff.sh"; o="$(tt "$CC" -C "$U" update)"
+grep -qF "${E}31mSome kit files were edited here${E}0m" <<<"$o" || fail "update: an edited kit file is not red"
+fresh; rm -rf "$U/.git"; o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mUpdated to${E}0m 9.9.9" <<<"$o" || fail "update: Updated to is not green"
+
+# Criterion 10: the changelog, rendered.
+o="$(tt "$CC" changelog)"; printf '%s\n' "$o" >> "$T/color-styled"
+! nc <<<"$o" | grep -q '^#' && ! nc <<<"$o" | grep -qF '`' && ! nc <<<"$o" | grep -qF '**' || fail "changelog: Markdown marks left"
+grep -qF "${E}1m9.9.9${E}0m${E}2m - 1 Jan 2030" <<<"$o" && grep -qF "${E}1mDocs" <<<"$o" && grep -qF "${E}1mbold words" <<<"$o" && grep -qF "Run cabinet next for" <<<"$o" || fail "changelog: versions, headings, bold and code"
+[[ "$(tt "$CC" changelog 9.9.9)" == "$("$CC" changelog 9.9.9)" ]] || fail "changelog with no sections in range differs in a terminal"
+# Criterion 11: wrapping at words, at COLUMNS, the terminal's width, or 80.
+words() { tr -s ' \n' '\n\n' | sed '/^$/d'; }
+want="$("$CC" changelog | sed 's/^#* //; s/`//g; s/\*\*//g' | words)"
+wrapped() {  # wrapped <output> <width>: every line fits but the long word alone, no word split, items indented
+  local o; o="$(nc <<<"$1")"
+  awk -v w="$2" -v lw="$LW" 'length($0) > w && !($0 ~ /^ *[^ ]+$/ && index($0, lw)) { print "too long: " $0; bad = 1 } END { exit bad }' <<<"$o" || return 1
+  [[ "$(words <<<"$o")" == "$want" ]] || { echo "words differ"; return 1; }
+  awk '/^- / { item = 1; next } /^$/ || /^[^ -]/ { item = 0 } item && !/^  [^ ]/ { print "not under the text: " $0; bad = 1 } END { exit bad }' <<<"$o"
+}
+o="$(COLUMNS=40 tt "$CC" changelog)"; wrapped "$o" 40 || fail "changelog at COLUMNS=40"
+nc <<<"$o" | grep -qxF "  $LW," && nc <<<"$o" | grep -q '^A plain paragraph longer than forty$' || { nc <<<"$o"; fail "changelog at COLUMNS=40: the long word or the paragraph"; }
+o="$(unset COLUMNS; tt bash -c 'stty cols 100 && exec "$0" changelog' "$CC")"; wrapped "$o" 100 && nc <<<"$o" | awk 'length($0) > 80 { f = 1 } END { exit !f }' || fail "changelog after stty cols 100 does not wrap at 100"
+o="$(unset COLUMNS; tt bash -c 'stty cols 0 && exec "$0" changelog' "$CC")"; wrapped "$o" 80 && nc <<<"$o" | awk 'length($0) > 60 { f = 1 } END { exit !f }' || fail "changelog after stty cols 0 does not wrap at 80"
+
+# Criterion 13: yellow keeps apart from the status colors, and is never bold.
+for c in "next" "digest" "status" "handoff list"; do
+  (cd "$CW" && tt "$F" $c) | grep -F "${E}33m" | grep -qE "${ER}3[124]m" && fail "$c: a line with yellow has a status color"
+done
+node -e 'const s = require("fs").readFileSync(process.argv[1], "utf8"); const E = "\x1b[";
+  for (const [a, b] of [["1m", "33m"], ["33m", "1m"]]) { let i = -1; while ((i = s.indexOf(E + a, i + 1)) >= 0) {
+    const r = s.indexOf(E + "0m", i), n = s.indexOf(E + b, i); if (n >= 0 && (r < 0 || n < r)) process.exit(1); } }
+  if (s.includes(E + "1;33m")) process.exit(1)' "$T/color-styled" || fail "yellow is bold somewhere"
+# Criterion 14: escape codes only in the shell helper and the renderer.
+o="$(cd "$KIT" && grep -rlE '\\033\[|\\e\[|\\x1[bB]|\\u001[bB]|\\u\{1[bB]\}|fromCharCode\(27\)' bin/cabinet scripts/ | sort | tr '\n' ' ')"
+[[ "$o" == "scripts/lib.js scripts/platform.sh " ]] || fail "escape codes outside the helper and the renderer: $o"
+# Criterion 15: text is printed, never run.
+(cd "$CW" && tt "$F" digest) | grep -qF '$(touch pwned)' && tt "$CC" changelog | grep -qF '$(touch pwned)' || fail "\$(touch pwned) is not printed as it is"
+[[ ! -e "$CW/pwned" && ! -e "$T/pwned" && ! -e "$PWD/pwned" ]] || fail "text from a brief or the changelog was run"
+# Criteria 17 and 18: the docs and the brand.
+grep -q 'NO_COLOR=1' "$KIT/docs/commands.md" && awk '/^## 0\.2\.0 - /{on=1; next} /^## /{on=0} on' "$KIT/CHANGELOG.md" | grep -q 'NO_COLOR' || fail "the docs or the changelog do not describe color"
+grep -qxF -- "- **(Approved)** In a terminal, what waits on the owner is the terminal's yellow, standing in for brass. It is the owner's color, not a status." "$KIT/brand/BRAND.md" \
+  && j -e '$.color.brass.terminal == "yellow" && $.color.brass.use == "The owner'"'"'s open seat, on light backgrounds; in a terminal, yellow marks what waits on the owner. Nothing else."' "$KIT/brand/tokens.json" >/dev/null \
+  && grep -qF "<li><b>In a terminal,</b> use the terminal's own red, green and blue, and never yellow for a status: yellow stands in for brass and marks only what waits on the owner. Color only when the output is a terminal, and none when <code>NO_COLOR</code> is set.</li>" "$KIT/brand/index.html" || fail "the brand does not hold the yellow rule word for word"
+for x in "$CW" "$CO" "$T/color-nobrief" "$U" "$T/color-base"; do [[ -d "$x" ]] && "$F" -C "$x" remove --yes --force >/dev/null 2>&1; rm -rf "$x"; done
+rm -rf "$HOME/$LOGS/color" "$HOME/$LOGS/color-gone" "$CK"
   return 0   # a last "check && fail" line must not end the run
 }
 
