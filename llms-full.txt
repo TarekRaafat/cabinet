@@ -73,7 +73,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | When should the daily brief with your decisions arrive? | `--brief-time "7 AM"`, or `off` | 7:00 AM every day |
 | Which day does your week start? | `--week-start sunday` | `sunday` |
 | Short or standard messages from the team? | `--writing short\|standard` | `standard` |
-| Should each commit a role makes in a Cabinet run credit that role beside them, with the Cabinet Team avatar on GitHub? | `--credit-roles app\|off` | `app` |
+| Should each commit a role makes in a Cabinet run credit that role beside them, with the Cabinet Team avatar on GitHub? | `--credit-roles on\|off` | `on` |
 | A weekly spending limit for the agents' runs? Scheduled runs use the person's own agent tool account and its plan or usage costs. | `--budget <dollars>\|off` (and `--price "<in> <out>"` for codex, cursor, qwen or antigravity) | off |
 | Encrypted daily backups, and to which folder (outside the project)? | `--backup-dir <folder>\|off` | off |
 
@@ -322,7 +322,7 @@ It asks, each with a default you keep by pressing Enter:
 - the project name, folder, and owner name and email (defaults from your git config);
 - which roles to enable (chief-of-staff is always on: it writes the brief and routes work);
 - the agent tool that runs scheduled jobs, the brief time (`7 AM`, days and a time like `fri 4 PM`, or `off`), and the first day of the week;
-- whether a commit a role makes in a Cabinet run credits that role beside you, with one `Co-authored-by` line that shows the Cabinet Team avatar on GitHub (`app`, the default, or `off`; [credit roles](docs/concepts.md#credit-roles));
+- whether a commit a role makes in a Cabinet run credits that role beside you, with one `Co-authored-by` line that shows the Cabinet Team avatar on GitHub (`on`, the default, or `off`; [credit roles](docs/concepts.md#credit-roles));
 - a folder for the encrypted daily backup, outside the workspace (or `off`);
 - the product repos, as git URLs.
 
@@ -332,7 +332,7 @@ Every answer is also an option, and `--yes` skips the questions:
 
 ```sh
 cabinet new ~/dev/acme --name "Acme" --roles "qa security" --runner claude \
-  --brief-time "7 AM" --week-start sunday --writing standard --credit-roles app --backup-dir off --repo git@github.com:acme/api.git --yes
+  --brief-time "7 AM" --week-start sunday --writing standard --credit-roles on --backup-dir off --repo git@github.com:acme/api.git --yes
 ```
 
 All options: [commands](docs/commands.md#cabinet-new).
@@ -802,8 +802,8 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs Cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
 | `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `antigravity`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
-| `--credit-roles off\|app` | `app` | [Credit roles](concepts.md#credit-roles): each commit a role makes in a Cabinet run ends with one line crediting that role beside you, `Co-authored-by: Cabinet <role> <email>`, which shows the Cabinet Team avatar on GitHub. Exactly `off` or `app`. Written into `cabinet.env`; the "Commits." house rule in `AGENTS.md` follows it. |
-| `--credit-email <email>\|off` | none | With `--credit-roles app`: your own GitHub App's bot noreply email (`<user ID>+<app>[bot]@users.noreply.github.com`, lower case) in place of the Cabinet Team app's; `off` goes back to it. Refused with credit off. |
+| `--credit-roles off\|on` | `on` | [Credit roles](concepts.md#credit-roles): each commit a role makes in a Cabinet run ends with one line crediting that role beside you, `Co-authored-by: Cabinet <role> <email>`, which shows the Cabinet Team avatar on GitHub. Exactly `off` or `on`. Written into `cabinet.env`; the "Commits." house rule in `AGENTS.md` follows it. |
+| `--credit-email <email>\|off` | none | With `--credit-roles on`: your own GitHub App's bot noreply email (`<user ID>+<app>[bot]@users.noreply.github.com`, lower case) in place of the Cabinet Team app's; `off` goes back to it. Refused with credit off. |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
 | `--dry-run` | | Prints everything setup would write and change, then stops: `Nothing was written.` |
@@ -1065,11 +1065,11 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|app` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|on` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **Committing the change.** In a workspace with its own git that had no uncommitted changes before, `config` commits what it changed (`cabinet config: <the settings changed>`): only the files that run wrote, each for the settings that change it. `cabinet.env` always; `AGENTS.md` for the project name, the owner, the week start, writing to the owner, credit roles (when its house rule changes), hard to undo, the roles or a new repo; `OPERATIONS.md` for the name, the slug or the roles; `package.json` for the name or the slug, when it is the workspace's own (`private`, named `<slug>-workspace`); under `jobs/`, the job files it wrote: `brief.job` for the brief time, `pipeline.job` when the scheduled runner is first turned on, when its time changes or when it was deleted (a mode change alone writes none), and for the slug each job that names it (the rewrite changes no other); `HANDOFFS.md`, `README.md` and `specs/ROADMAP.md` for the name (`README.md` for the slug too); `repos.tsv` for a new repo; the role files under `ORG.md`, `agents/` and `.claude/agents/` that the role build changed, added or removed, for the roles or the name, or when `bootstrap` ran; and `CLAUDE.md` only when that `bootstrap` linked it because it was missing (a `CLAUDE.md` that was already there, a plain file included, is left alone). A change someone else makes while it runs, in one of the files that run wrote, goes into that commit; a change anywhere else stays theirs to commit. When the workspace already held uncommitted changes, or the workspace is committed with a project (a shared `cabinet/`), it leaves the change for you: review with `git diff`, then commit.
 
-**For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --credit-roles off|app` answers the credit roles question for this machine; in a shared workspace a machine credits nothing until it has answered. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
+**For this machine only:** `cabinet config --this-machine --backup-dir <folder>|off [--backup-time <time>]` writes the backup settings into `cabinet.local.env` instead of `cabinet.env`, so they apply on this machine and are never committed. In a shared workspace, each teammate picks their own backup folder, or none. `cabinet config --this-machine --credit-roles off|on` answers the credit roles question for this machine; in a shared workspace a machine credits nothing until it has answered. `cabinet config --this-machine --clear` makes this machine follow `cabinet.env` again. With `--this-machine`, no other setting can be changed (they are shared by every machine), and nothing is asked.
 
 **What it changes:**
 
@@ -1242,8 +1242,8 @@ Text output is for people and may be reworded at any time. For a script or an ag
 | `CABINET_JOB_TIMEOUT` | Minutes a job may run before it is stopped, for jobs without their own `TIMEOUT` (default 60; `0` for no limit). |
 | `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs Cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
 | `CABINET_PRICE` | Dollars per million tokens, `"<input> <output> [<cached input>]"`, to count runs of a runner that reports only tokens; empty for none. |
-| `CABINET_CREDIT_ROLES` | [Credit roles](concepts.md#credit-roles): `app` or `off`. Missing (a workspace from before it): off, and `cabinet next` and the brief ask once. Any other value is off, and the doctor reports it (`credit.setting`). |
-| `CABINET_CREDIT_EMAIL` | With `app`: your own GitHub App's bot noreply email; empty for the Cabinet Team app's. A value that is not that format credits nothing, and the doctor reports it (`credit.email`). |
+| `CABINET_CREDIT_ROLES` | [Credit roles](concepts.md#credit-roles): `on` or `off`. Missing (a workspace from before it): off, and `cabinet next` and the brief ask once. Any other value is off, and the doctor reports it (`credit.setting`). |
+| `CABINET_CREDIT_EMAIL` | With `on`: your own GitHub App's bot noreply email; empty for the Cabinet Team app's. A value that is not that format credits nothing, and the doctor reports it (`credit.email`). |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job
@@ -1260,7 +1260,7 @@ Settings for this machine only. Git never tracks it (the workspace's `.gitignore
 |---|---|
 | `CABINET_SCHEDULES` | `off`: this machine schedules none of the jobs in `jobs/` (another machine runs them). Set and cleared with `cabinet bootstrap --no-schedules` and `--schedules`. Jobs still run by hand with `cabinet job run <job>`. |
 | `CABINET_BACKUP_DIR`, `CABINET_BACKUP_TIME` | When present, they replace `cabinet.env`'s on this machine; an empty `CABINET_BACKUP_DIR` turns backups off here. Set with `cabinet config --this-machine`, removed with `cabinet config --this-machine --clear`. |
-| `CABINET_CREDIT_ROLES` | This machine's credit roles answer, `app` or `off`, in place of `cabinet.env`'s. In a shared workspace it is the only answer that counts: until it is there, this machine credits nothing. Set with `cabinet config --this-machine --credit-roles off\|app`, and by `config --credit-roles` and `init` in a shared workspace. |
+| `CABINET_CREDIT_ROLES` | This machine's credit roles answer, `on` or `off`, in place of `cabinet.env`'s. In a shared workspace it is the only answer that counts: until it is there, this machine credits nothing. Set with `cabinet config --this-machine --credit-roles off\|on`, and by `config --credit-roles` and `init` in a shared workspace. |
 
 ### Schedule times
 
@@ -1290,7 +1290,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one Cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
 | `CABINET_PROMPT` | the `custom` runner | The prompt, for `CABINET_RUNNER_CMD`. |
 | `CABINET_AGENT` | every runner | The role of the run, set for the agent tool and everything it starts; the credit hook reads it. |
-| `CABINET_CREDIT`, `CABINET_CREDIT_ADDRESS` | every runner | Set by a run for the credit hook: `app` or `off`, and the email its line carries ([credit roles](concepts.md#credit-roles)). |
+| `CABINET_CREDIT`, `CABINET_CREDIT_ADDRESS` | every runner | Set by a run for the credit hook: `on` or `off`, and the email its line carries ([credit roles](concepts.md#credit-roles)). |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
 
@@ -1493,9 +1493,9 @@ Co-authored-by: Cabinet backend <347351783+cabinet-team[bot]@users.noreply.githu
 
 GitHub links that email to the Cabinet Team app, so the commit shows you and `cabinet-team[bot]` with the Cabinet Team avatar; the role's name is in the message. You stay the author and the committer, and you still push. Nothing is set up on GitHub, and nothing is paid for.
 
-- **On for a new workspace** (`app`), asked at setup; `cabinet config --credit-roles off|app` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|app`), so a teammate's runs credit nothing until they say so.
+- **On for a new workspace** (`on`), asked at setup; `cabinet config --credit-roles off|on` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|on`), so a teammate's runs credit nothing until they say so.
 - **Only commits made in a Cabinet run:** scheduled jobs, `cabinet handoff run`, `cabinet spec run` and `cabinet role draft`, which tell the agent tool the role (`CABINET_AGENT`). Your own commits, and the ones `cabinet` makes for you, get nothing. A session you open in an agent tool yourself is not credited yet.
-- **Only new commits:** never an amend that keeps its message, a merge or a squash, nor a commit that a rebase or cherry-pick replays. An amend that writes a new message (`git commit --amend -m` or `-F`) counts as a new message from the role, and is credited. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
+- **Only new commits:** never any other amend, a merge or a squash, nor a commit that a rebase or cherry-pick replays. An amend that writes a new message (`git commit --amend -m` or `-F`) counts as a new message from the role, and is credited. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
 - **Your own app:** `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` shows your GitHub App instead; `off` goes back to the Cabinet Team.
 - **The house rule follows it:** the "Commits." line in `AGENTS.md` allows this one line while credit is on, and no other attribution.
 
@@ -1810,10 +1810,10 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `ok credit roles: <...>` | `credit.setting` | The setting is `app` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
-| `FIX CABINET_CREDIT_ROLES is "<...>", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `app` turns credit on. | `cabinet config --credit-roles off` or `app`. |
-| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `app`. |
-| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `app`. |
+| `ok credit roles: <...>` | `credit.setting` | The setting is `on` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
+| `FIX CABINET_CREDIT_ROLES is "<...>", not off or on, so no commit is credited (cabinet config --credit-roles on, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `on` turns credit on. | `cabinet config --credit-roles off` or `on`. |
+| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `on`. |
+| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles on, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `on`. |
 | `ok credit names the app of <...>` | `credit.email` | `CABINET_CREDIT_EMAIL` names your own GitHub App. | Nothing. |
 | `FIX CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)` | `credit.email` | The email is not `<user ID>+<app>[bot]@users.noreply.github.com` exactly, in lower case. | `cabinet config --credit-email <email>`, or `off` for the Cabinet Team app. |
 | `ok credit installed: the credit hook is at <...>` | `credit.hook` | The global hooks folder holds the kit's credit hook. | Nothing. |
@@ -2215,9 +2215,9 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Credit roles
 
-- A commit a role makes in a Cabinet run can credit that role beside you: its message ends with one `Co-authored-by: Cabinet <role> <347351783+cabinet-team[bot]@users.noreply.github.com>` line, which GitHub shows with the Cabinet Team avatar. You stay the author and still push. New options for `cabinet new`, `init` and `config`: `--credit-roles off|app` (on, `app`, for a new workspace, and asked at setup) and `--credit-email <email>|off` (your own GitHub App's bot noreply email). `cabinet config --this-machine --credit-roles off|app` answers for one machine; in a shared `cabinet/`, each machine answers for itself. Only commits made in a Cabinet run are credited (scheduled jobs, `handoff run`, `spec run`, `role draft`), and only new ones: never an amend that keeps its message, a merge or a squash, nor a commit a rebase or cherry-pick replays. The "Commits." house rule in `AGENTS.md` follows the setting; the concepts page explains it.
+- A commit a role makes in a Cabinet run can credit that role beside you: its message ends with one `Co-authored-by: Cabinet <role> <347351783+cabinet-team[bot]@users.noreply.github.com>` line, which GitHub shows with the Cabinet Team avatar. You stay the author and still push. New options for `cabinet new`, `init` and `config`: `--credit-roles off|on` (`on` for a new workspace, and asked at setup) and `--credit-email <email>|off` (your own GitHub App's bot noreply email). `cabinet config --this-machine --credit-roles off|on` answers for one machine; in a shared `cabinet/`, each machine answers for itself. Only commits made in a Cabinet run are credited (scheduled jobs, `handoff run`, `spec run`, `role draft`), and only new ones (an amend with a new message, `git commit --amend -m` or `-F`, counts as a new one): never any other amend, a merge or a squash, nor a commit a rebase or cherry-pick replays. The "Commits." house rule in `AGENTS.md` follows the setting; the concepts page explains it.
 - Bootstrap places the credit hook as `prepare-commit-msg` in the global hooks folder, in place of the pass-through stub there (it still runs a repo's own `prepare-commit-msg`, whose failure still stops the commit). A hook of your own there is never replaced. New doctor checks `credit.setting`, `credit.email` and `credit.hook`; new `cabinet next` step `credit-roles`. Every runner now gets the role in `CABINET_AGENT`, not only `custom`.
-- After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles app`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
+- After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles on`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
 
 ### Rules
 

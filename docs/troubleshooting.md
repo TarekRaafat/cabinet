@@ -66,10 +66,10 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
-| `ok credit roles: <...>` | `credit.setting` | The setting is `app` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
-| `FIX CABINET_CREDIT_ROLES is "<...>", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `app` turns credit on. | `cabinet config --credit-roles off` or `app`. |
-| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `app`. |
-| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `app`. |
+| `ok credit roles: <...>` | `credit.setting` | The setting is `on` or `off` ([credit roles](concepts.md#credit-roles)). | Nothing. |
+| `FIX CABINET_CREDIT_ROLES is "<...>", not off or on, so no commit is credited (cabinet config --credit-roles on, or off)` | `credit.setting` | `cabinet.env` (or this machine's `cabinet.local.env`) holds another value, often edited by hand. Only an exact `on` turns credit on. | `cabinet config --credit-roles off` or `on`. |
+| `note this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)` | `credit.setting` | A shared `cabinet/` cloned on this machine: each machine answers for itself. | `cabinet config --this-machine --credit-roles off` or `on`. |
+| `note credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles on, or off)` | `credit.setting` | A workspace from before credit roles. | `cabinet config --credit-roles off` or `on`. |
 | `ok credit names the app of <...>` | `credit.email` | `CABINET_CREDIT_EMAIL` names your own GitHub App. | Nothing. |
 | `FIX CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)` | `credit.email` | The email is not `<user ID>+<app>[bot]@users.noreply.github.com` exactly, in lower case. | `cabinet config --credit-email <email>`, or `off` for the Cabinet Team app. |
 | `ok credit installed: the credit hook is at <...>` | `credit.hook` | The global hooks folder holds the kit's credit hook. | Nothing. |

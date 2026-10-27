@@ -35,8 +35,8 @@ CABINET_SCHEDULES="$(local_get CABINET_SCHEDULES)"
 BACKUP_DIR_LOCAL=0
 if local_has CABINET_BACKUP_DIR; then CABINET_BACKUP_DIR="$(local_get CABINET_BACKUP_DIR)"; BACKUP_DIR_LOCAL=1; fi
 if local_has CABINET_BACKUP_TIME; then CABINET_BACKUP_TIME="$(local_get CABINET_BACKUP_TIME)"; fi
-# Credit roles (cabinet config --credit-roles off|app): a commit made in a Cabinet run credits its role
-# (guardrails/prepare-commit-msg). Read as written; only an exact "app" turns it on.
+# Credit roles (cabinet config --credit-roles off|on): a commit made in a Cabinet run credits its role
+# (guardrails/prepare-commit-msg). Read as written; only an exact "on" turns it on.
 CREDIT_KIT_EMAIL="347351783+cabinet-team[bot]@users.noreply.github.com"
 credit_email_ok() {   # a GitHub App's bot noreply email, exactly
   local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
@@ -50,7 +50,7 @@ credit_value() {   # the answer as written, or nothing
   if local_has CABINET_CREDIT_ROLES; then local_get CABINET_CREDIT_ROLES
   elif credit_answered; then printf '%s' "${CABINET_CREDIT_ROLES-}"; fi
 }
-credit_mode() { [[ "$(credit_value)" == app ]] && credit_email_ok "${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}" && echo app || echo off; }
+credit_mode() { [[ "$(credit_value)" == on ]] && credit_email_ok "${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}" && echo on || echo off; }
 
 K="$WS/.cabinet"                                   # kit-managed files
 LABEL="ai.cabinet.$CABINET_SLUG"                   # schedule labels: $LABEL.<job>
@@ -168,9 +168,9 @@ run_agent() {
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
   # Every runner gets the role in $CABINET_AGENT and the credit its commits carry (credit roles):
-  # CABINET_CREDIT, app or off, and CABINET_CREDIT_ADDRESS, the email; the credit hook reads them.
+  # CABINET_CREDIT, on or off, and CABINET_CREDIT_ADDRESS, the email; the credit hook reads them.
   local credit address=""; credit="$(credit_mode)"
-  [[ "$credit" == app ]] && address="${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}"
+  [[ "$credit" == on ]] && address="${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}"
   # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
   # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
   if [[ "$CABINET_RUNNER" == custom ]]; then

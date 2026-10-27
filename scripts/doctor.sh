@@ -192,15 +192,15 @@ if [[ "$CABINET_RUNNER" == custom ]] && ! has "claude codex gemini qwen grok ope
 fi
 
 section "Credit roles"
-# Read as written (lib.sh, credit_value): only an exact app or off is a setting.
+# Read as written (lib.sh, credit_value): only an exact on or off is a setting.
 cv="$(credit_value)"
 if credit_answered; then
   case "$cv" in
-    app|off) ok credit.setting "credit roles: $cv" ;;
-    *) bad credit.setting "CABINET_CREDIT_ROLES is \"$cv\", not off or app, so no commit is credited (cabinet config --credit-roles app, or off)" ;;
+    on|off) ok credit.setting "credit roles: $cv" ;;
+    *) bad credit.setting "CABINET_CREDIT_ROLES is \"$cv\", not off or on, so no commit is credited (cabinet config --credit-roles on, or off)" ;;
   esac
-elif credit_shared; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles app, or off)"
-else note credit.setting "credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles app, or off)"; fi
+elif credit_shared; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)"
+else note credit.setting "credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles on, or off)"; fi
 if [[ -n "${CABINET_CREDIT_EMAIL:-}" ]]; then
   credit_email_ok "$CABINET_CREDIT_EMAIL" && ok credit.email "credit names the app of $CABINET_CREDIT_EMAIL" \
     || bad credit.email "CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)"

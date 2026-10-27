@@ -132,8 +132,8 @@ O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, us
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
-O	new,init,config	--credit-roles	off|app	Credit roles: each commit a role makes in a Cabinet run credits that role beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: app; asked once in an older workspace).
-O	new,init,config	--credit-email	<email>|off	With --credit-roles app: your own GitHub App's bot noreply email instead of the Cabinet Team's; off goes back to it.
+O	new,init,config	--credit-roles	off|on	Credit roles: each commit a role makes in a Cabinet run credits that role beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: on; asked once in an older workspace).
+O	new,init,config	--credit-email	<email>|off	With --credit-roles on: your own GitHub App's bot noreply email instead of the Cabinet Team's; off goes back to it.
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
 O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
@@ -395,21 +395,21 @@ check_answers() {
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
 
-# Credit roles, for setup and config: the mode is exactly off or app, and a project's own app is
+# Credit roles, for setup and config: the mode is exactly off or on, and a project's own app is
 # named by its bot noreply email, exactly (scripts/lib.sh and the credit hook check the same).
 credit_email_ok() {
   local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
   [[ "$1" =~ $re ]]
 }
 check_credit() {   # check_credit <the mode the result has>: credit and cemail (cemail_given) can be written
-  [[ -z "$credit" || "$credit" == off || "$credit" == app ]] || die "--credit-roles must be off or app"
+  [[ -z "$credit" || "$credit" == off || "$credit" == on ]] || die "--credit-roles must be off or on"
   ((cemail_given)) || return 0
   [[ "$cemail" == off ]] || credit_email_ok "$cemail" || die "--credit-email must be a GitHub App's bot noreply email, like 123+my-app[bot]@users.noreply.github.com, or off"
-  [[ "$1" == app ]] || die "--credit-email goes with --credit-roles app: with credit off, no email is used"
+  [[ "$1" == on ]] || die "--credit-email goes with --credit-roles on: with credit off, no email is used"
 }
 credit_question() {   # the setup question, the offered answer in $credit
   echo "  Credit roles: each commit a role makes in a Cabinet run credits that role beside you, with one Co-authored-by line"
-  echo "  that shows the Cabinet Team avatar on GitHub. app (on, as the Cabinet Team app), or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
+  echo "  that shows the Cabinet Team avatar on GitHub. on, or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
   credit="$(ask "Credit roles" "$credit")"
 }
 
@@ -435,7 +435,7 @@ cmd_init() { setup init "$@"; }
 setup() {
   local how=$1; shift
   local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" price="" backup="" yes=0 repos=() r
-  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="app" cemail="" cemail_given=0
+  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="on" cemail="" cemail_given=0
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; shift 2 ;;
@@ -448,7 +448,7 @@ setup() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
-      --credit-roles) need "--credit-roles needs off or app" "$@"; credit="$2"; shift 2 ;;
+      --credit-roles) need "--credit-roles needs off or on" "$@"; credit="$2"; shift 2 ;;
       --credit-email) need "--credit-email needs an email, or off" "$@"; cemail="$2"; cemail_given=1; shift 2 ;;
       --budget) need "--budget needs dollars a week, like 20, or off" "$@"; budget="$2"; shift 2 ;;
       --price) need "--price needs dollars per million tokens, like \"1.25 10\", or off" "$@"; price="$2"; shift 2 ;;
@@ -748,7 +748,7 @@ setup() {
     [[ "$layout" == inside && "$visibility" == shared ]] && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit" >> "$ws/cabinet.local.env"
   fi
   # The "Commits." house rule allows the role credit only while it is on.
-  [[ "$credit" == app ]] && is_placed AGENTS.md && { node "$LIBJS" credit-line "$ws/AGENTS.md" on || true; }
+  [[ "$credit" == on ]] && is_placed AGENTS.md && { node "$LIBJS" credit-line "$ws/AGENTS.md" on || true; }
   is_placed jobs/brief.job && W="$brief" node "$LIBJS" sub "$ws/jobs/brief.job" -- '/^WHEN=.*/' 'WHEN="${W}"'
   is_placed AGENTS.md && D="$Week" G="$writing" node "$LIBJS" sub "$ws/AGENTS.md" -- \
     '/^(- \*\*Week starts on:\*\*) \w+\./' '$1 ${D}.' '/^(- \*\*Writing to the owner:\*\*) \w+\./' '$1 ${G}.'
@@ -1101,7 +1101,7 @@ cmd_config() {
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
-      --credit-roles) need "--credit-roles needs off or app" "$@"; credit="$2"; set_credit=1; shift 2 ;;
+      --credit-roles) need "--credit-roles needs off or on" "$@"; credit="$2"; set_credit=1; shift 2 ;;
       --credit-email) need "--credit-email needs an email, or off" "$@"; cemail="$2"; cemail_given=1; shift 2 ;;
       --pipeline) need "--pipeline needs off, small or all" "$@"; pipe="$2"; set_pipe=1; shift 2 ;;
       --pipeline-limit) need "--pipeline-limit needs dollars, like 5" "$@"; plimit="$2"; set_plimit=1; shift 2 ;;
@@ -1125,7 +1125,7 @@ cmd_config() {
     # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
     (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir, --backup-time and --credit-roles: the other settings are shared by every machine"
-    (( set_backup || set_btime || clear || set_credit )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|app, or --clear"
+    (( set_backup || set_btime || clear || set_credit )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, or --clear"
     (( clear && set_credit )) && die "--clear cannot be combined with --credit-roles"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
     yes=1
@@ -1163,8 +1163,8 @@ cmd_config() {
   if lhas CABINET_CREDIT_ROLES; then o_credit="$(lget CABINET_CREDIT_ROLES)"; o_credit_set=1
   elif ((shared == 0 && o_cfile_set)); then o_credit="$o_cfile"; o_credit_set=1; fi
   o_cemail="$(envget CABINET_CREDIT_EMAIL)"
-  if ((o_credit_set)) && [[ "$o_credit" != off && "$o_credit" != app ]]; then credit_bad=1; fi
-  local credit_offer=app
+  if ((o_credit_set)) && [[ "$o_credit" != off && "$o_credit" != on ]]; then credit_bad=1; fi
+  local credit_offer=on
   ((o_credit_set)) && credit_offer="$o_credit"; ((credit_bad)) && credit_offer=off; ((set_credit)) && credit_offer="$credit"
   o_pipe="$(envget CABINET_PIPELINE)"; o_pipe="${o_pipe:-off}"; o_plimit="$(envget CABINET_PIPELINE_LIMIT)"
   o_ptime=""   # empty: no pipeline job yet; off: one that runs only by hand
@@ -1214,7 +1214,7 @@ cmd_config() {
     echo "  How agents write to you: standard, or short (the shortest briefs, questions and answers, for little time to read)."
     writing="$(ask "Writing" "$writing")"
     local cnote=""
-    ((credit_bad)) && cnote="Now: \"$o_credit\", which is not off or app, so nothing is credited."
+    ((credit_bad)) && cnote="Now: \"$o_credit\", which is not off or on, so nothing is credited."
     ((shared && !o_credit_set)) && cnote="This machine has not answered yet: its runs credit nothing until it does."
     credit="$credit_offer"; credit_question "$cnote"; credit="$(printf %s "$credit" | tr '[:upper:]' '[:lower:]')"; set_credit=1
     local guess; guess="$(hard_guesses "$ws")"; guess="${guess% }"
@@ -1248,7 +1248,7 @@ cmd_config() {
   check_answers
   local credit_after="$o_credit"; ((set_credit)) && credit_after="$credit"
   check_credit "$credit_after"
-  ((set_credit || !credit_bad)) || echo "Note: CABINET_CREDIT_ROLES is \"$o_credit\", which is not off or app, so no commit is credited. It stays until you set it: cabinet config --credit-roles off|app"
+  ((set_credit || !credit_bad)) || echo "Note: CABINET_CREDIT_ROLES is \"$o_credit\", which is not off or on, so no commit is credited. It stays until you set it: cabinet config --credit-roles off|on"
   if ((!cemail_given)) && [[ -n "$o_cemail" ]] && ! credit_email_ok "$o_cemail"; then
     echo "Note: CABINET_CREDIT_EMAIL is \"$o_cemail\", which is not a GitHub App's bot noreply email, so no commit is credited. It stays until you set it: cabinet config --credit-email <email>|off"
   fi
@@ -1362,7 +1362,7 @@ cmd_config() {
     fi
     # The "Commits." house rule follows it: one sentence changes, the owner's other words stay.
     local asum; asum="$(cksum < "$ws/AGENTS.md" 2>/dev/null || true)"
-    node "$LIBJS" credit-line "$ws/AGENTS.md" "$([[ "$credit" == app ]] && echo on || echo off)" \
+    node "$LIBJS" credit-line "$ws/AGENTS.md" "$([[ "$credit" == on ]] && echo on || echo off)" \
       || echo "AGENTS.md: the \"Commits.\" house rule holds neither of the kit's attribution sentences, so it was left as it is. It needs your own edit to say whether the Cabinet role credit line is allowed."
     [[ "$(cksum < "$ws/AGENTS.md" 2>/dev/null || true)" == "$asum" ]] || agents_credit=1
   fi
@@ -1620,9 +1620,9 @@ cmd_next() {
   # place that counts in a shared workspace). Nothing is credited until then.
   if ! grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.local.env" 2>/dev/null; then
     if [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared ]]; then
-      step credit-roles "Credit roles: say whether commits made in this machine's Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (app), or not (off). Nothing is credited until you answer." "cabinet config --this-machine --credit-roles app"
+      step credit-roles "Credit roles: say whether commits made in this machine's Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (on), or not (off). Nothing is credited until you answer." "cabinet config --this-machine --credit-roles on"
     elif ! grep -q '^CABINET_CREDIT_ROLES=' "$env" 2>/dev/null; then
-      step credit-roles "Credit roles: say whether commits made in Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (app), or not (off). Nothing is credited until you answer." "cabinet config --credit-roles app"
+      step credit-roles "Credit roles: say whether commits made in Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (on), or not (off). Nothing is credited until you answer." "cabinet config --credit-roles on"
     fi
   fi
   # Work waiting on the owner.

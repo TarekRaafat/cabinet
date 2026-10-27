@@ -56,7 +56,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | When should the daily brief with your decisions arrive? | `--brief-time "7 AM"`, or `off` | 7:00 AM every day |
 | Which day does your week start? | `--week-start sunday` | `sunday` |
 | Short or standard messages from the team? | `--writing short\|standard` | `standard` |
-| Should each commit a role makes in a Cabinet run credit that role beside them, with the Cabinet Team avatar on GitHub? | `--credit-roles app\|off` | `app` |
+| Should each commit a role makes in a Cabinet run credit that role beside them, with the Cabinet Team avatar on GitHub? | `--credit-roles on\|off` | `on` |
 | A weekly spending limit for the agents' runs? Scheduled runs use the person's own agent tool account and its plan or usage costs. | `--budget <dollars>\|off` (and `--price "<in> <out>"` for codex, cursor, qwen or antigravity) | off |
 | Encrypted daily backups, and to which folder (outside the project)? | `--backup-dir <folder>\|off` | off |
 
