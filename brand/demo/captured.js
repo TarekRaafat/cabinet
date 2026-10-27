@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.1.0).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.1.3).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -38,7 +38,7 @@ var CAPTURED = {
   "cmd": "cabinet next",
   "lines": [
    "Next in Acme (/Users/maya/acme):",
-   "  1. Fill the TBDs in AGENTS.md: What Acme is, The team: repos and owners, Contracts that cross repo lines, House rules, Product rules, How to test.",
+   "  1. Fill the TBDs in AGENTS.md: What Acme is, Contracts that cross repo lines, House rules, Product rules, How to test.",
    "  2. Download the pinned kit (in /Users/maya/acme). Run: npm install",
    "  3. Set up this machine: guardrails and schedules (add --dry-run to see the changes first). Run: cabinet bootstrap",
    "  4. The first brief comes at 7:00 AM (or write it now). Run: cabinet brief",
@@ -60,7 +60,6 @@ var CAPTURED = {
    "  placed /Users/maya/.config/git/hooks/post-applypatch",
    "  placed /Users/maya/.config/git/hooks/pre-commit",
    "  placed /Users/maya/.config/git/hooks/pre-merge-commit",
-   "  placed /Users/maya/.config/git/hooks/prepare-commit-msg",
    "  placed /Users/maya/.config/git/hooks/commit-msg",
    "  placed /Users/maya/.config/git/hooks/post-commit",
    "  placed /Users/maya/.config/git/hooks/pre-rebase",
@@ -71,6 +70,7 @@ var CAPTURED = {
    "  placed /Users/maya/.config/git/hooks/reference-transaction",
    "  placed /Users/maya/.config/git/hooks/post-index-change",
    "  placed /Users/maya/.config/git/hooks/sendemail-validate",
+   "  placed the credit hook at /Users/maya/.config/git/hooks/prepare-commit-msg",
    "== Secrets check",
    "  placed /Users/maya/acme/.git/hooks/pre-commit",
    "== Claude Code",
@@ -112,7 +112,7 @@ var CAPTURED = {
    "== Product repos",
    "  <span class=\"green\">ok   </span> product repos checked",
    "== Kit and roles",
-   "  <span class=\"green\">ok   </span> cabinet 0.1.0",
+   "  <span class=\"green\">ok   </span> cabinet 0.1.3",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -130,9 +130,12 @@ var CAPTURED = {
    "  <span class=\"green\">ok   </span> Cursor CLI config holds the deny rules (rule shapes probed live on Cursor CLI 2026.10.16)",
    "  <span class=\"blue\">note </span> the Cursor editor keeps its agent's command rules in its own settings, which the kit does not set: only the git push gate applies there",
    "  <span class=\"green\">ok   </span> Grok loads the Claude Code rules",
-   "  <span class=\"blue\">note </span> v2.1.2 of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)",
+   "  <span class=\"blue\">note </span> v2.2.0 of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)",
    "  <span class=\"green\">ok   </span> scheduled jobs run with claude (/opt/homebrew/bin/claude)",
    "  <span class=\"green\">ok   </span> scheduled jobs find node",
+   "== Credit roles",
+   "  <span class=\"green\">ok   </span> credit roles: on",
+   "  <span class=\"green\">ok   </span> credit installed: the credit hook is at /Users/maya/.config/git/hooks/prepare-commit-msg",
    "== Skills and plugins",
    "  <span class=\"green\">ok   </span> skills and plugins checked",
    "== Operations manual",
@@ -177,22 +180,22 @@ var CAPTURED = {
    "      ⬤",
    "  ⬤       ⬤",
    "",
-   "⬤               cabinet 0.1.0",
-   "                One person, a whole team. You stay in charge.",
-   "  ⬤       ⬤",
+   "⬤               cabinet 0.1.3",
+   "                One person, a whole team.",
+   "  ⬤       ⬤     Build anything with AI agents, and stay in charge.",
    "      ⬤"
   ]
  },
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261022-01 filed for qa and committed"
+   "H-20261027-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "  0d  open          H-20261022-01   qa                        Checkout screens ready"
+   "  0d  open          H-20261027-01   qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -205,7 +208,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.1.2).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.1.3).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",
