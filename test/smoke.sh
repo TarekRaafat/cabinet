@@ -3182,7 +3182,7 @@ cat > "$MF/fake" <<'FAKE'
 n="${0##*/}"
 { printf '%s' "$n"; for a in "$@"; do printf ' [%s]' "$a"; done; echo; } >> "$MLOG"
 case "$n $*" in
-  "codex debug models"|"agy models"|"grok models"|"opencode models"|"cursor-agent models") [[ -z "${MFAIL:-}" ]] || exit 1 ;;
+  "codex debug models"|"agy models"|"grok models"|"opencode models"|"cursor-agent models") pwd -P >> "$MLOG.cwd"; [[ -z "${MFAIL:-}" ]] || exit 1 ;;
 esac
 case "$n $*" in
   "codex debug models") echo '{"models":[{"slug":"m-1"},{"slug":"other"}]}' ;;
@@ -3340,6 +3340,11 @@ m "$F" new "$T/model-n2" --yes --model 'x;y' >/dev/null 2>&1 && fail "new took t
 mkdir -p "$T/model-p"; echo x > "$T/model-p/f"; git -C "$T/model-p" init -q; before="$(ls -A "$T/model-p")"
 (cd "$T/model-p" && m "$F" init --yes --model 'x;y') >/dev/null 2>&1 && fail "init took the model x;y"
 [[ "$(ls -A "$T/model-p")" == "$before" ]] || fail "init with a bad model wrote files: $(ls -A "$T/model-p")"
+# A model list runs in the log folder, never in the project just set up (security S1).
+mkdir -p "$T/model-p2"; echo x > "$T/model-p2/f"; git -C "$T/model-p2" init -q; rm -f "$ML.cwd"
+(cd "$T/model-p2" && m "$F" init --yes --runner codex --model m-1) >/dev/null 2>&1 || fail "init --model m-1"
+[[ -s "$ML.cwd" ]] && ! grep -q "^$(cd "$T/model-p2" && pwd -P)" "$ML.cwd" || fail "a model list ran in the project: $(cat "$ML.cwd" 2>/dev/null)"
+"$F" -C "$T/model-p2" remove --yes --force >/dev/null 2>&1 || true
 # 15. The setup question, right after the runner's: Enter, a name, and a refused name then a good one.
 q() { printf '%s\n' "Mq" "$T/$1" "" "" "" "" "" "" "" "" "" "" "" "" claude "${@:2}" "" "" "" "" "" "" "" y n n > "$T/m-answers"; CABINET_TTY="$T/m-answers" m "$F" new 2>&1; }
 q model-q1 "" >/dev/null; grep -qx 'CABINET_MODEL=""' "$T/model-q1/cabinet.env" || fail "the model question: Enter"

@@ -971,16 +971,19 @@ function cursorBin() {
   }
   return "";
 }
-// model-check <runner> <model>...: one line per model, "<state>\t<model>\t<list command>": ok or missing
-// when the runner's list was read; unlisted when the runner cannot list its models without a run;
-// failed when its list command did not run, failed or printed no model. The list is read once.
-function modelCheck(runner, ...models) {
+// model-check <logroot> <runner> <model>...: one line per model, "<state>\t<model>\t<list command>": ok
+// or missing when the runner's list was read; unlisted when the runner cannot list its models without a
+// run; failed when its list command did not run, failed or printed no model. The list is read once, in
+// <logroot> (the system's temporary folder until it exists), so the tool reads no project's settings.
+function modelCheck(root, runner, ...models) {
   const l = MODEL_LISTS[runner];
   const say = (st, how) => { for (const m of models) process.stdout.write(st + "\t" + m + "\t" + how + "\n"); };
   if (!l) return say("unlisted", "");
   const bin = runner === "cursor" ? cursorBin() || l[0] : l[0];
   const how = path.basename(bin) + " " + l[1].join(" ");
-  const r = spawnSync(bin, l[1], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
+  let cwd = require("node:os").tmpdir();
+  try { if (fs.statSync(root).isDirectory()) cwd = root; } catch (e) { /* not made yet */ }
+  const r = spawnSync(bin, l[1], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
   let names = [];
   try { if (r.status === 0) names = l[2](r.stdout).filter(Boolean); } catch (e) { names = []; }
   if (!names.length) return say("failed", how);

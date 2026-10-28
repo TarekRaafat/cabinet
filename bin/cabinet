@@ -355,7 +355,7 @@ model_say() {
   [[ -n "$2" ]] || return 0
   [[ "$1" != custom ]] || { echo "Model $2: not checked: the custom runner cannot list its models without a run."; return 0; }
   local st m how
-  IFS=$'\t' read -r st m how < <(node "$LIBJS" model-check "$1" "$2") || true
+  IFS=$'\t' read -r st m how < <(node "$LIBJS" model-check "$LOGROOT" "$1" "$2") || true
   case "$st" in
     ok) echo "Model $2: one of $1's models." ;;
     missing) echo "Model $2: not in $1's model list ($how). It is written anyway; a run with it may fail. Change it with cabinet config --model <name>|off." ;;

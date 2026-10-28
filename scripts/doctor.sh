@@ -226,7 +226,7 @@ if ((${#good[@]})); then
         unlisted) note model.exists "not checked: $CABINET_RUNNER cannot list its models without a run ($m in $f)" ;;
         *) note model.exists "not checked: $CABINET_RUNNER's model list could not be read ($how), for $m in $f" ;;
       esac
-    done < <(node "$LIBJS" model-check "$CABINET_RUNNER" "${good[@]}")
+    done < <(node "$LIBJS" model-check "$LOGROOT" "$CABINET_RUNNER" "${good[@]}")
   fi
 fi
 
