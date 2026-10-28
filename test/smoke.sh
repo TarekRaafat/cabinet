@@ -15,6 +15,8 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 F="$KIT/bin/cabinet"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com
+# Started from a Cabinet run, the suite would inherit the credit hook's variables: no commit it makes is a run's.
+unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS
 # The real home folder, git config and agent tool settings are never read or written.
 export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset XDG_CONFIG_HOME XDG_STATE_HOME   # their defaults follow HOME into the temp folder
@@ -2592,9 +2594,21 @@ cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -ne
 v="$(sed -n '2s/^# cabinet credit hook v//p' "$KH")"; ((v > 1)) || fail "the credit hook's version is not above 1: $v"
 { sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"; boot
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed after the earlier hook was replaced"
 printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-mine"; boot
 cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the owner's own prepare-commit-msg"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level != "ok" && r.message.includes("not the kit"))' >/dev/null || fail "the doctor did not say why credit is not installed"
+# A prepare-commit-msg that is a symlink to another file: bootstrap leaves the link and its target as they are.
+printf '#!/bin/sh
+# linked
+exit 0
+' > "$T/credit-link-target"; cp "$T/credit-link-target" "$T/credit-link-copy"
+rm -f "$HK/prepare-commit-msg"; ln -s "$T/credit-link-target" "$HK/prepare-commit-msg"; boot
+[[ -L "$HK/prepare-commit-msg" && "$(readlink "$HK/prepare-commit-msg")" == "$T/credit-link-target" ]] && cmp -s "$T/credit-link-target" "$T/credit-link-copy" \
+  || fail "bootstrap changed a symlinked prepare-commit-msg or its target"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "note" && r.message.includes("not the kit") && r.message.includes("bootstrap leaves it as it is"))' >/dev/null \
+  || fail "the doctor did not say why credit is not installed with a symlinked hook: $( (cd "$CW" && "$F" doctor --json) | j -r '$.results.find((r) => r.id == "credit.hook")?.message')"
+rm -f "$HK/prepare-commit-msg"
 cp "$KH" "$HK/prepare-commit-msg"
 git config --global core.hooksPath "$T/credit-other-hooks"; boot
 [[ "$(git config --global core.hooksPath)" == "$T/credit-other-hooks" ]] || fail "bootstrap changed a global hooks path of the owner's"
@@ -2668,6 +2682,8 @@ was="$(cl "$T/credit-offws")"
 grep -q 'no AI or tool attribution lines except Cabinet.s role credit' "$KIT/AGENTS.md" && grep -q 'No other `Co-Authored-By`, no "Generated with" line' "$KIT/AGENTS.md" || fail "the kit's rule 11 does not allow only the role credit"
 for d in docs/commands.md README.md docs/concepts.md CHANGELOG.md; do grep -q 'credit-roles\|Credit roles' "$KIT/$d" || fail "$d does not describe credit roles"; done
 grep -q 'CABINET_CREDIT_ROLES' "$KIT/docs/commands.md" && grep -q 'CABINET_CREDIT_EMAIL' "$KIT/docs/commands.md" || fail "the cabinet.env table lacks the credit settings"
+# The demo's captures fake opencode too, so none shows the version of one installed on the machine that captures.
+grep -qF 'claude opencode sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]]' "$KIT/brand/demo/capture.sh" && grep -q '^for t in [^;]* opencode [^;]*; do$' "$KIT/brand/demo/capture.sh" || fail "brand/demo/capture.sh does not put a fake opencode first on PATH"
 sec="$(awk '/^## Credit roles$/{on=1; next} /^## /{on=0} on' "$KIT/docs/concepts.md")"
 ! sed 's/\[bot\]//g' <<<"$sec" | grep -qiw 'bot' || fail "the credit roles docs call a role a bot"
 for r in claude codex antigravity qwen grok opencode cursor; do grep -q "^| \`$r\` | not yet |\|^| \`$r\` | yes" <<<"$sec" || fail "the docs do not say whether $r was confirmed live"; done

@@ -2,7 +2,8 @@
 # Runs the demo's commands for real in a throwaway sandbox and saves each one's terminal output to out/;
 # node brand/render-film.js demo --capture runs it and turns out/ into captured.js. macOS (script's options).
 # The sandbox is the test suite's: HOME and git's config inside a temp folder, fakes for the
-# schedulers, secret stores, notifications, package managers and the agent tool first on PATH.
+# schedulers, secret stores, notifications, package managers and the agent tools (claude, opencode) first on PATH,
+# so no capture shows a version of a tool installed on this machine.
 set -eu
 KIT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$(cd "$(dirname "$0")" && pwd)/out"
@@ -13,13 +14,13 @@ export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM
 unset XDG_CONFIG_HOME XDG_STATE_HOME
 mkdir -p "$HOME"; printf '[user]\n\tname = Maya\n\temail = maya@example.com\n[init]\n\tdefaultBranch = main\n' > "$GIT_CONFIG_GLOBAL"
 mkdir -p "$T/shim"
-for t in launchctl systemctl security secret-tool osascript notify-send claude brew apt-get dnf pacman sudo; do
+for t in launchctl systemctl security secret-tool osascript notify-send claude opencode brew apt-get dnf pacman sudo; do
   printf '#!/bin/sh\necho "%s $*" >> "%s"\ncase "$1" in find-generic-password|lookup) exit 44 ;; esac\n' "$t" "$T/fake.log" > "$T/shim/$t"; chmod +x "$T/shim/$t"
 done
 printf '#!/bin/sh\ncase "$1" in -l) cat "%s" 2>/dev/null ;; -) cat > "%s" ;; *) exit 1 ;; esac\n' "$T/crontab" "$T/crontab" > "$T/shim/crontab"; chmod +x "$T/shim/crontab"
 mkdir -p "$T/bin"; ln -s "$KIT/bin/cabinet" "$T/bin/cabinet"
 export PATH="$T/shim:$T/bin:$PATH"
-for t in launchctl systemctl crontab security secret-tool claude sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || { echo "the fake $t is not first on PATH" >&2; exit 1; }; done
+for t in launchctl systemctl crontab security secret-tool claude opencode sudo; do [[ "$(command -v "$t")" == "$T/shim/$t" ]] || { echo "the fake $t is not first on PATH" >&2; exit 1; }; done
 export LANG=en_US.UTF-8 COLUMNS=100 LINES=40
 
 # rec <name> <command>...: run it on a terminal (colors as a person sees them) and save what it printed.
