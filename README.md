@@ -63,7 +63,7 @@ New to Cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 1. **Morning.** At the time you chose, the chief-of-staff agent writes `BRIEF.md`. It starts with the sign-off queue: every decision only you can make, each as a plain question with lettered options, the experts' recommendations and whether it can be undone.
 2. **You answer in one message**, for example "approve 1 and 3; 2: no; 4: wait until Friday". The agents write your answers into the right specs and handoffs.
 3. **The agents work.** Each owns its repos and passes work to the others through `HANDOFFS.md`. The agent that built something never verifies it: qa and security do, and either can block it. Screenshots and recordings of the work are links in the brief, one click to open. `cabinet spec run <spec>` runs those steps for a whole feature, start to ready, so you start no agent by hand.
-4. **You push** what has passed review, from your own terminal. No agent can push, merge, release or publish.
+4. **You push** what has passed review, from your own terminal. No agent can push, merge on GitHub, release or publish; a local git action that can be undone (an amend, a rebase, a local merge) runs only when you ask for it in that session.
 
 ## Words you will see
 
@@ -75,6 +75,7 @@ New to Cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 | Guide | A standing document the agents follow, such as a brand guide, style guide, policy or business document. It lives in `guides/`, with a row in `AGENTS.md`. |
 | Role | An agent's job description: what it owns, decides, escalates and may write. Kit roles live in `.cabinet/roles/`; a project adds notes in `roles/`. |
 | Spec | One file per feature in `specs/`: the problem, the rules, testable acceptance criteria, your decisions, and the builders' plan. Work bigger than a small task is built only from a spec that is ready. |
+| Session | A folder of its own for one agent session in a repo (a git worktree on a branch `session/<name>`), so several sessions work at once without touching each other's changes: `cabinet session start`. You merge its work. See [sessions](docs/concepts.md#sessions). |
 | Handoff | One entry in `HANDOFFS.md`: who it is for, what changed, what they need to do. The only channel between agents. |
 | Sign-off queue | The top of `BRIEF.md`: every decision waiting on you. |
 | Tiers | Who decides what: the agent (reversible, in its own files), its lead (reversible, across repos), or you (irreversible, public, or costs money). |

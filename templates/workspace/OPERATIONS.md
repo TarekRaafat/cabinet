@@ -82,6 +82,7 @@ git -C <repo> push
 | `bin/role.sh list`, `bin/repo.sh list`, `bin/job.sh list` | The team, the repos, the jobs. |
 | `bin/bootstrap.sh [--dry-run]` | Sets up a machine: clones repos, restores local-only files, installs guardrails and schedules. Safe to rerun. |
 | `bin/secret.sh check [--staged]` | Looks for keys, tokens and passwords in the workspace's files; the pre-commit hook refuses a commit that adds one. A false alarm: add `not-a-secret` to its line. |
+| `bin/session.sh start [name]`, `list`, `end <name>` | A session: a folder of its own (a git worktree on a branch `session/<name>`) for one agent session in a repo, so several work at once. `end` prints the merge command for you to run, and removes the folder when nothing in it is uncommitted. |
 | `bin/repo.sh snapshot` | Copies each repo's local-only files into `local/`. The backup runs it for you. |
 | `bin/backup.sh create [dir]` | One encrypted backup now. |
 | `bin/backup.sh verify [dir]` | Checks that the newest backup restores (once a quarter). |

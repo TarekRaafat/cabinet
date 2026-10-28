@@ -106,6 +106,9 @@ C	Work	repo add	<git url>	Add a product repo; bootstrap clones it and gives it a
 C	Work	repo remove	<name>	Take a repo out of repos.tsv and the team table; its folder is left as it is.
 C	Work	repo list		Every repo: its owner, whether it is on this machine, where it lives.
 C	Work	repo snapshot		Copy each repo's local-only files into local/.
+C	Work	session start	[name] [--repo <repo>]	Start a session: a git worktree of a repo on a branch of its own, so several sessions work in it at once without touching each other's changes.
+C	Work	session list		Every session: its repo, branch, folder, commits ahead, uncommitted files, whether it is merged, and when it started.
+C	Work	session end	<name>	A session's commits, the handoffs that name them and the command to merge them; removes its folder when nothing is uncommitted, keeps its branch.
 C	Work	job run	<job>	Run a job from jobs/ now.
 C	Work	job list		Every job: its role, schedule and time limit.
 C	Safety	secret check		Look for keys, tokens and passwords in the workspace's files (file and line, never the value).
@@ -188,6 +191,7 @@ O	spec record	--note	<file>	The reviewer's committed note under specs/, with the
 O	handoff run	--retries	<n>	Fix rounds after a BLOCK before it stops and asks you (default 2).
 O	spec run	--retries	<n>	Fix rounds after a BLOCK, for each of its handoffs, before it stops and asks you (default 2).
 O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
+O	session start	--repo	<repo>	The repo in repos.tsv to start it in (needed when the workspace has more than one).
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.
@@ -198,11 +202,11 @@ O	remove	--force		Remove even with uncommitted changes or commits on no remote.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
-O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
+O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,session list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE
 }
 is_cmd() { commands_table | awk -F'\t' -v c="$1" '$1 == "C" && $3 == c {f = 1} END {exit !f}'; }
-# A noun: the first word of two-word commands (role, repo, handoff, spec, manual, job, backup, secret).
+# A noun: the first word of two-word commands (role, repo, handoff, spec, manual, session, job, backup, secret).
 is_noun() { commands_table | awk -F'\t' -v n="$1" '$1 == "C" && index($3, n " ") == 1 {f = 1} END {exit !f}'; }
 
 cmd_help() {
@@ -1601,14 +1605,20 @@ JOB
 # The workspace a command means: <dir> itself, or <dir>/cabinet inside a project. With no
 # <dir>, the nearest one from here upward, so commands work from any folder inside a
 # workspace or its project.
+# A workspace inside another one's sessions/ folder is a session's copy of a shared cabinet/ (a worktree
+# of the project carries one): the outer workspace is meant, since HANDOFFS.md there is the one channel.
 find_ws_up() {
-  local d; d="$(pwd -P)"
+  local d w=""; d="$(pwd -P)"
   while :; do
-    [[ -f "$d/.cabinet/version" ]] && { echo "$d"; return 0; }
-    [[ -f "$d/cabinet/.cabinet/version" ]] && { echo "$d/cabinet"; return 0; }
-    [[ "$d" == / ]] && return 1
+    if [[ -z "$w" ]]; then
+      [[ -f "$d/.cabinet/version" ]] && w="$d"
+      [[ -z "$w" && -f "$d/cabinet/.cabinet/version" ]] && w="$d/cabinet"
+    elif [[ -f "$d/.cabinet/version" && "$w" == "$d/sessions/"* ]]; then w="$d"
+    fi
+    [[ "$d" == / ]] && break
     d="$(dirname "$d")"
   done
+  [[ -n "$w" ]] && echo "$w"
 }
 find_ws() {
   local d="${1:-}"
@@ -2380,6 +2390,7 @@ case "${1:-}" in
   spec) shift; noun_script spec "$@" ;;
   manual) shift; noun_script manual "$@" ;;
   repo) shift; cmd_repo "$@" ;;
+  session) shift; noun_script session "$@" ;;
   job) shift; noun_script job "$@" ;;
   secret) shift; noun_script secret "$@" ;;
   backup) shift; cmd_backup "$@" ;;

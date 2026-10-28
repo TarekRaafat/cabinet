@@ -28,7 +28,7 @@ Together they are a strong speed bump, not a boundary. For a hard boundary, prot
 
 Two more machine-wide settings come with the push gate:
 
-- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. `prepare-commit-msg` is the credit hook instead ([credit roles](concepts.md#credit-roles)): it runs the repo's own `prepare-commit-msg` in the same way, whose failure still stops the commit, then adds the role's line to a commit made in a Cabinet run. Bootstrap places it where there is no hook, or where the stub or an earlier credit hook is, and never replaces a hook of yours; `--no-verify` does not skip it. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
+- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. `prepare-commit-msg` is the credit hook instead ([credit roles](concepts.md#credit-roles)): it runs the repo's own `prepare-commit-msg` in the same way, whose failure still stops the commit, then adds the role's line to a commit made in a Cabinet run. It also refuses an amend in a Cabinet run, and `pre-rebase` is the kit's too, refusing a rebase there ([runs never rewrite](#runs-never-rewrite)). Bootstrap places each where there is no hook, or where the stub or an earlier version of the same hook is, and never replaces a hook of yours; `--no-verify` does not skip `prepare-commit-msg`. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
 - **The workspace's secrets check,** a `pre-commit` hook in the workspace's own `.git/hooks` (bootstrap runs it through the pass-through stub). It runs `bin/secret.sh check --staged` and refuses a commit that adds a likely key, token or password, naming the file and line, never the value. A false alarm passes once its line has `not-a-secret` on it. An existing `pre-commit` hook is left as it is (the doctor notes it; your hook can call `bin/secret.sh check --staged` itself). A shared `cabinet/` inside a project gets none, since the project's own hooks run there; `bin/doctor.sh` still scans its files. It is a safety net, not a guarantee: it knows common key formats, not every secret.
 - **Gemini CLI's `context.fileName`** is set to read `AGENTS.md` everywhere, so Gemini also loads `AGENTS.md` in folders that are not Cabinet workspaces.
 
@@ -57,6 +57,17 @@ Side effects: some harmless commands are refused too, such as an npm script name
 
 **Not caught by any tool's rules:** git config keys in unusual letter case (except in Gemini), an agent editing `.git/config` with its file tools (the doctor reports a repo's own `core.hooksPath` afterwards), and other ways of faking a terminal.
 
+## Runs never rewrite
+
+An agent may run an amend, a rebase or another git action that can be undone only when you ask for it in its session ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:
+
+- **`prepare-commit-msg`** (the credit hook) refuses `git commit --amend`, in every form: with `-m` or `-F` git calls the hook as it does for a new commit, so the hook also reads the git command's own arguments for `--amend` (or an abbreviation of it). `git commit -c` and `-C` are refused in a run too, since git calls the hook the same way for them. `--no-verify` does not skip this hook.
+- **`pre-rebase`** refuses `git rebase` (and `git pull --rebase`).
+
+Each runs the repo's own hook of the same name first, with the same arguments, and its failure still stops the commit or rebase. Outside a run, in your terminal or an interactive session, they change nothing. `cabinet doctor` says whether both are installed (`guardrails.run-refusal`); a hook of your own in the global hooks folder is left as it is, and then runs are not refused on that machine.
+
+Limits: `git rebase --no-verify` skips `pre-rebase`. In a run it is refused only by the tools whose deny rules match `--no-v`: Claude Code, Grok, Qwen Code, opencode, Cursor CLI and Gemini CLI. Codex and Antigravity are not covered (their rules match only how a command starts; both ask before any `git rebase`, which a run cannot answer), nor are the Cursor editor and a custom runner. An amend through a git alias of your own (`git config alias.fix "commit --amend"`) is not seen. Git has no hook for `reset` or `stash`, so those stay rules for the agents.
+
 ## Known limits
 
 These are on the [roadmap](../ROADMAP.md):
@@ -72,6 +83,6 @@ These are on the [roadmap](../ROADMAP.md):
 The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
-- **The push gate, the hook stubs and the credit hook:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
+- **The push gate, the hook stubs, the credit hook and `pre-rebase`:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
 - **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules`.
 - **Gemini:** delete `~/.gemini/policies/owner-control.toml` and remove `context.fileName` from `~/.gemini/settings.json`.

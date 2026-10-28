@@ -145,7 +145,7 @@ function handoffArchive(ws) {
 }
 
 // readiness <spend file> <HANDOFFS.md> [<archive>...]: {"<ID>": {verdicts, needs, missing, blocking,
-// stale, ready, ...}} for every entry, from the environment lib.sh's readiness() sets (WSDIR, TEAM,
+// stale, ready, ...}} for every entry, from the environment lib.sh's readiness() sets (WSDIR, REPODIRS, TEAM,
 // BUILDS, UI, DELEGATES, AREAS, TOUCH, SAREAS). See readiness() in lib.sh for the rules.
 function readiness(spend, ...files) {
   const inWs = {};
@@ -212,6 +212,18 @@ function readiness(spend, ...files) {
   finally { if (attrs) fs.rmSync(path.dirname(attrs), { recursive: true, force: true }); }
   const specOf = {};
   for (const e of entries) specOf[e.id] = field(e, "- Spec:");
+  const repoDirs = env("REPODIRS").split("\n").filter(Boolean);
+  const git = (d, ...a) => spawnSync("git", ["-C", d, ...a], { encoding: "utf8" });
+  const onlyOnSession = (commits) => {  // the session branch of the first commit found only there, or null
+    for (const c of commits) for (const d of repoDirs) {
+      if (git(d, "cat-file", "-e", c + "^{commit}").status !== 0) continue;
+      if (git(d, "merge-base", "--is-ancestor", c, "HEAD").status === 0) break;
+      const b = git(d, "for-each-ref", "--contains", c, "--format=%(refname:short)", "refs/heads/session/").stdout.split("\n").filter(Boolean)[0];
+      if (b) return b;
+      break;
+    }
+    return null;
+  };
   const out = {};
   for (const e of entries) {
     let frm = "", to = "";
@@ -260,11 +272,16 @@ function readiness(spend, ...files) {
     for (const l of e.lines) addBlock(e.id, l);
     const blocks = {};
     for (const l of blockLines[e.id] || []) { const r = l.match(VER)[1]; blocks[r] = (blocks[r] || 0) + 1; }
+    // Passed work is ready only on the branch the owner pushes: a commit its repo's main folder does not
+    // have, on a session branch (cabinet session), holds it until the session is merged.
+    let ready = needs.length ? !missing.length && !blocking.length && !stale.length : null, sessionBranch = null;
+    if (ready) sessionBranch = onlyOnSession(work);
+    if (sessionBranch) ready = false;
     out[e.id] = {
-      areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
+      session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
       cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
-      ready: needs.length ? !missing.length && !blocking.length && !stale.length : null, unread_verdicts: unread,
+      ready, unread_verdicts: unread,
     };
   }
   process.stdout.write(JSON.stringify(out) + "\n");

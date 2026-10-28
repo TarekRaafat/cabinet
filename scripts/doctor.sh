@@ -57,6 +57,11 @@ while IFS=$'\t' read -r name url files link path; do
     st="$(git -C "$repo" status --porcelain -- AGENTS.md CLAUDE.md 2>/dev/null | grep '^??' || true)"
     [[ -n "$st" ]] && bad repos.instructions-excluded "$name: instruction files show as untracked (missing exclude entry)"
   fi
+  # A session whose folder was deleted by hand: git keeps it listed until a prune, which only the owner runs.
+  rq="$(abspath "$repo")"; rqs="$(printf '%q' "$rq")"
+  while IFS=$'\t' read -r s sf sb; do
+    [[ -d "$sf" ]] || note sessions.gone "$name: the folder of session $s is gone ($sf): git -C $rqs worktree prune"
+  done < <(sessions_of "$name" "$rq")
 done < <(repos)
 ((problems == before)) && ok repos.all "product repos checked"
 
@@ -125,6 +130,13 @@ while IFS= read -r d; do
   lh="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
   [[ -n "$lh" ]] && bad guardrails.repo-hookspath "$d sets its own core.hooksPath ($lh), which bypasses the push gate"
 done < <(data_dirs | awk '!seen[$0]++')
+# Unattended runs never rewrite: the kit's prepare-commit-msg refuses an amend in a Cabinet run, its pre-rebase a rebase.
+rr=""
+for h in prepare-commit-msg:amend pre-rebase:rebase; do
+  [[ -n "$hooks" && -f "$hooks/${h%%:*}" && ! -L "$hooks/${h%%:*}" ]] && cmp -s "$K/guardrails/${h%%:*}" "$hooks/${h%%:*}" || rr+="${rr:+, }${h%%:*} (${h#*:})"
+done
+[[ -z "$rr" ]] && ok guardrails.run-refusal "Cabinet runs are refused an amend or a rebase (the kit's hooks in $hooks)" \
+  || note guardrails.run-refusal "the run refusal is not installed: $rr in ${hooks:-the global hooks folder} is missing or not the kit's, so a Cabinet run is not refused that (run bin/bootstrap.sh; it leaves a hook of your own as it is: move yours into each repo's own .git/hooks first)"
 
 # Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
@@ -252,6 +264,8 @@ if [[ -n "$hooks" && -f "$pcm" ]] && cmp -s "$K/guardrails/prepare-commit-msg" "
 elif [[ -z "$hooks" ]]; then note credit.hook "credit not installed: git has no global hooks path (run bin/bootstrap.sh)"
 elif [[ "$hooks" != "$HOME/.config/git/hooks" && ! -e "$pcm" ]]; then note credit.hook "credit not installed: the global hooks path is $hooks, which bootstrap leaves as it is, and it holds no credit hook"
 elif [[ ! -e "$pcm" && ! -L "$pcm" ]]; then note credit.hook "credit not installed: no prepare-commit-msg in $hooks (run bin/bootstrap.sh)"
+elif [[ "$hooks" == "$HOME/.config/git/hooks" && -f "$pcm" && ! -L "$pcm" ]] && hv="$(sed -n '2s/^# cabinet credit hook v\([0-9][0-9]*\)$/\1/p' "$pcm")" && [[ -n "$hv" && "$hv" -lt "$(sed -n '2s/^# cabinet credit hook v//p' "$K/guardrails/prepare-commit-msg")" ]]; then
+  note credit.hook "credit hook out of date: $pcm is an earlier version of the kit's (run bin/bootstrap.sh, which replaces it)"
 else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks and remove it from $hooks, then run bin/bootstrap.sh)"; fi
 
 section "Skills and plugins"

@@ -9,7 +9,8 @@ An encrypted daily archive of everything a lost machine would take with it, and 
 - the full git history: every branch and unpushed commit;
 - uncommitted changes, untracked files and stashes;
 - `.env` files (git ignores them, so nothing else keeps them);
-- the branch it was on, or that HEAD was detached.
+- the branch it was on, or that HEAD was detached;
+- each [session](concepts.md#sessions) of a repo: its uncommitted changes and untracked files (its commits are in the repo's history, on its `session/<name>` branch). A session whose folder was deleted by hand is named in the output and left out.
 
 It also includes Claude Code's memory for the workspace and `~/.claude/settings.json`. A repo with no commits yet (for example a workspace made without an owner identity) is kept as its files.
 
@@ -41,6 +42,7 @@ On a new machine, put the passphrase in the keychain or secret store first, then
 - **A missing repo, or an empty folder,** is restored with its uncommitted work, on the branch it was on (or detached, as it was).
 - **The workspace folder itself, or a project folder holding nothing but the workspace being restored** (the inside layout), is checked out in place. Any file the archive would replace with different content, tracked or untracked, is first copied to `recovered/<archive>/`.
 - **Any other folder that already holds files of its own** is left alone, and the repo is restored into `recovered/<archive>/<name>/repo` instead. A folder such as your home folder is never turned into a repo.
+- **Sessions** come back as worktrees at `sessions/<repo>/<name>/`, on their branch, with their uncommitted changes and untracked files, when their repo is restored fresh and that folder is missing. Where the repo already exists, or the session's folder does, its patch and untracked files go to `recovered/<archive>/<repo>/sessions/<name>/`, and nothing that exists changes.
 - `.env` files are restored only where missing. Stashes are kept as patches in `recovered/`.
 - Claude Code memory and settings are restored only where missing.
 
@@ -54,4 +56,4 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 cabinet backup verify      # or bin/backup.sh verify [folder]
 ```
 
-It restores the newest archive of this workspace into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace and each repo it prints one line: restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
+It restores the newest archive of this workspace into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace, each repo and each session it holds it prints one line (a session as `<repo> session <name>`, with its worktree rebuilt on its branch and its changes applied): restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.

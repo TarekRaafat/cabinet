@@ -153,23 +153,28 @@ echo "== Git push gate"
 hooks="$HOME/.config/git/hooks"
 place "$G/pre-push" "$hooks/pre-push"
 for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg \
-         post-commit pre-rebase post-checkout post-merge post-rewrite pre-auto-gc reference-transaction \
+         post-commit post-checkout post-merge post-rewrite pre-auto-gc reference-transaction \
          post-index-change sendemail-validate; do
   place "$G/hook-passthrough" "$hooks/$h"
 done
-# prepare-commit-msg is the credit hook (credit roles): it passes the call on too, then credits the role
-# of a Cabinet run. It replaces only what the kit put there: no file, the pass-through stub, or an
-# earlier credit hook (its line 2, "# cabinet credit hook v<N>", with a lower N). Anything else is yours.
-credit_v() { sed -n '2s/^# cabinet credit hook v\([0-9][0-9]*\)$/\1/p' "$1" 2>/dev/null; }
-pcm="$hooks/prepare-commit-msg" old=""
-[[ -f "$pcm" && ! -L "$pcm" ]] && old="$(credit_v "$pcm")"
-if [[ -f "$pcm" && ! -L "$pcm" ]] && cmp -s "$G/prepare-commit-msg" "$pcm"; then :
-elif [[ ! -e "$pcm" && ! -L "$pcm" ]] || { [[ -f "$pcm" && ! -L "$pcm" ]] && { cmp -s "$G/hook-passthrough" "$pcm" || [[ -n "$old" && "$old" -lt "$(credit_v "$G/prepare-commit-msg")" ]]; }; }; then
-  if ((DRY)); then echo "  would place the credit hook at $pcm"
-  else mkdir -p "$hooks"; cp "$G/prepare-commit-msg" "$pcm.cabinet-new" && chmod +x "$pcm.cabinet-new" && mv -f "$pcm.cabinet-new" "$pcm" && echo "  placed the credit hook at $pcm"; fi
-else
-  echo "  differs, left as is: $pcm (credit roles cannot add their line on this machine; cabinet doctor says why)"
-fi
+# Two hooks are the kit's own, and pass the call on too: prepare-commit-msg is the credit hook (credit
+# roles), which also refuses an amend in a Cabinet run, and pre-rebase refuses a rebase there. Each
+# replaces only what the kit put there: no file, the pass-through stub, or an earlier version of the same
+# hook (its line 2, "# cabinet <what> v<N>", with a lower N). Anything else is yours, and left as it is.
+hook_v() { sed -n "2s/^# cabinet $2 v\\([0-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
+kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is>
+  local h="$hooks/$1" src="$G/$1" old=""
+  [[ -f "$h" && ! -L "$h" ]] && old="$(hook_v "$h" "$2")"
+  if [[ -f "$h" && ! -L "$h" ]] && cmp -s "$src" "$h"; then :
+  elif [[ ! -e "$h" && ! -L "$h" ]] || { [[ -f "$h" && ! -L "$h" ]] && { cmp -s "$G/hook-passthrough" "$h" || [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$2")" ]]; }; }; then
+    if ((DRY)); then echo "  would place the $2 at $h"
+    else mkdir -p "$hooks"; cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $2 at $h"; fi
+  else
+    echo "  differs, left as is: $h ($3 on this machine; cabinet doctor says why)"
+  fi
+}
+kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend,"
+kit_hook pre-rebase "pre-rebase hook" "runs are not refused a rebase"
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done
 current="$(git config --global core.hooksPath || true)"
 if [[ -z "$current" ]]; then

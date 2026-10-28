@@ -42,6 +42,8 @@ Fits: solo work, open source projects, client repos.
 
 Fits: a private repo whose teammates should see the team's handoffs and specs.
 
+A [session](concepts.md#sessions) of the project is a worktree at `cabinet/sessions/<repo>/<name>/`, which the project's git ignores in both kinds. With a shared `cabinet/`, the session's folder holds its branch's copy of `cabinet/` too; the `cabinet` command, run from there, uses the main folder's workspace, whose `HANDOFFS.md` is the one channel, so file and read handoffs with `cabinet handoff`, never the copy's `bin/`. A project tool that scans every folder may see the session's folder: point it past `cabinet/`.
+
 ## beside
 
 The project is not changed at all. The workspace is a folder next to it and points at it with a relative path (`../<project>`) in `repos.tsv`, so the project stays where it is and nothing is cloned again. Fits a product with several repos, or a project you would rather not touch.

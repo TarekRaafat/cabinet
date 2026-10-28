@@ -2584,9 +2584,9 @@ cfg --credit-roles on >/dev/null
   || fail "a commit cabinet made outside a run was credited"
 before="$(msg)"; CR_DO='git commit -q --amend --no-edit' crun "$CW" codex backend
 [[ "$(msg)" == "$before" ]] || fail "an amend in a run credited the owner's commit"
-# An amend that writes a new message is a new message from the role, and is credited (git gives it source "message").
+# An amend that writes a new message (git gives it source "message", as a new commit) is refused in a run too.
 CR_DO='git commit -q --amend -m amended' crun "$CW" codex backend
-[[ "$(msg | head -1)" == amended && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "an amend with a new message in a run was not credited: $(msg)"
+[[ "$(msg)" == "$before" ]] || fail "an amend with a new message in a run was not refused: $(msg)"
 # A commit from a template (git gives it source "template") is credited once.
 printf 'from a template\n' > "$T/credit-template"
 CR_DO="echo x >> f && git add f && GIT_EDITOR='sed -i.bak 1s/^/edited\ /' git commit -q -t '$T/credit-template'" crun "$CW" codex backend
@@ -2595,7 +2595,8 @@ CR_DO='git revert --no-edit HEAD >/dev/null' crun "$CW" codex backend
 [[ "$(msg | head -1)" == 'Revert "edited from a template"' && "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" && "$(cab)" == 1 ]] || fail "a revert in a run was not credited: $(msg)"
 git -C "$CR" checkout -q -b own; for i in 1 2; do echo "o$i" >> "$CR/o$i"; git -C "$CR" add "o$i"; git -C "$CR" commit -qm "owner $i"; done; git -C "$CR" checkout -q main
 echo m >> "$CR/f"; git -C "$CR" commit -qam "main moves"
-CR_DO='git checkout -q own && git rebase -q main && git checkout -q main' crun "$CW" codex backend
+# A rebase in a run is refused (pre-rebase), so the owner's commits stay as they were, uncredited.
+CR_DO='git checkout -q own && git rebase -q main; git checkout -q main' crun "$CW" codex backend
 [[ "$(git -C "$CR" log --format=%B main..own | grep -c 'Co-authored-by')" == 0 && "$(git -C "$CR" rev-list --count main..own)" == 2 ]] || fail "a rebase in a run credited the owner's commits"
 CR_DO='git cherry-pick own >/dev/null' crun "$CW" codex backend
 [[ "$(msg)" == "owner 2" ]] || fail "a cherry-pick in a run credited the owner's commit: $(msg)"
@@ -3555,6 +3556,215 @@ grep -q 'step `update`' "$KIT/docs/commands.md" && grep -q 'edited, latest}' "$K
   && grep -q '`kit.newer`' "$KIT/docs/troubleshooting.md" && grep -q '`kit.newer`' "$KIT/roles/chief-of-staff.md" && grep -q 'npm install @tarekraafat/cabinet@latest && cabinet update' "$KIT/CHANGELOG.md" || fail "a release-notice doc is missing"
 "$F" -C "$RW" remove --yes --force >/dev/null 2>&1 || true; "$F" -C "$SP/cabinet" remove --yes --force >/dev/null 2>&1 || true
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="${PATH#"$NP:$KIT/bin:"}"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "parallel sessions: a worktree per session, backed up, and runs that never rewrite" ""
+s68() {
+# Its own HOME and global git config, so the global hooks folder is this section's only. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+PH="$T/ps-home"; mkdir -p "$PH"; export HOME="$PH" GIT_CONFIG_GLOBAL="$PH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+mkr() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add -A && git -C "$1" commit -qm init; }
+PW="$T/ps-ws"; "$F" new "$PW" --yes >/dev/null || fail "new"
+PW="$(cd "$PW" && pwd -P)"; S="$PW/sessions"
+mkr "$PW/app"; printf 'app\t-\t-\tno\tapp\n' >> "$PW/repos.tsv"; git -C "$PW" commit -qam "one repo"
+A="$PW/app"
+ses() { (cd "$PW" && "$F" session "$@"); }
+head_of() { git -C "$A" rev-parse "${1:-main}"; }
+
+# Starting a session (criteria 1 to 10).
+o="$(ses start feature-a)" || fail "session start feature-a: $o"
+[[ -d "$S/app/feature-a" && "$(git -C "$S/app/feature-a" branch --show-current)" == session/feature-a && "$(head_of session/feature-a)" == "$(head_of)" ]] || fail "the session's worktree or branch: $o"
+grep -qxF "  $S/app/feature-a" <<<"$o" || fail "session start did not print the folder: $o"
+git -C "$PW" check-ignore -q sessions/ && git -C "$PW" check-ignore -q sessions/app/feature-a || fail "sessions/ is not ignored in the workspace"
+[[ -z "$(git -C "$PW" status --porcelain)" ]] || fail "a session shows in the workspace's git status"
+d="$(date +%Y-%m-%d)"
+ses start >/dev/null && ses start >/dev/null && [[ -d "$S/app/$d-1" && -d "$S/app/$d-2" ]] || fail "names from the date and a number: $(ls "$S/app")"
+mkr "$PW/web"; printf 'web\t-\t-\tno\tweb\n' >> "$PW/repos.tsv"
+st=0; o="$(ses start two 2>&1)" || st=$?
+((st)) && grep -q app <<<"$o" && grep -q web <<<"$o" && [[ ! -e "$S/app/two" && ! -e "$S/web/two" ]] && ! git -C "$A" rev-parse -q --verify refs/heads/session/two >/dev/null || fail "two repos without --repo: $o"
+n40="$(printf 'a%.0s' $(seq 40))"
+ses start "$n40" --repo app >/dev/null && [[ -d "$S/app/$n40" ]] || fail "a 40-character name was refused"
+before="$(git -C "$A" for-each-ref --format='%(refname)' refs/heads | sort; ls -A "$S/app")"
+for bad in feature-a Feature 'a b' a/b '$(x)' -b "${n40}a"; do
+  ses start "$bad" --repo app >/dev/null 2>&1 && fail "the session name '$bad' was accepted"
+done
+ses start ok-name --repo nope >/dev/null 2>&1 && fail "a --repo not in repos.tsv was accepted"
+[[ "$(git -C "$A" for-each-ref --format='%(refname)' refs/heads | sort; ls -A "$S/app")" == "$before" && ! -e "$S/nope" && ! -e "$PW/\$(x)" ]] || fail "a refused start created a branch or folder"
+git -C "$A" branch session/left-over
+st=0; o="$(ses start left-over --repo app 2>&1)" || st=$?
+((st)) && [[ ! -e "$S/app/left-over" ]] && grep -q 'branch -d session/left-over' <<<"$o" && grep -q 'worktree add .* session/left-over' <<<"$o" || fail "an existing branch: $o"
+echo dirty >> "$A/f"
+o="$(ses start dirty-main --repo app)" && grep -q 'uncommitted change(s), which are not in the session' <<<"$o" && [[ "$(cat "$S/app/dirty-main/f")" == x ]] || fail "uncommitted changes in the main folder: $o"
+printf '# web\n\n## Session setup\n\nRun npm install in the new folder.\n\n## Other\n\nnot this\n' > "$PW/web/AGENTS.md"; git -C "$PW/web" add AGENTS.md; git -C "$PW/web" commit -qm notes
+o="$(ses start setup-note --repo web)" && grep -qx 'Run npm install in the new folder.' <<<"$o" && ! grep -q 'not this' <<<"$o" || fail "the repo's setup note: $o"
+mkdir -p "$PW/notrepo"; printf 'notrepo\t-\t-\tno\tnotrepo\n' >> "$PW/repos.tsv"
+ses start nr --repo notrepo >/dev/null 2>&1 && fail "a folder that is not a git repo got a session"
+[[ ! -e "$S/notrepo" ]] || fail "a refused session in a folder that is not a repo left a folder"
+echo s > "$S/app/feature-a/s"; git -C "$S/app/feature-a" add s; git -C "$S/app/feature-a" commit -qm "in the session"
+[[ "$(git -C "$A" status --porcelain)" == " M f" ]] || fail "a session's commit changed the main folder's status: $(git -C "$A" status --porcelain)"
+[[ -z "$(git -C "$S/app/feature-a" status --porcelain)" ]] || fail "the main folder's changes show in the session"
+git -C "$A" checkout -q -- f
+
+# Listing (criteria 11 and 12).
+echo u > "$S/app/$d-1/u"
+L1="$(ses list --json)"
+j -e --arg d "$d" --arg s "$S" '((by) => by("feature-a").ahead == 1 && by("feature-a").uncommitted == 0 && by("feature-a").merged === false
+  && by($d + "-1").ahead == 0 && by($d + "-1").uncommitted == 1 && by($d + "-1").merged === true
+  && by($d + "-2").ahead == 0 && by($d + "-2").uncommitted == 0 && by("feature-a").repo == "app" && by("feature-a").branch == "session/feature-a"
+  && by("feature-a").folder == $s + "/app/feature-a" && by("feature-a").gone === false)((n) => $.find((x) => x.name == n))' <<<"$L1" >/dev/null || fail "session list --json: $L1"
+[[ "$(j -r '$.find((x) => x.name == "feature-a").started' <<<"$L1")" == "$(date +%F)" ]] || fail "the start date is not today's: $L1"
+o="$(ses list)"; grep -q "^feature-a  (app, session/feature-a)  1 commit(s) ahead, 0 uncommitted, not merged, started $(LC_ALL=C date "+%-d %b %Y")" <<<"$o" || fail "session list: $o"
+rm -rf "$S/app/$d-2"
+o="$(ses list)"; grep -q "^$d-2 .*folder gone" <<<"$o" && grep -qF "git -C $A worktree prune" <<<"$o" || fail "a gone folder in session list: $o"
+j -e --arg n "$d-2" '$.find((x) => x.name == $n).gone === true' <<<"$(ses list --json)" >/dev/null || fail "gone in --json"
+(cd "$PW" && "$F" doctor --json) | j -e --arg n "$d-2" '$.results.some((r) => r.id == "sessions.gone" && r.message.includes($n) && r.message.includes("worktree prune"))' >/dev/null || fail "the doctor did not report the gone session"
+git -C "$A" worktree prune
+
+# Reviews (criteria 17 and 18).
+sc="$(git -C "$S/app/feature-a" rev-parse HEAD)"
+"$PW/bin/handoff.sh" add --from backend --to "qa, security" --changed "the session's work" --needed "review it" --evidence "$S/app/feature-a/s" "session work" >/dev/null || fail "handoff add"
+hid="$(grep -o '^### H-[0-9]*-[0-9]*' "$PW/HANDOFFS.md" | tail -1 | cut -c5-)"
+mkdir -p "$PW/specs/qa"; echo ok > "$PW/specs/qa/ps.md"; git -C "$PW" add specs/qa/ps.md; git -C "$PW" commit -qm note
+for r in qa security code-reviewer; do (cd "$PW" && bin/handoff.sh record "$hid" --role "$r" PASS --commits "${sc:0:7}" --note specs/qa/ps.md) >/dev/null 2>&1 || fail "record $r of a session commit from the main folder"; done
+grep -q "^- Verdict: qa PASS .* ${sc:0:7} " "$PW/HANDOFFS.md" || fail "the session commit's verdict"
+o="$(cd "$PW" && bin/handoff.sh list --ready)"
+grep -qF "$hid: passed, but its commits are only on session/feature-a" <<<"$o" && [[ "$(grep -c "$hid" <<<"$o")" == 1 ]] || fail "list --ready with the work only on a session branch: $o"
+(cd "$PW" && bin/handoff.sh list --json) | j -e --arg i "$hid" '$.find((e) => e.id == $i).ready === false && $.find((e) => e.id == $i).session_branch == "session/feature-a"' >/dev/null || fail "list --json session_branch"
+grep -q 'cabinet session list --json' "$KIT/roles/chief-of-staff.md" && grep -q 'merged: false' "$KIT/roles/chief-of-staff.md" || fail "the brief does not list unmerged sessions"
+
+# Ending (criteria 13 to 16).
+m="$(head_of)"
+o="$(ses end feature-a 2>&1)" || fail "end feature-a: $o"
+grep -q "${sc:0:7} in the session" <<<"$o" && grep -q "Handoffs that name them: $hid" <<<"$o" && grep -qxF "  git -C $A merge --ff-only session/feature-a" <<<"$o" && [[ "$(head_of)" == "$m" ]] || fail "session end with commits: $o"
+[[ ! -e "$S/app/feature-a" && "$(head_of session/feature-a)" == "$sc" ]] || fail "end did not remove the clean folder, or lost the branch"
+git -C "$A" merge -q --ff-only session/feature-a
+o="$(cd "$PW" && bin/handoff.sh list --ready)"; grep -q "$hid" <<<"$o" && ! grep -q 'only on session' <<<"$o" || fail "merged work is not ready: $o"
+ses start moved --repo app >/dev/null; echo m > "$S/app/moved/m"; git -C "$S/app/moved" add m; git -C "$S/app/moved" commit -qm moved
+echo main >> "$A/f"; git -C "$A" commit -qam "main moves"; m="$(head_of)"
+o="$(ses end moved)" && grep -qF "git -C $S/app/moved rebase main" <<<"$o" && grep -qxF "  git -C $A merge --ff-only session/moved" <<<"$o" && [[ "$(head_of)" == "$m" ]] || fail "end when main moved on: $o"
+ses start busy --repo app >/dev/null; echo b >> "$S/app/busy/f"; echo n > "$S/app/busy/new"
+snap() { (cd "$S/app/busy" && find . -name .git -prune -o -type f -print | sort | xargs cksum); }
+b4="$(snap)"; st=0; o="$(ses end busy 2>&1)" || st=$?
+((st)) && grep -q 'uncommitted' <<<"$o" && [[ "$(snap)" == "$b4" ]] || fail "end with uncommitted changes: $o"
+ses start envs --repo app >/dev/null; echo '.env' >> "$A/.git/info/exclude"; echo SECRET=1 > "$S/app/envs/.env"
+st=0; o="$(ses end envs 2>&1)" || st=$?; ((st)) && [[ -f "$S/app/envs/.env" ]] || fail "end deleted an ignored .env: $o"
+rm "$S/app/envs/.env"; ses end envs >/dev/null || fail "end of a clean session"
+[[ ! -e "$S/app/envs" ]] && git -C "$A" rev-parse -q --verify refs/heads/session/envs >/dev/null || fail "end did not remove the folder, or deleted the branch"
+
+# Inside a project (criterion 2), private and shared.
+for vis in private shared; do
+  P="$T/ps-proj-$vis"; mkr "$P"; P="$(cd "$P" && pwd -P)"
+  (cd "$P" && "$F" init --yes --inside --$vis) >/dev/null || fail "init --inside --$vis"
+  [[ "$vis" == shared ]] && { git -C "$P" add -A; git -C "$P" commit -qm cabinet; }
+  pr="$(awk -F'\t' '$5 == ".." {print $1}' "$P/cabinet/repos.tsv")"; [[ -n "$pr" ]] || fail "no project row in repos.tsv ($vis)"
+  (cd "$P" && "$F" session start feature-a) >/dev/null || fail "session start inside a project ($vis)"
+  [[ -d "$P/cabinet/sessions/$pr/feature-a" ]] && git -C "$P" check-ignore -q "cabinet/sessions/$pr/feature-a" || fail "the inside session is not at cabinet/sessions/ or not ignored ($vis)"
+  [[ -z "$(git -C "$P" status --porcelain)" ]] || fail "an inside session shows in the project's status ($vis): $(git -C "$P" status --porcelain)"
+  # From the session's folder, the cabinet command means the main folder's workspace, whose HANDOFFS.md is the one channel.
+  (cd "$P/cabinet/sessions/$pr/feature-a" && "$F" handoff add --from qa --to owner --changed x --needed y "from a session") >/dev/null || fail "handoff add from an inside session ($vis)"
+  grep -q 'from a session' "$P/cabinet/HANDOFFS.md" || fail "a handoff from an inside session did not reach the main workspace ($vis)"
+  ! grep -qs 'from a session' "$P/cabinet/sessions/$pr/feature-a/cabinet/HANDOFFS.md" || fail "the handoff went to the session's copy ($vis)"
+done
+
+# Backups (criteria 20 to 23).
+BK="$T/ps-bk"; bk() { CABINET_BACKUP_PASSPHRASE=t "$PW/bin/backup.sh" "$@"; }
+ses start kept --repo app >/dev/null; echo changed >> "$S/app/kept/f"; echo new > "$S/app/kept/untracked.txt"
+rm -rf "$S/app/busy" "$S/app/dirty-main"
+o="$(bk create "$BK" 2>&1)" || fail "backup with sessions: $o"
+grep -q 'the folder of session busy is gone' <<<"$o" && grep -q 'app: session kept' <<<"$o" || fail "backup create did not say which sessions it saved and which are gone: $o"
+o="$(bk verify "$BK" 2>&1)" && grep -q '^  app session kept: restores on session/kept' <<<"$o" || fail "verify did not check the session: $o"
+arc="$(ls "$BK")"; x="$T/ps-x"; mkdir -p "$x" "$T/ps-bk2"
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:t < "$BK/$arc" | tar -C "$x" -xzf -
+printf 'diff --git a/nothere b/nothere\n--- a/nothere\n+++ b/nothere\n@@ -1 +1 @@\n-a\n+b\n' > "$(echo "$x"/*/repos/app/sessions/kept)/worktree.patch"
+tar -C "$x" -czf - "$(ls "$x")" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass pass:t > "$T/ps-bk2/$arc"
+st=0; o="$(bk verify "$T/ps-bk2" 2>&1)" || st=$?; ((st)) && grep -q 'PROBLEM app session kept' <<<"$o" || fail "a damaged session patch verified: $o"
+bk verify "$BK" >/dev/null 2>&1 || fail "the owner's archive was changed by the damage test"
+R="$T/ps-restore"; o="$(bk restore "$BK/$arc" "$R" 2>&1)" || fail "restore: $o"
+[[ "$(git -C "$R/sessions/app/kept" branch --show-current)" == session/kept && "$(tail -1 "$R/sessions/app/kept/f")" == changed && "$(cat "$R/sessions/app/kept/untracked.txt")" == new ]] || fail "restore did not recreate the session: $o"
+git -C "$R" check-ignore -q sessions/app/kept || fail "the restored session is not ignored"
+echo mine >> "$R/sessions/app/kept/f"; b4="$(cksum "$R/sessions/app/kept/f" "$R/sessions/app/kept/untracked.txt" "$R/app/f")"
+o="$(bk restore "$BK/$arc" "$R" 2>&1)" || fail "restore over the existing repo: $o"
+[[ "$(cksum "$R/sessions/app/kept/f" "$R/sessions/app/kept/untracked.txt" "$R/app/f")" == "$b4" ]] && ls "$R"/recovered/*/app/sessions/kept/worktree.patch "$R"/recovered/*/app/sessions/kept/untracked.tar >/dev/null 2>&1 || fail "restore over an existing repo did not keep the session in recovered/: $o"
+
+# The git actions rule, word for word (criteria 26, 27 and 29).
+c="$(tr '\n' ' ' < "$KIT/core/CABINET.md")"
+for w in 'push, merge on a shared host (a pull request), deploy, publish, release' '**Never push, merge on GitHub, publish or release.**' \
+  '**Local git actions only, and only what can be undone.** Commit your own work locally.' 'compare `git status --short` with the files you changed: if any change is not yours, stop and tell the owner which files appear to be someone else'"'"'s.' \
+  '`git reset --hard`, a checkout or restore of files, `git clean`, `git stash drop`, `git commit -a`, `git add -A`, `git add .`'; do
+  grep -qF -- "$w" <<<"$c" || fail "core/CABINET.md lacks: $w"
+done
+# Rule 15's snapshot step, in core/rules/builders.md, which core/CABINET.md points every agent to.
+grep -qF '.cabinet/rules/builders.md` (rule 5)' <<<"$c" || fail "core/CABINET.md does not point to the snapshot step"
+for w in 'git stash create' 'git stash store -m "cabinet: before <command>" <commit>' 'when it prints nothing, there is no tracked change to save, so go on without a snapshot' 'git clean -n'; do
+  grep -qF -- "$w" "$KIT/core/rules/builders.md" || fail "core/rules/builders.md lacks: $w"
+done
+grep -qF 'never pushes, merges on GitHub, deploys or publishes; other git actions only as `CABINET.md` allows' "$KIT/core/rules/builders.md" && grep -qF 'no push, merge on GitHub, deploy, publish or spend' "$KIT/core/rules/seats.md" \
+  && grep -qF 'merge on GitHub' "$KIT/roles/chief-of-staff.md" && grep -qF 'Never push, merge on GitHub, publish or release.' "$KIT/AGENTS.md" \
+  && grep -qF 'Run a recoverable git action (amend, rebase, reset without `--hard`, stash, a local merge) only when the maintainer asks for it in your session, and say how to undo it.' "$KIT/AGENTS.md" \
+  && grep -qF 'Never sweep or drop changes you did not make: before `commit -a`, `add -A`, `add .`, `reset --hard`, a checkout or restore of files, or an amend, check that every uncommitted change is your own, and stop if it is not.' "$KIT/AGENTS.md" || fail "a Rule 17 or 18 wording is missing"
+g="$(tr '\n' ' ' < "$KIT/docs/guardrails.md")"
+grep -qF 'git rebase --no-verify' <<<"$g" && grep -qF 'Codex and Antigravity' <<<"$g" && grep -qF 'Claude Code, Grok, Qwen Code, opencode, Cursor CLI and Gemini CLI' <<<"$g" || fail "docs/guardrails.md does not say which tools refuse a rebase that skips its hook"
+SR="$T/ps-stash"; mkr "$SR"; echo changed >> "$SR/f"; b4="$(cksum "$SR/f")"
+sc="$(git -C "$SR" stash create)"; [[ -n "$sc" ]] && git -C "$SR" stash store -m "cabinet: before reset --hard" "$sc" || fail "stash create and store"
+[[ "$(cksum "$SR/f")" == "$b4" ]] && git -C "$SR" stash list | grep -q 'cabinet: before reset --hard' || fail "the snapshot changed the working tree or is not listed"
+git -C "$SR" reset -q --hard; git -C "$SR" stash apply -q; [[ "$(cksum "$SR/f")" == "$b4" ]] || fail "the snapshot did not bring the change back"
+git -C "$SR" reset -q --hard; git -C "$SR" stash clear; b4="$(cksum "$SR/f")"
+[[ -z "$(git -C "$SR" stash create)" && "$(cksum "$SR/f")" == "$b4" && -z "$(git -C "$SR" stash list)" ]] || fail "stash create with no tracked change"
+
+# Runs never rewrite (criteria 28 and 30).
+HK="$PH/.config/git/hooks"; boot() { "$PW/bin/bootstrap.sh" >/dev/null 2>&1 || true; }
+boot; cmp -s "$KIT/guardrails/pre-rebase" "$HK/pre-rebase" && cmp -s "$KIT/guardrails/prepare-commit-msg" "$HK/prepare-commit-msg" || fail "bootstrap did not place the kit's hooks"
+(cd "$PW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "guardrails.run-refusal" && r.level == "ok")' >/dev/null || fail "the doctor does not report the run refusal"
+mkdir -p "$T/ps-shim"
+for t in claude codex agy qwen grok opencode cursor-agent; do
+  printf '#!/bin/sh\ncd "$PS_REPO" || exit 1\nsh -c "$PS_DO"; echo $? > "$PS_REPO/../ps-status"\n' > "$T/ps-shim/$t"; chmod +x "$T/ps-shim/$t"
+done
+RR="$T/ps-run"; mkr "$RR"; git -C "$RR" checkout -q -b side; echo s > "$RR/s"; git -C "$RR" add s; git -C "$RR" commit -qm side; git -C "$RR" checkout -q main; echo m >> "$RR/f"; git -C "$RR" commit -qam "main moves"
+prun() {  # prun <runner> <command>: the command in a fake run, through run_agent; prints its exit status
+  rm -f "$T/ps-status"
+  (cd "$PW" && PATH="$T/ps-shim:$PATH" PS_REPO="$RR" PS_DO="$2" bash -c 'source bin/lib.sh; CABINET_RUNNER="$1"; AGENT=backend PROMPT=work run_agent' _ "$1") >/dev/null 2>&1 || true
+  cat "$T/ps-status" 2>/dev/null || echo "did not run"
+}
+for r in claude codex antigravity qwen grok opencode cursor; do
+  h="$(git -C "$RR" rev-parse HEAD)" sh="$(git -C "$RR" rev-parse side)"
+  for c in 'git commit -q --amend --no-edit' 'git commit -q --amend --no-edit --no-verify' 'git commit -q --amend -m other' 'git commit -q --amend --no-edit -n'; do
+    s="$(prun "$r" "$c")"; [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse HEAD)" == "$h" ]] || fail "$r: '$c' in a run was not refused ($s), or changed the commit"
+  done
+  s="$(prun "$r" 'git checkout -q side && git rebase -q main; s=$?; git checkout -q main; exit $s')"
+  [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse side)" == "$sh" && "$(git -C "$RR" branch --show-current)" == main ]] || fail "$r: a rebase in a run was not refused ($s), or moved the branch"
+done
+[[ "$(prun codex 'echo y >> f && git commit -qam new')" == 0 ]] || fail "a new commit in a run was refused"
+h="$(git -C "$RR" rev-parse HEAD)"
+# Each amend with a change of its own: an amend that changes nothing, in the same second, makes the same commit.
+echo a1 >> "$RR/f"; git -C "$RR" add f; git -C "$RR" commit -q --amend --no-edit || fail "an amend outside a run was refused"
+h2="$(git -C "$RR" rev-parse HEAD)"; echo a2 >> "$RR/f"; git -C "$RR" add f
+git -C "$RR" commit -q --amend --no-edit --no-verify && [[ "$(git -C "$RR" rev-parse HEAD)" != "$h" && "$(git -C "$RR" rev-parse HEAD)" != "$h2" ]] || fail "an amend outside a run (one that skips the hooks) was refused"
+git -C "$RR" checkout -q side && git -C "$RR" rebase -q main && git -C "$RR" checkout -q main || fail "a rebase outside a run was refused"
+# The owner's own pre-rebase is left as it is, and the doctor says why runs are not refused.
+printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/pre-rebase"; cp "$HK/pre-rebase" "$T/ps-mine"; boot
+cmp -s "$T/ps-mine" "$HK/pre-rebase" || fail "bootstrap replaced the owner's own pre-rebase"
+(cd "$PW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "guardrails.run-refusal" && r.level == "note" && r.message.includes("pre-rebase"))' >/dev/null || fail "the doctor did not say the run refusal is not installed"
+cp "$KIT/guardrails/hook-passthrough" "$HK/pre-rebase"; boot; cmp -s "$KIT/guardrails/pre-rebase" "$HK/pre-rebase" || fail "bootstrap did not replace the pass-through stub with the kit's pre-rebase"
+{ sed -n 1p "$KIT/guardrails/pre-rebase"; echo "# cabinet pre-rebase hook v0"; sed 1,2d "$KIT/guardrails/pre-rebase"; } > "$HK/pre-rebase"; boot
+cmp -s "$KIT/guardrails/pre-rebase" "$HK/pre-rebase" || fail "bootstrap did not replace an earlier pre-rebase hook"
+# With the kit's hook, a repo's own pre-rebase runs with the same arguments, and its exit 1 stops the rebase.
+printf '#!/bin/sh\necho "$@" >> "%s"\n[ -e "%s" ] && exit 1\nexit 0\n' "$T/ps-own-args" "$T/ps-own-fail" > "$RR/.git/hooks/pre-rebase"; chmod +x "$RR/.git/hooks/pre-rebase"
+echo m2 >> "$RR/f"; git -C "$RR" commit -qam "main again"
+git -C "$RR" rebase -q main side >/dev/null 2>&1 && grep -qx 'main side' "$T/ps-own-args" || fail "the repo's own pre-rebase did not run with git's arguments: $(cat "$T/ps-own-args" 2>/dev/null)"
+git -C "$RR" checkout -q main; echo m3 >> "$RR/f"; git -C "$RR" commit -qam "main once more"; touch "$T/ps-own-fail"; sh="$(git -C "$RR" rev-parse side)"
+git -C "$RR" rebase -q main side >/dev/null 2>&1 && fail "the repo's own pre-rebase failing did not stop the rebase"
+[[ "$(git -C "$RR" rev-parse side)" == "$sh" ]] || fail "the branch moved though the repo's pre-rebase failed"
+git -C "$RR" checkout -q main 2>/dev/null || true
+
+# Docs (criterion 31).
+for f in docs/commands.md docs/concepts.md docs/guardrails.md docs/backups.md README.md CHANGELOG.md; do
+  grep -qi 'session' "$KIT/$f" || fail "$f does not describe sessions"
+  grep -qiE '(session|role)s? (merges|pushes)|merges on its own|pushes on its own' "$KIT/$f" && fail "$f says a session or role merges or pushes"
+done
+grep -q 'sessions.gone' "$KIT/docs/troubleshooting.md" && grep -q 'guardrails.run-refusal' "$KIT/docs/troubleshooting.md" || fail "a new doctor check is not in troubleshooting"
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 

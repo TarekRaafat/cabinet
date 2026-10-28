@@ -85,6 +85,26 @@ set_head() {  # set_head <repo> <bundle> <branch-ref or empty>
   else git -C "$1" fetch -q "$2" HEAD && git -C "$1" update-ref --no-deref HEAD FETCH_HEAD; fi
 }
 
+# Sessions (bin/session.sh) the archive holds for a repo. Restored as worktrees at sessions/<repo>/<name>/ on
+# their branch, with their changes, into a repo restored fresh where that folder is missing; else their
+# patch and files go to recovered/, and nothing that exists is changed.
+restore_sessions() {  # restore_sessions <name> <archived repo> <the repo when restored fresh, else empty>
+  local name=$1 o=$2 repo=$3 so s sb w
+  for so in "$o"/sessions/*/; do
+    [[ -d "$so" ]] || continue
+    s="$(basename "$so")" sb="$(cat "$so/branch" 2>/dev/null || true)" w="$target/sessions/$name/$(basename "$so")"
+    if [[ -n "$repo" && "$repo" != "$kept"/* && "$s" =~ ^[a-z0-9][a-z0-9-]{0,39}$ && "$sb" == "session/$s" && ! -e "$w" ]] \
+      && mkdir -p "$target/sessions/$name" && { [[ -e "$target/sessions/.gitignore" ]] || printf '*\n' > "$target/sessions/.gitignore"; } \
+      && git -C "$repo" worktree add -q "$w" "$sb" 2>/dev/null; then
+      { [[ ! -s "$so/worktree.patch" ]] || git -C "$w" apply --binary "$so/worktree.patch"; } && { [[ ! -f "$so/untracked.tar" ]] || tar -C "$w" -xf "$so/untracked.tar"; } \
+        && echo "    session $s restored at $w, on $sb" || echo "    session $s: restored at $w on $sb, but its uncommitted changes did not apply (they are in the archive's repos/$name/sessions/$s/)"
+    else
+      mkdir -p "$kept/$name/sessions/$s"; cp -p "$so"/* "$kept/$name/sessions/$s/" 2>/dev/null || true
+      echo "    session $s: its uncommitted changes and untracked files are in $kept/$name/sessions/$s"
+    fi
+  done
+}
+
 restore_one() {
   local name=$1 o=$2 repo=$3 inplace=$4 head f n
   if [[ ! -f "$o/repo.bundle" ]]; then
@@ -96,6 +116,7 @@ restore_one() {
     git -C "$repo" fetch -q "$o/repo.bundle" '+refs/heads/*:refs/remotes/backup/*'
     echo "  $name exists: archive branches fetched to refs/remotes/backup/*; compare and merge by hand"
     mkdir -p "$kept/$name"; cp -p "$o"/*.patch "$o"/untracked.tar "$kept/$name/" 2>/dev/null || true
+    restore_sessions "$name" "$o" ""
     return 0
   fi
   head="$(branch_of "$o")"
@@ -134,6 +155,7 @@ restore_one() {
   [[ -f "$o/untracked.tar" ]] && extract_keeping "$o/untracked.tar" "$repo" "$kept/$name"
   echo "  $name: restored with its uncommitted work"
   if ls "$o"/stash-*.patch >/dev/null 2>&1; then mkdir -p "$kept/$name"; cp -p "$o"/stash-*.patch "$kept/$name/"; echo "    stashes kept as patches in $kept/$name"; fi
+  restore_sessions "$name" "$o" "$repo"
   if [[ -f "$o/env.tar" ]]; then
     while IFS= read -r f; do
       if [[ -e "$repo/$f" ]]; then echo "    $f exists, left as is"; else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored $f"; fi
@@ -254,6 +276,16 @@ if ((verify)); then
       else
         say "$name" ok "restores ($n commits); its history changed since the backup (a rebase, a reset or another branch)"
       fi
+      # Each session it holds: its worktree on its branch, with its uncommitted changes and untracked files.
+      for so in "$o"/sessions/*/; do
+        [[ -d "$so" ]] || continue
+        s="$(basename "$so")" sb="$(cat "$so/branch" 2>/dev/null || true)" sw="$tmp/check-sessions/$sub/$(basename "$so")"
+        if [[ "$s" =~ ^[a-z0-9][a-z0-9-]{0,39}$ && "$sb" == "session/$s" ]] && git -C "$r" worktree add -q "$sw" "$sb" 2>/dev/null \
+          && { [[ ! -s "$so/worktree.patch" ]] || git -C "$sw" apply --binary "$so/worktree.patch" 2>/dev/null; } \
+          && { [[ ! -f "$so/untracked.tar" ]] || tar -C "$sw" -xf "$so/untracked.tar" 2>/dev/null; }; then
+          say "$name session $s" ok "restores on $sb with its uncommitted changes"
+        else problem "$name session $s" "its uncommitted changes do not restore"; fi
+      done
     done < <(targets)
   fi
   # The doctor reads the date of the last good verify from here, never from the backup folder.
@@ -303,8 +335,25 @@ save_repo() {
 # Fresh snapshot first, so local-only files are current.
 "$WS/bin/repo.sh" snapshot >/dev/null
 
+# Each session of a repo (bin/session.sh): its uncommitted changes and untracked files, as the main
+# folder's, in repos/<name>/sessions/<session>/. Its commits are in the repo's bundle, on session/<session>.
+save_sessions() {
+  local name=$1 repo=$2 o="$out/$3/sessions" s f b
+  while IFS=$'\t' read -r s f b; do
+    if [[ ! -d "$f" ]]; then echo "  $name: the folder of session $s is gone ($f), so it is not in the backup (git -C $(printf '%q' "$repo") worktree prune)"; continue; fi
+    mkdir -p "$o/$s"
+    printf '%s\n' "$b" > "$o/$s/branch"
+    git -C "$f" diff HEAD --binary > "$o/$s/worktree.patch"
+    git -C "$f" ls-files --others --exclude-standard -z | (cd "$f" && tar --null -T - -cf "$o/$s/untracked.tar" 2>/dev/null) || true
+    echo "  $name: session $s"
+  done < <(sessions_of "$name" "$(abspath "$repo")")
+}
+
 echo "== Repos"
-while IFS=$'\t' read -r name dir sub; do save_repo "$name" "$dir" "$sub"; done < <(targets)
+while IFS=$'\t' read -r name dir sub; do
+  save_repo "$name" "$dir" "$sub"
+  [[ "$sub" != repos/* || ! -e "$dir/.git" ]] || save_sessions "$name" "$dir" "$sub"
+done < <(targets)
 
 echo "== Claude Code"
 mem="$HOME/.claude/projects/$CLAUDE_SLUG/memory"

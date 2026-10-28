@@ -251,6 +251,19 @@ secrets_hook() {
 }
 repo_dir() { case "$1" in /*) echo "$1" ;; "~/"*) echo "$HOME/${1#"~/"}" ;; *) echo "$WS/$1" ;; esac; }
 
+# Sessions (bin/session.sh): each is a git worktree of a repo at $SESSIONS/<repo>/<name>/, on the branch
+# session/<name>. sessions_of <repo name> <repo folder>: "<name>\t<folder>\t<branch>" for each, one whose
+# folder is gone included (git keeps it until a prune), found the way git lists worktrees.
+SESSIONS="$WS/sessions"
+sessions_of() {
+  [[ -e "$2/.git" ]] || return 0
+  git -C "$2" worktree list --porcelain 2>/dev/null | awk -v pre="$SESSIONS/$1/" '
+    function flush() { n = substr(p, length(pre) + 1); if (index(p, pre) == 1 && n != "" && n !~ /\//) print n "\t" p "\t" b; p = ""; b = "" }
+    /^worktree / { flush(); p = substr($0, 10); next }
+    /^branch refs\/heads\// { b = substr($0, 19) }
+    END { flush() }'
+}
+
 # The absolute, symlink-free form of a path that may not exist yet.
 abspath() {
   local p="$1" tail=""
@@ -343,7 +356,10 @@ readiness() {
           exit }' "$n")
     done
   fi
-  WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+  # Each repo's main folder, where the branch the owner pushes is checked out (sessions: lib.js readiness).
+  local rdirs="" name url files link path
+  while IFS=$'\t' read -r name url files link path; do rdirs+="$(repo_dir "$path")"$'\n'; done < <(repos 2>/dev/null)
+  REPODIRS="$rdirs" WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
 }
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
 # a repo in the team table: whoever it is, work sent to it is built (.cabinet/rules/ready-to-build.md).

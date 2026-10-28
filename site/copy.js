@@ -84,7 +84,7 @@ module.exports = {
         ["Independent review", "qa and security check the work. The role that built it never verifies it, and either one can hold it back."],
         ["Your morning brief", "Every decision only you can make waits in one sign-off queue: a plain question, the options, the experts' recommendations, and whether it can be undone."],
         ["One line from you", "You answer in one message. The team puts each answer where it belongs and carries on."],
-        ["Only you push", "No agent can push, merge, release or publish. The push gate asks you, at your own terminal."],
+        ["Only you push", "No agent can push, merge on GitHub, release or publish. The push gate asks you, at your own terminal."],
       ],
       verdicts: [
         "- Verdict: qa PASS 2026-10-22 8a71d04 specs/qa/2026-10-22-checkout.md",
@@ -207,7 +207,7 @@ module.exports = {
         "Any supported agent tool, and you can change tools later.",
         "For work that is not code too: design, writing, marketing, music, finance.",
       ] },
-      { q: "Can an agent push, merge, release or publish?", a: ["No supported agent tool's rules allow it, and a push gate asks you at your own terminal before any push. Each tool's rule format differs; the guardrails page lists what each one blocks and its known limits."] },
+      { q: "Can an agent push, merge on GitHub, release or publish?", a: ["No supported agent tool's rules allow it, and a push gate asks you at your own terminal before any push. Each tool's rule format differs; the guardrails page lists what each one blocks and its known limits."] },
       { q: "Which agent tools does Cabinet support?", tools: true, other: "any other tool that reads `AGENTS.md`" },
       { q: "Does Cabinet change my machine?", a: ["Only when you run `cabinet bootstrap`, which shows a dry run first."], setup: true },
       { q: "Where does my work live?", a: ["In a workspace folder on your machine, its own git repo. Cabinet runs no server and has no account to sign up for."] },

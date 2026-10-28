@@ -405,6 +405,9 @@ term_text < "$WS/HANDOFFS.md" | awk '
   [[ "$to" == owner || "$to" == founder ]] && pto="$S_Y$to$S_Z${pto:${#to}}"
   printf '%s%3sd%s  %-12s  %s%-14s%s  %s  %s\n' "$S_D" "$age" "$S_Z" "$st" "$S_D" "$id" "$S_Z" "$pto" "$title"
 done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || { ((ready)) && echo "No handoffs ready to push." || echo "No open handoffs."; }; }
+# Passed work held only because its commits are on a session branch: said, with the command that shows the merge.
+((ready == 0)) || json -r --each 'Object.entries($).filter(([i, e]) => e.session_branch && !e.archived && /^(open|acknowledged)$/.test(e.status_now))
+  .map(([i, e]) => i + ": passed, but its commits are only on " + e.session_branch + ", not on the branch you push: cabinet session end " + e.session_branch.replace(/^session\//, "") + " shows how to merge it")' <<<"$rd"
 }
 
 h_archive() {

@@ -48,7 +48,7 @@ Pick the place by what it is:
 
 **Or ask an agent:** "Add this as a guide every agent follows: <paste or file>". It saves the file, adds the row and commits, as `guides/README.md` says.
 
-**What wins:** a repo's `AGENTS.md` over the workspace's `AGENTS.md` and its guides, over the kit's `CABINET.md`. No rule or guide can loosen "Never push, merge, publish or release" or "The builder never verifies"; the guardrails enforce the first anyway. Never edit `CABINET.md`: it is the kit's, and `cabinet update` stops on an edited kit file.
+**What wins:** a repo's `AGENTS.md` over the workspace's `AGENTS.md` and its guides, over the kit's `CABINET.md`. No rule or guide can loosen "Never push, merge on GitHub, publish or release" or "The builder never verifies"; the guardrails enforce the first anyway. Never edit `CABINET.md`: it is the kit's, and `cabinet update` stops on an edited kit file.
 
 **Folders:** the workspace's git tracks only the folders its `.gitignore` lists (`guides/`, `notes/`, `specs/`, `roles/` and the rest). A new top-level folder of your own is not committed until you add a `!/<folder>/` line to `.gitignore`; prefer `guides/` for documents agents follow.
 

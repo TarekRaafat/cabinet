@@ -1,0 +1,16 @@
+#!/bin/sh
+# cabinet pre-rebase hook v1
+# Unattended runs never rewrite: in a Cabinet run (CABINET_AGENT set; run_agent in bin/lib.sh), git rebase
+# is refused, since no owner is there to ask for one. Outside a run it changes nothing. First, as the
+# pass-through stub does, the repo's own pre-rebase runs with the same arguments, and its failure still
+# stops the rebase. git rebase --no-verify skips this hook: the agent tools' deny rules refuse that option
+# where their format allows (docs/guardrails.md).
+# Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
+# replace an earlier one. An edited copy is left as it is, and the doctor says runs are not refused.
+own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/pre-rebase"
+if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
+if [ -n "${CABINET_AGENT:-}" ]; then
+  echo "cabinet: no rebase in a Cabinet run: no owner is there to ask for one. Leave the branch as it is and say what it needs." >&2
+  exit 1
+fi
+exit 0

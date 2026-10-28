@@ -8,7 +8,7 @@ Every command Cabinet has, its options and defaults, what it changes, and its ex
 - Start: [cabinet new](#cabinet-new), [cabinet init](#cabinet-init)
 - Daily: [cabinet next](#cabinet-next), [cabinet brief](#cabinet-brief), [cabinet digest](#cabinet-digest), [cabinet list](#cabinet-list), [cabinet doctor](#cabinet-doctor)
 - Team: [cabinet role](#cabinet-role), [cabinet handoff](#cabinet-handoff)
-- Work: [cabinet repo](#cabinet-repo), [cabinet job](#cabinet-job)
+- Work: [cabinet repo](#cabinet-repo), [cabinet session](#cabinet-session), [cabinet job](#cabinet-job)
 - Safety: [cabinet secret](#cabinet-secret), [cabinet backup](#cabinet-backup)
 - Setup: [cabinet bootstrap](#cabinet-bootstrap), [cabinet config](#cabinet-config), [cabinet move](#cabinet-move), [cabinet remove](#cabinet-remove)
 - Kit: [cabinet update](#cabinet-update), [cabinet status](#cabinet-status), [cabinet outdated](#cabinet-outdated), [cabinet changelog](#cabinet-changelog), [cabinet completion](#cabinet-completion), [cabinet version](#cabinet-version)
@@ -24,8 +24,8 @@ Every command Cabinet has, its options and defaults, what it changes, and its ex
 Once you know one command, you can guess the next:
 
 - **One word** acts on the workspace as a whole, or on this machine: `cabinet doctor`, `cabinet update`.
-- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `spec`, `manual`, `repo`, `job`, `secret` and `backup`, always singular.
-- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `spec record`, `handoff archive`, `repo snapshot`, `job run`, `backup create`, `backup verify`, `backup restore`.
+- **A noun, then a verb** acts on something the workspace holds: `cabinet role add`, `cabinet repo list`, `cabinet handoff archive`. The nouns are `role`, `handoff`, `spec`, `manual`, `repo`, `session`, `job`, `secret` and `backup`, always singular.
+- **The verbs** mean the same on every noun: `add` (put one in, or turn on one the kit has), `remove` (take one out), `list` (show them), `check` (look for problems), and a few a noun needs: `role draft`, `role build`, `handoff attach`, `handoff record`, `spec record`, `handoff archive`, `repo snapshot`, `session start`, `session end`, `job run`, `backup create`, `backup verify`, `backup restore`.
 - **The same options everywhere:** `--json` on every command that reports, `--dry-run` on every command that changes the setup or deletes anything, `--yes` (`-y`) on every command that asks.
 - **Any workspace, from anywhere:** every command finds the workspace from the folder you are in, upward, so it works anywhere inside the workspace or the project around a `cabinet/` workspace. `cabinet -C <dir> <command>` runs it as if started in `<dir>`, as git does.
 - **Exit codes:** 0 done (or nothing found), 1 failed or found a problem, 2 wrong usage (an unknown command or option, a missing value). An unknown command gets one short answer, with the closest command when one is near, never the whole help.
@@ -282,6 +282,26 @@ cabinet repo snapshot
 
 Exit 0; 1 for a repo that is not in `repos.tsv`, or a URL setup refuses; 2 for wrong usage.
 
+## cabinet session
+
+```sh
+cabinet session start [name] [--repo <repo>]
+cabinet session list [--json]
+cabinet session end <name>
+```
+
+A session is a git worktree of a repo: a folder of its own, on a branch of its own, so several sessions (yours, a teammate's, a role's) work in the same repo at once without seeing or sweeping each other's uncommitted changes ([sessions](concepts.md#sessions)). Sessions need git 2.17 or later.
+
+**`start`** creates the folder `sessions/<repo>/<name>/` in the workspace (`cabinet/sessions/...` inside a project) on a new branch `session/<name>`, from the repo's current branch head, and prints the folder to open your agent tool in. A name is 1 to 40 lower-case letters, digits and hyphens, starting with a letter or digit; with none, it is today's date and a number (`2026-10-28-1`). `--repo` names a repo in `repos.tsv`, and may be left out when the workspace has one. The main folder's uncommitted changes stay there: `start` says so when it has some. When the repo's `AGENTS.md` has a `## Session setup` section (installing dependencies, for example), `start` prints it: a new folder needs the setup the repo needs per folder. `sessions/` is ignored by the workspace's git. It refuses a name a session already has, a branch `session/<name>` that exists with no session (with the commands to delete or reuse it), and a repo that is not a git repo.
+
+**`list`** shows each session: its repo, branch, folder, commits ahead of the repo's current branch, uncommitted files, whether it is merged into that branch, and the date it started. A session whose folder was deleted by hand shows as gone, with `git -C <repo> worktree prune`, which you run; the doctor notes it too (`sessions.gone`).
+
+**`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when it has no uncommitted or untracked changes and no ignored `.env` file (git would delete it with the folder), and keeps the branch.
+
+Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch.
+
+Exit 0; 1 for a name already used, an existing branch, a repo that is not a git repo or has no commit, no such session, or a session with uncommitted changes; 2 for a name that is not a session name, a missing `--repo` with several repos, or wrong usage.
+
 ## cabinet job
 
 ```sh
@@ -470,6 +490,7 @@ Every workspace has its own scripts in `bin/` (`cabinet/bin/` inside a project),
 | `cabinet manual build` | `bin/manual.sh build` |
 | `cabinet role list`, `draft`, `build` | `bin/role.sh list`, `draft <role>`, `build` (`role add` and `remove` need the `cabinet` command: they change settings) |
 | `cabinet repo list`, `remove`, `snapshot` | `bin/repo.sh list`, `remove <name>`, `snapshot` (`repo add` needs the `cabinet` command) |
+| `cabinet session start`, `list`, `end` | `bin/session.sh start`, `list`, `end` (inside a project, use the main folder's `cabinet/bin/`, never a session's copy) |
 | `cabinet secret check` | `bin/secret.sh check` |
 | `cabinet backup create`, `verify`, `restore` | `bin/backup.sh create`, `verify`, `restore` |
 
@@ -484,13 +505,14 @@ In a terminal, text output is styled for people, in the terminal's own colors: h
 | `cabinet help --json`, `cabinet help <command> --json` | `{name, version, docs, commands: [{name, group, usage, summary, options: [{name, value, text}]}]}` |
 | `cabinet next --json` | `{workspace, project, steps: [{id, text, command}], optional: [...]}`. Step IDs: `deps`, `tbd`, `commit`, `install`, `update`, `bootstrap`, `credit-roles`, `handoffs`, `brief`, `doctor`; `command` is empty when the step is not a command. Outside a workspace, `workspace` is `null` and the one step is `start`. |
 | `cabinet doctor --json` | `{workspace, problems, notes, can_fix, results: [{level, section, id, message}]}`. `level` is `ok`, `fix` or `note`; `id` names the check (every ID is in [troubleshooting](troubleshooting.md)) and does not change when its message is reworded. Exit 1 when `problems` is above 0. |
-| `cabinet handoff list --json` | The open and acknowledged entries, oldest first: `[{id, status, status_line, date, age_days, from, to, title, verdicts, blocks, needs, missing, blocking, stale, ready, unread_verdicts}]`. `date` and `age_days` are `null` when the status line has no date. `verdicts` is `[{role, verdict, date, commits, note}]` (`commits` empty for `none`); `blocks` is `{<role>: <count>}`, how many BLOCK or CHANGES verdicts each reviewer has recorded on the entry, counted from the workspace's git history of `HANDOFFS.md` (a later Verdict line replaces an earlier one, the count keeps it), `{}` when none; `needs`, `missing`, `blocking` and `stale` are role names (where a sub-team role covers the sender's work, it is named in place of its lead, and both during its trial); `ready` is `true`, `false`, or `null` when the entry needs no review; `unread_verdicts` lists lines with PASS, BLOCK or CHANGES outside a Verdict line. `areas` are the critical areas it touches, by its commits or its spec; `depends_on` is the entry's "Depends on" line, `small` and `spec` say how it was filed, and `cost_usd` is what the agent runs recorded under its ID cost (`handoff run`), or `null`. `--ready` keeps only the entries with `ready` true. |
+| `cabinet handoff list --json` | The open and acknowledged entries, oldest first: `[{id, status, status_line, date, age_days, from, to, title, verdicts, blocks, needs, missing, blocking, stale, ready, unread_verdicts}]`. `date` and `age_days` are `null` when the status line has no date. `verdicts` is `[{role, verdict, date, commits, note}]` (`commits` empty for `none`); `blocks` is `{<role>: <count>}`, how many BLOCK or CHANGES verdicts each reviewer has recorded on the entry, counted from the workspace's git history of `HANDOFFS.md` (a later Verdict line replaces an earlier one, the count keeps it), `{}` when none; `needs`, `missing`, `blocking` and `stale` are role names (where a sub-team role covers the sender's work, it is named in place of its lead, and both during its trial); `ready` is `true`, `false`, or `null` when the entry needs no review; `unread_verdicts` lists lines with PASS, BLOCK or CHANGES outside a Verdict line. `areas` are the critical areas it touches, by its commits or its spec; `depends_on` is the entry's "Depends on" line, `session_branch` the session branch (`session/<name>`) its commits are only on, which holds it from `ready`, else `null`; `small` and `spec` say how it was filed, and `cost_usd` is what the agent runs recorded under its ID cost (`handoff run`), or `null`. `--ready` keeps only the entries with `ready` true. |
 | `cabinet handoff list <name> --json` | Every entry addressed to that repo or role and not closed, with its full `text`. `owner` and `founder` are the same person. |
 | `cabinet status --json` | `{workspace, version, kit_version, kit, edited, latest}` |
 | `cabinet digest --json` | `[{slug, project, path, exists, brief_written, brief_stale, sign_off_queue, queue_heading_found, actions_for_owner, waiting_on_owner, spend_this_week_usd, budget_usd}]`. The two parts are the Markdown under their headings, or `null`; `queue_heading_found` is `null` with no brief; `spend_this_week_usd` is `null` when the runner does not report cost, `budget_usd` when no budget is set. |
 | `cabinet push-check --json` | `{repos: [{name, path, branch, upstream, commits: [{hash, subject, handoffs}], files, insertions, deletions, ready, why}]}`, the workspace first (`name` `workspace`) when it has its own git, then the repos in `repos.tsv`. `hash` is the short hash, newest first; `handoffs` the IDs whose Verdict lines name the commit, `[]` for none. `branch` is `null` on a detached HEAD, `upstream` `null` without one; `why` is the first reason it is not ready, `null` when `ready` is `true`. |
 | `cabinet list --json` | `[{slug, project, path, exists, version, update_available, waiting_on_owner, doctor_problems, brief_written}]`. `brief_written` is ISO 8601 UTC, or `null`; the counts are `null` for a workspace whose folder is gone. |
 | `cabinet role list --json` | `[{name, kind, on, drafted, reports_to, covers, trial_until, title, display_name, function}]`; `title` and `display_name` are `null` when not set; `reports_to` and `trial_until` are `null`, and `covers` empty, for a role in no sub-team. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
+| `cabinet session list --json` | `[{repo, name, branch, folder, ahead, uncommitted, merged, started, gone, merge, prune}]`. `started` is the date (ISO 8601), `null` when git has no record of it (after a restore); `uncommitted` is `null` and `gone` `true` for a session whose folder is gone; `merge` is the command that brings it into the repo's current branch; `prune` is the command that clears a gone one, else `null`. |
 | `cabinet repo list --json` | `[{name, path, present, owner, url}]`. `owner` is `null` while the team table says `TBD`; `url` is `null` for a repo with no clone URL. |
 | `cabinet job list --json` | `[{name, role, when, timeout_minutes, cost_this_week_usd}]`. `when` is the schedule as people read it, or `by hand only`. `cost_this_week_usd` is `null` when the runner's runs are not counted in dollars (a token-only runner with no price, or `custom`). |
 | `cabinet secret check --json` | `[{file, line, kind}]`, never the value. Exit 1 when the list is not empty. |

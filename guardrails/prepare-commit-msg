@@ -1,18 +1,28 @@
 #!/bin/sh
-# cabinet credit hook v2
+# cabinet credit hook v3
 # Credit roles (cabinet config --credit-roles on): a commit made in a Cabinet run ends with one line,
 #   Co-authored-by: Cabinet <role> <email>
 # naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
 # (run_agent in bin/lib.sh); a commit made anywhere else has none of them, so it gets nothing. Each value
-# is checked here and none reaches a shell. Only new commits: an amend with -m or -F gives git's source
-# "message", as a new commit does, so it counts as a new message from the role and is credited; never
-# any other amend, merge or squash, nor a commit a rebase or cherry-pick replays. First,
-# as the pass-through stub does, the repo's own prepare-commit-msg runs with the same arguments, and its
-# failure still stops the commit.
+# is checked here and none reaches a shell. Only new commits: never an amend, merge or squash, nor a
+# commit a rebase or cherry-pick replays. First, as the pass-through stub does, the repo's own
+# prepare-commit-msg runs with the same arguments, and its failure still stops the commit.
+# Unattended runs never rewrite: in a Cabinet run (CABINET_AGENT set), every amend is refused, since no
+# owner is there to ask for one. git gives an amend the source "commit" (as it gives -c and -C <commit>,
+# refused too), but "message" with -m or -F, as it gives a new commit: so the arguments of the git command
+# that runs this hook (its parent process) are read too, for --amend or an abbreviation of it.
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
 # replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
 if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
+
+# The git command's arguments, joined by spaces: from /proc on Linux, from ps elsewhere.
+git_args() { if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' ' ' < "/proc/$PPID/cmdline"; else ps -o args= -p "$PPID" 2>/dev/null; fi; }
+amend() { [ "${2:-}" = commit ] && return 0; case " $(git_args) " in *" --am"*) return 0 ;; esac; return 1; }
+if [ -n "${CABINET_AGENT:-}" ] && amend "$@"; then
+  echo "cabinet: no amend in a Cabinet run: no owner is there to ask for one. Commit the fix as a new commit." >&2
+  exit 1
+fi
 
 [ "${CABINET_CREDIT:-}" = on ] || exit 0
 case "${2:-}" in ""|message|template) ;; *) exit 0 ;; esac
