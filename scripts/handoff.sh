@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--evidence <file or URL>]... "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--way-back "..."] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
@@ -9,17 +9,21 @@
 #       --spec names the spec it builds, on a "- Spec:" line, and refuses unless bin/spec.sh check
 #       finds the spec ready or building with nothing missing (.cabinet/rules/ready-to-build.md). --small
 #       marks it a small task ("- Size: small"). Work for a repo, or for a role that builds one, needs
-#       one of the two.
+#       one of the two. --way-back says how to undo the change once pushed, released or published
+#       (or why there is none), on a "- Way back:" line; one line, never empty.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
-#   bin/handoff.sh attach <ID> <file or URL>... --from <name>
+#   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."] --from <name>
 #       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
 #       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.
+#       --way-back adds the entry's "- Way back:" line, or replaces it, before its first verdict.
 #   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 #       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
 #       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
 #       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
-#       span repos or change a path AGENTS.md guards (small_problems in lib.sh). A PASS from a
+#       span repos or change a path AGENTS.md guards (small_problems in lib.sh), and a PASS on commits
+#       that change a path under "Hard to undo" in AGENTS.md while the entry has no "- Way back:"
+#       line (hard_hit in lib.sh). A PASS from a
 #       reviewer a critical area requires counts only when the area's check (a command in tools/)
 #       passes at those commits; its output is kept as evidence on the entry. --commits none is for
 #       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
@@ -57,6 +61,13 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 lc() { printf %s "$1" | tr '[:upper:]' '[:lower:]'; }
+# way_back <text>: the text of a "- Way back:" line, or exit 2: never empty, never more than one line.
+way_back() {
+  [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]] || { echo "--way-back is one line: no line breaks. $usage" >&2; return 2; }
+  local t; t="$(printf '%s' "$1" | tr '\t' ' ' | sed 's/  */ /g; s/^ //; s/ $//')"
+  [[ -n "$t" ]] || { echo "--way-back needs how to undo the change, or why there is no way back. $usage" >&2; return 2; }
+  printf '%s' "$t"
+}
 # ev_arg <value>: a link as it is, or a file as an absolute path. Read before the script moves to
 # the workspace: a path is from the caller's folder, else from the workspace.
 ev_arg() {
@@ -113,8 +124,8 @@ entry() {
 }
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file> | --small] [--evidence <file or URL>]... \"<title>\""
-from="" to="" changed="" needed="" depends="none" title="" spec="" small=""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file> | --small] [--way-back \"...\"] [--evidence <file or URL>]... \"<title>\""
+from="" to="" changed="" needed="" depends="none" title="" spec="" small="" back=""
 local -a ev
 ev=()
 while (($#)); do
@@ -124,6 +135,10 @@ while (($#)); do
       ev+=("$(ev_arg "$2")") || exit 2
       shift 2 ;;
     --small) small=1; shift ;;
+    --way-back)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      back="$(way_back "$2")" || exit 2
+      shift 2 ;;
     --spec)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       spec="$(ws_md --spec "$2")" || exit 1
@@ -181,7 +196,8 @@ entry="### $id: $title
 - Needed: $needed
 - Depends on: $depends${spec:+
 - Spec: $spec}${small:+
-- Size: small}${evline:+
+- Size: small}${back:+
+- Way back: $back}${evline:+
 - Evidence: $evline}"
 ENTRY="$entry" awk '
   function put() { if (!done) { sub(/\n+$/, "", buf); printf "%s\n\n%s\n", buf, ENVIRON["ENTRY"]; buf = ""; done = 1 } }
@@ -198,26 +214,30 @@ save "$id filed for $to" "handoffs: $id $title" "${paths[@]}"
 }
 
 h_attach() {
-usage="usage: bin/handoff.sh attach <ID> <file or URL>... --from <name>"
-local id="" from="" evline="" e
+usage="usage: bin/handoff.sh attach <ID> [<file or URL>...] [--way-back \"...\"] --from <name>"
+local id="" from="" evline="" e back=""
 local -a ev
 ev=()
 while (($#)); do
   case "$1" in
     --from) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; from="$2"; shift 2 ;;
+    --way-back) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; back="$(way_back "$2")" || exit 2; shift 2 ;;
     -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
     *) if [[ -z "$id" ]]; then id="$1"; else ev+=("$(ev_arg "$1")") || exit 2; fi; shift ;;
   esac
 done
-[[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ && -n "$from" && ${#ev[@]} -gt 0 ]] || { echo "an entry ID, --from and at least one file or URL. $usage" >&2; exit 2; }
+[[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ && -n "$from" && ( ${#ev[@]} -gt 0 || -n "$back" ) ]] || { echo "an entry ID, --from and at least one file or URL, or --way-back. $usage" >&2; exit 2; }
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 sender="${info%%$'\t'*}"
-[[ "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds evidence (a reviewer links its own in its note)" >&2; exit 1; }
-for e in "${ev[@]}"; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
-entry "$id" evidence "$evline"
+[[ "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds evidence or a way back (a reviewer links its own in its note)" >&2; exit 1; }
+for e in ${ev[@]+"${ev[@]}"}; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
+[[ -z "$evline" ]] || entry "$id" evidence "$evline"
+[[ -z "$back" ]] || entry "$id" wayback "$back"
 paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
-save "$id: evidence attached" "handoffs: $id evidence" "${paths[@]}"
+if [[ -z "$evline" ]]; then save "$id: way back written" "handoffs: $id way back" "${paths[@]}"
+elif [[ -z "$back" ]]; then save "$id: evidence attached" "handoffs: $id evidence" "${paths[@]}"
+else save "$id: evidence and way back attached" "handoffs: $id evidence and way back" "${paths[@]}"; fi
 }
 
 h_record() {
@@ -274,7 +294,7 @@ fi
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # Split by hand: read would merge the two tabs around an empty field.
-sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; size="${rest%%$'\t'*}" to="${rest#*$'\t'}"
+sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; size="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; hasback="${rest%%$'\t'*}" to="${rest#*$'\t'}"
 # Work for a repo or a builder has commits: none is only for work that changes no repo.
 if [[ "$commits" == none ]]; then
   while IFS= read -r n; do
@@ -289,6 +309,11 @@ fi
 if [[ "$size" == small && "$verdict" == PASS && "$commits" != none ]]; then
   why="$(small_problems "$commits")"
   [[ -z "$why" ]] || { echo "$id is marked small, but $why: it needs a spec. Record BLOCK; chief-of-staff routes it again from a spec (CABINET.md, \"Ready to build\")" >&2; exit 1; }
+fi
+# A change to a "Hard to undo" path says how to undo it before anyone passes it (.cabinet/rules/reviews.md).
+if [[ "$verdict" == PASS && "$commits" != none && -z "$hasback" ]]; then
+  why="$(hard_hit "$commits")"
+  [[ -z "$why" ]] || { echo "$id changes $why, which \"Hard to undo\" in AGENTS.md names, and says no way back: record BLOCK; its sender adds one with bin/handoff.sh attach $id --way-back \"<how to undo it>\" --from $sender" >&2; exit 1; }
 fi
 entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel"
 local -a paths

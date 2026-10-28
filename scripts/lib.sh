@@ -347,6 +347,23 @@ guarded_paths() {
     c && NF >= 5 {print $4} h && /^- / {print}' "$WS/AGENTS.md" 2>/dev/null \
     | grep -o '`[A-Za-z0-9._-]*/[^`[:space:]]*`' | tr -d '`' | sed 's#/#\t#' || true
 }
+# hard_paths: "<repo>\t<path>" for each path under "Hard to undo" only: a change there needs a way back.
+hard_paths() {
+  awk '/^## / {h = ($0 ~ /^## Hard to undo/); next} h && /^- /' "$WS/AGENTS.md" 2>/dev/null \
+    | grep -o '`[A-Za-z0-9._-]*/[^`[:space:]]*`' | tr -d '`' | sed 's#/#\t#' || true
+}
+# hard_hit <hash,...>: the first file the commits change under a "Hard to undo" path, as <repo>/<file>.
+hard_hit() {
+  local touched gr gp r f
+  touched="$(commit_files "$1")"
+  while IFS=$'\t' read -r gr gp; do
+    [[ -n "$gr" ]] || continue
+    while IFS=$'\t' read -r r f; do
+      [[ "$r" == "$gr" && ( "$f" == "$gp" || "$f" == "${gp%/}/"* ) ]] && { echo "$r/$f"; return 0; }
+    done <<<"$touched"
+  done < <(hard_paths)
+  return 0
+}
 # commit_files <hash,...>: "<repo>\t<file>" for every file the commits change, each commit found in
 # the workspace ("workspace") or a repo on this machine; "?\t<hash>" for one found nowhere.
 commit_files() {

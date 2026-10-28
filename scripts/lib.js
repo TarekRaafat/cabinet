@@ -58,8 +58,9 @@ function hardWrite(file, ...given) {
   fs.renameSync(file + ".new", file);
 }
 
-// handoff-entry <HANDOFFS.md> <ID> info|evidence <links>|verdict <role> <line>: read or change one
-// open entry in place. info prints "<sender>\t<1 when it has evidence>\t<small>\t<addressee>".
+// handoff-entry <HANDOFFS.md> <ID> info|evidence <links>|verdict <role> <line>|wayback <text>: read or
+// change one open entry in place. info prints "<sender>\t<1 when it has evidence>\t<small>\t<1 when it
+// has a way back>\t<addressee>".
 // Exit 3 when the entry is not under "## Open".
 function handoffEntry(file, hid, mode, ...args) {
   const lines = read(file).split("\n");
@@ -82,8 +83,16 @@ function handoffEntry(file, hid, mode, ...args) {
     const sender = first(/^- From: (.*?) ->/);
     const small = body.some((l) => /^- Size: small\s*$/.test(l)) ? "small" : "";
     const to = first(/^- From: .*? -> To: (.*)/);
-    process.stdout.write(sender + "\t" + (body.some(hasEv) ? "1" : "") + "\t" + small + "\t" + to + "\n");
+    const back = body.some((l) => /^- Way back: \S/.test(l)) ? "1" : "";
+    process.stdout.write(sender + "\t" + (body.some(hasEv) ? "1" : "") + "\t" + small + "\t" + back + "\t" + to + "\n");
     return;
+  }
+  if (mode === "wayback") {
+    // One line, before the first verdict: a new one replaces the old.
+    body = body.filter((l) => !l.startsWith("- Way back:"));
+    let v = body.findIndex((l) => l.startsWith("- Verdict:"));
+    if (v < 0) v = body.length;
+    body.splice(v, 0, "- Way back: " + args[0]);
   }
   if (mode === "evidence") {
     const links = args[0];

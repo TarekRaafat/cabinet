@@ -3081,6 +3081,71 @@ grep -qF "  ${ESC}[32mready to push${ESC}[0m" <<<"$o" && grep -qF "  ${ESC}[31mn
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "way back: a change to a Hard to undo path says how to undo it before it passes" "0"
+s65() {
+local base id id2 id3 out r c1 c2 c3 h0 sum ent v
+base="$(git -C "$W" rev-parse HEAD)"
+git init -q "$W/app" && echo x > "$W/app/a.js" && git -C "$W/app" add -A && git -C "$W/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"
+# app/db/ is hard to undo; app/api/ a critical area with no check; app/api.json a contract's file.
+L sub-all "$W/AGENTS.md" '/(## Hard to undo\n\n.*\n\n)- none yet/' '$1- `app/db/`'
+L sub-all "$W/AGENTS.md" '/\| none yet \| \| \| \| \|/' '| api | `app/api/` | security | the requests | |'
+L sub-all "$W/AGENTS.md" '/(\| Contract \| Repos that move together \| Source of truth \|\n\|---\|---\|---\|\n)\| TBD \| \| \|/' '$1| Items API | app | `app/api.json` |'
+grep -qx -- '- `app/db/`' "$W/AGENTS.md" && grep -qF '| api | `app/api/` | security |' "$W/AGENTS.md" && grep -qF '| Items API | app | `app/api.json` |' "$W/AGENTS.md" || fail "test setup: way back fixture"
+mkdir -p "$W/specs/qa" && echo ran > "$W/specs/qa/w.md" && git -C "$W" add -A && git -C "$W" commit -qm "way back setup"
+c() { mkdir -p "$(dirname "$W/app/$2")"; echo "$1" > "$W/app/$2"; git -C "$W/app" add -A; git -C "$W/app" commit -qm "$1"; git -C "$W/app" rev-parse --short HEAD; }
+c1="$(c one db/1.sql)" c2="$(c two api/x.js)" c3="$(c three api.json)"
+id="$("$W/bin/handoff.sh" add --from backend --to "qa, security, code-reviewer" --changed x --needed y --evidence https://example.com/e "Migration")"; id="${id%% *}"
+ent() { awk -v id="### $1:" 'index($0, id) == 1 { on = 1; print; next } /^##/ { on = 0 } on' "$W/HANDOFFS.md"; }
+rec() { "$W/bin/handoff.sh" record "$1" --role "$2" "$3" --commits "$4" --note specs/qa/w.md 2>&1; }
+# 1. No way back: a PASS from each reviewer is refused, naming the file and the option; nothing written.
+sum="$(cksum < "$W/HANDOFFS.md")"
+for r in qa security code-reviewer; do
+  out="$(rec "$id" "$r" PASS "$c1")" && fail "$r passed a Hard to undo change with no way back"
+  grep -q 'app/db/1.sql' <<<"$out" && grep -q -- '--way-back' <<<"$out" || fail "$r's refusal: $out"
+done
+[[ "$(cksum < "$W/HANDOFFS.md")" == "$sum" ]] || fail "a refused PASS changed HANDOFFS.md"
+# 4. A BLOCK or CHANGES is recorded as today.
+rec "$id" qa BLOCK "$c1" >/dev/null || fail "a BLOCK with no way back was refused"
+rec "$id" code-reviewer CHANGES "$c1" >/dev/null || fail "a CHANGES with no way back was refused"
+# 7. Only the sender adds it.
+"$W/bin/handoff.sh" attach "$id" --way-back "x" --from qa >/dev/null 2>&1 && fail "attach --way-back by someone other than the sender"
+# 6. Empty or more than one line: refused, nothing written, no commit.
+h0="$(git -C "$W" rev-parse HEAD)" sum="$(cksum < "$W/HANDOFFS.md")"
+for v in "" $'a\nb' $'a\rb' "   "; do
+  "$W/bin/handoff.sh" add --from backend --to qa --changed x --needed y --way-back "$v" "Bad" >/dev/null 2>&1 && fail "add took the way back '$v'"
+  "$W/bin/handoff.sh" attach "$id" --way-back "$v" --from backend >/dev/null 2>&1 && fail "attach took the way back '$v'"
+done
+[[ "$(cksum < "$W/HANDOFFS.md")" == "$sum" && "$(git -C "$W" rev-parse HEAD)" == "$h0" ]] || fail "a refused way back wrote or committed"
+# 2. Added once, before the first verdict; the PASSes then succeed; a second replaces it.
+dr() { "$W/bin/doctor.sh" 2>&1 | grep -F "$id" | grep -v 'addressed to no role' || true; }
+local d0; d0="$(dr)"
+"$W/bin/handoff.sh" attach "$id" --way-back "run app/db/1.down.sql" --from backend >/dev/null || fail "attach --way-back"
+ent="$(ent "$id")"
+[[ "$(grep -c '^- Way back:' <<<"$ent")" == 1 ]] && grep -qx -- '- Way back: run app/db/1.down.sql' <<<"$ent" \
+  && (( $(grep -n '^- Way back:' <<<"$ent" | cut -d: -f1) < $(grep -n -m1 '^- Verdict:' <<<"$ent" | cut -d: -f1) )) || fail "the way back line: $ent"
+for r in qa security code-reviewer; do out="$(rec "$id" "$r" PASS "$c1")" || fail "$r's PASS after the way back: $out"; done
+"$W/bin/handoff.sh" attach "$id" --way-back "restore backup 42" --from backend >/dev/null || fail "attach --way-back again"
+ent="$(ent "$id")"
+[[ "$(grep -c '^- Way back:' <<<"$ent")" == 1 ]] && grep -qx -- '- Way back: restore backup 42' <<<"$ent" || fail "the second way back did not replace the first: $ent"
+"$W/bin/handoff.sh" list --json | j -e --arg id "$id" '$.some((e) => e.id == $id && e.ready === true)' >/dev/null || fail "list --json lost the entry or its readiness: $("$W/bin/handoff.sh" list --json)"
+[[ "$(dr)" == "$d0" ]] || fail "the doctor reports something new on the entry with a way back: $(dr)"
+# 3. add --way-back.
+id2="$("$W/bin/handoff.sh" add --from backend --to qa --changed x --needed y --way-back "restore backup 42" "Filed with one")"; id2="${id2%% *}"
+[[ "$(ent "$id2" | grep -c '^- Way back:')" == 1 ]] && ent "$id2" | grep -qx -- '- Way back: restore backup 42' || fail "add --way-back: $(ent "$id2")"
+# 5, 9, 10. No Hard to undo path: a PASS without the line, on a critical area's file, a contract's file, or --commits none.
+id3="$("$W/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/e "Api")"; id3="${id3%% *}"
+out="$(rec "$id3" security PASS "$c2")" || fail "a PASS on a critical area's file needed a way back: $out"
+out="$(rec "$id3" qa PASS "$c3")" || fail "a PASS on a contract's file needed a way back: $out"
+id3="$("$W/bin/handoff.sh" add --from product-manager --to security --changed copy --needed y "Copy")"; id3="${id3%% *}"
+out="$(rec "$id3" security PASS none)" || fail "a PASS with --commits none needed a way back: $out"
+# 8. The rules and docs.
+grep -q 'Way back:' "$KIT/roles/chief-of-staff.md" && grep -q -- '--way-back' "$KIT/core/rules/builders.md" && grep -q 'Way back:' "$KIT/core/rules/reviews.md" \
+  && grep -q -- '--way-back' "$KIT/docs/commands.md" && grep -q -- '--way-back' "$KIT/CHANGELOG.md" || fail "a way-back rule or doc is missing"
+git -C "$W" reset -q --hard "$base"; rm -rf "$W/app" "$W/specs/qa"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

@@ -25,6 +25,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ### Handoffs
 
 - The loop breaker: `cabinet handoff run` stops for you once the same reviewer has blocked the work more times than `--retries` allows (with the default 2, at the third BLOCK or CHANGES), counted over every run from the history of `HANDOFFS.md`, not only this run's rounds, and names the reviewer and the count. A scheduled run skips it until you run it by hand, `PIPELINE.md` says why, and the brief puts it in your sign-off queue with the options. `handoff list --json` gives each entry `blocks`, the count per reviewer.
+- A way back before anything hard to undo: a handoff can say how to undo its change once pushed, released or published, or why there is none, on a `Way back:` line, with `cabinet handoff add --way-back "..."` or later `cabinet handoff attach <ID> --way-back "..." --from <you>` (which replaces it). `cabinet handoff record` refuses a PASS on commits that change a path under "Hard to undo" in `AGENTS.md` while the entry has none, naming the file. Builders add it when they hand such work on, and the brief quotes it beside whether the change can be undone.
 
 ### Fixes
 
