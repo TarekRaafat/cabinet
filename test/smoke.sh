@@ -948,6 +948,10 @@ x='{"a":[1,2.5,-3,"1.0"],"k\"2":0.1,"b":1e-7,"3x":0}'
 node "$KIT/tools/build-brand.js" --check || fail "brand/assets/ or docs/logo.svg is out of date with brand/tokens.json (npm run brand)"
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
 j -e '!!$.color.ink.value && !!$.status_color.fix.light && $.mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
+# The brass token is approved (owner, 28 Oct 2026), and the guide's doctor sample shows headings as a terminal prints them: bold, no "== ".
+j -e '$.color.brass.status == "approved"' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json: brass is not approved"
+sed -n '/<div class="status-term">/,/<\/pre>/p' "$KIT/brand/index.html" | grep -q '^== ' && fail "the brand guide's doctor sample still shows == headings"
+grep -qx '<b>Kit and roles</b>' "$KIT/brand/index.html" || fail "the brand guide's doctor sample has no bold heading"
 repo="$(j -r '$.repository.url' "$KIT/package.json" | sed 's/^git+//')"
 grep -qF "git clone $repo " "$KIT/README.md" || fail "the README's clone command does not match the repository in package.json"
 # The package installs only where the README says the kit runs: macOS and Linux.
