@@ -1299,6 +1299,9 @@ cmd_config() {
     fi
     if ((${#lchanges[@]} == 0)); then echo "Nothing to change."; return 0; fi
     echo; echo "Changes (cabinet.local.env, this machine only; not committed):"; printf '  - %s\n' "${lchanges[@]}"
+    if ((set_credit && shared)) && [[ "$credit" == on && "$o_cfile" != on ]]; then
+      echo "Note: the project's credit roles setting is ${o_cfile:-not set}, and off for everyone wins: this machine's on counts only once it is on (cabinet config --credit-roles on)."
+    fi
     ((dry)) && { echo "(dry run: nothing written)"; return 0; }
     local keep=(-e '^CABINET_BACKUP_DIR=' -e '^CABINET_BACKUP_TIME='); ((set_credit)) && keep+=(-e '^CABINET_CREDIT_ROLES=')
     {
@@ -1631,9 +1634,13 @@ cmd_next() {
     [[ -n "$when" && "$SCHEDULER" != none && ! -f "$(sched_file "$label.$(basename "$jf" .job)")" ]] && missing=1
   done
   ((missing)) && step bootstrap "Set up this machine: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
-  # Credit roles, asked once until answered: in cabinet.env, or this machine's cabinet.local.env (the only
-  # place that counts in a shared workspace). Nothing is credited until then.
-  if ! grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.local.env" 2>/dev/null; then
+  # Credit roles, asked once until answered: in cabinet.env, or this machine's cabinet.local.env (in a shared
+  # workspace, only while the project's setting is on: off for everyone wins). Nothing is credited until then.
+  local pcredit; pcredit="$(envget CABINET_CREDIT_ROLES)"
+  if [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared && "$pcredit" != on ]]; then
+    grep -q '^CABINET_CREDIT_ROLES=' "$env" 2>/dev/null \
+      || step credit-roles "Credit roles: say whether commits made in Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (on), or not (off). Nothing is credited until you answer." "cabinet config --credit-roles on"
+  elif ! grep -q '^CABINET_CREDIT_ROLES=' "$ws/cabinet.local.env" 2>/dev/null; then
     if [[ "$(envget CABINET_LAYOUT)" == inside && "$(envget CABINET_VISIBILITY)" == shared ]]; then
       step credit-roles "Credit roles: say whether commits made in this machine's Cabinet runs credit their role beside you, with one Co-authored-by line that shows the Cabinet Team avatar on GitHub (on), or not (off). Nothing is credited until you answer." "cabinet config --this-machine --credit-roles on"
     elif ! grep -q '^CABINET_CREDIT_ROLES=' "$env" 2>/dev/null; then

@@ -194,12 +194,15 @@ fi
 section "Credit roles"
 # Read as written (lib.sh, credit_value): only an exact on or off is a setting.
 cv="$(credit_value)"
-if credit_answered; then
+if credit_project_wins && [[ "$(local_get CABINET_CREDIT_ROLES)" == on ]]; then
+  pv="not set"; credit_answered && pv="$cv"
+  note credit.setting "credit roles: off, because the project's setting is $pv: this machine says on, which counts only while the project's setting is on (cabinet config --credit-roles on)"
+elif credit_answered; then
   case "$cv" in
     on|off) ok credit.setting "credit roles: $cv" ;;
     *) bad credit.setting "CABINET_CREDIT_ROLES is \"$cv\", not off or on, so no commit is credited (cabinet config --credit-roles on, or off)" ;;
   esac
-elif credit_shared; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)"
+elif credit_shared && ! credit_project_wins; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)"
 else note credit.setting "credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles on, or off)"; fi
 if [[ -n "${CABINET_CREDIT_EMAIL:-}" ]]; then
   credit_email_ok "$CABINET_CREDIT_EMAIL" && ok credit.email "credit names the app of $CABINET_CREDIT_EMAIL" \

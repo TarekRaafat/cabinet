@@ -2632,6 +2632,21 @@ crun "$SC/cabinet" codex backend; [[ "$(cab)" == 1 ]] || fail "the teammate's ru
 cp "$SC/cabinet/cabinet.local.env" "$T/credit-local"
 (cd "$SC" && "$F" config --yes --this-machine --credit-roles app) >/dev/null 2>&1 && fail "--this-machine took --credit-roles app"
 cmp -s "$T/credit-local" "$SC/cabinet/cabinet.local.env" && [[ -z "$(git -C "$SC" status --porcelain)" ]] || fail "--this-machine --credit-roles app changed something"
+# Off for everyone wins: while the committed setting is off or not set, this machine's on credits nothing.
+cs() { (cd "$SC" && "$F" doctor --json) | j -r '$.results.find((r) => r.id == "credit.setting").level + " " + $.results.find((r) => r.id == "credit.setting").message'; }
+for pv in off unset; do
+  git -C "$SC" checkout -q -- cabinet/cabinet.env; if [[ "$pv" == off ]]; then sedi 's/^CABINET_CREDIT_ROLES=.*/CABINET_CREDIT_ROLES="off"/' "$SC/cabinet/cabinet.env"; else sedi '/^CABINET_CREDIT_ROLES=/d' "$SC/cabinet/cabinet.env"; fi
+  grep -qx 'CABINET_CREDIT_ROLES="on"' "$SC/cabinet/cabinet.local.env" || fail "credit test setup: this machine does not say on"
+  crun "$SC/cabinet" codex backend; [[ "$(msg)" == work ]] || fail "this machine's on credited while the project's setting is $pv: $(msg)"
+  (cd "$SC" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "credit-roles" && s.command.includes("--this-machine"))' >/dev/null || fail "next asks this machine while the project's setting is $pv"
+  [[ "$(cs)" == "note credit roles: off, because the project's setting is $([[ $pv == off ]] && echo off || echo "not set"): this machine says on"* ]] || fail "doctor's credit.setting with the project $pv: $(cs)"
+done
+(cd "$SC" && "$F" next --json) | j -e '$.steps.some((s) => s.id == "credit-roles" && s.command == "cabinet config --credit-roles on")' >/dev/null || fail "next does not ask the project's question when it is not set"
+sedi '/^CABINET_CREDIT_ROLES=/d' "$SC/cabinet/cabinet.local.env"; o="$(cd "$SC" && "$F" config --this-machine --credit-roles on 2>&1)" && grep -qF "Note: the project's credit roles setting is not set, and off for everyone wins" <<<"$o" || fail "config --this-machine --credit-roles on did not say the project's setting wins: $o"
+git -C "$SC" checkout -q -- cabinet/cabinet.env; sedi 's/^CABINET_CREDIT_ROLES=.*/CABINET_CREDIT_ROLES="off"/' "$SC/cabinet/cabinet.env"
+(cd "$SC" && "$F" next --json) | j -e '!$.steps.some((s) => s.id == "credit-roles")' >/dev/null || fail "next asks about credit roles while the project's setting is off"
+git -C "$SC" checkout -q -- cabinet/cabinet.env; crun "$SC/cabinet" codex backend; [[ "$(cab)" == 1 ]] || fail "both on: the run was not credited"
+[[ "$(cs)" == "ok credit roles: on" ]] || fail "doctor's credit.setting with both on: $(cs)"
 touch "$T/credit-mark"; "$F" new "$T/credit-app" --yes --credit-roles app >/dev/null 2>&1 && fail "new took --credit-roles app"
 [[ ! -e "$T/credit-app" && -z "$(find "$T" -mindepth 1 -newer "$T/credit-mark" 2>/dev/null)" ]] || fail "new --credit-roles app changed something: $(find "$T" -mindepth 1 -newer "$T/credit-mark" 2>/dev/null | head -5)"
 

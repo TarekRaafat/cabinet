@@ -43,11 +43,16 @@ credit_email_ok() {   # a GitHub App's bot noreply email, exactly
   [[ "$1" =~ $re ]]
 }
 credit_shared() { [[ "${CABINET_LAYOUT:-}" == inside && "${CABINET_VISIBILITY:-}" == shared ]]; }
+# In a shared workspace, off for everyone wins: while the committed setting is not on, it is the answer.
+credit_project_wins() { credit_shared && [[ "${CABINET_CREDIT_ROLES-}" != on ]]; }
 # Answered on this machine: cabinet.local.env's line, else cabinet.env's, except in a shared workspace,
-# where each machine answers for itself (cabinet config --this-machine --credit-roles).
-credit_answered() { local_has CABINET_CREDIT_ROLES || { ! credit_shared && grep -q '^CABINET_CREDIT_ROLES=' "$WS/cabinet.env"; }; }
+# where each machine answers for itself (cabinet config --this-machine --credit-roles) while the project's is on.
+credit_answered() {
+  if credit_project_wins; then grep -q '^CABINET_CREDIT_ROLES=' "$WS/cabinet.env"
+  else local_has CABINET_CREDIT_ROLES || { ! credit_shared && grep -q '^CABINET_CREDIT_ROLES=' "$WS/cabinet.env"; }; fi
+}
 credit_value() {   # the answer as written, or nothing
-  if local_has CABINET_CREDIT_ROLES; then local_get CABINET_CREDIT_ROLES
+  if ! credit_project_wins && local_has CABINET_CREDIT_ROLES; then local_get CABINET_CREDIT_ROLES
   elif credit_answered; then printf '%s' "${CABINET_CREDIT_ROLES-}"; fi
 }
 credit_mode() { [[ "$(credit_value)" == on ]] && credit_email_ok "${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}" && echo on || echo off; }
