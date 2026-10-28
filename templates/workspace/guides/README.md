@@ -12,7 +12,7 @@ To retire a guide, delete the file and its row. To change one, edit it and commi
 
 ## How agents use them
 
-Agents read the "Guides" table in `AGENTS.md` at the start of every session, and read a guide before any work its row covers. A guide ranks with `AGENTS.md`: it adds to and tightens the kit's rules in `CABINET.md`, a repo's own `AGENTS.md` still wins inside that repo, and no guide can loosen "Never push, merge on GitHub, publish or release" or "The builder never verifies".
+Agents read the "Guides" table in `AGENTS.md` at the start of every session, and read a guide before any work its row covers. A guide ranks with `AGENTS.md`: it adds to and tightens the kit's rules in `CABINET.md`, a repo's own `AGENTS.md` still wins inside that repo, and no guide can loosen "Never push, merge on a shared host, publish or release" or "The builder never verifies".
 
 Agents edit a guide only when the owner asks: a change to one is the owner's decision.
 

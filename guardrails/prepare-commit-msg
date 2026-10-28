@@ -10,17 +10,23 @@
 # Unattended runs never rewrite: in a Cabinet run (CABINET_AGENT set), every amend is refused, since no
 # owner is there to ask for one. git gives an amend the source "commit" (as it gives -c and -C <commit>,
 # refused too), but "message" with -m or -F, as it gives a new commit: so the arguments of the git command
-# that runs this hook (its parent process) are read too, for --amend or an abbreviation of it.
+# that runs this hook (its parent process) are read too, for --amend or an abbreviation of it. On Linux each
+# argument is read on its own, so a -m message that mentions --amend is a new commit; ps (elsewhere) joins
+# them with spaces, so there such a message is refused too, and the refusal says to give it with -F <file>.
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
 # replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
 if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
 
-# The git command's arguments, joined by spaces: from /proc on Linux, from ps elsewhere.
-git_args() { if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' ' ' < "/proc/$PPID/cmdline"; else ps -o args= -p "$PPID" 2>/dev/null; fi; }
-amend() { [ "${2:-}" = commit ] && return 0; case " $(git_args) " in *" --am"*) return 0 ;; esac; return 1; }
+# An amend in the git command's arguments: one argument --am, --ame, --amen or --amend from /proc on Linux;
+# elsewhere, " --am" anywhere in what ps prints, the arguments joined by spaces.
+amend_arg() {
+  if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' '\n' < "/proc/$PPID/cmdline" | grep -qxE -e '--am(e(n(d)?)?)?'
+  else case " $(ps -o args= -p "$PPID" 2>/dev/null) " in *" --am"*) return 0 ;; esac; return 1; fi
+}
+amend() { [ "${2:-}" = commit ] && return 0; amend_arg; }
 if [ -n "${CABINET_AGENT:-}" ] && amend "$@"; then
-  echo "cabinet: no amend in a Cabinet run: no owner is there to ask for one. Commit the fix as a new commit." >&2
+  echo "cabinet: no amend in a Cabinet run: no owner is there to ask for one. Commit the fix as a new commit. If this is a new commit whose message mentions --amend, give the message with -F <file> instead of -m." >&2
   exit 1
 fi
 

@@ -23,7 +23,7 @@ usage="usage: bin/session.sh start [name] [--repo <repo>] | list [--json] | end 
 # with -, which git would read as an option). It becomes a branch and a folder name.
 name_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,39}$ ]]; }
 shown() { printf '%s' "$1" | term_text; }   # a value someone typed, printed safely
-q() { printf '%q' "$1"; }                   # a path as a command line takes it
+q() { printf '%q' "$1"; }                   # a path or branch as a command line takes it
 
 # Every session in the workspace: "<repo>\t<name>\t<folder>\t<branch>\t<repo folder>".
 all_sessions() {
@@ -73,8 +73,8 @@ s_start() {
   [[ -z "$b" ]] || { echo "a session named $name already exists, in ${b%%$'\t'*} at ${b#*$'\t'}: choose another name, or end it first (cabinet session end $name)" >&2; exit 1; }
   if git -C "$dir" rev-parse -q --verify "refs/heads/session/$name" >/dev/null; then
     { echo "the branch session/$name already exists in $repo, with no session. Either:"
-      echo "  delete it (once merged):  git -C $(q "$dir") branch -d session/$name"
-      echo "  or reuse it in a session: git -C $(q "$dir") worktree add $(q "$SESSIONS/$repo/$name") session/$name"; } >&2
+      echo "  delete it (once merged):  git -C $(q "$dir") branch -d $(q "session/$name")"
+      echo "  or reuse it in a session: git -C $(q "$dir") worktree add $(q "$SESSIONS/$repo/$name") $(q "session/$name")"; } >&2
     exit 1
   fi
   [[ ! -e "$SESSIONS/$repo/$name" ]] || { echo "$SESSIONS/$repo/$name already exists and is not a session: move it, then start again" >&2; exit 1; }
@@ -102,16 +102,16 @@ s_list() {
     if [[ -d "$f" ]]; then gone=false dirty="$(git -C "$f" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"; else gone=true dirty=-; fi
     e="$(started "$d" "$b")" when=- day="on an unknown date"
     [[ -z "$e" ]] || { when="$(epoch_date "$e" +%F)"; day="$(epoch_date "$e" "+%-d %b %Y")"; }
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$s" "$b" "$f" "$ahead" "$dirty" "$merged" "$when" "$gone" "$(q "$d")" "$day"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$repo" "$s" "$b" "$f" "$ahead" "$dirty" "$merged" "$when" "$gone" "$(q "$d")" "$day" "$(q "$b")"
   done < <(all_sessions))"
   if ((json)); then
     printf '%s' "$rows" | json -R '$.filter((l) => l != "").map((l) => l.split("\t")).map((r) => ({repo: r[0], name: r[1], branch: r[2], folder: r[3], ahead: Number(r[4]),
       uncommitted: r[8] == "true" ? null : Number(r[5]), merged: r[6] == "true", started: r[7] == "-" ? null : r[7], gone: r[8] == "true",
-      merge: "git -C " + r[9] + " merge --ff-only " + r[2], prune: r[8] == "true" ? "git -C " + r[9] + " worktree prune" : null}))'
+      merge: "git -C " + r[9] + " merge --ff-only " + r[11], prune: r[8] == "true" ? "git -C " + r[9] + " worktree prune" : null}))'
     return 0
   fi
   [[ -n "$rows" ]] || { echo "No sessions. Start one: cabinet session start [name]"; return 0; }
-  while IFS=$'\t' read -r repo s b f ahead dirty merged when gone d day; do
+  while IFS=$'\t' read -r repo s b f ahead dirty merged when gone d day _; do
     if [[ "$gone" == true ]]; then
       echo "$s  ($repo, $b)  folder gone: $f"
       echo "  git keeps it listed until a prune: git -C $d worktree prune"
@@ -155,15 +155,15 @@ s_end() {
   echo "To bring them into $main, from your terminal (no Cabinet command merges):"
   if ! git -C "$d" merge-base --is-ancestor HEAD "refs/heads/$b" 2>/dev/null; then
     echo "  $main has moved on since the session started. First, either rebase the session onto it:"
-    echo "    git -C $(q "$f") rebase $main"
-    echo "  or merge it without a fast-forward instead of the line below: git -C $(q "$d") merge session/$name"
+    echo "    git -C $(q "$f") rebase $(q "$main")"
+    echo "  or merge it without a fast-forward instead of the line below: git -C $(q "$d") merge $(q "session/$name")"
   fi
-  echo "  git -C $(q "$d") merge --ff-only session/$name"
+  echo "  git -C $(q "$d") merge --ff-only $(q "session/$name")"
   echo
   if [[ -d "$f" ]]; then
     git -C "$d" worktree remove "$f" || { echo "git did not remove $f (see above); the session is as it was" >&2; exit 1; }
     rmdir "$SESSIONS/$repo" 2>/dev/null || true
-    echo "Removed the folder $f. The branch session/$name stays; once it is merged: git -C $(q "$d") branch -d session/$name"
+    echo "Removed the folder $f. The branch session/$name stays; once it is merged: git -C $(q "$d") branch -d $(q "session/$name")"
   else
     echo "The folder $f is already gone. git keeps it listed until a prune: git -C $(q "$d") worktree prune"
   fi

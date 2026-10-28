@@ -3645,6 +3645,13 @@ o="$(cd "$PW" && bin/handoff.sh list --ready)"; grep -q "$hid" <<<"$o" && ! grep
 ses start moved --repo app >/dev/null; echo m > "$S/app/moved/m"; git -C "$S/app/moved" add m; git -C "$S/app/moved" commit -qm moved
 echo main >> "$A/f"; git -C "$A" commit -qam "main moves"; m="$(head_of)"
 o="$(ses end moved)" && grep -qF "git -C $S/app/moved rebase main" <<<"$o" && grep -qxF "  git -C $A merge --ff-only session/moved" <<<"$o" && [[ "$(head_of)" == "$m" ]] || fail "end when main moved on: $o"
+# A branch name holding shell characters is printed quoted in every command (security S1).
+ses start odd --repo app >/dev/null; git -C "$S/app/odd" checkout -q -b 'session/odd;id'
+L1="$(ses list --json)"; j -e --arg m "git -C $(printf %q "$A") merge --ff-only $(printf %q 'session/odd;id')" '$.find((x) => x.name == "odd").merge == $m' <<<"$L1" >/dev/null || fail "list --json with a branch holding shell characters: $L1"
+git -C "$S/app/odd" checkout -q session/odd; git -C "$A" branch -q -D 'session/odd;id'
+mb='m$(id);x'; git -C "$A" branch -m main "$mb"; echo odd >> "$A/f"; git -C "$A" commit -qam "odd moves"
+o="$(ses end odd)" && grep -qF "rebase $(printf %q "$mb")" <<<"$o" && ! grep -qF "rebase $mb" <<<"$o" || fail "end with a main branch holding shell characters: $o"
+git -C "$A" branch -m "$mb" main
 ses start busy --repo app >/dev/null; echo b >> "$S/app/busy/f"; echo n > "$S/app/busy/new"
 snap() { (cd "$S/app/busy" && find . -name .git -prune -o -type f -print | sort | xargs cksum); }
 b4="$(snap)"; st=0; o="$(ses end busy 2>&1)" || st=$?
@@ -3691,7 +3698,7 @@ o="$(bk restore "$BK/$arc" "$R" 2>&1)" || fail "restore over the existing repo: 
 
 # The git actions rule, word for word (criteria 26, 27 and 29).
 c="$(tr '\n' ' ' < "$KIT/core/CABINET.md")"
-for w in 'push, merge on a shared host (a pull request), deploy, publish, release' '**Never push, merge on GitHub, publish or release.**' \
+for w in 'push, merge on a shared host (a pull request), deploy, publish, release' '**Never push, merge on a shared host, publish or release.**' 'may loosen "Never push, merge on a shared host, publish or release"' \
   '**Local git actions only, and only what can be undone.** Commit your own work locally.' 'compare `git status --short` with the files you changed: if any change is not yours, stop and tell the owner which files appear to be someone else'"'"'s.' \
   '`git reset --hard`, a checkout or restore of files, `git clean`, `git stash drop`, `git commit -a`, `git add -A`, `git add .`'; do
   grep -qF -- "$w" <<<"$c" || fail "core/CABINET.md lacks: $w"
@@ -3701,17 +3708,25 @@ am='One amend needs no ask: your own commit, while it is the newest on the branc
 grep -qF "$am It never runs in an unattended run, where the hooks refuse it." <<<"$c" && grep -qF 'and an amend with anything staged that is not yours need the owner'"'"'s explicit ask' <<<"$c" \
   && grep -qF 'Once a handoff or verdict names a commit, a fix is a new commit: a commit that fails review is reverted, or fixed in a follow-up commit, never amended.' <<<"$c" \
   && grep -qF "$am Once a handoff or verdict names a commit, a fix is a new commit." "$KIT/AGENTS.md" || fail "the amend rule is not in core/CABINET.md and the kit's rule 12"
+grep -qxF '4. **You push** what has passed review, from your own terminal. No agent can push, merge on GitHub, release or publish.' "$KIT/README.md" || fail "README step 4 is not the owner's sentence"
+n="$(tr '\n' ' ' < "$KIT/docs/concepts.md")"
+grep -qF 'One exception: an agent may amend its own newest commit without asking, while it is not pushed and no handoff, verdict or note names it; once one does, a fix is a new commit.' <<<"$n" \
+  && grep -qF 'an amend with anything staged that is not its own) needs your explicit ask' <<<"$n" && grep -qF 'refuse every amend and every rebase there' <<<"$n" || fail "docs/concepts.md does not carry the amend rule"
 # Rule 15's snapshot step, in core/rules/builders.md, which core/CABINET.md points every agent to.
 grep -qF '.cabinet/rules/builders.md` (rule 5)' <<<"$c" || fail "core/CABINET.md does not point to the snapshot step"
 for w in 'git stash create' 'git stash store -m "cabinet: before <command>" <commit>' 'when it prints nothing, there is no tracked change to save, so go on without a snapshot' 'git clean -n'; do
   grep -qF -- "$w" "$KIT/core/rules/builders.md" || fail "core/rules/builders.md lacks: $w"
 done
-grep -qF 'never pushes, merges on GitHub, deploys or publishes; other git actions only as `CABINET.md` allows' "$KIT/core/rules/builders.md" && grep -qF 'no push, merge on GitHub, deploy, publish or spend' "$KIT/core/rules/seats.md" \
-  && grep -qF 'merge on GitHub' "$KIT/roles/chief-of-staff.md" && grep -qF 'Never push, merge on GitHub, publish or release.' "$KIT/AGENTS.md" \
+grep -qF 'never pushes, merges on a shared host, deploys or publishes; other git actions only as `CABINET.md` allows' "$KIT/core/rules/builders.md" && grep -qF 'no push, merge on a shared host, deploy, publish or spend' "$KIT/core/rules/seats.md" \
+  && grep -qF 'merge on a shared host' "$KIT/roles/chief-of-staff.md" && grep -qF 'Never push, merge on a shared host, publish or release.' "$KIT/AGENTS.md" \
+  && grep -qF 'Never push, merge on a shared host, publish or release' "$KIT/templates/workspace/guides/README.md" \
+  && ! grep -rqF 'merge on GitHub' "$KIT/core" "$KIT/roles" "$KIT/AGENTS.md" && ! grep -qF 'merges on GitHub' "$KIT/core/rules/builders.md" \
   && grep -qF 'Run a recoverable git action (amend, rebase, reset without `--hard`, stash, a local merge) only when the maintainer asks for it in your session, and say how to undo it.' "$KIT/AGENTS.md" \
   && grep -qF 'Never sweep or drop changes you did not make: before `commit -a`, `add -A`, `add .`, `reset --hard`, a checkout or restore of files, or an amend, check that every uncommitted change is your own, and stop if it is not.' "$KIT/AGENTS.md" || fail "a Rule 17 or 18 wording is missing"
 g="$(tr '\n' ' ' < "$KIT/docs/guardrails.md")"
 grep -qF 'git rebase --no-verify' <<<"$g" && grep -qF 'Codex and Antigravity' <<<"$g" && grep -qF 'Claude Code, Grok, Qwen Code, opencode, Cursor CLI and Gemini CLI' <<<"$g" || fail "docs/guardrails.md does not say which tools refuse a rebase that skips its hook"
+grep -qF 'except an amend of its own newest commit before it is pushed or named in a handoff or verdict' <<<"$g" && grep -qF 'give that message with `-F <file>`' <<<"$g" \
+  && grep -qF 'setting `CABINET_AGENT` empty (`CABINET_AGENT= git commit --amend`), which no tool'"'"'s deny rules catch' <<<"$g" || fail "docs/guardrails.md: the amend exception, the -F hint or the empty CABINET_AGENT limit"
 SR="$T/ps-stash"; mkr "$SR"; echo changed >> "$SR/f"; b4="$(cksum "$SR/f")"
 sc="$(git -C "$SR" stash create)"; [[ -n "$sc" ]] && git -C "$SR" stash store -m "cabinet: before reset --hard" "$sc" || fail "stash create and store"
 [[ "$(cksum "$SR/f")" == "$b4" ]] && git -C "$SR" stash list | grep -q 'cabinet: before reset --hard' || fail "the snapshot changed the working tree or is not listed"
@@ -3742,6 +3757,13 @@ for r in claude codex antigravity qwen grok opencode cursor; do
   [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse side)" == "$sh" && "$(git -C "$RR" branch --show-current)" == main ]] || fail "$r: a rebase in a run was not refused ($s), or moved the branch"
 done
 [[ "$(prun codex 'echo y >> f && git commit -qam new')" == 0 ]] || fail "a new commit in a run was refused"
+# A new commit whose -m message mentions --amend: made where each argument can be read on its own (/proc,
+# Linux), refused elsewhere with the -F hint; through -F it is made everywhere.
+h="$(git -C "$RR" rev-parse HEAD)"; s="$(prun codex 'echo y2 >> f && git commit -qa -m "docs: say --amend is refused" 2>../ps-err')"
+if [[ -r /proc/self/cmdline ]]; then [[ "$s" == 0 && "$(git -C "$RR" log -1 --format=%s)" == "docs: say --amend is refused" ]] || fail "a new commit whose message mentions --amend was refused on Linux ($s): $(cat "$T/ps-err")"
+else [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse HEAD)" == "$h" ]] && grep -qF 'give the message with -F <file> instead of -m' "$T/ps-err" || fail "a -m message mentioning --amend: not refused with the -F hint ($s): $(cat "$T/ps-err")"; fi
+h="$(git -C "$RR" rev-parse HEAD)"; s="$(prun codex 'echo y3 >> f && printf "docs: say --amend is refused\n" > ../ps-msg && git commit -qa -F ../ps-msg')"
+[[ "$s" == 0 && "$(git -C "$RR" rev-parse HEAD~1)" == "$h" && "$(git -C "$RR" log -1 --format=%s)" == "docs: say --amend is refused" ]] || fail "a new commit in a run with -F and a message mentioning --amend ($s)"
 h="$(git -C "$RR" rev-parse HEAD)"
 # Each amend with a change of its own: an amend that changes nothing, in the same second, makes the same commit.
 echo a1 >> "$RR/f"; git -C "$RR" add f; git -C "$RR" commit -q --amend --no-edit || fail "an amend outside a run was refused"

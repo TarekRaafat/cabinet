@@ -59,14 +59,14 @@ Side effects: some harmless commands are refused too, such as an npm script name
 
 ## Runs never rewrite
 
-An agent may run an amend, a rebase or another git action that can be undone only when you ask for it in its session ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:
+An agent may run a rebase, a local merge or another git action that can be undone only when you ask for it in its session, except an amend of its own newest commit before it is pushed or named in a handoff or verdict ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:
 
 - **`prepare-commit-msg`** (the credit hook) refuses `git commit --amend`, in every form: with `-m` or `-F` git calls the hook as it does for a new commit, so the hook also reads the git command's own arguments for `--amend` (or an abbreviation of it). `git commit -c` and `-C` are refused in a run too, since git calls the hook the same way for them. `--no-verify` does not skip this hook.
 - **`pre-rebase`** refuses `git rebase` (and `git pull --rebase`).
 
 Each runs the repo's own hook of the same name first, with the same arguments, and its failure still stops the commit or rebase. Outside a run, in your terminal or an interactive session, they change nothing. `cabinet doctor` says whether both are installed (`guardrails.run-refusal`); a hook of your own in the global hooks folder is left as it is, and then runs are not refused on that machine.
 
-Limits: `git rebase --no-verify` skips `pre-rebase`. In a run it is refused only by the tools whose deny rules match `--no-v`: Claude Code, Grok, Qwen Code, opencode, Cursor CLI and Gemini CLI. Codex and Antigravity are not covered (their rules match only how a command starts; both ask before any `git rebase`, which a run cannot answer), nor are the Cursor editor and a custom runner. An amend through a git alias of your own (`git config alias.fix "commit --amend"`) is not seen. Git has no hook for `reset` or `stash`, so those stay rules for the agents.
+Limits: `git rebase --no-verify` skips `pre-rebase`. In a run it is refused only by the tools whose deny rules match `--no-v`: Claude Code, Grok, Qwen Code, opencode, Cursor CLI and Gemini CLI. Codex and Antigravity are not covered (their rules match only how a command starts; both ask before any `git rebase`, which a run cannot answer), nor are the Cursor editor and a custom runner. An amend through a git alias of your own (`git config alias.fix "commit --amend"`) is not seen. On macOS a new commit whose `-m` message mentions `--amend` is refused too, since `ps` joins the arguments with spaces; give that message with `-F <file>` (on Linux each argument is read on its own, so it commits). A run can turn both refusals off by setting `CABINET_AGENT` empty (`CABINET_AGENT= git commit --amend`), which no tool's deny rules catch: the hooks guard against a mistake, not an agent set on getting round them. Git has no hook for `reset` or `stash`, so those stay rules for the agents.
 
 ## Known limits
 
