@@ -962,7 +962,8 @@ j -e 'JSON.stringify($.os) == "[\"darwin\",\"linux\"]"' "$KIT/package.json" >/de
 for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" || fail ".gitignore does not ignore $p"; done
 # CABINET.md holds what every agent needs on every session; the rest is in core/rules/, each file named
 # from it with when to read it, and every reference to one names a file that exists.
-w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3400)) || fail "CABINET.md has $w words, over its 3400: move what only some roles or tasks need to core/rules/"
+# 3460 since 0.2.0: the git actions rule and the amend rule are owner decisions, quoted word for word.
+w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3460)) || fail "CABINET.md has $w words, over its 3460: move what only some roles or tasks need to core/rules/"
 for f in "$KIT"/core/rules/*.md; do
   grep -q "^   | \`.cabinet/rules/${f##*/}\` | " "$KIT/core/CABINET.md" || fail "CABINET.md does not say when to read .cabinet/rules/${f##*/}"
 done
@@ -3695,6 +3696,11 @@ for w in 'push, merge on a shared host (a pull request), deploy, publish, releas
   '`git reset --hard`, a checkout or restore of files, `git clean`, `git stash drop`, `git commit -a`, `git add -A`, `git add .`'; do
   grep -qF -- "$w" <<<"$c" || fail "core/CABINET.md lacks: $w"
 done
+# The amend rule (owner decision, 28 Oct 2026): one's own newest, unpushed, unnamed commit needs no ask; never in a run.
+am='One amend needs no ask: your own commit, while it is the newest on the branch, is not pushed, and no handoff, verdict or note names its hash; check `git diff --cached` first, since the amend takes everything staged.'
+grep -qF "$am It never runs in an unattended run, where the hooks refuse it." <<<"$c" && grep -qF 'and an amend with anything staged that is not yours need the owner'"'"'s explicit ask' <<<"$c" \
+  && grep -qF 'Once a handoff or verdict names a commit, a fix is a new commit: a commit that fails review is reverted, or fixed in a follow-up commit, never amended.' <<<"$c" \
+  && grep -qF "$am Once a handoff or verdict names a commit, a fix is a new commit." "$KIT/AGENTS.md" || fail "the amend rule is not in core/CABINET.md and the kit's rule 12"
 # Rule 15's snapshot step, in core/rules/builders.md, which core/CABINET.md points every agent to.
 grep -qF '.cabinet/rules/builders.md` (rule 5)' <<<"$c" || fail "core/CABINET.md does not point to the snapshot step"
 for w in 'git stash create' 'git stash store -m "cabinet: before <command>" <commit>' 'when it prints nothing, there is no tracked change to save, so go on without a snapshot' 'git clean -n'; do
