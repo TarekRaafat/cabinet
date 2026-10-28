@@ -546,18 +546,23 @@ grep -q '^chief-of-staff|Act as the chief-of-staff role: read agents/chief-of-st
 rm -f "$W/runner.out"
 # A run past its time limit is stopped with everything it started, and the log says why
 # (CABINET_TEST_MINUTE makes a minute one second). A limit that is not a number never runs.
-echo "CABINET_RUNNER_CMD='sleep 323; :'" >> "$W/cabinet.env"
+# The agent sleeps for a time only this suite uses (its own PID in it), so another suite's sleep, like the
+# decoy below, is never taken for one this run left; a decoy plain sleep 323 stands in for one.
+SL="323.$$"; echo "CABINET_RUNNER_CMD='sleep $SL; :'" >> "$W/cabinet.env"
+left() { pgrep -f "sleep 323\.$$" >/dev/null; }
+sleep 323 & decoy=$!
 cp "$W/jobs/brief.job" "$T/brief.bak"; sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
 s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
 ((st == 1 && SECONDS - s < 10)) || fail "a run past its limit was not stopped (exit $st after $((SECONDS - s))s)"
-! pgrep -f 'sleep 323' >/dev/null || fail "a stopped run left what it started running"
+! left || fail "a stopped run left what it started running"
 grep -q "stopped after 2 min: the job's time limit" "$H/$LOGS/demo-co/brief.log" || fail "the log does not say why the run stopped"
 # Stopping the job (launchd's stop, or Ctrl-C by hand) stops the agent too, though it runs in its own group.
 HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM "$p"; wait "$p" || true
-! pgrep -f 'sleep 323' >/dev/null || fail "stopping the job left the agent running"
+! left || fail "stopping the job left the agent running"
 sedi 's/^TIMEOUT=.*/TIMEOUT="08"/' "$W/jobs/brief.job"
 st=0; HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
-((st == 2)) && ! pgrep -f 'sleep 323' >/dev/null || fail "a TIMEOUT that is not whole minutes was not refused"
+((st == 2)) && ! left || fail "a TIMEOUT that is not whole minutes was not refused"
+kill "$decoy" 2>/dev/null; wait "$decoy" 2>/dev/null || true
 cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 # A run that ends on its own is never reported as stopped, even when the clock passed its limit while
 # the machine slept: the watchdog's timer counts only time awake. A watchdog that never fires stands
