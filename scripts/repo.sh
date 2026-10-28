@@ -26,7 +26,7 @@ p_list() {
   done < <(repos) | if ((json)); then
     json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], path: r[1], present: r[2] == "yes", owner: r[3] == "TBD" ? null : str(r[3]), url: r[4] == "-" ? null : r[4]}))'
   else
-    awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-20s %-16s %-8s %s\n", $1, ($4 == "" ? "TBD" : $4), ($3 == "yes" ? "here" : "missing"), $2} END {if (!n) print "No repos in repos.tsv. Add one: cabinet repo add <git url>"}'
+    awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-20s %-16s %-8s %s\n", $1, ($4 == "" ? "TBD" : $4), ($3 == "yes" ? "here" : "missing"), $2} END {if (!n) print "No repos in repos.tsv. Add one: cabinet repo add <git url>"}' | term_text
   fi
 }
 

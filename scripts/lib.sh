@@ -237,7 +237,8 @@ HOST=""; [[ "$CABINET_LAYOUT" == inside ]] && HOST="$(cd "$WS/.." && pwd -P)"
 repos() {
   [[ -f "$WS/repos.tsv" ]] || return 0
   awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2 {
-    if ($1 !~ /^[A-Za-z0-9._-]+$/ || $1 == "." || $1 == "..") { print "repos.tsv: skipped the row named \"" $1 "\" (not a plain folder name)" > "/dev/stderr"; next }
+    # The name is shown with each control character as ?: the row is skipped, so the name is only quoted.
+    if ($1 !~ /^[A-Za-z0-9._-]+$/ || $1 == "." || $1 == "..") { n = $1; gsub(/[[:cntrl:]]/, "?", n); print "repos.tsv: skipped the row named \"" n "\" (not a plain folder name)" > "/dev/stderr"; next }
     if ($3 == "") $3 = "-"; if ($4 == "") $4 = "no"; if ($5 == "") $5 = $1; print $1, $2, $3, $4, $5 }' "$WS/repos.tsv"
 }
 # Where the workspace's pre-commit hook goes, or "none" when the workspace has no git of its

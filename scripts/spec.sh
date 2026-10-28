@@ -60,7 +60,7 @@ fi
 ((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1)" spec_py check "${files[@]}")"
 if ((json)); then json '$' <<<"$out"
 else
-  json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out"
+  json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out" | term_text
   [[ "$(json '$.filter((s) => s.problems.length).length' <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
     || echo "Not ready for their status: fix each problem, or set the spec's status back (draft)."
 fi

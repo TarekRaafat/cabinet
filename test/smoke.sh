@@ -2989,6 +2989,29 @@ grep -qF "CABINET_PROJECT is 'Ctl ?[2J?1m Co', which cannot be written back" <<<
 (cd "$CT" && "$F" digest) | grep -qF "**Clear?** ${ESC}[2J A." || fail "digest piped changed the brief line"
 (cd "$CT" && "$F" next --json) | j -e '$.project == "Ctl \u001b[2J\u009b1m Co"' >/dev/null || fail "next --json changed the project name"
 (cd "$CT" && "$F" digest --json) | j -e '$[0].sign_off_queue.includes("\u001b[2J")' >/dev/null || fail "digest --json changed the brief line"
+# The remaining commands: doctor (a cabinet.env value), role list (a role's title), repo list (a repo's
+# folder, and a repo name, which is skipped), spec check (a spec's status) and status.
+cp "$CT/cabinet.env" "$T/ctl-env"; sedi 's/^CABINET_CREDIT_ROLES=.*//' "$CT/cabinet.env"; printf 'CABINET_CREDIT_ROLES="o%s[2Jn"\n' "$ESC" >> "$CT/cabinet.env"
+printf '\n## Team\n\n- Title: Head %s[31mof QA, %s\n' "$ESC" "$CAFE" >> "$CT/roles/qa.md"
+printf 'ok\t-\t-\tno\tsub%s[2Jdir\nx%s[2Jy\t-\n' "$ESC" "$ESC" >> "$CT/repos.tsv"
+printf -- '---\nfeature: x\nstatus: dr%s[2Jaft\n---\n\n# X\n' "$ESC" > "$CT/specs/x.md"
+for c in doctor "role list" "repo list" "spec check" status; do
+  o="$(cd "$CT" && tt "$F" $c)"
+  grep -q "$ESC\[2J\|$ESC\[31mof" <<<"$o" && fail "$c in a terminal printed a control character from project text: $(printf '%s' "$o" | od -c | grep -m3 '033')"
+  case "$c" in
+    doctor) grep -qF 'CABINET_CREDIT_ROLES is "o?[2Jn", not off or on' <<<"$o" || fail "doctor in a terminal: $o" ;;
+    "role list") grep -qF "Head ?[31mof QA, $CAFE" <<<"$o" || fail "role list in a terminal: $o" ;;
+    "repo list") grep -qF 'sub?[2Jdir' <<<"$o" && grep -qF 'skipped the row named "x?[2Jy"' <<<"$o" || fail "repo list in a terminal: $o" ;;
+    "spec check") grep -qF 'specs/x.md (dr?[2Jaft)' <<<"$o" || fail "spec check in a terminal: $o" ;;
+    status) grep -q '^workspace .*: cabinet ' <<<"$o" || fail "status in a terminal: $o" ;;
+  esac
+done
+(cd "$CT" && "$F" doctor 2>&1) | grep -qF "CABINET_CREDIT_ROLES is \"o${ESC}[2Jn\"" || fail "doctor piped changed the value"
+(cd "$CT" && "$F" doctor --json 2>/dev/null) | j -e '$.results.some((r) => r.message.includes("o\u001b[2Jn"))' >/dev/null || fail "doctor --json changed the value"
+(cd "$CT" && "$F" role list 2>/dev/null) | grep -qF "Head ${ESC}[31mof QA, $CAFE" || fail "role list piped changed the title"
+(cd "$CT" && "$F" repo list 2>/dev/null) | grep -qF "sub${ESC}[2Jdir" || fail "repo list piped changed the folder"
+(cd "$CT" && "$F" spec check 2>&1) | grep -qF "specs/x.md (dr${ESC}[2Jaft)" || fail "spec check piped changed the status"
+cp "$T/ctl-env" "$CT/cabinet.env"
 grep -q 'control characters from project text show as `?`' "$KIT/docs/commands.md" || fail "the commands page does not say control characters show as ?"
 "$F" -C "$CT" remove --yes --force >/dev/null 2>&1 || true; rm -rf "$CT"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"

@@ -548,7 +548,9 @@ fix_names() {
   for a in $actions; do case "$a" in roles) out+="role build, " ;; snapshot) out+="repo snapshot, " ;; deps) out+="install tools, " ;; *) out+="$a, " ;; esac; done
   printf '%s' "${out%, }"
 }
-# Summary first: what needs you, and what --fix can do; then the full report.
+# Summary first: what needs you, and what --fix can do; then the full report. Messages quote project
+# text (settings, names): in a terminal, through term_text (platform.sh) before the kit's colors.
+term_text < "$REC" > "$REC.shown" && mv "$REC.shown" "$REC"
 if ((problems)); then
   echo "$problems thing(s) need attention:"
   awk -F'\t' '$1 == "fix" {print "  - " $4}' "$REC"

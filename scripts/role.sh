@@ -217,7 +217,8 @@ r_list() {
       reports_to: str(r[3]), covers: r[4] == "" ? [] : r[4].split(/, */),
       trial_until: str(r[5]), title: str(r[6]), display_name: str(r[7]), function: str(r[8])}))' "$K/roles.list"
   else
-    awk -F'\t' '{printf "%-20s %-9s %s%s%s\n", $1, $2, $3, ($7 $8 == "" ? "" : ", " ($7 != "" && $8 != "" ? $7 ", " $8 : $7 $8)), ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' "$K/roles.list"
+    # The team table's words, in a terminal through term_text (platform.sh).
+    awk -F'\t' '{printf "%-20s %-9s %s%s%s\n", $1, $2, $3, ($7 $8 == "" ? "" : ", " ($7 != "" && $8 != "" ? $7 ", " $8 : $7 $8)), ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' "$K/roles.list" | term_text
   fi
   rm -f "$K/roles.list"
 }

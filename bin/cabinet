@@ -2315,8 +2315,10 @@ cmd_status() {
       '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean)})'
     return 0
   fi
-  echo "workspace $ws: cabinet $(cat "$ws/.cabinet/version"); kit at $KIT: $VERSION"
-  ((${#edited[@]})) && printf "  ${S_U}edited here${S_Z}: %s\n" "${edited[@]}" || echo "  ${S_G}no kit file edited${S_Z}"
+  # Folders and the workspace's own words, in a terminal through term_text (platform.sh).
+  echo "workspace $(printf '%s' "$ws" | term_text): cabinet $(term_text < "$ws/.cabinet/version"); kit at $(printf '%s' "$KIT" | term_text): $VERSION"
+  local e; for e in ${edited[@]+"${edited[@]}"}; do printf "  ${S_U}edited here${S_Z}: %s\n" "$(printf '%s' "$e" | term_text)"; done
+  ((${#edited[@]})) || echo "  ${S_G}no kit file edited${S_Z}"
 }
 
 # --help (or -h) after any command: its usage and options, from the table. A noun alone, or a
