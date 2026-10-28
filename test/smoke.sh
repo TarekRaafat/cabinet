@@ -2972,6 +2972,73 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "push-check: what is ready to push, per repo" ""
+s64() {
+local PC="$T/pc" ESC=$'\033'
+"$F" new "$PC" --yes --roles "qa security" >/dev/null || fail "new for push-check"
+# app: cloned (so its main has an upstream) with four unpushed commits; good: one, on a ready handoff;
+# det: detached; noup: no upstream; gone: not on this machine.
+mkr() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add -A && git -C "$1" commit -qm init; }
+mkr "$T/pc-src"; git clone -q "$T/pc-src" "$PC/app"; git clone -q "$T/pc-src" "$PC/good"; git clone -q "$T/pc-src" "$PC/det"; mkr "$PC/noup"
+git -C "$PC/det" checkout -q --detach
+for n in 1 2 3 4; do echo "$n" >> "$PC/app/f"; git -C "$PC/app" commit -qam "app change $n"; eval "c$n=\$(git -C \"\$PC/app\" rev-parse --short HEAD)"; done
+echo g >> "$PC/good/f"; git -C "$PC/good" commit -qam "good change"; g1="$(git -C "$PC/good" rev-parse --short HEAD)"
+git -C "$PC/app" remote set-url origin https://example.invalid/app.git   # a fetch would fail: none is made
+printf 'app\t-\t-\tno\ngood\t-\t-\tno\ndet\t-\t-\tno\nnoup\t-\t-\tno\ngone\t-\t-\tno\n' >> "$PC/repos.tsv"
+cat >> "$PC/HANDOFFS.md" <<HO
+
+### H-20260101-01: Ready work
+- From: backend -> To: qa, security
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+- Verdict: qa PASS 2026-01-02 $c1,$g1 specs/qa/a.md
+- Verdict: security PASS 2026-01-02 $c1,$g1 specs/security/a.md
+
+### H-20260101-02: Work with a stale PASS
+- From: backend -> To: qa, security
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+- Verdict: qa PASS 2026-01-02 $c2 specs/qa/b.md
+- Verdict: security PASS 2026-01-02 $c2,$c3 specs/security/b.md
+HO
+git -C "$PC" add -A && git -C "$PC" commit -qm "push-check setup"
+snap() { local r; for r in "$PC" "$PC/app" "$PC/good"; do git -C "$r" for-each-ref; git -C "$r" status --porcelain; done; cksum < "$PC/HANDOFFS.md"; }
+before="$(snap)"
+out="$(cd "$PC/app" && "$F" push-check)" || fail "push-check: $out"
+part() { awk -v n="$1" '$0 == n || index($0, n " (") == 1 { on = 1; print; next } /^[^ ]/ { on = 0 } on' <<<"$out"; }
+for r in workspace app good det noup gone; do [[ -n "$(part "$r")" ]] || fail "push-check has no part for $r: $out"; done
+a="$(part app)"
+grep -qF "Branch main, upstream origin/main: 4 unpushed commit(s), 1 file(s) changed, 4 insertion(s), 0 deletion(s)" <<<"$a" || fail "push-check app's branch line: $a"
+grep -qxF "  $c1 app change 1 (H-20260101-01)" <<<"$a" && grep -qxF "  $c2 app change 2 (H-20260101-02)" <<<"$a" && grep -qxF "  $c3 app change 3 (H-20260101-02)" <<<"$a" \
+  && grep -qxF "  $c4 app change 4 (no handoff)" <<<"$a" || fail "push-check app's commits: $a"
+grep -qxF "  H-20260101-01: ready" <<<"$a" && grep -qxF "  H-20260101-02: stale qa" <<<"$a" || fail "push-check app's handoffs: $a"
+[[ "$(tail -1 <<<"$a")" == "  not ready: $c4 is on no handoff" ]] || fail "push-check app's end: $a"
+[[ "$(tail -1 <<<"$(part good)")" == "  ready to push" ]] || fail "push-check good: $(part good)"
+[[ "$(tail -1 <<<"$(part det)")" == "  not ready: detached HEAD" && "$(tail -1 <<<"$(part noup)")" == "  not ready: no upstream: nothing to compare with" \
+  && "$(tail -1 <<<"$(part gone)")" == "  not ready: not on this machine" && "$(tail -1 <<<"$(part workspace)")" == "  not ready: no upstream: nothing to compare with" ]] || fail "push-check's other repos: $out"
+# Once app's last commit is on the ready handoff too, its stale PASS is the first reason.
+sedi "s/^- Verdict: \([a-z]*\) PASS 2026-01-02 $c1,$g1 /- Verdict: \1 PASS 2026-01-02 $c1,$g1,$c4 /" "$PC/HANDOFFS.md"
+[[ "$(tail -1 <<<"$(cd "$PC" && "$F" push-check | awk '$0 ~ /^app / { on = 1 } /^[^ ]/ && $0 !~ /^app / { on = 0 } on')")" == "  not ready: $c3 is on H-20260101-02, stale qa" ]] || fail "push-check's first reason after $c4: $(cd "$PC" && "$F" push-check)"
+git -C "$PC" checkout -q -- HANDOFFS.md
+# JSON, the same, with the fields the docs give.
+o="$(cd "$PC" && "$F" push-check --json)"
+j -e --arg c1 "$c1" --arg c4 "$c4" '((a) => Object.keys(a).join() == "name,path,branch,upstream,commits,files,insertions,deletions,ready,why"
+  && a.branch == "main" && a.upstream == "origin/main" && a.commits.length == 4 && a.commits[0].hash == $c4 && a.commits[0].handoffs.length == 0
+  && a.commits[3].hash == $c1 && a.commits[3].handoffs[0] == "H-20260101-01" && a.commits[3].subject == "app change 1"
+  && a.files == 1 && a.insertions == 4 && a.deletions == 0 && a.ready === false && a.why == $c4 + " is on no handoff")($.repos.find((r) => r.name == "app"))
+  && $.repos[0].name == "workspace" && $.repos.find((r) => r.name == "good").ready === true && $.repos.find((r) => r.name == "good").why === null
+  && $.repos.find((r) => r.name == "det").branch === null && $.repos.find((r) => r.name == "gone").why == "not on this machine"' <<<"$o" >/dev/null || fail "push-check --json: $o"
+# Local refs only: nothing fetched, pushed or written.
+[[ "$(snap)" == "$before" && ! -e "$PC/app/.git/FETCH_HEAD" ]] || fail "push-check changed refs, status or HANDOFFS.md"
+# In a terminal: ready to push green, not ready red.
+o="$(cd "$PC" && TERM=xterm in_tty "$F" push-check | tr -d '\r')"
+grep -qF "  ${ESC}[32mready to push${ESC}[0m" <<<"$o" && grep -qF "  ${ESC}[31mnot ready${ESC}[0m: detached HEAD" <<<"$o" || fail "push-check's colors: $o"
+"$F" -C "$PC" remove --yes --force >/dev/null 2>&1 || true
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

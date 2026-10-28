@@ -30,7 +30,7 @@ const optsOf = (c) => opts[c] || new Set();
 const nouns = [...new Set(cmds.filter((c) => c.includes(" ")).map((c) => c.split(" ")[0]))].sort();
 const words = cmds.filter((c) => !c.includes(" "));
 const dispatch = cabinet.slice(cabinet.lastIndexOf('case "${1:-}" in'));
-const dispatched = new Set(all(/^  ([a-z]+)[|)]/gm, dispatch).map((m) => m[1]));
+const dispatched = new Set(all(/^  ([a-z]+(?:-[a-z]+)*)[|)]/gm, dispatch).map((m) => m[1]));
 const known = new Set([...words, ...nouns]);
 for (const c of [...new Set([...dispatched, ...known])].filter((c) => dispatched.has(c) !== known.has(c)).sort())
   fail(`bin/cabinet: the command ${c} is ` + (dispatched.has(c) ? "dispatched but not in the table" : "in the table but not dispatched"));
@@ -40,7 +40,7 @@ for (const c of [...new Set([...dispatched, ...known])].filter((c) => dispatched
 const fnOf = (fn) => { const s = cabinet.indexOf(fn + "() {"); return cabinet.slice(s, cabinet.indexOf("\n}\n", s)); };
 const sources = { setup: [fnOf("setup"), ["new", "init", "config"]], cmd_config: [fnOf("cmd_config"), ["config"]] };
 for (const [fn, c] of [["cmd_next", "next"], ["cmd_remove", "remove"], ["cmd_status", "status"], ["cmd_help", "help"], ["cmd_list", "list"],
-  ["cmd_digest", "digest"], ["cmd_outdated", "outdated"], ["cmd_version", "version"], ["cmd_changelog", "changelog"]])
+  ["cmd_digest", "digest"], ["cmd_push_check", "push-check"], ["cmd_outdated", "outdated"], ["cmd_version", "version"], ["cmd_changelog", "changelog"]])
   sources[fn] = [fnOf(fn), [c]];
 sources.cmd_role = [fnOf("cmd_role"), cmds.filter((c) => c.startsWith("role "))];
 sources.cmd_repo = [fnOf("cmd_repo"), cmds.filter((c) => c.startsWith("repo "))];
@@ -70,7 +70,7 @@ for (const c of cmds)
 for (const n of nouns) if (n.endsWith("s")) fail(`bin/cabinet table: the noun '${n}' is plural (AGENTS.md, "Command conventions" 2)`);
 for (const c of cmds)
   if (cmds.includes(c + "s") || cmds.includes(c + "es")) fail(`bin/cabinet table: '${c}' and its plural are both commands (AGENTS.md, "Command conventions" 2)`);
-const reports = ["next", "digest", "list", "doctor", "status", "outdated", "changelog", "version", "help",
+const reports = ["next", "digest", "list", "push-check", "doctor", "status", "outdated", "changelog", "version", "help",
   ...cmds.filter((c) => ["list", "check", "verify"].includes(c.split(" ").pop()))];
 for (const c of reports)
   if (!optsOf(c).has("--json")) fail(`bin/cabinet table: '${c}' reports but has no --json (AGENTS.md, "Command conventions" 5)`);

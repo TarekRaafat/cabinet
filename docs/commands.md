@@ -149,6 +149,14 @@ cabinet list [--json]
 
 Every workspace on this machine, from anywhere: its slug, project name, kit version (marked `*` when it is not the installed kit), how many handoffs wait on you, what the doctor finds, when the latest brief was written, and its folder. The doctors run side by side, each with its workspace's own scripts, so it takes about as long as one doctor run. A workspace is listed once setup or bootstrap has claimed its slug on this machine; `cabinet remove` takes it off the list. A workspace whose folder is gone shows as `folder gone`, with how to free its slug. Changes nothing. Exit 0.
 
+## cabinet push-check
+
+```sh
+cabinet push-check [--json]
+```
+
+What is ready to push, per repo, before you push: one part for the workspace (when it has its own git) and one for each repo in `repos.tsv`, where it lives. Each part gives the branch and its upstream, every commit not pushed yet (`git log @{u}..HEAD`: short hash and subject) with the handoffs whose Verdict lines name it, or `no handoff`, the size of the change (`git diff --shortstat @{u}..HEAD`), and each of those handoffs as `handoff list --json` sees it: `ready`, or the reviewers `missing`, `blocking` or `stale`, by name. A part ends `ready to push` only when every unpushed commit is on a ready handoff, else `not ready` with the first reason: a commit on no handoff, a handoff not ready, nothing to push, no upstream, a detached HEAD, or a repo not on this machine; the other parts still print. It reads local refs only, so run `git fetch` first for an up-to-date upstream: it fetches nothing, pushes nothing and changes nothing. In a terminal, `ready to push` is green and `not ready` red. Exit 0.
+
 ## cabinet doctor
 
 ```sh
@@ -468,6 +476,7 @@ In a terminal, text output is styled for people, in the terminal's own colors: h
 | `cabinet handoff list <name> --json` | Every entry addressed to that repo or role and not closed, with its full `text`. `owner` and `founder` are the same person. |
 | `cabinet status --json` | `{workspace, version, kit_version, kit, edited}` |
 | `cabinet digest --json` | `[{slug, project, path, exists, brief_written, brief_stale, sign_off_queue, queue_heading_found, actions_for_owner, waiting_on_owner, spend_this_week_usd, budget_usd}]`. The two parts are the Markdown under their headings, or `null`; `queue_heading_found` is `null` with no brief; `spend_this_week_usd` is `null` when the runner does not report cost, `budget_usd` when no budget is set. |
+| `cabinet push-check --json` | `{repos: [{name, path, branch, upstream, commits: [{hash, subject, handoffs}], files, insertions, deletions, ready, why}]}`, the workspace first (`name` `workspace`) when it has its own git, then the repos in `repos.tsv`. `hash` is the short hash, newest first; `handoffs` the IDs whose Verdict lines name the commit, `[]` for none. `branch` is `null` on a detached HEAD, `upstream` `null` without one; `why` is the first reason it is not ready, `null` when `ready` is `true`. |
 | `cabinet list --json` | `[{slug, project, path, exists, version, update_available, waiting_on_owner, doctor_problems, brief_written}]`. `brief_written` is ISO 8601 UTC, or `null`; the counts are `null` for a workspace whose folder is gone. |
 | `cabinet role list --json` | `[{name, kind, on, drafted, reports_to, covers, trial_until, title, display_name, function}]`; `title` and `display_name` are `null` when not set; `reports_to` and `trial_until` are `null`, and `covers` empty, for a role in no sub-team. `kind` is `kit`, `optional`, `builder` or `project`; an optional kit role that is off is listed with `on: false`. |
 | `cabinet repo list --json` | `[{name, path, present, owner, url}]`. `owner` is `null` while the team table says `TBD`; `url` is `null` for a repo with no clone URL. |

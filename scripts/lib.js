@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -904,12 +904,47 @@ function changelogRender(width) {
   process.stdout.write(out.join("\n"));
 }
 
+// push-check: what is ready to push, per repo (cabinet push-check). REPOS holds "<name>\t<path>" lines,
+// HANDOFFS what handoff list --json gives. Local refs only: no fetch, nothing written.
+function pushCheck() {
+  const hs = JSON.parse(env("HANDOFFS") || "[]");
+  const git = (dir, ...a) => { const r = spawnSync("git", ["-C", dir, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.replace(/\n$/, "") : null; };
+  const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return null; } };
+  const state = (e) => [["missing", e.missing], ["blocking", e.blocking], ["stale", e.stale]].filter(([, r]) => r.length).map(([k, r]) => k + " " + r.join(", ")).join("; ")
+    || (e.ready === null ? "needs no review" : "not ready");
+  const repos = env("REPOS").split("\n").filter(Boolean).map((l) => l.split("\t")).map(([name, p]) => {
+    const o = { name, path: p, branch: null, upstream: null, commits: [], files: 0, insertions: 0, deletions: 0, ready: false, why: null };
+    // Its own repo, not a folder inside another (a repo not cloned yet, inside the workspace's own git).
+    if (!real(p) || git(p, "rev-parse", "--show-toplevel") === null || real(git(p, "rev-parse", "--show-toplevel")) !== real(p)) return { ...o, why: "not on this machine" };
+    o.branch = git(p, "symbolic-ref", "--short", "-q", "HEAD");
+    if (!o.branch) return { ...o, branch: null, why: "detached HEAD" };
+    o.upstream = git(p, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
+    if (!o.upstream) return { ...o, upstream: null, why: "no upstream: nothing to compare with" };
+    for (const l of (git(p, "log", "--format=%H%x09%h%x09%s", "@{u}..HEAD") || "").split("\n").filter(Boolean)) {
+      const [full, hash, ...s] = l.split("\t");
+      const handoffs = hs.filter((e) => e.verdicts.some((v) => v.commits.some((c) => c.length >= 4 && full.startsWith(c)))).map((e) => e.id);
+      o.commits.push({ hash, subject: s.join("\t"), handoffs });
+    }
+    const st = git(p, "diff", "--shortstat", "@{u}..HEAD") || "";
+    for (const [k, re] of [["files", /(\d+) files? changed/], ["insertions", /(\d+) insertions?/], ["deletions", /(\d+) deletions?/]]) o[k] = Number((st.match(re) || [0, 0])[1]);
+    if (!o.commits.length) return { ...o, why: "nothing to push" };
+    for (const c of o.commits) {
+      if (!c.handoffs.length) { o.why = c.hash + " is on no handoff"; break; }
+      const e = c.handoffs.map((i) => hs.find((h) => h.id === i)).find((h) => h.ready !== true);
+      if (e) { o.why = c.hash + " is on " + e.id + ", " + state(e); break; }
+    }
+    o.ready = !o.why;
+    return o;
+  });
+  process.stdout.write(JSON.stringify({ repos }) + "\n");
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
-  closest, "changelog-render": changelogRender,
+  closest, "changelog-render": changelogRender, "push-check": pushCheck,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);
