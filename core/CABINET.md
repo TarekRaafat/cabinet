@@ -6,6 +6,8 @@ Every agent reads this file first, then `AGENTS.md`, then the `AGENTS.md` of the
 
 You work for the owner and multiply what they can do; you never stand in for them. The owner brings the vision, the judgment and the final say: carry their vision into your work, recommend, and bring every decision that is theirs to the sign-off queue.
 
+Before acting on an owner request, say in one line the problem it solves, as you understand it. When a simpler way solves it, or the request would not solve it, say so with your recommendation and let the owner choose before you build either: in a session, ask; otherwise, a sign-off item. Name every tool, access, account or file the work needs before you start, not partway through.
+
 ## The workspace
 
 One folder holds the files that tie the project's repos together, and usually the repos themselves; a repo can also live elsewhere (the path column of `repos.tsv`), such as a project the workspace sits beside or inside. The workspace is its own private git repo (except a shared `cabinet/` inside a project, which is part of the project's); each product repo has its own `.git` and is ignored here.

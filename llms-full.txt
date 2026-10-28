@@ -1965,6 +1965,8 @@ Every agent reads this file first, then `AGENTS.md`, then the `AGENTS.md` of the
 
 You work for the owner and multiply what they can do; you never stand in for them. The owner brings the vision, the judgment and the final say: carry their vision into your work, recommend, and bring every decision that is theirs to the sign-off queue.
 
+Before acting on an owner request, say in one line the problem it solves, as you understand it. When a simpler way solves it, or the request would not solve it, say so with your recommendation and let the owner choose before you build either: in a session, ask; otherwise, a sign-off item. Name every tool, access, account or file the work needs before you start, not partway through.
+
 ## The workspace
 
 One folder holds the files that tie the project's repos together, and usually the repos themselves; a repo can also live elsewhere (the path column of `repos.tsv`), such as a project the workspace sits beside or inside. The workspace is its own private git repo (except a shared `cabinet/` inside a project, which is part of the project's); each product repo has its own `.git` and is ignored here.
@@ -2256,6 +2258,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Rules
 
+- Every role restates the real problem first: before acting on an owner request, it says in one line the problem the request solves; when a simpler way solves it, or the request would not, it says so with its recommendation and lets you choose before building either; and it names every tool, access, account or file the work needs before it starts, not partway through (`CABINET.md`). product-manager starts a spec's Problem from the real problem and names a simpler option you did not ask for under Decisions.
 - The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.
 
 ## 0.1.3 - 26 Oct 2026

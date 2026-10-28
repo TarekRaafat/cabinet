@@ -263,6 +263,11 @@ grep -q '## Project notes' "$W/agents/qa.md" && grep -q 'bun test' "$W/agents/qa
 "$W/bin/role.sh" build --check || fail "check fails on fresh roles"
 sedi 's/ growth"/"/' "$W/cabinet.env"; "$W/bin/role.sh" build >/dev/null
 [[ ! -f "$W/agents/growth.md" ]] || fail "dropped role not removed"
+# Every role restates the real problem and names what it needs first; product-manager's spec does too.
+grep -qxF 'Before acting on an owner request, say in one line the problem it solves, as you understand it. When a simpler way solves it, or the request would not solve it, say so with your recommendation and let the owner choose before you build either: in a session, ask; otherwise, a sign-off item. Name every tool, access, account or file the work needs before you start, not partway through.' "$W/CABINET.md" \
+  && [[ "$(grep -n '^You work for the owner' "$W/CABINET.md" | cut -d: -f1)" == "$(( $(grep -n '^Before acting on an owner request' "$W/CABINET.md" | cut -d: -f1) - 2 ))" ]] || fail "CABINET.md does not restate the real problem right after 'You work for the owner'"
+grep -qF 'Start the Problem from the real problem the request solves, not the request as worded; when a simpler option the owner did not ask for would solve it, name it under "Decisions" beside what was asked.' "$W/agents/product-manager.md" \
+  || fail "product-manager's spec step 3 does not start from the real problem"
   return 0   # a last "check && fail" line must not end the run
 }
 

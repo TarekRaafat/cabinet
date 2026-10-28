@@ -32,6 +32,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Rules
 
+- Every role restates the real problem first: before acting on an owner request, it says in one line the problem the request solves; when a simpler way solves it, or the request would not, it says so with its recommendation and lets you choose before building either; and it names every tool, access, account or file the work needs before it starts, not partway through (`CABINET.md`). product-manager starts a spec's Problem from the real problem and names a simpler option you did not ask for under Decisions.
 - The changelog lists changes to what the package ships or what users see; the website gets at most one line per release, for a new page or section. `AGENTS.md` and `CONTRIBUTING.md` say so.
 
 ## 0.1.3 - 26 Oct 2026
