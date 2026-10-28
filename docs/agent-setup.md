@@ -49,6 +49,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | What is the project called? | `--name "Name"` | the folder name |
 | Is it a new project, or one that exists already (a folder or a code repository)? | `cabinet new` or `cabinet init` | |
 | Which AI tool do you use? | `--runner claude\|codex\|antigravity\|qwen\|grok\|opencode\|cursor` | the first one installed |
+| Which model should its runs use? Only ask when the person names one. | `--model <name>` ([models](#models)) | the tool's own default |
 | Where should its folder go? (new projects) | `[dir]` | `~/dev/<name>`; suggest a folder they know, such as `~/Documents/<name>`, to someone who is not a developer |
 | What kind of work is it: code, or something else such as design, writing or music? | `--roles "..."` | the seven core roles: chief-of-staff, product-manager, architect, qa, security, design-lead, finance |
 | Any code repositories to include? (new projects) | `--repo <url>`, repeatable | none |
@@ -67,6 +68,23 @@ A website that is only designed (mockups) is design work: HTML and SVG pages in 
 **No repository yet:** leave out `--repo`. Builders, the roles that write code, come with repositories, so tell the person that coding starts once one exists: create it (an empty folder with `git init` is enough), then `cabinet repo add <url-or-path> --apply`.
 
 **An existing folder of files that is not a repository** (design files, documents): `cabinet init` in that folder makes it the workspace and keeps every file in it.
+
+### Models
+
+`--model` (`CABINET_MODEL`, or `MODEL` in one job file) goes to the tool through its own option, as its own argument before the prompt. The doctor (`model.exists`), setup and `config` check the name against the tool's model list when the tool can list its models without a run; Cabinet never makes a paid run to check one. Seen on these versions:
+
+| Runner | Model option | Free model list | Checked |
+|---|---|---|---|
+| `claude` (Claude Code 2.1.312) | `--model` | none | not checked (a note) |
+| `codex` (Codex 0.165.0) | `--model` | `codex debug models` (JSON, each `slug`) | yes |
+| `antigravity` (`agy` 1.4.8) | `--model` | `agy models` (the name before each tab) | yes |
+| `qwen` (Qwen Code 0.26.2) | `--model` (a string: an all-digit name stays text) | none | not checked (a note) |
+| `grok` (Grok 1.0.70) | `--model` | `grok models` (each `*` or `-` line) | yes |
+| `opencode` (opencode 2.2.0) | `--model`, as `provider/model` | `opencode models` | yes |
+| `cursor` (Cursor CLI 2026.10.22) | `--model` | `cursor-agent models` (the name before ` - `) | yes |
+| `custom` | `$CABINET_MODEL` in its environment | none | not checked (a note) |
+
+A list that needs the network or a login and cannot be read gives a note, never a problem.
 
 ## 4. Create the workspace
 

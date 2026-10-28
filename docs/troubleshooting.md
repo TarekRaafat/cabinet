@@ -61,6 +61,12 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `ok scheduled jobs find node` | `schedules.node` | Node is on the PATH scheduled jobs get, so the workspace scripts' JavaScript (`bin/lib.js`) runs in them. | Nothing. |
 | `FIX scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)` | `schedules.node` | Node is not on the PATH scheduled jobs get (the PATH found when `bin/bootstrap.sh` last ran), so the brief, handoff and spec steps of a job would fail. | Install Node.js where your shell finds it, then `bin/bootstrap.sh` saves the new PATH into the schedules. |
 | `note the custom runner '<...>' has no cabinet guardrails: only the git push gate covers its scheduled runs` | `runner.custom-unguarded` | A custom runner the kit does not know. | Add its own deny rules by hand. |
+| `FIX the model '<...>' in <...> is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model off` | `model.name` | `CABINET_MODEL` in `cabinet.env`, or `MODEL` in a job file, holds something other than a model name (a space, a quote, `$`, `;`, a leading `-`). Every run with it is refused before the agent tool starts. | `cabinet config --model <name>\|off`, or fix the `MODEL` line in the job file. |
+| `ok <...> (<...>) is one of <...>'s models` | `model.exists` | The agent tool lists the model, without a run. | Nothing. |
+| `FIX <...> in <...> is not in <...>'s model list (<...>): fix the name (<...>)` | `model.exists` | The tool lists its models for free and this name is not among them: a run with it would likely fail. | Correct the name, or turn it off. It stays a problem until the tool lists it. |
+| `note not checked: <...> cannot list its models without a run (<...>)` | `model.exists` | Claude Code and Qwen Code have no free model list, and Cabinet never pays for a run to check one. | Nothing; a mistyped model shows as a failed run. |
+| `note not checked: <...>'s model list could not be read (<...>), for <...>` | `model.exists` | The tool's list command failed (no network, not logged in). | Run the command it names yourself to see why. |
+| `note not checked: the custom runner cannot list its models without a run (<...>)` | `model.exists` | A custom runner has no known model list. | Nothing. |
 
 ## Credit roles
 

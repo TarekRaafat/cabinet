@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -948,12 +948,51 @@ function pushCheck() {
   process.stdout.write(JSON.stringify({ repos }) + "\n");
 }
 
+// ---- Models (doctor, config, setup) -----------------------------------------------------------
+// How each built-in runner lists its models without a run, as seen on the installed tools (Codex
+// 0.165.0, Antigravity CLI 1.4.8, Grok 1.0.70, opencode 2.2.0, Cursor 2026.10.22): fixed arguments,
+// never the model, and a parser for what it prints. Claude Code (2.1.312) and Qwen Code (0.26.2) have
+// no such command, so their models are not checked; custom is not either.
+const MODEL_LISTS = {
+  codex: ["codex", ["debug", "models"], (o) => JSON.parse(o).models.map((m) => m.slug)],
+  antigravity: ["agy", ["models"], (o) => o.split("\n").filter((l) => l.includes("\t")).map((l) => l.split("\t")[0].trim())],
+  grok: ["grok", ["models"], (o) => o.split("\n").map((l) => (l.match(/^\s*[*-]\s+(\S+)/) || [])[1])],
+  opencode: ["opencode", ["models"], (o) => o.split("\n").map((l) => l.trim().split(/\s+/)[0])],
+  cursor: ["cursor-agent", ["models"], (o) => o.split("\n").map((l) => (l.match(/^(\S+) - /) || [])[1])],
+};
+// The Cursor CLI: cursor-agent, or an agent that really is Cursor's (the name is generic), as cursor_bin.
+function cursorBin() {
+  for (const d of env("PATH").split(":")) {
+    if (d && fs.existsSync(path.join(d, "cursor-agent"))) return path.join(d, "cursor-agent");
+  }
+  for (const d of env("PATH").split(":")) {
+    const p = d && path.join(d, "agent");
+    if (p && fs.existsSync(p)) { try { if (/cursor/i.test(fs.realpathSync(p))) return p; } catch (e) { /* none */ } return ""; }
+  }
+  return "";
+}
+// model-check <runner> <model>...: one line per model, "<state>\t<model>\t<list command>": ok or missing
+// when the runner's list was read; unlisted when the runner cannot list its models without a run;
+// failed when its list command did not run, failed or printed no model. The list is read once.
+function modelCheck(runner, ...models) {
+  const l = MODEL_LISTS[runner];
+  const say = (st, how) => { for (const m of models) process.stdout.write(st + "\t" + m + "\t" + how + "\n"); };
+  if (!l) return say("unlisted", "");
+  const bin = runner === "cursor" ? cursorBin() || l[0] : l[0];
+  const how = path.basename(bin) + " " + l[1].join(" ");
+  const r = spawnSync(bin, l[1], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, maxBuffer: 64 * 1024 * 1024 });
+  let names = [];
+  try { if (r.status === 0) names = l[2](r.stdout).filter(Boolean); } catch (e) { names = []; }
+  if (!names.length) return say("failed", how);
+  for (const m of models) process.stdout.write((names.includes(m) ? "ok" : "missing") + "\t" + m + "\t" + how + "\n");
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
-  closest, "changelog-render": changelogRender, "push-check": pushCheck,
+  closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

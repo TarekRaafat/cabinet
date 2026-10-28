@@ -66,6 +66,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | What is the project called? | `--name "Name"` | the folder name |
 | Is it a new project, or one that exists already (a folder or a code repository)? | `cabinet new` or `cabinet init` | |
 | Which AI tool do you use? | `--runner claude\|codex\|antigravity\|qwen\|grok\|opencode\|cursor` | the first one installed |
+| Which model should its runs use? Only ask when the person names one. | `--model <name>` ([models](#models)) | the tool's own default |
 | Where should its folder go? (new projects) | `[dir]` | `~/dev/<name>`; suggest a folder they know, such as `~/Documents/<name>`, to someone who is not a developer |
 | What kind of work is it: code, or something else such as design, writing or music? | `--roles "..."` | the seven core roles: chief-of-staff, product-manager, architect, qa, security, design-lead, finance |
 | Any code repositories to include? (new projects) | `--repo <url>`, repeatable | none |
@@ -84,6 +85,23 @@ A website that is only designed (mockups) is design work: HTML and SVG pages in 
 **No repository yet:** leave out `--repo`. Builders, the roles that write code, come with repositories, so tell the person that coding starts once one exists: create it (an empty folder with `git init` is enough), then `cabinet repo add <url-or-path> --apply`.
 
 **An existing folder of files that is not a repository** (design files, documents): `cabinet init` in that folder makes it the workspace and keeps every file in it.
+
+### Models
+
+`--model` (`CABINET_MODEL`, or `MODEL` in one job file) goes to the tool through its own option, as its own argument before the prompt. The doctor (`model.exists`), setup and `config` check the name against the tool's model list when the tool can list its models without a run; Cabinet never makes a paid run to check one. Seen on these versions:
+
+| Runner | Model option | Free model list | Checked |
+|---|---|---|---|
+| `claude` (Claude Code 2.1.312) | `--model` | none | not checked (a note) |
+| `codex` (Codex 0.165.0) | `--model` | `codex debug models` (JSON, each `slug`) | yes |
+| `antigravity` (`agy` 1.4.8) | `--model` | `agy models` (the name before each tab) | yes |
+| `qwen` (Qwen Code 0.26.2) | `--model` (a string: an all-digit name stays text) | none | not checked (a note) |
+| `grok` (Grok 1.0.70) | `--model` | `grok models` (each `*` or `-` line) | yes |
+| `opencode` (opencode 2.2.0) | `--model`, as `provider/model` | `opencode models` | yes |
+| `cursor` (Cursor CLI 2026.10.22) | `--model` | `cursor-agent models` (the name before ` - `) | yes |
+| `custom` | `$CABINET_MODEL` in its environment | none | not checked (a note) |
+
+A list that needs the network or a login and cannot be read gives a note, never a problem.
 
 ## 4. Create the workspace
 
@@ -797,6 +815,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--roles "qa security ..."` | the seven core roles, and `code-reviewer` when the workspace starts with repos | `chief-of-staff` is always added. `code-reviewer` is on by default when setup starts with product repos (`--repo`, `init` in a project, or a folder of repos), since nothing else reviews the code itself; the chief-of-staff proposes it later for a workspace that gains repos without it. The other optional kit roles, `brand-designer`, `dba` and `auditor`, are off unless named. Builders are never listed here: they come with the repos they own. |
 | `--runner <tool>` | the first installed of `claude`, `codex`, `antigravity` (`agy`), `qwen`, `grok`, `opencode`, `cursor`, else `claude` | The agent tool for scheduled jobs. `cursor` means the Cursor CLI, never the editor's `cursor` command. `custom` needs `--runner-cmd`. |
 | `--runner-cmd '<command>'` | none | With `--runner custom`: the command to run, using `"$CABINET_PROMPT"` (and `$CABINET_AGENT`). No single quotes. |
+| `--model <name>\|off` | off: the tool's own default | The model every run asks the agent tool for, passed with the tool's own `--model` option (`custom` gets it in `$CABINET_MODEL`). A name is letters, digits and `. _ : / @ -`, up to 100, not starting with `-`; anything else is refused. After writing it, setup says whether the tool lists the model ([which tools can](agent-setup.md#models)); a model it does not list is still written. Setup asks for it right after the runner. |
 | `--brief-time <when>` | `7:00 AM` | When the brief is written: a time every day (`"7 AM"`), or days and a time, one day (`"fri 4 PM"`) or several (`"sun,mon,tue,wed,thu 8 AM"`), or `off`. See [Schedule times](#schedule-times). |
 | `--week-start <day>` | `sunday` | Written into `AGENTS.md` house rules. |
 | `--budget <dollars>\|off` | off | A weekly budget in US dollars for the agent runs Cabinet starts, in `cabinet.env`. Asked for every built-in runner ([what agent runs cost](concepts.md#what-agent-runs-cost)). |
@@ -1075,7 +1094,7 @@ cabinet config [options]
 
 Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
 
-Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|on` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
+Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--model <name>|off` (the model every run asks for, see `new`; `config` says whether the tool lists it after a new model or a new runner), `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|on` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
 **Committing the change.** In a workspace with its own git that had no uncommitted changes before, `config` commits what it changed (`cabinet config: <the settings changed>`): only the files that run wrote, each for the settings that change it. `cabinet.env` always; `AGENTS.md` for the project name, the owner, the week start, writing to the owner, credit roles (when its house rule changes), hard to undo, the roles or a new repo; `OPERATIONS.md` for the name, the slug or the roles; `package.json` for the name or the slug, when it is the workspace's own (`private`, named `<slug>-workspace`); under `jobs/`, the job files it wrote: `brief.job` for the brief time, `pipeline.job` when the scheduled runner is first turned on, when its time changes or when it was deleted (a mode change alone writes none), and for the slug each job that names it (the rewrite changes no other); `HANDOFFS.md`, `README.md` and `specs/ROADMAP.md` for the name (`README.md` for the slug too); `repos.tsv` for a new repo; the role files under `ORG.md`, `agents/` and `.claude/agents/` that the role build changed, added or removed, for the roles or the name, or when `bootstrap` ran; and `CLAUDE.md` only when that `bootstrap` linked it because it was missing (a `CLAUDE.md` that was already there, a plain file included, is left alone). A change someone else makes while it runs, in one of the files that run wrote, goes into that commit; a change anywhere else stays theirs to commit. When the workspace already held uncommitted changes, or the workspace is committed with a project (a shared `cabinet/`), it leaves the change for you: review with `git diff`, then commit.
 
@@ -1090,6 +1109,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Owner and email | the "Commits" line in `AGENTS.md` |
 | Roles | `CABINET_ROLES`, the team tables in `AGENTS.md` and `OPERATIONS.md` (a dropped role's row leaves; a returning kit role's row comes back; a project role gets a `TBD` row), and the built roles |
 | Runner | `CABINET_RUNNER`, `CABINET_RUNNER_CMD` |
+| Model | `CABINET_MODEL` (`off` writes it empty); a value carried over that is not a model name stops `config`, naming it and `cabinet config --model off` |
 | Brief | `WHEN` in `jobs/brief.job` |
 | Week start | the house rule in `AGENTS.md` |
 | Writing | the "Writing to the owner" house rule in `AGENTS.md` (added after the week start when an older `AGENTS.md` lacks it) |
@@ -1247,6 +1267,7 @@ In a terminal, text output is styled for people, in the terminal's own colors: h
 | `CABINET_ROLES` | Roles to build, space separated. |
 | `CABINET_RUNNER` | `claude`, `codex`, `antigravity`, `qwen`, `grok`, `opencode`, `cursor` or `custom`. |
 | `CABINET_RUNNER_CMD` | With `custom`: the command, single-quoted. |
+| `CABINET_MODEL` | The model every run asks the agent tool for; empty: the tool's default. Checked before every run: a value that is not a model name starts no agent. Change it with `cabinet config --model <name>\|off`. |
 | `CABINET_LAYOUT` | `new`, `around`, `inside` or `beside`. Set by setup; not changed by `config`. |
 | `CABINET_VISIBILITY` | Inside only: `private` or `shared`. |
 | `CABINET_BACKUP_DIR` | Absolute folder for archives, outside the workspace and its repos; empty turns backups off. |
@@ -1261,7 +1282,7 @@ In a terminal, text output is styled for people, in the terminal's own colors: h
 
 ### jobs/&lt;job&gt;.job
 
-One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT` (or, instead of both, `COMMAND`: a command run in the workspace that starts and limits its own agent runs, as `jobs/pipeline.job` runs `bin/handoff.sh run --scheduled`), `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run), `QUIET_DAYS` (whole days; empty or `0` runs every time). After a change, run `bin/bootstrap.sh`.
+One scheduled agent run each. Keys: `AGENT` (the role), `PROMPT` (or, instead of both, `COMMAND`: a command run in the workspace that starts and limits its own agent runs, as `jobs/pipeline.job` runs `bin/handoff.sh run --scheduled`), `WHEN` (a [schedule time](#schedule-times), or empty for by hand only), `MINUTES` and `RESULT` (shown when run by hand), `TIMEOUT` (whole minutes before the run is stopped, with everything it started, and the reason written to its log; empty uses `CABINET_JOB_TIMEOUT`, `0` means no limit), `AFTER` (an optional shell command run in the workspace after a successful run), `QUIET_DAYS` (whole days; empty or `0` runs every time), `MODEL` (the model this job's runs ask for, in place of `CABINET_MODEL`, as `MODEL="<name>"`; checked before the run like `CABINET_MODEL`, and refused in a `COMMAND` job, whose runs use `CABINET_MODEL`; a `MODEL` in the environment never applies). After a change, run `bin/bootstrap.sh`.
 
 **Quiet days.** With `QUIET_DAYS`, a scheduled run starts no agent when nothing changed since the job's last full run: no commit, branch or fetch in the workspace, the project around it or any repo, no new doctor problem (by check ID), and the `RESULT` file as that run left it (an answer written into `BRIEF.md` counts as a change). It logs `<job> skipped: nothing changed since the full run of <time>` and touches the `RESULT` file, so `cabinet digest` and `cabinet next` see the brief as current. It never skips when any of those folders has uncommitted changes (the brief asks about work pending for more than a day), when the sign-off queue in the `RESULT` file holds a `default` item (it goes ahead after 72 hours of silence, and only a run says so), after a failed run, or once `QUIET_DAYS` days have passed since the last full run. A run by hand always runs. The brief has `QUIET_DAYS="6"`: on a quiet week, one full run a week. The state is `<job>.quiet` in the log folder, on this machine only.
 
@@ -1302,6 +1323,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CABINET_BACKUP_PASSPHRASE` | backup, restore, doctor | The archive passphrase, instead of the item `cabinet.<slug>.backup` in the keychain, the secret store or the passphrase file. Never put it in `cabinet.env`, which git tracks. |
 | `CABINET_SCHEDULER` | bootstrap, doctor, digest, config, remove, move | `launchd`, `systemd`, `cron` or `none`: the scheduler to use instead of the one Cabinet finds ([macOS and Linux](concepts.md#macos-and-linux)). |
 | `CABINET_PROMPT` | the `custom` runner | The prompt, for `CABINET_RUNNER_CMD`. |
+| `CABINET_MODEL` | the `custom` runner | The run's model (the job's `MODEL`, else `CABINET_MODEL`), empty for the tool's default. |
 | `CABINET_AGENT` | every runner | The role of the run, set for the agent tool and everything it starts; the credit hook reads it. |
 | `CABINET_CREDIT`, `CABINET_CREDIT_ADDRESS` | every runner | Set by a run for the credit hook: `on` or `off`, and the email its line carries ([credit roles](concepts.md#credit-roles)). |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
@@ -1823,6 +1845,12 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `ok scheduled jobs find node` | `schedules.node` | Node is on the PATH scheduled jobs get, so the workspace scripts' JavaScript (`bin/lib.js`) runs in them. | Nothing. |
 | `FIX scheduled jobs cannot find node, which the workspace scripts need (install Node.js, then run bin/bootstrap.sh)` | `schedules.node` | Node is not on the PATH scheduled jobs get (the PATH found when `bin/bootstrap.sh` last ran), so the brief, handoff and spec steps of a job would fail. | Install Node.js where your shell finds it, then `bin/bootstrap.sh` saves the new PATH into the schedules. |
 | `note the custom runner '<...>' has no cabinet guardrails: only the git push gate covers its scheduled runs` | `runner.custom-unguarded` | A custom runner the kit does not know. | Add its own deny rules by hand. |
+| `FIX the model '<...>' in <...> is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model off` | `model.name` | `CABINET_MODEL` in `cabinet.env`, or `MODEL` in a job file, holds something other than a model name (a space, a quote, `$`, `;`, a leading `-`). Every run with it is refused before the agent tool starts. | `cabinet config --model <name>\|off`, or fix the `MODEL` line in the job file. |
+| `ok <...> (<...>) is one of <...>'s models` | `model.exists` | The agent tool lists the model, without a run. | Nothing. |
+| `FIX <...> in <...> is not in <...>'s model list (<...>): fix the name (<...>)` | `model.exists` | The tool lists its models for free and this name is not among them: a run with it would likely fail. | Correct the name, or turn it off. It stays a problem until the tool lists it. |
+| `note not checked: <...> cannot list its models without a run (<...>)` | `model.exists` | Claude Code and Qwen Code have no free model list, and Cabinet never pays for a run to check one. | Nothing; a mistyped model shows as a failed run. |
+| `note not checked: <...>'s model list could not be read (<...>), for <...>` | `model.exists` | The tool's list command failed (no network, not logged in). | Run the command it names yourself to see why. |
+| `note not checked: the custom runner cannot list its models without a run (<...>)` | `model.exists` | A custom runner has no known model list. | Nothing. |
 
 ## Credit roles
 
@@ -2250,6 +2278,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Commands
 
+- Choose the model: `cabinet new`, `init` and `config` take `--model <name>|off` (`CABINET_MODEL`, asked at setup right after the agent tool; Enter keeps the tool's default), and a job file can set `MODEL="<name>"` for its own runs. Every run passes it with the tool's own `--model` option (`custom` gets `$CABINET_MODEL`); with none set, every tool gets exactly the command line it got before. A name is letters, digits and `. _ : / @ -`, up to 100, not starting with `-`: anything else is refused before it is written, and before any run starts. The doctor's new checks `model.name` and `model.exists` say whether the tool lists the model, for codex, antigravity, grok, opencode and cursor, which can list their models without a run; Claude Code, Qwen Code and custom get a note. No check ever makes a paid run. The setup guide has a table of each tool's option and list.
 - `cabinet push-check`: what is ready to push, per repo, before you push. For the workspace and each repo, the branch, its upstream, each unpushed commit with the handoffs whose verdicts name it (or `no handoff`), the size of the change, and each handoff's reviews: ready, or who is missing, blocking or stale. A repo ends `ready to push` only when every unpushed commit is on a ready handoff, else `not ready` with the first reason. Local refs only: it fetches and changes nothing. `--json` for scripts.
 
 ### Handoffs

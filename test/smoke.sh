@@ -111,10 +111,10 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 
 section "new, answered at the prompts" ""
 s2() {
-# Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, brief,
+# Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, model (Enter: the tool's), brief,
 # budget and price (antigravity reports only tokens), week, writing, credit roles (Enter: on), backup, one repo then done, create, no npm install,
 # no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity 5 "1  2" "8:30 am" sunday short "" off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity "" 5 "1  2" "8:30 am" sunday short "" off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
@@ -123,11 +123,11 @@ grep -qx 'CABINET_RUNNER="antigravity"' "$A/cabinet.env" && grep -qx 'WHEN="8:30
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$A/AGENTS.md" || fail "prompted writing"
 # With claude (the fake comes first on PATH) setup asks for a budget, and no price: claude reports dollars.
-printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" "" y n n > "$T/answers"
+printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_BUDGET="15"' "$T/budgeted/cabinet.env" || fail "prompted budget with claude"
 grep -qx 'CABINET_BUDGET="5"' "$A/cabinet.env" && grep -qx 'CABINET_PRICE="1 2"' "$A/cabinet.env" || fail "prompted budget and price with antigravity"
 grep -qx 'CABINET_PRICE=""' "$T/budgeted/cabinet.env" || fail "a price was set with claude"
-printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
+printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
 [[ ! -e "$T/nope" ]] || fail "declined setup created files"
 
@@ -678,9 +678,9 @@ cfg --yes --roles "qa security finance" >/dev/null
 cfg --yes | grep -qx 'Nothing to change.' || fail "no-op config changed something"
 cp "$C/cabinet.env" "$T/cfg.env"; cfg --yes --slug "Bad Slug" >/dev/null && fail "a bad slug was accepted"
 cmp -s "$C/cabinet.env" "$T/cfg.env" || fail "a refused config wrote files"
-# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), budget, scheduled runner (off), brief, week, writing,
+# Name, slug, owner, email, 6 roles (all yes), 4 optional roles (Enter: off), runner (claude), model (Enter: the tool's), budget, scheduled runner (off), brief, week, writing,
 # hard to undo (Enter: not set, no repos), backup, no repos, apply, no bootstrap.
-printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" 25 "" off "" short "" "" off "" y n > "$T/answers"
+printf '%s\n' "Acme Co" "" "" "" y y y y y y "" "" "" "" "" "" 25 "" off "" short "" "" off "" y n > "$T/answers"
 (cd "$C" && HOME="$H" CABINET_TTY="$T/answers" "$F" config >/dev/null 2>&1) || fail "prompted config"
 grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/jobs/brief.job" && grep -q 'design-lead' "$C/cabinet.env" || fail "prompted answers not written"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" && grep -qx 'CABINET_BUDGET="25"' "$C/cabinet.env" || fail "prompted writing or budget not written by config"
@@ -2500,12 +2500,12 @@ grep -qx 'CABINET_CREDIT_ROLES="on"' "$CW/cabinet.env" || fail "new does not wri
 mkdir -p "$T/credit-init"; "$F" init "$T/credit-init" --yes >/dev/null || fail "init"
 grep -qx 'CABINET_CREDIT_ROLES="on"' "$T/credit-init/cabinet.env" || fail "init does not write credit roles on by default"
 # Prompted: new with Enter keeps on; new answering off; init answering off; config with Enter keeps the value.
-printf '%s\n' "Cr One" "$T/credit-p1" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr One" "$T/credit-p1" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="on"' "$T/credit-p1/cabinet.env" || fail "prompted new: Enter does not keep on"
-printf '%s\n' "Cr Two" "$T/credit-p2" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr Two" "$T/credit-p2" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted new: off not written"
 mkdir -p "$T/credit-p3"
-printf '%s\n' "Cr Three" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr Three" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" init "$T/credit-p3" >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p3/cabinet.env" || fail "prompted init: off not written"
 printf '\n%.0s' $(seq 40) > "$T/credit-answers"
 (cd "$T/credit-p2" && CABINET_TTY="$T/credit-answers" "$F" config >/dev/null 2>&1); grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted config: Enter did not keep off"
@@ -3143,6 +3143,187 @@ out="$(rec "$id3" security PASS none)" || fail "a PASS with --commits none neede
 grep -q 'Way back:' "$KIT/roles/chief-of-staff.md" && grep -q -- '--way-back' "$KIT/core/rules/builders.md" && grep -q 'Way back:' "$KIT/core/rules/reviews.md" \
   && grep -q -- '--way-back' "$KIT/docs/commands.md" && grep -q -- '--way-back' "$KIT/CHANGELOG.md" || fail "a way-back rule or doc is missing"
 git -C "$W" reset -q --hard "$base"; rm -rf "$W/app" "$W/specs/qa"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "model choice: a model for every run, checked first, never with a paid run" ""
+s66() {
+local MW="$T/model" MF="$T/mfakes" ML="$T/model-calls.log" ML2="$HOME/$LOGS/model" r mm P AS out st id n v f before
+mkdir -p "$MF"
+# One fake for every built-in tool: it logs each call as "<tool> [arg] [arg]...", prints its model list
+# (m-1 and other, each in the tool's own format; exit 1 with MFAIL), and answers a run with {}.
+cat > "$MF/fake" <<'FAKE'
+#!/bin/bash
+n="${0##*/}"
+{ printf '%s' "$n"; for a in "$@"; do printf ' [%s]' "$a"; done; echo; } >> "$MLOG"
+case "$n $*" in
+  "codex debug models"|"agy models"|"grok models"|"opencode models"|"cursor-agent models") [[ -z "${MFAIL:-}" ]] || exit 1 ;;
+esac
+case "$n $*" in
+  "codex debug models") echo '{"models":[{"slug":"m-1"},{"slug":"other"}]}' ;;
+  "agy models") printf 'Fetching available models...\nm-1\tM One\nother\tOther\n' ;;
+  "grok models") printf 'Default model: m-1\n\nAvailable models:\n  * m-1 (default)\n  - other\n' ;;
+  "opencode models") printf 'm-1\nother\n' ;;
+  "cursor-agent models") printf 'Available models\n\nm-1 - M One\nother - Other\n' ;;
+  *" --version") echo "$n 1.0" ;;
+  *) echo '{}' ;;
+esac
+FAKE
+chmod +x "$MF/fake"
+for r in claude codex agy qwen grok opencode cursor-agent; do ln -sf fake "$MF/$r"; done
+m() { PATH="$MF:$PATH" MLOG="$ML" "$@"; }
+# runs: the calls that are not a version or a model list (nor the doctor's guardrail reads); lists: model-list calls.
+runs() { grep -v -e ' \[--version\]$' -e '^codex \[debug\] \[models\]$' -e '^\(agy\|grok\|opencode\|cursor-agent\) \[models\]$' -e '^codex \[execpolicy\]' -e '^opencode \[debug\] \[agent\] \[build\]$' -e '^grok \[inspect\] \[--json\]$' "$ML" 2>/dev/null || true; }
+lists() { grep -c -e '^codex \[debug\] \[models\]$' -e '^\(agy\|grok\|opencode\|cursor-agent\) \[models\]$' "$ML" 2>/dev/null || true; }
+envline() { { grep -v "^$1=" "$MW/cabinet.env"; printf '%s\n' "$2"; } > "$T/m.env"; mv "$T/m.env" "$MW/cabinet.env"; }
+mres() { m "$F" -C "$MW" doctor --json | j -r --arg id "$1" '$.results.filter((r) => r.id == $id).map((r) => r.level + " " + r.message).join("\n")'; }
+: > "$ML"
+m "$F" new "$MW" --yes --runner claude >/dev/null || fail "new for model choice"
+grep -qx 'CABINET_MODEL=""' "$MW/cabinet.env" || fail "new did not write an empty CABINET_MODEL"
+[[ -z "$(runs)" && "$(lists)" == 0 ]] || fail "new with no model called a tool: $(cat "$ML")"
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$MW/jobs/brief.job"
+P="$(PROMPT=""; source "$MW/jobs/brief.job"; printf '%s' "$PROMPT")"
+AS="Act as the chief-of-staff role: read agents/chief-of-staff.md and follow it as your instructions. $P"
+# exp <runner> <model>: the call run_agent makes; with no model, exactly the one it made before.
+exp() {
+  local mo=""; [[ -z "$2" ]] || mo=" [--model] [$2]"
+  case "$1" in
+    claude) echo "claude [-p] [--agent] [chief-of-staff] [--permission-mode] [auto] [--output-format] [json]$mo [$P]" ;;
+    codex) echo "codex [exec] [--json]$mo [$AS]" ;;
+    antigravity) echo "agy$mo [-p] [$AS] [--output-format] [json] [--dangerously-skip-permissions]" ;;
+    qwen) echo "qwen [--approval-mode] [auto] [-o] [json]$mo [$AS]" ;;
+    grok) echo "grok$mo [-p] [$AS] [--permission-mode] [auto] [--output-format] [json]" ;;
+    opencode) echo "opencode [run] [--format] [json]$mo [$AS]" ;;
+    cursor) echo "cursor-agent [-p] [--force] [--output-format] [json]$mo [$AS]" ;;
+  esac
+}
+# 1, 4. Every built-in runner: today's call with no model, the model through --model with one.
+for r in claude codex antigravity qwen grok opencode cursor; do
+  envline CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  for mm in "" m-1; do
+    envline CABINET_MODEL "CABINET_MODEL=\"$mm\""; : > "$ML"
+    m "$F" -C "$MW" job run brief >/dev/null 2>&1 || fail "job run brief with $r and the model '$mm'"
+    [[ "$(runs)" == "$(exp "$r" "$mm")" ]] || fail "$r with the model '$mm' got: $(runs) -- expected: $(exp "$r" "$mm")"
+  done
+done
+envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='printf %s \"\$CABINET_MODEL\" > model.out'"
+m "$F" -C "$MW" job run brief >/dev/null 2>&1 && [[ "$(cat "$MW/model.out")" == m-1 ]] || fail "custom did not get CABINET_MODEL=m-1: $(cat "$MW/model.out" 2>/dev/null)"
+envline CABINET_RUNNER 'CABINET_RUNNER="claude"'; envline CABINET_RUNNER_CMD 'CABINET_RUNNER_CMD=""'
+# 5. A job's MODEL wins for that job only.
+printf 'AGENT=qa\nPROMPT="p"\nQUIET_DAYS="0"\nMODEL="m-2"\n' > "$MW/jobs/t.job"
+: > "$ML"; m "$F" -C "$MW" job run t >/dev/null 2>&1; m "$F" -C "$MW" job run brief >/dev/null 2>&1
+grep -q '^claude \[-p\] \[--agent\] \[qa\] .* \[--model\] \[m-2\] \[p\]$' <<<"$(runs)" && grep -q '^claude \[-p\] \[--agent\] \[chief-of-staff\] .* \[--model\] \[m-1\] ' <<<"$(runs)" || fail "a job's MODEL: $(runs)"
+# 6. A bad MODEL in a job: no run, no file pwned, and the job log names the file and the value.
+for v in "'x;touch pwned'" '"--yolo"'; do
+  printf 'AGENT=qa\nPROMPT="p"\nQUIET_DAYS="0"\nMODEL=%s\n' "$v" > "$MW/jobs/t.job"; : > "$ML"; : > "$ML2/t.log"
+  (cd "$T" && m "$F" -C "$MW" job run t >/dev/null 2>&1) && fail "job run took MODEL=$v"
+  [[ -z "$(runs)" && ! -e "$MW/pwned" && ! -e "$T/pwned" ]] || fail "a bad MODEL=$v started a run or ran code: $(runs)"
+  v="${v:1:${#v}-2}"; grep -qF "the model '$v' in jobs/t.job is not a model name" "$ML2/t.log" || fail "the job log does not name jobs/t.job and $v: $(tail -3 "$ML2/t.log")"
+done
+# 13 (a job). The doctor: model.name, no run, no list call for it (no other model is set).
+envline CABINET_MODEL 'CABINET_MODEL=""'; envline CABINET_RUNNER 'CABINET_RUNNER="codex"'; : > "$ML"
+out="$(mres model.name)"; grep -qF "fix the model '--yolo' in jobs/t.job is not a model name" <<<"$out" || fail "doctor model.name for a job: $out"
+[[ -z "$(runs)" && "$(lists)" == 0 ]] || fail "the doctor ran a tool for a bad job MODEL: $(cat "$ML")"
+printf 'AGENT=qa\nPROMPT="p"\nQUIET_DAYS="0"\n' > "$MW/jobs/t.job"
+# 7, 18. A tool that lists its models: ok, a problem for one it does not list, a note when the list fails.
+envline CABINET_MODEL 'CABINET_MODEL="m-1"'; : > "$ML"
+grep -qx "ok m-1 (cabinet.env) is one of codex's models" <<<"$(mres model.exists)" || fail "model.exists ok: $(mres model.exists)"
+envline CABINET_MODEL 'CABINET_MODEL="m-9"'
+grep -qx "fix m-9 in cabinet.env is not in codex's model list (codex debug models): fix the name (cabinet config --model <name>|off)" <<<"$(mres model.exists)" || fail "model.exists for m-9: $(mres model.exists)"
+out="$(MFAIL=1 mres model.exists)"; grep -q "^note not checked: codex's model list could not be read" <<<"$out" || fail "model.exists when the list fails: $out"
+# 11. Only version and list calls, never a run.
+[[ -z "$(runs)" ]] || fail "the doctor started a run: $(runs)"
+# 8, 16. A tool with no free list, and custom: a note.
+for r in claude qwen; do
+  envline CABINET_RUNNER "CABINET_RUNNER=\"$r\""; : > "$ML"
+  grep -qx "note not checked: $r cannot list its models without a run (m-9 in cabinet.env)" <<<"$(mres model.exists)" || fail "model.exists with $r: $(mres model.exists)"
+  [[ -z "$(runs)" && "$(lists)" == 0 ]] || fail "the doctor called $r: $(cat "$ML")"
+done
+envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='true'"
+grep -q '^note not checked: the custom runner cannot list its models without a run' <<<"$(mres model.exists)" || fail "model.exists with custom: $(mres model.exists)"
+envline CABINET_RUNNER 'CABINET_RUNNER="claude"'; envline CABINET_RUNNER_CMD 'CABINET_RUNNER_CMD=""'; envline CABINET_MODEL 'CABINET_MODEL=""'
+printf 'model.out\n' >> "$MW/.git/info/exclude"; git -C "$MW" add -A && git -C "$MW" commit -qm "model test settings"
+# 2, 3, 17. config --model: written, off, refused, and checked against the tool's list.
+cfgm() { (cd "$MW" && m "$F" config --yes "$@" 2>&1); }
+cfgm --model m-1 >/dev/null && grep -qx 'CABINET_MODEL="m-1"' "$MW/cabinet.env" || fail "config --model m-1"
+cfgm --model off >/dev/null && grep -qx 'CABINET_MODEL=""' "$MW/cabinet.env" || fail "config --model off"
+cp "$MW/cabinet.env" "$T/m.keep"
+for v in 'a b' 'x;y' '$(id)' -x "$(printf 'a%.0s' $(seq 101))"; do
+  st=0; cfgm --model "$v" >/dev/null || st=$?
+  ((st)) && cmp -s "$T/m.keep" "$MW/cabinet.env" || fail "config took the model '$v'"
+done
+v="$(printf 'a%.0s' $(seq 100))"; cfgm --model "$v" >/dev/null && grep -qx "CABINET_MODEL=\"$v\"" "$MW/cabinet.env" || fail "config refused a 100-character model"
+cfgm --runner codex --model off >/dev/null
+: > "$ML"; out="$(cfgm --model m-9)" || fail "config --model m-9 with codex: $out"
+grep -qx 'CABINET_MODEL="m-9"' "$MW/cabinet.env" && grep -qF "Model m-9: not in codex's model list (codex debug models)" <<<"$out" || fail "config --model m-9: $out"
+cfgm --runner claude >/dev/null; out="$(cfgm --runner codex)"; grep -qF "Model m-9: not in codex's model list" <<<"$out" || fail "config --runner codex with m-9 set: $out"
+[[ -z "$(runs)" ]] || fail "config started a run: $(runs)"
+cfgm --runner claude --model off >/dev/null
+# 19. A carried value is checked before config writes it back.
+envline CABINET_MODEL "CABINET_MODEL='\$(touch pwned)'"; cp "$MW/cabinet.env" "$T/m.keep"
+st=0; out="$(cfgm --runner codex)" || st=$?
+((st)) && grep -qF "CABINET_MODEL is '\$(touch pwned)'" <<<"$out" && grep -qF 'cabinet config --model off' <<<"$out" && cmp -s "$T/m.keep" "$MW/cabinet.env" || fail "config wrote back a carried bad model (exit $st): $out"
+m "$F" -C "$MW" doctor >/dev/null 2>&1 || true
+[[ ! -e "$MW/pwned" && ! -e "$T/pwned" ]] || fail "a carried model ran as code"
+# 9, 12. role draft, handoff run and spec run pass the model, and refuse a bad one before any run.
+envline CABINET_MODEL 'CABINET_MODEL=""'
+git init -q "$MW/app" && echo x > "$MW/app/a" && git -C "$MW/app" add -A && git -C "$MW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$MW/repos.tsv"; L before "$MW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The API | backend |'
+printf -- '---\nfeature: s\nstatus: ready\nrepos: [app]\n---\n\n# S\n\n## Rules\n\nOne.\n\n## Acceptance criteria\n\n- One works.\n\n## Decisions\n\n| # | Question | Options | Recommendation | Owner answer (date) |\n|---|---|---|---|---|\n\n## Plan\n\nLater.\n\n## Reviews\n' > "$MW/specs/s.md"
+mkdir -p "$MW/specs/qa"; echo ok > "$MW/specs/qa/s.md"; git -C "$MW" add -A && git -C "$MW" commit -qm "a spec and a repo"
+"$MW/bin/spec.sh" record specs/s.md --role qa PASS --note specs/qa/s.md >/dev/null && "$MW/bin/spec.sh" check specs/s.md >/dev/null || fail "test setup: a ready spec: $("$MW/bin/spec.sh" check specs/s.md)"
+(cd "$MW" && "$F" role add growth --yes) >/dev/null || fail "test setup: role add"
+id="$("$MW/bin/handoff.sh" add --from chief-of-staff --to app --small --changed x --needed y "Work")"; id="${id%% *}"
+three() {   # role draft, handoff run and spec run, each started once
+  (cd "$MW" && m "$F" role draft growth) >/dev/null 2>&1 || true; m "$F" -C "$MW" handoff run "$id" >/dev/null 2>&1 || true; m "$F" -C "$MW" spec run specs/s.md >/dev/null 2>&1 || true
+}
+envline CABINET_MODEL 'CABINET_MODEL="m-1"'; : > "$ML"; three
+[[ "$(runs | grep -c '^claude .*\[--model\] \[m-1\] ')" == 3 && "$(runs | wc -l | tr -d ' ')" == 3 ]] || fail "role draft, handoff run, spec run with m-1: $(runs)"
+for v in --yolo 'x;y'; do
+  envline CABINET_MODEL "CABINET_MODEL=\"$v\""; : > "$ML"; : > "$ML2/run-$id.log"; : > "$ML2/run-s.log"; : > "$ML2/brief.log"
+  out="$( (cd "$MW" && m "$F" role draft growth) 2>&1)" && fail "role draft took CABINET_MODEL=$v"
+  st=0; m "$F" -C "$MW" handoff run "$id" >/dev/null 2>&1 || st=$?; ((st)) || fail "handoff run took CABINET_MODEL=$v"
+  st=0; m "$F" -C "$MW" spec run specs/s.md >/dev/null 2>&1 || st=$?; ((st)) || fail "spec run took CABINET_MODEL=$v"
+  st=0; m "$F" -C "$MW" job run brief >/dev/null 2>&1 || st=$?; ((st)) || fail "job run brief took CABINET_MODEL=$v"
+  [[ -z "$(runs)" ]] || fail "CABINET_MODEL=$v started a run: $(runs)"
+  for f in "$ML2/run-$id.log" "$ML2/run-s.log" "$ML2/brief.log"; do
+    grep -qF "the model '$v' in cabinet.env is not a model name" "$f" || fail "$f does not name cabinet.env and $v: $(tail -3 "$f")"
+  done
+  grep -qF "the model '$v' in cabinet.env is not a model name" <<<"$out" || fail "role draft does not name cabinet.env and $v: $out"
+  envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='touch marker'"
+  m "$F" -C "$MW" job run brief >/dev/null 2>&1 && fail "custom took CABINET_MODEL=$v"
+  [[ ! -e "$MW/marker" ]] || fail "custom ran with CABINET_MODEL=$v"
+  envline CABINET_RUNNER 'CABINET_RUNNER="claude"'; envline CABINET_RUNNER_CMD 'CABINET_RUNNER_CMD=""'
+  # 13 (cabinet.env).
+  : > "$ML"; grep -qF "fix the model '$v' in cabinet.env is not a model name" <<<"$(mres model.name)" && [[ "$(lists)" == 0 && -z "$(runs)" ]] || fail "doctor model.name for $v: $(mres model.name) $(cat "$ML")"
+done
+# 20. MODEL from the environment never applies, in any kind of run.
+for mm in "" m-1; do
+  envline CABINET_MODEL "CABINET_MODEL=\"$mm\""; : > "$ML"
+  MODEL=-x three; MODEL=-x m "$F" -C "$MW" job run t >/dev/null 2>&1 || true
+  n="$(runs | wc -l | tr -d ' ')"
+  if [[ -z "$mm" ]]; then ((n == 4)) && ! runs | grep -q -- '--model' || fail "MODEL=-x from the environment reached a run: $(runs)"
+  else ((n == 4)) && [[ "$(runs | grep -c '\[--model\] \[m-1\] ')" == 4 ]] && ! runs | grep -q -- '\[-x\]' || fail "MODEL=-x with m-1: $(runs)"; fi
+done
+printf 'COMMAND="true"\nMODEL="m-1"\n' > "$MW/jobs/c.job"
+out="$(m "$F" -C "$MW" job run c 2>&1)" && fail "a COMMAND job with MODEL ran"
+grep -qF 'jobs/c.job sets MODEL, but it runs COMMAND' <<<"$out" || fail "the COMMAND job's refusal: $out"
+# 14. new and init.
+m "$F" new "$T/model-n1" --yes --model m-1 >/dev/null && grep -qx 'CABINET_MODEL="m-1"' "$T/model-n1/cabinet.env" || fail "new --model m-1"
+m "$F" new "$T/model-n2" --yes --model 'x;y' >/dev/null 2>&1 && fail "new took the model x;y"
+[[ ! -e "$T/model-n2" ]] || fail "new with a bad model left a folder"
+mkdir -p "$T/model-p"; echo x > "$T/model-p/f"; git -C "$T/model-p" init -q; before="$(ls -A "$T/model-p")"
+(cd "$T/model-p" && m "$F" init --yes --model 'x;y') >/dev/null 2>&1 && fail "init took the model x;y"
+[[ "$(ls -A "$T/model-p")" == "$before" ]] || fail "init with a bad model wrote files: $(ls -A "$T/model-p")"
+# 15. The setup question, right after the runner's: Enter, a name, and a refused name then a good one.
+q() { printf '%s\n' "Mq" "$T/$1" "" "" "" "" "" "" "" "" "" "" "" "" claude "${@:2}" "" "" "" "" "" "" "" y n n > "$T/m-answers"; CABINET_TTY="$T/m-answers" m "$F" new 2>&1; }
+q model-q1 "" >/dev/null; grep -qx 'CABINET_MODEL=""' "$T/model-q1/cabinet.env" || fail "the model question: Enter"
+q model-q2 m-1 >/dev/null; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q2/cabinet.env" || fail "the model question: m-1"
+out="$(q model-q3 'x;y' m-1)"; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q3/cabinet.env" && grep -qF "'x;y' is not a model name" <<<"$out" || fail "the model question: x;y then m-1: $out"
+# 10. The docs.
+grep -q -- '--model' "$KIT/docs/commands.md" && grep -q 'MODEL=' "$KIT/docs/commands.md" && grep -q 'model\.exists' "$KIT/docs/troubleshooting.md" && grep -q 'model\.name' "$KIT/docs/troubleshooting.md" \
+  && grep -q '^# MODEL:' "$KIT/templates/workspace/jobs/brief.job" && grep -q -- '--model' "$KIT/CHANGELOG.md" && grep -qF '| `codex` (Codex 0.165.0) | `--model` | `codex debug models`' "$KIT/docs/agent-setup.md" || fail "a model-choice doc is missing"
+for f in "$MW" "$T/model-n1" "$T/model-q1" "$T/model-q2" "$T/model-q3"; do "$F" -C "$f" remove --yes --force >/dev/null 2>&1 || true; done
   return 0   # a last "check && fail" line must not end the run
 }
 

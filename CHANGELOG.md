@@ -20,6 +20,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Commands
 
+- Choose the model: `cabinet new`, `init` and `config` take `--model <name>|off` (`CABINET_MODEL`, asked at setup right after the agent tool; Enter keeps the tool's default), and a job file can set `MODEL="<name>"` for its own runs. Every run passes it with the tool's own `--model` option (`custom` gets `$CABINET_MODEL`); with none set, every tool gets exactly the command line it got before. A name is letters, digits and `. _ : / @ -`, up to 100, not starting with `-`: anything else is refused before it is written, and before any run starts. The doctor's new checks `model.name` and `model.exists` say whether the tool lists the model, for codex, antigravity, grok, opencode and cursor, which can list their models without a run; Claude Code, Qwen Code and custom get a note. No check ever makes a paid run. The setup guide has a table of each tool's option and list.
 - `cabinet push-check`: what is ready to push, per repo, before you push. For the workspace and each repo, the branch, its upstream, each unpushed commit with the handoffs whose verdicts name it (or `no handoff`), the size of the change, and each handoff's reviews: ready, or who is missing, blocking or stale. A repo ends `ready to push` only when every unpushed commit is on a ready handoff, else `not ready` with the first reason. Local refs only: it fetches and changes nothing. `--json` for scripts.
 
 ### Handoffs

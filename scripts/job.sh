@@ -9,7 +9,8 @@
 #       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
 #       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run. A job
 #       with COMMAND instead of AGENT and PROMPT runs that command in the workspace (the pipeline job:
-#       bin/handoff.sh run --scheduled), which starts and limits its own agent runs.
+#       bin/handoff.sh run --scheduled), which starts and limits its own agent runs. MODEL="<name>" in an
+#       agent job asks for that model in place of CABINET_MODEL; a COMMAND job with MODEL is refused.
 #   bin/job.sh list [--json]
 #       Every job: its name, role, schedule, time limit and what it cost this week, with the week's
 #       total and budget (CABINET_BUDGET), from what the agent tool reports.
@@ -37,10 +38,13 @@ j_run() {
 job="${1:-}"; [[ -n "$job" ]] || { echo "usage: bin/job.sh run <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))" >&2; exit 2; }
 jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
-AGENT="" PROMPT="" COMMAND="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS=""
+# MODEL too: one from the caller's environment never applies, nor is passed on.
+unset MODEL
+AGENT="" PROMPT="" COMMAND="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS="" MODEL=""
 # shellcheck disable=SC1090
 source "$jf"
 [[ -n "$AGENT" && -n "$PROMPT" ]] || [[ -n "$COMMAND" ]] || { echo "jobs/$job.job needs AGENT and PROMPT, or COMMAND" >&2; exit 2; }
+[[ -z "$COMMAND" || -z "$MODEL" ]] || { echo "jobs/$job.job sets MODEL, but it runs COMMAND, whose agent runs use CABINET_MODEL: remove the MODEL line, or set the model with cabinet config --model" >&2; exit 2; }
 limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 [[ "$limit" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "TIMEOUT in jobs/$job.job (or CABINET_JOB_TIMEOUT) must be whole minutes, or 0 for no limit, not '$limit'" >&2; exit 2; }
 QUIET_DAYS="${QUIET_DAYS:-0}"
@@ -48,7 +52,7 @@ QUIET_DAYS="${QUIET_DAYS:-0}"
 
 limited() {
   if [[ -n "$COMMAND" ]]; then (cd "$WS" && bash -c "$COMMAND"); return; fi   # it limits its own agent runs
-  run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)"
+  run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)" "$MODEL" "jobs/$job.job"
 }
 
 # What a quiet run is judged by: every branch and remote branch of the workspace and its repos,

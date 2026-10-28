@@ -190,6 +190,35 @@ else bad schedules.node "scheduled jobs cannot find node, which the workspace sc
 if [[ "$CABINET_RUNNER" == custom ]] && ! has "claude codex gemini qwen grok opencode agy cursor-agent agent" "$c"; then
   note runner.custom-unguarded "the custom runner '$c' has no cabinet guardrails: only the git push gate covers its scheduled runs"
 fi
+# Models (cabinet config --model, MODEL in a job): a name first; then, for a tool that lists its models
+# without a run, that the name is in its list. No run starts, and no list command gets the model.
+mods=() mfrom=() good=() gfrom=()
+[[ -z "$CABINET_MODEL" ]] || { mods+=("$CABINET_MODEL"); mfrom+=(cabinet.env); }
+for jf in "$WS"/jobs/*.job; do
+  [[ -f "$jf" ]] || continue
+  m="$(MODEL=""; source "$jf" >/dev/null 2>&1; printf '%s' "$MODEL")"
+  [[ -z "$m" ]] || { mods+=("$m"); mfrom+=("jobs/${jf##*/}"); }
+done
+for ((i = 0; i < ${#mods[@]}; i++)); do
+  if model_ok "${mods[$i]}"; then good+=("${mods[$i]}"); gfrom+=("${mfrom[$i]}")
+  else bad model.name "the model '${mods[$i]}' in ${mfrom[$i]} is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model off"; fi
+done
+if ((${#good[@]})); then
+  if [[ "$CABINET_RUNNER" == custom ]]; then note model.exists "not checked: the custom runner cannot list its models without a run (${good[*]})"
+  else
+    i=0
+    while IFS=$'\t' read -r st m how; do
+      f="${gfrom[$i]}"; i=$((i + 1))
+      case "$st" in
+        ok) ok model.exists "$m ($f) is one of $CABINET_RUNNER's models" ;;
+        missing) fx="MODEL in $f"; [[ "$f" != cabinet.env ]] || fx="cabinet config --model <name>|off"
+          bad model.exists "$m in $f is not in $CABINET_RUNNER's model list ($how): fix the name ($fx)" ;;
+        unlisted) note model.exists "not checked: $CABINET_RUNNER cannot list its models without a run ($m in $f)" ;;
+        *) note model.exists "not checked: $CABINET_RUNNER's model list could not be read ($how), for $m in $f" ;;
+      esac
+    done < <(node "$LIBJS" model-check "$CABINET_RUNNER" "${good[@]}")
+  fi
+fi
 
 section "Credit roles"
 # Read as written (lib.sh, credit_value): only an exact on or off is a setting.

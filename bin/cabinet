@@ -130,6 +130,7 @@ O	new,init,config	--email	<email>	The commit author's email (default: git config
 O	new,init,config	--roles	"qa security ..."	Roles to enable; chief-of-staff is always on (default: the seven core roles, and code-reviewer when the workspace starts with repos).
 O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, antigravity, qwen, grok, opencode, cursor or custom.
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
+O	new,init,config	--model	<name>|off	The model every run asks the agent tool for; off (default) leaves it to the tool. A job's MODEL line overrides it.
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
@@ -340,6 +341,27 @@ url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]
 name_ok() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != . && "$1" != .. ]]; }
 # A role name: lowercase ASCII letters, digits and dashes (C: a-z is ASCII only).
 role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
+# A model name (scripts/lib.sh checks the same before every run): never a leading -, which a tool would
+# read as an option of its own (C: A-Z is ASCII only).
+model_ok() { local LC_ALL=C re='^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$'; [[ "$1" =~ $re ]]; }
+check_model() {   # the model about to be written, given now or carried over
+  local v="$model"; [[ -t 2 ]] && v="$(printf '%s' "$v" | TERM_OUT=1 term_text)"
+  [[ -z "$model" ]] || model_ok "$model" || die "CABINET_MODEL is '$v', which is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -. Give one with cabinet config --model <name>, or cabinet config --model off"
+}
+# model_say <runner> <model>: whether the agent tool lists the model, without a run (lib.js, model-check).
+# A model missing from its list is said, never refused: the owner may know one the list does not show.
+model_say() {
+  [[ -n "$2" ]] || return 0
+  [[ "$1" != custom ]] || { echo "Model $2: not checked: the custom runner cannot list its models without a run."; return 0; }
+  local st m how
+  IFS=$'\t' read -r st m how < <(node "$LIBJS" model-check "$1" "$2") || true
+  case "$st" in
+    ok) echo "Model $2: one of $1's models." ;;
+    missing) echo "Model $2: not in $1's model list ($how). It is written anyway; a run with it may fail. Change it with cabinet config --model <name>|off." ;;
+    unlisted) echo "Model $2: not checked: $1 cannot list its models without a run." ;;
+    *) echo "Model $2: not checked: $1's model list could not be read ($how)." ;;
+  esac
+}
 # env_ok <setting> <value>: a value written to cabinet.env in double quotes, given now or carried
 # over, passes safe as well as its own check, before anything is written.
 env_ok() { local v="$2"; [[ -t 2 ]] && v="$(printf '%s' "$v" | TERM_OUT=1 term_text)"; safe "$2" || die "$1 is '$v', which cannot be written back: no \$, backtick, backslash, double quote or line break. Set it again with cabinet config, or correct it by hand"; }
@@ -389,6 +411,7 @@ check_answers() {
   has "$RUNNERS custom" "$runner" || die "runner must be one of: $RUNNERS, custom"
   [[ "$runner" != custom || -n "$runner_cmd" ]] || die "--runner custom needs --runner-cmd"
   [[ "$runner_cmd" != *"'"* && "$runner_cmd" != *[[:cntrl:]]* ]] || die "the runner command cannot contain single quotes or control characters"
+  check_model
   if [[ -n "$brief" ]]; then
     brief="$(when_norm "$brief")" || die "the brief time must be a time like \"7 AM\" or \"7:30 PM\" for every day, days and a time like \"fri 4 PM\" or \"sun,mon,tue,wed,thu 8 AM\" (day names in full work too), or off"
   fi
@@ -415,6 +438,16 @@ check_credit() {   # check_credit <the mode the result has>: credit and cemail (
   ((cemail_given)) || return 0
   [[ "$cemail" == off ]] || credit_email_ok "$cemail" || die "--credit-email must be a GitHub App's bot noreply email, like 123+my-app[bot]@users.noreply.github.com, or off"
   [[ "$1" == on ]] || die "--credit-email goes with --credit-roles on: with credit off, no email is used"
+}
+model_question() {   # the setup and config question, asked until the answer is a model name or the default
+  local a
+  echo "  The model every run asks $runner for. Enter keeps the tool's own default; a job's MODEL line overrides it."
+  while :; do
+    a="$(ask "Model (a name $runner knows, or default)" "${model:-default}")"
+    [[ "$a" == default || "$a" == off ]] && a=""
+    if [[ -z "$a" ]] || model_ok "$a"; then model="$a"; return 0; fi
+    echo "  '$(printf '%s' "$a" | TERM_OUT=1 term_text)' is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -."
+  done
 }
 credit_question() {   # the setup question, the offered answer in $credit
   echo "  Credit roles: each commit a role makes in a Cabinet run credits that role beside you, with one Co-authored-by line"
@@ -444,7 +477,7 @@ cmd_init() { setup init "$@"; }
 setup() {
   local how=$1; shift
   local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" price="" backup="" yes=0 repos=() r
-  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="on" cemail="" cemail_given=0
+  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="on" cemail="" cemail_given=0 model=""
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; shift 2 ;;
@@ -454,6 +487,7 @@ setup() {
       --roles) need "--roles needs a value" "$@"; roles="$2"; shift 2 ;;
       --runner) need "--runner needs a value" "$@"; runner="$2"; shift 2 ;;
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; shift 2 ;;
+      --model) need "--model needs a model name, or off" "$@"; model="$2"; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; shift 2 ;;
@@ -570,6 +604,7 @@ setup() {
       echo "  Custom tool: the command to run, with the prompt as \"\$CABINET_PROMPT\" (and the role as \$CABINET_AGENT)."
       runner_cmd="$(ask "Command" "$runner_cmd")"
     fi
+    model_question
     ask_budget
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
@@ -604,6 +639,7 @@ setup() {
     [[ ! -e "$ws" ]] || [[ -z "$(ls -A "$ws")" ]] || die "$ws exists and is not empty"
   fi
   [[ "$layout" != inside ]] || has "private shared" "$visibility" || die "inside is private or shared, not '$visibility'"
+  [[ "$model" == off ]] && model=""
   check_answers
   check_credit "$credit"
   [[ "$cemail" == off ]] && cemail=""
@@ -702,7 +738,7 @@ setup() {
     [[ -n "$pkg_desc" ]] && echo "  About     $pkg_desc (from package.json)"
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
-    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, brief ${brief:-off}, week starts $week, writing $writing"
+    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, model ${model:-the tool default}, brief ${brief:-off}, week starts $week, writing $writing"
     echo "  Credit    roles credited on commits from Cabinet runs: $credit${cemail:+, as $cemail}"
     [[ -n "$budget" ]] && echo "  Budget    \$$budget a week${price:+, priced at $price per million tokens}"
     echo "  Backups   ${backup:-off}"
@@ -753,6 +789,7 @@ setup() {
       '/^CABINET_BACKUP_DIR=.*/' 'CABINET_BACKUP_DIR="${B}"' '/^CABINET_BUDGET=.*/' 'CABINET_BUDGET="${U}"' '/^CABINET_PRICE=.*/' 'CABINET_PRICE="${P}"' \
       '/^CABINET_LAYOUT=.*/' 'CABINET_LAYOUT="${L}"' '/^CABINET_VISIBILITY=.*/' 'CABINET_VISIBILITY="${V}"'
     CR="$credit" CE="$cemail" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_CREDIT_ROLES=.*/' 'CABINET_CREDIT_ROLES="${CR}"' '/^CABINET_CREDIT_EMAIL=.*/' 'CABINET_CREDIT_EMAIL="${CE}"'
+    M="$model" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_MODEL=.*/' 'CABINET_MODEL="${M}"'
     # Shared, each machine answers for itself (cabinet.local.env, never committed): this one just did.
     [[ "$layout" == inside && "$visibility" == shared ]] && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit" >> "$ws/cabinet.local.env"
   fi
@@ -868,6 +905,7 @@ setup() {
   fi
 
   echo
+  is_placed cabinet.env && model_say "$runner" "$model"
   echo "Created $name at $ws (slug $slug, cabinet $VERSION)."
   echo "Next:"
   echo "  - Fill the TBDs in $([[ "$layout" == inside ]] && echo cabinet/)AGENTS.md: what $name is, its product rules, how to test, the repo rows."
@@ -1096,7 +1134,7 @@ cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
   local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
-  local credit="" cemail="" set_credit=0 cemail_given=0
+  local credit="" cemail="" set_credit=0 cemail_given=0 model="" set_model=0 o_model
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1107,6 +1145,7 @@ cmd_config() {
       --roles) need "--roles needs a value" "$@"; roles="$2"; set_roles=1; shift 2 ;;
       --runner) need "--runner needs a value" "$@"; runner="$2"; set_runner=1; shift 2 ;;
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; set_cmd=1; shift 2 ;;
+      --model) need "--model needs a model name, or off" "$@"; model="$2"; set_model=1; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
@@ -1132,7 +1171,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir, --backup-time and --credit-roles: the other settings are shared by every machine"
     (( set_backup || set_btime || clear || set_credit )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, or --clear"
     (( clear && set_credit )) && die "--clear cannot be combined with --credit-roles"
@@ -1159,6 +1198,7 @@ cmd_config() {
   [[ -z "$o_brief" ]] || o_brief="$(when_norm "$o_brief" || printf '%s' "$o_brief")"   # "daily 07:00" is "7:00 AM": no change
   ((set_name)) || name="$o_name"; ((set_slug)) || slug="$o_slug"; ((set_owner)) || owner="$o_owner"; ((set_email)) || email="$o_email"
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
+  o_model="$(envget CABINET_MODEL)"; ((set_model)) || model="$o_model"
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
   ((set_writing)) || writing="${o_writing:-standard}"
   o_hard="$(hard_now "$ws")"; ((set_hard)) || hard="$o_hard"
@@ -1212,6 +1252,7 @@ cmd_config() {
     roles="$picked"
     runner="$(ask "Agent tool for scheduled jobs (${RUNNERS// /, }, or custom)" "$runner")"
     [[ "$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')" == custom ]] && runner_cmd="$(ask "Command, with the prompt as \"\$CABINET_PROMPT\"" "$runner_cmd")"
+    model_question
     ask_budget
     echo "  The scheduled runner moves ready work through build and review while you are away, within a cost limit per run:"
     echo "  off, small (only small tasks) or all (small tasks and ready specs). It runs agents unattended."
@@ -1245,7 +1286,10 @@ cmd_config() {
   hard="$(printf %s "$hard" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
   [[ "$(printf %s "$hard" | tr '[:upper:]' '[:lower:]')" == off ]] && hard=off
   [[ "$hard" == off || "$hard" == "$o_hard" ]] || hard_check "$ws" "$hard"
-  # Every value written back in double quotes, given now or carried over, before any other check.
+  # The model first, so a carried value names its own fix; then every value written back in double
+  # quotes, given now or carried over, before any other check.
+  [[ "$model" == off ]] && model=""
+  check_model
   env_ok CABINET_PROJECT "$name"; env_ok CABINET_SLUG "$slug"; env_ok CABINET_ROLES "$roles"; env_ok CABINET_RUNNER "$runner"
   env_ok CABINET_BACKUP_DIR "$backup"; env_ok CABINET_BACKUP_TIME "$backup_time"; env_ok CABINET_BUDGET "$budget"; env_ok CABINET_PRICE "$price"
   env_ok CABINET_PIPELINE "$pipe"; env_ok CABINET_PIPELINE_LIMIT "$plimit"
@@ -1329,6 +1373,7 @@ cmd_config() {
   [[ "$owner" != "$o_owner" || "$email" != "$o_email" ]] && changes+=("owner: $o_owner <$o_email> -> $owner <$email>")
   [[ "$roles" != "$o_roles" ]] && changes+=("roles: $o_roles -> $roles")
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
+  [[ "$model" != "$o_model" ]] && changes+=("model: ${o_model:-the tool default} -> ${model:-the tool default}")
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
   [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
@@ -1375,6 +1420,9 @@ cmd_config() {
   setenv CABINET_PROJECT "$name"; setenv CABINET_ROLES "$roles"; setenv CABINET_RUNNER "$runner"
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
+  [[ "$model" == "$o_model" ]] || setenv CABINET_MODEL "$model"
+  # A new model, or a new tool for the one set: whether the tool lists it (said, never refused).
+  [[ "$model" == "$o_model" && "$runner" == "$o_runner" ]] || model_say "$runner" "$model"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
   if ((credit_w)); then
     setenv CABINET_CREDIT_ROLES "$credit"

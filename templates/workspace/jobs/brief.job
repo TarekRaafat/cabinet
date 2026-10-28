@@ -6,6 +6,8 @@ AGENT=chief-of-staff
 WHEN="7:00 AM"
 MINUTES="5 to 15"
 RESULT="BRIEF.md"
+# MODEL: the model this job's runs ask for, in place of CABINET_MODEL in cabinet.env, like MODEL="<name>".
+# Unset: CABINET_MODEL, else the agent tool's default.
 # TIMEOUT: minutes before a run is stopped. Empty: CABINET_JOB_TIMEOUT in cabinet.env (60). 0: no limit.
 TIMEOUT=""
 # QUIET_DAYS: a scheduled run skips the agent when nothing changed since the last full run: no commit,

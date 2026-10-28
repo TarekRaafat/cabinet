@@ -14,6 +14,13 @@ source "$WS/bin/platform.sh"   # this machine: logs, dates, the passphrase, sche
 CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
 CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
+CABINET_MODEL="${CABINET_MODEL:-}"   # the model every run asks for; empty: the tool's default
+# A model name, checked before it reaches a tool (bin/cabinet checks the same): never a leading -, which
+# a tool would read as an option of its own.
+model_ok() {
+  local LC_ALL=C re='^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$'   # C: A-Z is ASCII only
+  [[ "$1" =~ $re ]]
+}
 RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs CABINET_RUNNER_CMD
 CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
@@ -148,14 +155,14 @@ spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 ==
 # everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
 # Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no
 # terminal input, which a background group would stop on.
-run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_agent, stopped at the limit
-  local limit=$1 why=$2
-  ((limit)) || { run_agent; return; }
+run_limited() {  # run_limited <minutes, 0 for none> <what set the limit> [<model> <its file>]: run_agent, stopped at the limit
+  local limit=$1 why=$2; shift 2
+  ((limit)) || { run_agent "$@"; return; }
   local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
   # Stopped means the watchdog stopped it (it writes the mark), never that the clock moved past the
   # limit: a machine that sleeps during a run moves the clock, not the watchdog's timer.
   local mark; mark="$(mktemp "${TMPDIR:-/tmp}/cabinet-run.XXXXXX")"
-  set -m; run_agent </dev/null & pid=$!; set +m
+  set -m; run_agent "$@" </dev/null & pid=$!; set +m
   node "$LIBJS" watchdog "$secs" "$pid" "$mark" & dog=$!
   trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; rm -f "$mark"; exit 130' INT TERM
   wait "$pid" || st=$?
@@ -169,7 +176,13 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit>: run_a
 
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
 # scheduled jobs and role drafts.
-run_agent() {
+run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else CABINET_MODEL from cabinet.env
+  local model="${1:-}" from="${2:-}"
+  [[ -n "$model" ]] || { model="$CABINET_MODEL"; from=cabinet.env; }
+  # First, for every runner: a model reaches a tool only as a name, never as code or an option.
+  [[ -z "$model" ]] || model_ok "$model" || { echo "the model '$model' in $from is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --model off" >&2; return 2; }
+  local -a mo
+  mo=(); [[ -z "$model" ]] || mo=(--model "$model")
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
   # Every runner gets the role in $CABINET_AGENT and the credit its commits carry (credit roles):
@@ -180,26 +193,27 @@ run_agent() {
   # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
   if [[ "$CABINET_RUNNER" == custom ]]; then
     [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
-    CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" bash -c "$CABINET_RUNNER_CMD"; return
+    CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" CABINET_MODEL="$model" bash -c "$CABINET_RUNNER_CMD"; return
   fi
   [[ "$CABINET_RUNNER" != gemini ]] || { echo "CABINET_RUNNER=gemini is no longer a runner (Gemini CLI users moved to Antigravity): cabinet config --runner antigravity" >&2; return 2; }
   has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
   # Each built-in runner prints JSON, for the cost it reports: the reply goes on to the log as
   # before, the cost to $SPEND (spend_report).
   local out st=0; out="$(mktemp)"
-  # In a subshell, so the caller keeps none of the run's variables.
+  # In a subshell, so the caller keeps none of the run's variables. The model, when there is one, is its
+  # own argument right after the tool's --model option, before the prompt (docs/agent-setup.md).
   ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"
   case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json "$PROMPT" ;;
-    codex)    codex exec --json "$as_role" ;;
+    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} "$PROMPT" ;;
+    codex)    codex exec --json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the
     # prompts keeps its deny rules, as the owner saw with a denied command (docs/guardrails.md).
-    antigravity) agy -p "$as_role" --output-format json --dangerously-skip-permissions ;;
-    qwen)     qwen --approval-mode auto -o json "$as_role" ;;
-    grok)     grok -p "$as_role" --permission-mode auto --output-format json ;;
-    opencode) opencode run --format json "$as_role" ;;
+    antigravity) agy ${mo[@]+"${mo[@]}"} -p "$as_role" --output-format json --dangerously-skip-permissions ;;
+    qwen)     qwen --approval-mode auto -o json ${mo[@]+"${mo[@]}"} "$as_role" ;;
+    grok)     grok ${mo[@]+"${mo[@]}"} -p "$as_role" --permission-mode auto --output-format json ;;
+    opencode) opencode run --format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # --force lets print mode write files (the brief); deny rules are the guardrail.
-    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json "$as_role" ;;
+    cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
   esac ) > "$out" || st=$?
   spend_report "$out"; rm -f "$out"; return "$st"
 }
