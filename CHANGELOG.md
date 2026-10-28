@@ -19,25 +19,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Fixes
 
-- `cabinet config` checks every setting it writes back to `cabinet.env` before writing anything, the ones it carries over unchanged included, so a value edited by hand that holds `# Changelog
-
-Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
-
-## 0.2.0 - Unreleased
-
-### Credit roles
-
-- A commit a role makes in a Cabinet run can credit that role beside you: its message ends with one `Co-authored-by: Cabinet <role> <347351783+cabinet-team[bot]@users.noreply.github.com>` line, which GitHub shows with the Cabinet Team avatar. You stay the author and still push. New options for `cabinet new`, `init` and `config`: `--credit-roles off|on` (`on` for a new workspace, and asked at setup) and `--credit-email <email>|off` (your own GitHub App's bot noreply email). `cabinet config --this-machine --credit-roles off|on` answers for one machine; in a shared `cabinet/`, each machine answers for itself. Only commits made in a Cabinet run are credited (scheduled jobs, `handoff run`, `spec run`, `role draft`), and only new ones (an amend with a new message, `git commit --amend -m` or `-F`, counts as a new one): never any other amend, a merge or a squash, nor a commit a rebase or cherry-pick replays. The "Commits." house rule in `AGENTS.md` follows the setting; the concepts page explains it.
-- Bootstrap places the credit hook as `prepare-commit-msg` in the global hooks folder, in place of the pass-through stub there (it still runs a repo's own `prepare-commit-msg`, whose failure still stops the commit). A hook of your own there is never replaced. New doctor checks `credit.setting`, `credit.email` and `credit.hook`; new `cabinet next` step `credit-roles`. Every runner now gets the role in `CABINET_AGENT`, not only `custom`.
-- After `npx cabinet update`: nothing changes until you answer. `cabinet next` and the brief ask once (`cabinet config --credit-roles on`, or `off`); then run `cabinet bootstrap` to place the credit hook on this machine.
-
-### Color in a terminal
-
-- The `cabinet` command's output is easier to scan in a terminal, in the terminal's own colors: headings, first lines and the command to run next in bold; folders, dates and handoff IDs dim; ok green, notes blue, problems and errors (`cabinet:`) red; and what waits on you in yellow, the terminal's stand-in for the owner's brass: `next`'s step numbers, the digest's sign-off queue and actions, `list`'s WAITING ON YOU, and `owner` in `handoff list`. On a Verdict line of `handoff list <name>`, PASS is green and BLOCK and CHANGES red. `cabinet doctor` keeps its colors and shows its section headings in bold.
-- `cabinet update` and `cabinet changelog` show the changelog for reading in a terminal: versions and headings in bold, no `##`, backticks or asterisks, list items and paragraphs wrapped at words to the terminal's width (`COLUMNS` when set, else 80 when the width is unknown), and a word longer than the line kept whole.
-- Output is styled only when it goes to a terminal, `NO_COLOR` is unset or empty and `TERM` is not `dumb`. Piped, written to a file (`digest --write`), with `--json`, or with `NO_COLOR=1`, every command prints the same text as in 0.1.3, byte for byte, so agents and scripts read what they always did. `cabinet doctor` now also leaves color out with `TERM=dumb`.
-
-, a backtick, a backslash, a double quote or a line break stops it, naming the setting, instead of becoming code the next time a script reads the file. A role's name is lowercase letters, digits and dashes, and a file under `roles/` with any other name is no longer taken as a role.
+- `cabinet config` checks every setting it writes back to `cabinet.env` before writing anything, the ones it carries over unchanged included, so a value edited by hand that holds `$`, a backtick, a backslash, a double quote or a line break stops it, naming the setting, instead of becoming code the next time a script reads the file. A role's name is lowercase letters, digits and dashes, and a file under `roles/` with any other name is no longer taken as a role.
 
 ### Rules
 
