@@ -563,7 +563,7 @@ const home = `
 <div class="team-grid">
 <div class="chairs-wrap"><div class="chairs-ring">${chairs(360, "chairs-pic")}<div class="seats">${chairButtons}</div></div><p class="caption nojs">${TO.team.noJs}</p></div>
 <div class="role-panel card" hidden aria-live="polite"><p class="role-name"></p><p class="role-desc"></p>
-<p class="caption more">${codeInline(TO.team.more)}</p><div class="chips">${others.map((r) => `<button type="button" class="chip-btn" data-role="${r}" aria-pressed="false">${r}</button>`).join("")}</div></div>
+<p class="caption more">${TO.team.more}</p><div class="chips">${others.map((r) => `<button type="button" class="chip-btn" data-role="${r}" aria-pressed="false">${r}</button>`).join("")}</div><p class="caption call">${codeInline(TO.team.call)}</p></div>
 <dl class="role-list no-term">${[...seven, ...others].map((r) => `<dt>${r}</dt><dd>${esc(roles[r])}</dd>`).join("")}</dl>
 </div>
 <script type="application/json" id="roles">${roleData}</script>

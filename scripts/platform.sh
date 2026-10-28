@@ -27,7 +27,8 @@ ERR_TAG="cabinet:"; styled 2 && ERR_TAG=$'\033[31m'"cabinet:"$'\033[0m'
 TERM_OUT=0; [[ -t 1 ]] && TERM_OUT=1
 term_text() {
   if ((TERM_OUT == 0)); then cat; return 0; fi
-  LC_ALL=C tr '\000-\010\013-\037\177' '?' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]/?/g'
+  # A \r before a line end ends the line (a file saved with CRLF); any other \r shows as '?'.
+  LC_ALL=C sed $'s/\r$//' | LC_ALL=C tr '\000-\010\013-\037\177' '?' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]/?/g'
 }
 # term_width: the width to wrap at: COLUMNS when it is above 0, else the terminal's own (stty on
 # fd 3, the stream being written, else on stdin; never tput, which can miss a change), else 80.

@@ -340,7 +340,7 @@ name_ok() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != . && "$1" != .. ]]; }
 role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 # env_ok <setting> <value>: a value written to cabinet.env in double quotes, given now or carried
 # over, passes safe as well as its own check, before anything is written.
-env_ok() { safe "$2" || die "$1 is '$2', which cannot be written back: no \$, backtick, backslash, double quote or line break. Set it again with cabinet config, or correct it by hand"; }
+env_ok() { local v="$2"; [[ -t 2 ]] && v="$(printf '%s' "$v" | TERM_OUT=1 term_text)"; safe "$2" || die "$1 is '$v', which cannot be written back: no \$, backtick, backslash, double quote or line break. Set it again with cabinet config, or correct it by hand"; }
 
 # The workspace that already uses a slug on this machine (its schedules or its log folder),
 # if not <ws>. Paths are compared with symlinks resolved.
@@ -1957,9 +1957,6 @@ cmd_list() {
   return 0
 }
 
-# Remove a workspace from this machine: its schedules, its log folder, its folder, and inside a
-# project what setup added there. Shows the plan first; the guardrails stay (other
-# workspaces use them); the backup key and archives stay unless --delete-key.
 # What is ready to push, per repo: the unpushed commits (local refs only: no fetch), the handoffs whose
 # Verdict lines name each, and their readiness (handoff list --json). Changes nothing.
 cmd_push_check() {
@@ -1978,19 +1975,21 @@ cmd_push_check() {
   if ((json)); then printf '%s\n' "$out"; return 0; fi
   # Styled (platform.sh): repo names bold, hashes, IDs and folders dim, ready to push green, not ready red;
   # commit subjects and the rest of the project's text through term_text first.
-  local kind a b c d e f g h i
-  echo "${S_B}Ready to push, per repo${S_Z} ${S_D}($(printf '%s' "$ws" | term_text))${S_Z}${S_B}:${S_Z}"
-  json -r --arg hs "$hs" '((hs) => $.repos.flatMap((r) => [["R", r.name, r.path, r.branch ?? "", r.upstream ?? "", r.commits.length, r.files, r.insertions, r.deletions, r.ready, r.why ?? ""],
-      ...r.commits.map((c) => ["C", c.hash, c.subject, c.handoffs.join(" ")]),
+  # One row per line, tab separated: tab is white space to read, so a value that can be empty is "-"
+  # (no branch, upstream or reason can be "-"), and a subject, which can be empty, comes last.
+  local kind a b c d e f g h
+  echo "${S_B}Ready to push, per repo${S_Z} ${S_D}($(printf '%s' "${ws/#$HOME/$TILDE}" | term_text))${S_Z}${S_B}:${S_Z}"
+  json -r --arg hs "$hs" '((hs) => $.repos.flatMap((r) => [["R", r.name, r.path, r.branch ?? "-", r.upstream ?? "-", r.commits.length, r.files, r.insertions, r.deletions],
+      ...r.commits.map((c) => ["C", c.hash, c.handoffs.join(" ") || "-", c.subject]),
       ...[...new Set(r.commits.flatMap((c) => c.handoffs))].map((i) => ((e) => ["H", i, e.ready === true ? "ready" : [["missing", e.missing], ["blocking", e.blocking], ["stale", e.stale]]
         .filter(([, x]) => x.length).map(([k, x]) => k + " " + x.join(", ")).join("; ") || (e.ready === null ? "needs no review" : "not ready")])(hs.find((h) => h.id == i))),
-      ["E", r.ready, r.why ?? ""]]).map((l) => l.map((x) => String(x).replace(/[\t\n]/g, " ")).join("\t")).join("\n"))(JSON.parse($hs))' <<<"$out" | term_text \
-  | while IFS=$'\t' read -r kind a b c d e f g h i; do
+      ["E", r.ready, r.why ?? "-"]]).map((l) => l.map((x) => String(x).replace(/[\t\n]/g, " ")).join("\t")).join("\n"))(JSON.parse($hs))' <<<"$out" | term_text \
+  | while IFS=$'\t' read -r kind a b c d e f g h; do
     case "$kind" in
       R) echo; echo "${S_B}$a${S_Z} ${S_D}(${b/#$HOME/$TILDE})${S_Z}"
-         if [[ -n "$c" && -n "$d" ]]; then echo "  Branch $c, upstream $d: $e unpushed commit(s), $f file(s) changed, $g insertion(s), $h deletion(s)"
-         elif [[ -n "$c" ]]; then echo "  Branch $c"; fi ;;
-      C) c="${c// /, }"; echo "  ${S_D}$a${S_Z} $b ${S_D}(${c:-no handoff})${S_Z}" ;;
+         if [[ "$c" != - && "$d" != - ]]; then echo "  Branch $c, upstream $d: $e unpushed commit(s), $f file(s) changed, $g insertion(s), $h deletion(s)"
+         elif [[ "$c" != - ]]; then echo "  Branch $c"; fi ;;
+      C) [[ "$b" == - ]] && b="no handoff" || b="${b// /, }"; echo "  ${S_D}$a${S_Z} $c ${S_D}($b)${S_Z}" ;;
       H) echo "  ${S_D}$a${S_Z}: $b" ;;
       E) if [[ "$a" == true ]]; then echo "  ${S_G}ready to push${S_Z}"; else echo "  ${S_R}not ready${S_Z}: $b"; fi ;;
     esac
@@ -1998,6 +1997,9 @@ cmd_push_check() {
   return 0
 }
 
+# Remove a workspace from this machine: its schedules, its log folder, its folder, and inside a
+# project what setup added there. Shows the plan first; the guardrails stay (other
+# workspaces use them); the backup key and archives stay unless --delete-key.
 cmd_remove() {
   local dir="" yes=0 dry=0 force=0 delkey=0 x
   for x in "$@"; do

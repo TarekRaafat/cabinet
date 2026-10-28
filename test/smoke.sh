@@ -270,7 +270,7 @@ grep -qF 'Start the Problem from the real problem the request solves, not the re
   || fail "product-manager's spec step 3 does not start from the real problem"
 # How to call a role from a session: @agent-<role> in Claude Code, plain words in any other tool; the site says it too.
 grep -qF '`@agent-<role>`, for example `@agent-product-manager`' "$KIT/docs/concepts.md" && grep -qF 'As product-manager, read agents/product-manager.md and ...' "$KIT/docs/concepts.md" \
-  && grep -qF '@agent-product-manager' "$KIT/site/copy.js" || fail "the concepts page or the site does not say how to call a role from a session (@agent-)"
+  && grep -qF 'call: "Call a role from a session with `@agent-product-manager`' "$KIT/site/copy.js" && grep -qF '<p class="caption call">${codeInline(TO.team.call)}</p>' "$KIT/site/build.js" || fail "the concepts page or the site does not say how to call a role from a session (@agent-)"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -557,7 +557,7 @@ rm -f "$W/runner.out"
 # The agent sleeps for a time only this suite uses (its own PID in it), so another suite's sleep, like the
 # decoy below, is never taken for one this run left; a decoy plain sleep 323 stands in for one.
 SL="323.$$"; echo "CABINET_RUNNER_CMD='sleep $SL; :'" >> "$W/cabinet.env"
-left() { pgrep -f "sleep 323\.$$" >/dev/null; }
+left() { pgrep -f "sleep 323\.$$([^0-9]|\$)" >/dev/null; }
 sleep 323 & decoy=$!
 cp "$W/jobs/brief.job" "$T/brief.bak"; sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
 s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
@@ -949,7 +949,7 @@ node "$KIT/tools/build-brand.js" --check || fail "brand/assets/ or docs/logo.svg
 for f in BRAND.md tokens.json text-paths.json; do [[ -f "$KIT/brand/$f" ]] || fail "brand/$f is missing"; done
 j -e '!!$.color.ink.value && !!$.status_color.fix.light && $.mark.places == 8' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json"
 # The brass token is approved (owner, 28 Oct 2026), and the guide's doctor sample shows headings as a terminal prints them: bold, no "== ".
-j -e '$.color.brass.status == "approved"' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json: brass is not approved"
+j -e '$.color.brass.status == "approved" && $.color["brass-light"].status == "approved"' "$KIT/brand/tokens.json" >/dev/null || fail "brand/tokens.json: brass, on light and on dark, is not approved"
 sed -n '/<div class="status-term">/,/<\/pre>/p' "$KIT/brand/index.html" | grep -q '^== ' && fail "the brand guide's doctor sample still shows == headings"
 grep -qx '<b>Kit and roles</b>' "$KIT/brand/index.html" || fail "the brand guide's doctor sample has no bold heading"
 repo="$(j -r '$.repository.url' "$KIT/package.json" | sed 's/^git+//')"
@@ -1978,7 +1978,10 @@ xv="$("$PW/bin/handoff.sh" list --json | j -r --arg i "$x" '$.find((h) => h.depe
 "$PW/bin/handoff.sh" list --json | j -e --arg v "$xv" '((h) => h.blocks.qa == 3 && h.verdicts.filter((v) => v.role == "qa").length == 1 && !("security" in h.blocks))($.find((h) => h.id == $v))' >/dev/null \
   || fail "list --json blocks: $("$PW/bin/handoff.sh" list --json | j -c --arg v "$xv" '$.find((h) => h.id == $v)')"
 "$PW/bin/handoff.sh" list --json | j -e '$.every((h) => typeof h.blocks == "object")' >/dev/null || fail "an entry without blocks"
+# A dry run that stops leaves no stopped mark (a scheduled run would skip the work for it).
+rm -f "$HOME/$LOGS/pipe/run-$x.stopped"
 h="$(git -C "$PW" rev-parse HEAD)"; out="$(run "$x" --dry-run)" && fail "run --dry-run went on past the loop breaker: $out"
+[[ ! -f "$HOME/$LOGS/pipe/run-$x.stopped" ]] || fail "a dry run's stop left the stopped mark"
 [[ "$out" == "Stopped: qa has blocked it 3 times on $xv, more than --retries allows (2): the owner decides (fix it another way, change the work, override the BLOCK, or drop it)" && "$(git -C "$PW" rev-parse HEAD)" == "$h" ]] || fail "run --dry-run at the loop breaker: $out"
 rc=0; out="$(run "$x")" || rc=$?
 [[ $rc == 1 ]] && echo "$out" | grep -qF "Stopped: qa has blocked it 3 times on $xv, more than --retries allows (2)" && ! echo "$out" | grep -q 'fixes\|verifies' || fail "a new run past the loop breaker: $out"
@@ -2971,6 +2974,14 @@ for c in "handoff list" "handoff list owner" digest next list; do
   esac
 done
 o="$(cd "$CT" && NO_COLOR=1 tt "$F" handoff list)"; ! raw "$o" && grep -qF "$title" <<<"$o" || fail "handoff list in a terminal with NO_COLOR printed a control character: $o"
+# A file saved with CRLF line ends shows no '?' at each line's end; a \r inside a line still does.
+cp "$CT/HANDOFFS.md" "$T/ctl-handoffs"; printf '\n### H-20260101-03: Windows line\r\n- From: qa -> To: owner\r\n- Status: open (2026-01-01)\r\n- Changed: a\rb\r\n' >> "$CT/HANDOFFS.md"
+o="$(cd "$CT" && tt "$F" handoff list owner)"
+grep -qx '### H-20260101-03: Windows line' <<<"$o" && grep -qx -- '- Changed: a?b' <<<"$o" || fail "handoff list owner with CRLF lines: $(grep -A4 'Windows' <<<"$o" | od -c | head)"
+cp "$T/ctl-handoffs" "$CT/HANDOFFS.md"
+# A refused config value is shown through the same filter (the project name above holds ESC [2J and a C1 control).
+o="$(cd "$CT" && tt bash -c '"$0" config --yes --week-start monday' "$F")"
+grep -qF "CABINET_PROJECT is 'Ctl ?[2J?1m Co', which cannot be written back" <<<"$o" && ! grep -q "$ESC\\[2J" <<<"$o" || fail "config printed a refused value's control characters: $o"
 # Piped and --json, as written, byte for byte.
 (cd "$CT" && "$F" handoff list) | grep -qF "Red ${ESC}[31mtitle ${ESC}]0;x${BEL} end" || fail "handoff list piped changed the title"
 (cd "$CT" && "$F" handoff list owner) | grep -qF "Red ${ESC}[31mtitle ${ESC}]0;x${BEL} end" || fail "handoff list owner piped changed the title"
@@ -2989,14 +3000,14 @@ s64() {
 local PC="$T/pc" ESC=$'\033'
 "$F" new "$PC" --yes --roles "qa security" >/dev/null || fail "new for push-check"
 # app: cloned (so its main has an upstream) with four unpushed commits; good: one, on a ready handoff;
-# det: detached; noup: no upstream; gone: not on this machine.
+# same: nothing to push; det: detached; noup: no upstream; gone: not on this machine.
 mkr() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add -A && git -C "$1" commit -qm init; }
-mkr "$T/pc-src"; git clone -q "$T/pc-src" "$PC/app"; git clone -q "$T/pc-src" "$PC/good"; git clone -q "$T/pc-src" "$PC/det"; mkr "$PC/noup"
+mkr "$T/pc-src"; git clone -q "$T/pc-src" "$PC/app"; git clone -q "$T/pc-src" "$PC/good"; git clone -q "$T/pc-src" "$PC/det"; git clone -q "$T/pc-src" "$PC/same"; mkr "$PC/noup"
 git -C "$PC/det" checkout -q --detach
 for n in 1 2 3 4; do echo "$n" >> "$PC/app/f"; git -C "$PC/app" commit -qam "app change $n"; eval "c$n=\$(git -C \"\$PC/app\" rev-parse --short HEAD)"; done
 echo g >> "$PC/good/f"; git -C "$PC/good" commit -qam "good change"; g1="$(git -C "$PC/good" rev-parse --short HEAD)"
 git -C "$PC/app" remote set-url origin https://example.invalid/app.git   # a fetch would fail: none is made
-printf 'app\t-\t-\tno\ngood\t-\t-\tno\ndet\t-\t-\tno\nnoup\t-\t-\tno\ngone\t-\t-\tno\n' >> "$PC/repos.tsv"
+printf 'app\t-\t-\tno\ngood\t-\t-\tno\nsame\t-\t-\tno\ndet\t-\t-\tno\nnoup\t-\t-\tno\ngone\t-\t-\tno\n' >> "$PC/repos.tsv"
 cat >> "$PC/HANDOFFS.md" <<HO
 
 ### H-20260101-01: Ready work
@@ -3014,13 +3025,32 @@ cat >> "$PC/HANDOFFS.md" <<HO
 - Needed: y
 - Verdict: qa PASS 2026-01-02 $c2 specs/qa/b.md
 - Verdict: security PASS 2026-01-02 $c2,$c3 specs/security/b.md
+
+### H-20260101-03: A verdict naming a hash too short to tell commits apart
+- From: backend -> To: qa, security
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+- Verdict: qa PASS 2026-01-02 ${c4:0:6} specs/qa/c.md
+- Verdict: security PASS 2026-01-02 ${c4:0:6} specs/security/c.md
 HO
 git -C "$PC" add -A && git -C "$PC" commit -qm "push-check setup"
 snap() { local r; for r in "$PC" "$PC/app" "$PC/good"; do git -C "$r" for-each-ref; git -C "$r" status --porcelain; done; cksum < "$PC/HANDOFFS.md"; }
 before="$(snap)"
 out="$(cd "$PC/app" && "$F" push-check)" || fail "push-check: $out"
 part() { awk -v n="$1" '$0 == n || index($0, n " (") == 1 { on = 1; print; next } /^[^ ]/ { on = 0 } on' <<<"$out"; }
-for r in workspace app good det noup gone; do [[ -n "$(part "$r")" ]] || fail "push-check has no part for $r: $out"; done
+for r in workspace app good same det noup gone; do [[ -n "$(part "$r")" ]] || fail "push-check has no part for $r: $out"; done
+# Each state's whole part: no branch line for a detached HEAD or a missing repo, the branch alone
+# without an upstream, the counts with one.
+P="$(cd "$PC" && pwd -P)" wb="$(git -C "$PC" symbolic-ref --short HEAD)" nl=$'\n'
+for x in "det ($P/det)$nl  not ready: detached HEAD" "gone ($P/gone)$nl  not ready: not on this machine" \
+  "noup ($P/noup)$nl  Branch main$nl  not ready: no upstream: nothing to compare with" "workspace ($P)$nl  Branch $wb$nl  not ready: no upstream: nothing to compare with" \
+  "same ($P/same)$nl  Branch main, upstream origin/main: 0 unpushed commit(s), 0 file(s) changed, 0 insertion(s), 0 deletion(s)$nl  not ready: nothing to push" \
+  "good ($P/good)$nl  Branch main, upstream origin/main: 1 unpushed commit(s), 1 file(s) changed, 1 insertion(s), 0 deletion(s)$nl  $g1 good change (H-20260101-01)$nl  H-20260101-01: ready$nl  ready to push" \
+  "app ($P/app)$nl  Branch main, upstream origin/main: 4 unpushed commit(s), 1 file(s) changed, 4 insertion(s), 0 deletion(s)$nl  $c4 app change 4 (no handoff)$nl  $c3 app change 3 (H-20260101-02)$nl  $c2 app change 2 (H-20260101-02)$nl  $c1 app change 1 (H-20260101-01)$nl  H-20260101-02: stale qa$nl  H-20260101-01: ready$nl  not ready: $c4 is on no handoff"; do
+  [[ "$(part "${x%% *}")" == "$x" ]] || fail "push-check's part for ${x%% *}:$nl$(part "${x%% *}")$nl--- expected:$nl$x"
+done
+[[ "$(head -1 <<<"$out")" == "Ready to push, per repo ($P):" ]] || fail "push-check's first line: $(head -1 <<<"$out")"
 a="$(part app)"
 grep -qF "Branch main, upstream origin/main: 4 unpushed commit(s), 1 file(s) changed, 4 insertion(s), 0 deletion(s)" <<<"$a" || fail "push-check app's branch line: $a"
 grep -qxF "  $c1 app change 1 (H-20260101-01)" <<<"$a" && grep -qxF "  $c2 app change 2 (H-20260101-02)" <<<"$a" && grep -qxF "  $c3 app change 3 (H-20260101-02)" <<<"$a" \

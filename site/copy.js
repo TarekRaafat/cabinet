@@ -72,7 +72,8 @@ module.exports = {
       you: "You",
       ownerTitle: "You, the owner",
       ownerText: "You bring the vision, the judgment and the final say. Every decision that is irreversible, public or costs money waits for you in the sign-off queue.",
-      more: "More roles: builders for each kind of repo, optional specialists, and any role your project needs, drafted for it. Call a role from a session with `@agent-product-manager` in Claude Code, or in any other tool in plain words: \"As product-manager, read agents/product-manager.md and ...\"",
+      more: "More roles: builders for each kind of repo, optional specialists, and any role your project needs, drafted for it.",
+      call: "Call a role from a session with `@agent-product-manager` in Claude Code, or in any other tool in plain words: \"As product-manager, read agents/product-manager.md and ...\"",
       noJs: "Turn on JavaScript to choose a role. Every role is listed below.",
     },
     work: {

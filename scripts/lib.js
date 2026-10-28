@@ -922,7 +922,7 @@ function pushCheck() {
     if (!o.upstream) return { ...o, upstream: null, why: "no upstream: nothing to compare with" };
     for (const l of (git(p, "log", "--format=%H%x09%h%x09%s", "@{u}..HEAD") || "").split("\n").filter(Boolean)) {
       const [full, hash, ...s] = l.split("\t");
-      const handoffs = hs.filter((e) => e.verdicts.some((v) => v.commits.some((c) => c.length >= 4 && full.startsWith(c)))).map((e) => e.id);
+      const handoffs = hs.filter((e) => e.verdicts.some((v) => v.commits.some((c) => c.length >= 7 && full.startsWith(c)))).map((e) => e.id);
       o.commits.push({ hash, subject: s.join("\t"), handoffs });
     }
     const st = git(p, "diff", "--shortstat", "@{u}..HEAD") || "";

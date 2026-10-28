@@ -28,6 +28,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ### Fixes
 
+- `cabinet handoff run --dry-run` that stops no longer leaves the stopped mark a real stop leaves, so a scheduled run no longer skips work only because a dry run looked at it.
 - `cabinet config` checks every setting it writes back to `cabinet.env` before writing anything, the ones it carries over unchanged included, so a value edited by hand that holds `$`, a backtick, a backslash, a double quote or a line break stops it, naming the setting, instead of becoming code the next time a script reads the file. A role's name is lowercase letters, digits and dashes, and a file under `roles/` with any other name is no longer taken as a role.
 
 ### Docs

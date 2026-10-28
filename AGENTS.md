@@ -68,7 +68,7 @@ Every command follows these, so a person or an agent who knows one command can g
    A new verb is added to this list, with its meaning, in the same change.
 4. **A noun alone shows its verbs** (`cabinet role` is `cabinet role --help`).
 5. **Options mean the same everywhere.**
-   - `--json`: every command that reports (`list`, `check`, `verify`, `next`, `doctor`, `digest`, `status`, `outdated`, `changelog`, `version`, `help`) prints JSON instead, on stdout. Its fields are never renamed without a changelog entry.
+   - `--json`: every command that reports (`list`, `check`, `verify`, `next`, `doctor`, `digest`, `push-check`, `status`, `outdated`, `changelog`, `version`, `help`) prints JSON instead, on stdout. Its fields are never renamed without a changelog entry.
    - `--dry-run`: every command that changes the setup (settings, the team, repos, this machine) or deletes anything prints what it would do and changes nothing.
    - `--yes` (`-y`): every command that asks takes the defaults and asks nothing.
    - `-C <dir>`, before the command: run as if started in `<dir>`, as git does. Commands find the workspace from the current folder upward, so none takes a folder to act on as an argument; `new` and `init` take the folder they make or adopt, which is what they act on.
