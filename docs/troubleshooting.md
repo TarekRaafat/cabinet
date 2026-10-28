@@ -29,6 +29,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 
 | Message | ID | Cause | Fix |
 |---|---|---|---|
+| `note cabinet <...> is out; this workspace runs <...>. Run<...>: <...>` | `kit.newer` | A newer Cabinet is on the registry (the release notice, at most one check a day). A note, never a problem. | Run the command it gives when you choose; `cabinet config --update-check off` turns the notice off. |
 | `FIX kit files edited here (an update will refuse them; move the change to a project file or into the kit): <...>` | `kit.unedited` | A file the kit owns (`CABINET.md`, `bin/`, `.cabinet/`) was changed in the workspace. | Move your change to a project file (`AGENTS.md`, `roles/`, `jobs/`), then `git checkout -- <file>`. |
 | `FIX workspace CLAUDE.md link missing (run bin/bootstrap.sh)` | `kit.claude-link` | The workspace's `CLAUDE.md` link to `AGENTS.md` is gone. | `bin/bootstrap.sh`. |
 | `FIX HANDOFFS.md missing` | `kit.handoffs-file` | The handoff log was deleted. | Restore it from git. |

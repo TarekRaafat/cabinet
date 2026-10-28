@@ -17,6 +17,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com
 # Started from a Cabinet run, the suite would inherit the credit hook's variables: no commit it makes is a run's.
 unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS
+# No section reaches the registry: the release notice is off everywhere but its own section, which fakes npm.
+export CABINET_UPDATE_CHECK=off
 # The real home folder, git config and agent tool settings are never read or written.
 export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset XDG_CONFIG_HOME XDG_STATE_HOME   # their defaults follow HOME into the temp folder
@@ -3347,6 +3349,207 @@ out="$(q model-q3 'x;y' m-1)"; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q3/cabin
 grep -q -- '--model' "$KIT/docs/commands.md" && grep -q 'MODEL=' "$KIT/docs/commands.md" && grep -q 'model\.exists' "$KIT/docs/troubleshooting.md" && grep -q 'model\.name' "$KIT/docs/troubleshooting.md" \
   && grep -q '^# MODEL:' "$KIT/templates/workspace/jobs/brief.job" && grep -q -- '--model' "$KIT/CHANGELOG.md" && grep -qF '| `codex` (Codex 0.165.0) | `--model` | `codex debug models`' "$KIT/docs/agent-setup.md" || fail "a model-choice doc is missing"
 for f in "$MW" "$T/model-n1" "$T/model-q1" "$T/model-q2" "$T/model-q3"; do "$F" -C "$f" remove --yes --force >/dev/null 2>&1 || true; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "release notice: a newer Cabinet is said in next, status and the doctor, asked once a day" ""
+s67() {
+# Its own HOME, the notice on (the rest of the suite runs with it off), and a fake npm first on PATH
+# before the first command: no request ever reaches the registry. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" NP="$T/rn-npm" NL="$T/rn-npm.log" RW="$T/rn-ws" LR V c i o p q st t0 off on pid ppid cmd SP SPH
+export HOME="$T/rn-home" GIT_CONFIG_GLOBAL="$T/rn-home/.gitconfig"; unset CABINET_UPDATE_CHECK NO_UPDATE_NOTIFIER CI
+mkdir -p "$HOME" "$NP"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+LR="$HOME/$LOGS"
+# The fake npm: logs "<arguments>|<folder>", writes its PID and its parent's, sleeps $NP/sleep seconds,
+# fails when $NP/fail exists, else prints $NP/answer as it is.
+cat > "$NP/npm" <<'FAKE'
+#!/bin/bash
+d="$(dirname "$0")"
+printf '%s|%s\n' "$*" "$(pwd -P)" >> "$d/../rn-npm.log"
+echo "$$ $PPID" > "$d/pid"
+[[ -s "$d/sleep" ]] && sleep "$(cat "$d/sleep")"
+[[ -e "$d/fail" ]] && exit 1
+cat "$d/answer"
+FAKE
+chmod +x "$NP/npm"; printf '9.9.9\n' > "$NP/answer"
+export PATH="$NP:$KIT/bin:$PATH"   # the fake npm, and the kit as the cabinet command, for this section only
+V="$(j -r '$.version' "$KIT/package.json")"
+"$F" new "$RW" --yes >/dev/null || fail "new for the release notice"
+RW="$(cd "$RW" && pwd -P)"; LR="$(cd "$LR" && pwd -P)"
+calls() { if [[ -f "$NL" ]]; then wc -l < "$NL" | tr -d ' '; else echo 0; fi; }
+clean() { rm -f "$LR/latest-version" "$NL" "$NP/pid"; rmdir "$LR/latest-version.lock" 2>/dev/null || true; }
+put() { clean; printf '%s' "$1" > "$LR/latest-version"; }
+ago() { if [[ "$(uname)" == Darwin ]]; then date -v-"$1"H +%Y%m%d%H%M; else date -d "$1 hours ago" +%Y%m%d%H%M; fi; }
+stale() { touch -h -t "$(ago 25)" "$LR/latest-version"; }
+# settled: the background check has started and ended (no lock), at most 10 seconds.
+settle() { sleep 0.5; local n; for n in $(seq 36); do [[ -e "$LR/latest-version.lock" ]] || return 0; sleep 0.25; done; }
+# out <command>: the output and exit code of next, status or bin/doctor.sh in the workspace.
+out() { local st=0 o; if [[ "$1" == doctor ]]; then o="$(cd "$RW" && bin/doctor.sh 2>&1)" || st=$?; else o="$("$F" -C "$RW" $1 2>&1)" || st=$?; fi; printf '%s\nexit %s\n' "$o" "$st"; }
+offout() { CABINET_UPDATE_CHECK=off out "$1"; }
+# offx: the off exit codes of next, status and the doctor, read once for the workspace as it stands.
+offx() { OX_next="$(offout next | tail -1)" OX_status="$(offout status | tail -1)" OX_doctor="$(offout doctor | tail -1)"; }
+same() { local v="OX_$1"; [[ "$(tail -1 <<<"$2")" == "${!v}" ]]; }
+notice() { grep -q 'is out\|^latest: cabinet' <<<"$1"; }
+# 13. The suite runs with the notice off.
+grep -qx 'export CABINET_UPDATE_CHECK=off' "$KIT/test/smoke.sh" || fail "the suite does not turn the release notice off"
+# 1. The first check: one request, from Cabinet's own folder, one line written, nothing left behind.
+clean; "$F" -C "$RW" next >/dev/null; settle
+[[ "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "the first check did not write 9.9.9: $(cat "$LR/latest-version" 2>&1)"
+[[ "$(cat "$NL")" == "view @tarekraafat/cabinet version --no-update-notifier|$LR" ]] || fail "the request: $(cat "$NL")"
+[[ "$(cd "$LR" && find . -maxdepth 1 -type f)" == ./latest-version && ! -e "$LR/latest-version.lock" ]] || fail "the check left files: $(ls -A "$LR")"
+# 2. The notice, and one command everywhere: pinned, no pin, only the workspace behind, a shared inside workspace.
+four() {   # four <workspace> <command> [<folder named>]
+  local w=$1 cmd=$2 at="${3:-}" o
+  "$F" -C "$w" outdated --json | j -e --arg c "$cmd" '$.command == $c' >/dev/null || fail "outdated --json in $w: $("$F" -C "$w" outdated --json)"
+  "$F" -C "$w" next --json | j -e --arg c "$cmd" '$.steps.some((s) => s.id == "update" && s.command == $c)' >/dev/null || fail "next --json in $w: $("$F" -C "$w" next --json)"
+  o="$("$F" -C "$w" status)"; grep -qx "latest: cabinet $(cat "$LR/latest-version")" <<<"$o" && grep -qF "$cmd" <<<"$o" || fail "status in $w: $o"
+  "$F" -C "$w" status --json | j -e --arg l "$(cat "$LR/latest-version")" '$.latest == $l' >/dev/null || fail "status --json in $w"
+  st=0; o="$( (cd "$w" && bin/doctor.sh --json) )" || st=$?
+  j -e --arg c "$cmd" --arg l "$(cat "$LR/latest-version")" --arg v "$(cat "$w/.cabinet/version")" \
+    '$.results.some((r) => r.id == "kit.newer" && r.level == "note" && r.message.includes($l) && r.message.includes($v) && r.message.includes($c))' <<<"$o" >/dev/null || fail "doctor kit.newer in $w: $(j -r '$.results.filter((r) => r.id.startsWith("kit")).map((r) => r.message).join("; ")' <<<"$o")"
+  [[ "$(j -r '$.problems' <<<"$o") $st" == "$( (cd "$w" && CABINET_UPDATE_CHECK=off bin/doctor.sh --json) | j -r '$.problems') $( (cd "$w" && CABINET_UPDATE_CHECK=off bin/doctor.sh --json >/dev/null); echo $?)" ]] || fail "the note changed the doctor's problems or exit code in $w"
+  if [[ -n "$at" ]]; then
+    "$F" -C "$w" next | grep -qF "Run it in $at." && (cd "$w" && bin/doctor.sh) | grep -qF "(in $at)" || fail "next or the doctor does not name $at"
+  fi
+}
+put 9.9.9; four "$RW" "npm install @tarekraafat/cabinet@latest && cabinet update"
+cp "$RW/package.json" "$T/rn-pkg"; j '({...$, devDependencies: {}})' "$T/rn-pkg" > "$RW/package.json"
+four "$RW" "npm i -g @tarekraafat/cabinet@latest && cabinet update"
+cp "$T/rn-pkg" "$RW/package.json"
+put "$V"; printf '0.0.1\n' > "$RW/.cabinet/version"; printf '%s\n' "$V" > "$NP/answer"
+four "$RW" "cabinet update"
+printf '%s\n' "$V" > "$RW/.cabinet/version"; printf '9.9.9\n' > "$NP/answer"
+SP="$T/rn-proj"; mkdir -p "$SP"; git -C "$SP" init -q; printf '{"name": "p", "devDependencies": {"@tarekraafat/cabinet": "^%s"}}\n' "$V" > "$SP/package.json"
+(cd "$SP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the notice"
+SPH="$(cd "$SP" && pwd -P)"; put 9.9.9
+four "$SP/cabinet" "npm install @tarekraafat/cabinet@latest && cabinet update" "$SPH"
+# 3. Never waits: with npm hanging, each command returns in its off time (plus 5 seconds), with its off output.
+echo 60 > "$NP/sleep"
+for c in next status doctor; do
+  clean; t0=$SECONDS; off="$(offout $c)"; t0=$((SECONDS - t0))
+  i=$SECONDS; on="$(out $c)"; i=$((SECONDS - i))
+  [[ "$on" == "$off" ]] || fail "$c with a hanging check printed something else: $(diff <(echo "$off") <(echo "$on"))"
+  ((i <= t0 + 5)) || fail "$c waited for the check: $i s against $t0 s"
+  for q in $(seq 40); do [[ -s "$NP/pid" ]] && break; sleep 0.25; done
+  read -r pid ppid < "$NP/pid"; kill -0 "$pid" 2>/dev/null || fail "$c: the check had ended when it returned"
+  kill "$pid" 2>/dev/null; settle
+done
+# 4. The background check stops itself at 30 seconds and leaves nothing.
+put 1.0.0; printf '\n' >> "$LR/latest-version"; stale; "$F" -C "$RW" next >/dev/null
+for q in $(seq 40); do [[ -s "$NP/pid" ]] && break; sleep 0.25; done; read -r pid ppid < "$NP/pid"
+for q in $(seq 160); do kill -0 "$pid" 2>/dev/null || kill -0 "$ppid" 2>/dev/null || [[ -n "$(pgrep -P "$ppid")" ]] || break; sleep 0.25; done
+kill -0 "$pid" 2>/dev/null || kill -0 "$ppid" 2>/dev/null || [[ -n "$(pgrep -P "$ppid")" ]] && fail "the check or its npm still runs after 40 seconds"
+[[ "$(cat "$LR/latest-version")" == 1.0.0 ]] && [[ -z "$(cd "$LR" && find . -maxdepth 1 -name '.latest-version.*')" && ! -e "$LR/latest-version.lock" ]] || fail "a stopped check left: $(ls -A "$LR")"
+: > "$NP/sleep"
+# 5. Offline: the off output; a seen version kept; and no npm at all.
+touch "$NP/fail"
+for c in next status doctor; do clean; [[ "$(out $c)" == "$(offout $c)" ]] || fail "$c offline differs from off"; done
+put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; settle; [[ "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "a failed check lost the version seen"
+mkdir -p "$T/rn-nonpm"; for p in $(printf '%s' "$PATH" | tr ':' ' '); do [[ "$p" == "$NP" || ! -d "$p" ]] || ln -s "$p"/* "$T/rn-nonpm/" 2>/dev/null || true; done
+rm -f "$T/rn-nonpm/npm" "$T/rn-nonpm/npx"
+for c in next status doctor; do clean; [[ "$(PATH="$T/rn-nonpm" out $c)" == "$(PATH="$T/rn-nonpm" offout $c)" ]] || fail "$c with no npm differs from off"; done
+rm -f "$NP/fail"
+# 6. Once a day, one check at a time, a stale lock taken over.
+put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 1 ]] || fail "two runs with a stale file made $(calls) calls"
+put 9.9.9; touch -t "$(ago 23)" "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 0 ]] || fail "a file 23 hours old was checked"
+put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 1 ]] || fail "a stale file: $(calls) calls"
+for i in 1 2 3 4 5; do
+  clean; "$F" -C "$RW" next >/dev/null & p=$!; "$F" -C "$RW" next >/dev/null & q=$!; wait "$p" "$q" || true; settle
+  [[ "$(calls)" == 1 ]] || fail "two commands at once, round $i: $(calls) calls"
+done
+put 9.9.9; stale; mkdir "$LR/latest-version.lock"
+touch -t "$(if [[ "$(uname)" == Darwin ]]; then date -v-2M +%Y%m%d%H%M; else date -d '2 minutes ago' +%Y%m%d%H%M; fi)" "$LR/latest-version.lock"
+"$F" -C "$RW" next >/dev/null; settle; "$F" -C "$RW" next >/dev/null; settle
+[[ "$(calls)" == 1 && ! -e "$LR/latest-version.lock" ]] || fail "a stale lock: $(calls) calls, $(ls -A "$LR")"
+# 7. Not newer: nothing (the doctor's text holds kit.newer's message when it has one).
+for v in "$V" 0.0.1; do
+  put "$v"; for c in next status doctor; do notice "$(out $c)" && fail "$c named $v, which is not newer"; done
+done
+offx
+# 8. Only a version is believed: in the file, from npm, in .cabinet/version; and a folder or a link in its place.
+for v in '1.2.3; touch pwned' '$(touch pwned)' '' $'9.9.9\nx' 1.0.0-beta.1 08.0.0 12345678901234567890.0.0; do
+  put "$v"
+  for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c believed '$v'"; same $c "$o" || fail "$c exit with '$v'"; done
+  put 1.0.0; stale; printf '%s\n' "$v" > "$NP/answer"; "$F" -C "$RW" status >/dev/null; settle
+  [[ "$(cat "$LR/latest-version")" == 1.0.0 ]] || fail "npm's '$v' was written: $(cat "$LR/latest-version")"
+done
+printf '9.9.9\n' > "$NP/answer"
+for v in '0.1.0$(touch pwned)' $'0.1.0\033[31m'; do
+  put 9.9.9; printf '%s\n' "$v" > "$RW/.cabinet/version"
+  for c in next status doctor; do notice "$(out $c)" && fail "$c with the workspace version '$v'"; done
+done
+printf '%s\n' "$V" > "$RW/.cabinet/version"
+mkdir -p "$T/rn-elsewhere"; printf '9.9.9\n' > "$T/rn-elsewhere/target"
+touch "$NP/fail"
+clean; mkdir "$LR/latest-version"
+for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c with a folder"; same $c "$o" || fail "$c exit with a folder"; done
+rmdir "$LR/latest-version"; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"
+for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c through a link"; same $c "$o" || fail "$c exit through a link"; done
+settle; rm -f "$NP/fail"
+clean; mkdir "$LR/latest-version"; touch -t "$(ago 25)" "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle
+[[ "$(calls)" == 0 && -z "$(ls -A "$LR/latest-version")" ]] || fail "a folder in its place was checked or written into"
+rmdir "$LR/latest-version"
+q="$(ls -lT "$T/rn-elsewhere/target" 2>/dev/null || ls -l --time-style=full-iso "$T/rn-elsewhere/target")"
+clean; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle
+[[ "$(cat "$T/rn-elsewhere/target")" == 9.9.9 && "$(ls -A "$T/rn-elsewhere")" == target && "$q" == "$(ls -lT "$T/rn-elsewhere/target" 2>/dev/null || ls -l --time-style=full-iso "$T/rn-elsewhere/target")" ]] || fail "the link's target changed"
+[[ -f "$LR/latest-version" && ! -L "$LR/latest-version" && "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "the link was not replaced by a file holding 9.9.9"
+[[ -z "$(find "$T" -name pwned 2>/dev/null)" ]] || fail "a version ran as code"
+# 9. Turned off, five ways; this machine's on wins over the workspace's off.
+cp "$RW/cabinet.env" "$T/rn-env"
+offnow() { put 9.9.9; stale; local c; for c in next status doctor; do notice "$(out $c)" && fail "$1: $c showed the notice"; done
+  "$F" -C "$RW" status --json | j -e '$.latest === null' >/dev/null || fail "$1: status --json latest"; settle; [[ "$(calls)" == 0 ]] || fail "$1: a request was made"; }
+CABINET_UPDATE_CHECK=off offnow "CABINET_UPDATE_CHECK=off"; NO_UPDATE_NOTIFIER=1 offnow "NO_UPDATE_NOTIFIER"; CI=true offnow "CI"
+printf 'CABINET_UPDATE_CHECK="off"\n' >> "$RW/cabinet.env"; offnow "off in cabinet.env"
+cp "$T/rn-env" "$RW/cabinet.env"; printf 'CABINET_UPDATE_CHECK="off"\n' >> "$RW/cabinet.local.env"; offnow "off in cabinet.local.env"
+printf 'CABINET_UPDATE_CHECK="off"\n' >> "$RW/cabinet.env"; sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.local.env"; printf 'CABINET_UPDATE_CHECK="on"\n' >> "$RW/cabinet.local.env"
+put 9.9.9; notice "$(out next)" || fail "on in cabinet.local.env did not win over off in cabinet.env"
+cp "$T/rn-env" "$RW/cabinet.env"; sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.local.env"; settle
+# 10. config --update-check.
+git -C "$RW" add -A >/dev/null 2>&1; git -C "$RW" commit -qm "notice setup" >/dev/null 2>&1 || true
+"$F" -C "$RW" config --yes --update-check off >/dev/null && grep -qx 'CABINET_UPDATE_CHECK="off"' "$RW/cabinet.env" && [[ -z "$(git -C "$RW" status --porcelain -- cabinet.env)" ]] || fail "config --update-check off"
+"$F" -C "$RW" config --yes --update-check on >/dev/null && grep -qx 'CABINET_UPDATE_CHECK="on"' "$RW/cabinet.env" || fail "config --update-check on"
+cp "$RW/cabinet.env" "$T/rn-env"
+"$F" -C "$RW" config --this-machine --update-check off >/dev/null && grep -qx 'CABINET_UPDATE_CHECK="off"' "$RW/cabinet.local.env" && cmp -s "$RW/cabinet.env" "$T/rn-env" || fail "config --this-machine --update-check off"
+"$F" -C "$RW" config --this-machine --clear >/dev/null && ! grep -q '^CABINET_UPDATE_CHECK=' "$RW/cabinet.local.env" 2>/dev/null || fail "config --this-machine --clear kept the update check"
+p="$(git -C "$RW" rev-parse HEAD)"; cp "$RW/cabinet.local.env" "$T/rn-lenv" 2>/dev/null || : > "$T/rn-lenv"
+for o in "--update-check maybe" "--update-check"; do
+  st=0; "$F" -C "$RW" config --yes $o >/dev/null 2>&1 || st=$?
+  [[ $st == 2 ]] && cmp -s "$RW/cabinet.env" "$T/rn-env" && [[ "$(git -C "$RW" rev-parse HEAD)" == "$p" ]] && { [[ ! -f "$RW/cabinet.local.env" ]] || cmp -s "$RW/cabinet.local.env" "$T/rn-lenv"; } || fail "config $o (exit $st)"
+done
+sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.env"; printf "CABINET_UPDATE_CHECK='\$(touch pwned)'\n" >> "$RW/cabinet.env"; cp "$RW/cabinet.env" "$T/rn-env"
+st=0; (cd "$RW" && "$F" config --yes --writing short) >/dev/null 2>&1 || st=$?
+{ grep -qxF "CABINET_UPDATE_CHECK='\$(touch pwned)'" "$RW/cabinet.env" || { ((st)) && cmp -s "$RW/cabinet.env" "$T/rn-env"; }; } || fail "config rewrote a hand-written update check"
+(cd "$RW" && bin/doctor.sh) >/dev/null 2>&1 || true
+sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.env"; printf "CABINET_UPDATE_CHECK='\$(touch pwned)'\n" >> "$RW/cabinet.local.env"
+(cd "$RW" && "$F" config --this-machine --credit-roles off) >/dev/null 2>&1 || true
+grep -qxF "CABINET_UPDATE_CHECK='\$(touch pwned)'" "$RW/cabinet.local.env" || fail "config --this-machine rewrote a hand-written update check"
+(cd "$RW" && bin/doctor.sh) >/dev/null 2>&1 || true
+[[ -z "$(find "$T" -name pwned 2>/dev/null)" ]] || fail "a hand-written update check ran as code"
+sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.local.env"
+# 11. outdated asks by hand, even with the check off, writes the file, and orders versions; a folder in the way.
+put 1.0.0; touch -t "$(ago 1)" "$LR/latest-version"
+CABINET_UPDATE_CHECK=off "$F" -C "$RW" outdated >/dev/null; [[ "$(calls)" == 1 && "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "outdated with the check off: $(calls) calls, $(cat "$LR/latest-version")"
+printf '0.0.1\n' > "$NP/answer"; "$F" -C "$RW" outdated --json | j -e '$.update_available === false && $.command === null' >/dev/null || fail "outdated with a registry older than the kit"
+printf '9.9.9\n' > "$NP/answer"; clean; mkdir "$LR/latest-version"; st=0; o="$("$F" -C "$RW" outdated)" || st=$?
+grep -qx 'latest: cabinet 9.9.9' <<<"$o" && ((st == 0)) && [[ -z "$(cd "$LR" && find . -maxdepth 1 -name '.latest-version.*')" ]] || fail "outdated with a folder in the way: $o (exit $st)"
+rmdir "$LR/latest-version"
+# 12. It never updates: the workspace, its pin and its kit as they were.
+clean; git -C "$RW" add -A >/dev/null 2>&1; git -C "$RW" commit -qm "before" >/dev/null 2>&1 || true
+snap() { git -C "$RW" status --porcelain; git -C "$RW" rev-parse HEAD; cat "$RW/.cabinet/version" "$RW/package.json"; ls -A "$RW/node_modules" 2>/dev/null || true; }
+q="$(snap)"; "$F" -C "$RW" next >/dev/null; settle
+"$F" -C "$RW" next >/dev/null; "$F" -C "$RW" status >/dev/null; "$F" -C "$RW" outdated >/dev/null; (cd "$RW" && bin/doctor.sh) >/dev/null 2>&1 || true; settle
+[[ "$(snap)" == "$q" ]] || fail "the notice changed the workspace"
+! grep -v '^view @tarekraafat/cabinet version --no-update-notifier|' "$NL" || fail "npm was called for something else"
+# 14. Outside a workspace: no notice.
+put 9.9.9; (cd "$T" && "$F" next) | grep -q 'is out' && fail "next outside a workspace showed the notice"
+# 15. The docs.
+grep -q 'step `update`' "$KIT/docs/commands.md" && grep -q 'edited, latest}' "$KIT/docs/commands.md" && grep -q 'update_available, command}' "$KIT/docs/commands.md" \
+  && grep -q -- '--update-check off|on' "$KIT/docs/commands.md" && grep -q '^| `CABINET_UPDATE_CHECK` | `off` turns' "$KIT/docs/commands.md" && grep -q '^| `CABINET_UPDATE_CHECK` | `off` or `on`: the release notice on this machine' "$KIT/docs/commands.md" \
+  && grep -q '^| `NO_UPDATE_NOTIFIER` |' "$KIT/docs/commands.md" && grep -q '^| `CI` |' "$KIT/docs/commands.md" && grep -q 'your npm login' "$KIT/docs/commands.md" \
+  && grep -q 'do not read your shell profile' "$KIT/docs/commands.md" && grep -q 'npm writes its own cache and logs' "$KIT/docs/commands.md" \
+  && grep -q '`kit.newer`' "$KIT/docs/troubleshooting.md" && grep -q '`kit.newer`' "$KIT/roles/chief-of-staff.md" && grep -q 'npm install @tarekraafat/cabinet@latest && cabinet update' "$KIT/CHANGELOG.md" || fail "a release-notice doc is missing"
+"$F" -C "$RW" remove --yes --force >/dev/null 2>&1 || true; "$F" -C "$SP/cabinet" remove --yes --force >/dev/null 2>&1 || true
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="${PATH#"$NP:$KIT/bin:"}"
   return 0   # a last "check && fail" line must not end the run
 }
 

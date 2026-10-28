@@ -140,6 +140,7 @@ O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backu
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
 O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
 O	config	--pipeline-time	<when>|off	When the scheduled runner runs (default: 10:00 PM); off runs it only by hand.
+O	config	--update-check	off|on	The release notice: whether cabinet next, status and the doctor say when a newer Cabinet is out, asking the registry at most once a day (default: on).
 O	config	--hard-to-undo	"<repo>/<path> ..."|off	Paths where a change is hard to undo (migrations, public API files): a small task never touches them. Written into AGENTS.md.
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
 O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
@@ -151,8 +152,8 @@ O	init	--shared		With --inside: cabinet/ is committed with the project.
 O	init	--beside		In a project repo: the workspace is a folder next to it.
 O	init	--workspace	<folder>	With --beside: where that folder goes (default: <project>-hq).
 O	config	--apply		Run bootstrap after the change without asking.
-O	config	--this-machine		With --backup-dir, --backup-time or --credit-roles: set them for this machine only, in cabinet.local.env (not committed).
-O	config	--clear		With --this-machine: this machine follows the backup settings in cabinet.env again.
+O	config	--this-machine		With --backup-dir, --backup-time, --credit-roles or --update-check: set them for this machine only, in cabinet.local.env (not committed).
+O	config	--clear		With --this-machine: this machine follows the backup and update-check settings in cabinet.env again.
 O	repo add	--apply		Run bootstrap right after, which clones the repo and gives it a builder.
 O	bootstrap	--no-schedules		From now on, schedule no jobs on this machine: another machine runs them (saved in cabinet.local.env, not committed).
 O	bootstrap	--schedules		Schedule this machine's jobs again (undoes --no-schedules).
@@ -1134,7 +1135,7 @@ cmd_config() {
   local dirarg="" yes=0 apply=0 extra_roles="" dry=0 this_machine=0 clear=0
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
   local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
-  local credit="" cemail="" set_credit=0 cemail_given=0 model="" set_model=0 o_model
+  local credit="" cemail="" set_credit=0 cemail_given=0 model="" set_model=0 o_model uc="" set_uc=0
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1154,6 +1155,7 @@ cmd_config() {
       --pipeline) need "--pipeline needs off, small or all" "$@"; pipe="$2"; set_pipe=1; shift 2 ;;
       --pipeline-limit) need "--pipeline-limit needs dollars, like 5" "$@"; plimit="$2"; set_plimit=1; shift 2 ;;
       --pipeline-time) need "--pipeline-time needs a time, like 10 PM, or off" "$@"; ptime="$2"; set_ptime=1; shift 2 ;;
+      --update-check) need "--update-check needs off or on" "$@"; uc="$2"; set_uc=1; [[ "$uc" == off || "$uc" == on ]] || bad_usage "--update-check is off or on, not '$uc'"; shift 2 ;;
       --hard-to-undo) need "--hard-to-undo needs paths like \"api/migrations/ api/openapi.yaml\", or off" "$@"; hard="$2"; set_hard=1; shift 2 ;;
       --backup-dir) need "--backup-dir needs a folder" "$@"; backup="$2"; set_backup=1; shift 2 ;;
       --backup-time) need "--backup-time needs a time, like 1 PM" "$@"; backup_time="$2"; set_btime=1; shift 2 ;;
@@ -1172,9 +1174,9 @@ cmd_config() {
   if ((this_machine)); then
     # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
     (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
-      && die "--this-machine sets only --backup-dir, --backup-time and --credit-roles: the other settings are shared by every machine"
-    (( set_backup || set_btime || clear || set_credit )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, or --clear"
-    (( clear && set_credit )) && die "--clear cannot be combined with --credit-roles"
+      && die "--this-machine sets only --backup-dir, --backup-time, --credit-roles and --update-check: the other settings are shared by every machine"
+    (( set_backup || set_btime || clear || set_credit || set_uc )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, --update-check off|on, or --clear"
+    (( clear && (set_credit || set_uc) )) && die "--clear cannot be combined with --credit-roles or --update-check"
     (( clear && (set_backup || set_btime) )) && die "--clear cannot be combined with --backup-dir or --backup-time"
     yes=1
   else
@@ -1334,8 +1336,8 @@ cmd_config() {
     lhas CABINET_BACKUP_DIR && cur_b="$(lget CABINET_BACKUP_DIR)"
     lhas CABINET_BACKUP_TIME && { cur_t="$(lget CABINET_BACKUP_TIME)"; cur_t="$(when_time_only "$cur_t" || printf '%s' "$cur_t")"; }
     if ((clear)); then
-      lhas CABINET_BACKUP_DIR || lhas CABINET_BACKUP_TIME || { echo "Nothing to change: this machine already follows cabinet.env."; return 0; }
-      new_b="$o_backup"; new_t="$o_btime"; lchanges+=("this machine: follow cabinet.env again (backups ${o_backup:-off}, at $o_btime)")
+      lhas CABINET_BACKUP_DIR || lhas CABINET_BACKUP_TIME || lhas CABINET_UPDATE_CHECK || { echo "Nothing to change: this machine already follows cabinet.env."; return 0; }
+      new_b="$o_backup"; new_t="$o_btime"; lchanges+=("this machine: follow cabinet.env again (backups ${o_backup:-off}, at $o_btime, and its update check)")
     else
       new_b="$cur_b"; new_t="$cur_t"
       ((set_backup)) && new_b="$backup"; ((set_btime)) && new_t="$backup_time"
@@ -1343,6 +1345,7 @@ cmd_config() {
       ((set_btime)) && { [[ "$new_t" != "$cur_t" ]] || ! lhas CABINET_BACKUP_TIME; } && lchanges+=("this machine: backup time $cur_t -> $new_t")
       ((set_credit)) && { [[ "$credit" != "$o_credit" ]] || ! lhas CABINET_CREDIT_ROLES; } \
         && lchanges+=("this machine: credit roles $( ((o_credit_set)) && printf %s "$o_credit" || echo "not answered") -> $credit")
+      ((set_uc)) && { ! lhas CABINET_UPDATE_CHECK || [[ "$(lget CABINET_UPDATE_CHECK)" != "$uc" ]]; } && lchanges+=("this machine: update check -> $uc")
     fi
     if ((${#lchanges[@]} == 0)); then echo "Nothing to change."; return 0; fi
     echo; echo "Changes (cabinet.local.env, this machine only; not committed):"; printf '  - %s\n' "${lchanges[@]}"
@@ -1351,9 +1354,11 @@ cmd_config() {
     fi
     ((dry)) && { echo "(dry run: nothing written)"; return 0; }
     local keep=(-e '^CABINET_BACKUP_DIR=' -e '^CABINET_BACKUP_TIME='); ((set_credit)) && keep+=(-e '^CABINET_CREDIT_ROLES=')
+    (( set_uc || clear )) && keep+=(-e '^CABINET_UPDATE_CHECK=')
     {
       grep -v "${keep[@]}" "$lenv" 2>/dev/null || true
       ((set_credit)) && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit"
+      ((set_uc)) && printf 'CABINET_UPDATE_CHECK="%s"\n' "$uc"
       if ((clear == 0)); then
         if ((set_backup)) || lhas CABINET_BACKUP_DIR; then printf 'CABINET_BACKUP_DIR="%s"\n' "$new_b"; fi
         if ((set_btime)) || lhas CABINET_BACKUP_TIME; then printf 'CABINET_BACKUP_TIME="%s"\n' "$new_t"; fi
@@ -1387,6 +1392,9 @@ cmd_config() {
   ((set_credit)) && [[ "$credit" == off ]] && new_cemail=""   # off uses no email, so none is kept
   [[ "$new_cemail" != "$o_cemail" ]] && changes+=("credit email: ${o_cemail:-the Cabinet Team app} -> ${new_cemail:-the Cabinet Team app}")
   [[ "$hard" != "$o_hard" ]] && changes+=("hard to undo: ${o_hard:-not set} -> ${hard:-not set}")
+  # The update check is written only when given, never carried over (a value there is only compared).
+  local o_uc=""; grep -q '^CABINET_UPDATE_CHECK=' "$ws/cabinet.env" && o_uc="$(sed -n 's/^CABINET_UPDATE_CHECK="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ws/cabinet.env" | tail -1)"
+  ((set_uc)) && [[ "$uc" != "$o_uc" ]] && changes+=("update check: ${o_uc:-on} -> $uc")
   [[ "$pipe" != "$o_pipe" ]] && changes+=("scheduled runner: $o_pipe -> $pipe")
   [[ "$plimit" != "$o_plimit" ]] && changes+=("its cost limit per run: $( [[ -n "$o_plimit" ]] && echo "\$$o_plimit" || echo none) -> $( [[ -n "$plimit" ]] && echo "\$$plimit" || echo none)")
   [[ "$pipe" != off && "$ptime" != "${o_ptime:-}" ]] && changes+=("it runs: ${o_ptime:-not scheduled} -> $ptime")
@@ -1421,6 +1429,7 @@ cmd_config() {
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$model" == "$o_model" ]] || setenv CABINET_MODEL "$model"
+  ((set_uc)) && [[ "$uc" != "$o_uc" ]] && setenv CABINET_UPDATE_CHECK "$uc"
   # A new model, or a new tool for the one set: whether the tool lists it (said, never refused).
   [[ "$model" == "$o_model" && "$runner" == "$o_runner" ]] || model_say "$runner" "$model"
   [[ "$price" == "$o_price" ]] || setenv CABINET_PRICE "$price"
@@ -1673,6 +1682,13 @@ cmd_next() {
   local pin="$ws"; [[ -f "$ws/package.json" ]] || pin="$(dirname "$ws")"
   if grep -q '@tarekraafat/cabinet' "$pin/package.json" 2>/dev/null && [[ ! -d "$pin/node_modules/@tarekraafat/cabinet" ]]; then
     step install "Download the pinned kit (in $pin)." "npm install"
+  fi
+  # A newer Cabinet on the registry (the release notice, platform.sh): what to run, and where when not here.
+  local latest r
+  latest="$(update_latest "$ws")"
+  if [[ -n "$latest" ]]; then
+    r="$(update_cmd "$ws" "$latest" "$VERSION")"
+    [[ -z "$r" ]] || step update "Cabinet $latest is out (this workspace runs $(head -1 "$ws/.cabinet/version")).$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' Run it in %s.' "${r%%$'\t'*}")" "${r#*$'\t'}"
   fi
   # This machine: guardrails and schedules.
   local slug label jf when missing=0
@@ -2141,19 +2157,29 @@ cmd_remove() {
 cmd_outdated() {
   local ws latest have="" json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown argument $x (see: cabinet outdated --help)" ;; esac; done
-  ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(cat "$ws/.cabinet/version")"
-  latest="$(npm view @tarekraafat/cabinet version 2>/dev/null)" || latest=""
+  ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(head -c 64 "$ws/.cabinet/version" | head -1)"
+  # The request the release notice makes (by hand, even with it off), from Cabinet's own folder so npm
+  # reads no project's files; only a version is believed, and it becomes the notice's latest-version too.
+  mkdir -p -m 700 "$LOGROOT" 2>/dev/null || true
+  latest="$(cd "$LOGROOT" 2>/dev/null && npm view @tarekraafat/cabinet version --no-update-notifier 2>/dev/null)" || latest=""
+  local LC_ALL=C re='^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$' r="" where="" cmd=""
+  [[ "$latest" =~ $re ]] || latest=""
+  if [[ -n "$latest" ]]; then
+    node "$LIBJS" latest-write "$LOGROOT" "$latest" 2>/dev/null || true
+    r="$(update_cmd "$ws" "$latest" "$VERSION")"; [[ -z "$r" ]] || { where="${r%%$'\t'*}"; cmd="${r#*$'\t'}"; }
+  fi
   if ((json)); then
-    json -n --arg w "$have" --arg k "$VERSION" --arg l "$latest" '({workspace_version: str($w), kit_version: $k, latest: str($l),
-      update_available: $l == "" ? null : $l != $k || ($w != "" && $w != $k)})'
+    json -n --arg w "$have" --arg k "$VERSION" --arg l "$latest" --arg c "$cmd" '({workspace_version: str($w), kit_version: $k, latest: str($l),
+      update_available: $l == "" ? null : $c != "", command: str($c)})'
     return 0
   fi
-  [[ -n "$have" ]] && echo "this workspace: cabinet $have"
+  [[ -n "$have" ]] && echo "this workspace: cabinet $(printf '%s' "$have" | term_text)"
   echo "installed kit: cabinet $VERSION"
   if [[ -z "$latest" ]]; then echo "latest: unknown (the registry could not be reached, or the package is not published there)"; return 0; fi
   echo "latest: cabinet $latest"
-  if [[ "$latest" != "$VERSION" ]]; then echo "To take it: npm update in the workspace (npm i -g @tarekraafat/cabinet@latest for the global command), then cabinet update."
-  elif [[ -n "$have" && "$have" != "$VERSION" ]]; then echo "The installed kit is newer than this workspace: cabinet update applies it."
+  [[ -z "$where" || "$where" == "$ws" ]] || where=" (in $where)"; [[ "$where" == " (in"* ]] || where=""
+  if [[ -n "$cmd" && "$cmd" != "cabinet update" ]]; then echo "To take it: $cmd$where."
+  elif [[ -n "$cmd" ]]; then echo "The installed kit is newer than this workspace: cabinet update applies it."
   else echo "Up to date."; fi
 }
 
@@ -2185,6 +2211,7 @@ $verbs
       --runner) words="$RUNNERS custom" ;;
       --roles) words="$ROLES_ALL $ROLES_OPT" ;;
       --week-start) words="$DAYS" ;;
+      --update-check) words="off on" ;;
       --brief-time) words="7am 8am 9am off" ;;
       completion) words="bash zsh" ;;
       help) words="$tops" ;;
@@ -2310,15 +2337,23 @@ cmd_status() {
     [[ -z "${p:-}" ]] && continue
     [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" == "$h" ]] || edited+=("$p")
   done < "$ws/.cabinet/manifest"
+  # A newer Cabinet on the registry (the release notice, platform.sh), and what to run.
+  local latest r=""; latest="$(update_latest "$ws")"
+  [[ -z "$latest" ]] || r="$(update_cmd "$ws" "$latest" "$VERSION")"
   if ((json)); then
-    printf '%s\n' ${edited[@]+"${edited[@]}"} | json -R --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" \
-      '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean)})'
+    printf '%s\n' ${edited[@]+"${edited[@]}"} | json -R --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" --arg latest "$latest" \
+      '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean), latest: $latest || null})'
     return 0
   fi
   # Folders and the workspace's own words, in a terminal through term_text (platform.sh).
   echo "workspace $(printf '%s' "$ws" | term_text): cabinet $(term_text < "$ws/.cabinet/version"); kit at $(printf '%s' "$KIT" | term_text): $VERSION"
   local e; for e in ${edited[@]+"${edited[@]}"}; do printf "  ${S_U}edited here${S_Z}: %s\n" "$(printf '%s' "$e" | term_text)"; done
   ((${#edited[@]})) || echo "  ${S_G}no kit file edited${S_Z}"
+  if [[ -n "$latest" && -n "$r" ]]; then
+    echo "latest: cabinet $latest"
+    echo "Run: ${S_B}${r#*$'\t'}${S_Z}$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' (in %s)' "${r%%$'\t'*}")"
+  fi
+  return 0
 }
 
 # --help (or -h) after any command: its usage and options, from the table. A noun alone, or a

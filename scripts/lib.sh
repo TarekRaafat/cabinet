@@ -6,6 +6,7 @@
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LIBJS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js"   # the scripts' JavaScript, run with node
 [[ -f "$WS/cabinet.env" ]] || { echo "no cabinet.env in $WS" >&2; exit 1; }
+CABINET_UPDATE_ENV="${CABINET_UPDATE_CHECK-}"   # the environment's, before cabinet.env (platform.sh, update_on)
 # shellcheck disable=SC1091
 source "$WS/cabinet.env"
 source "$WS/bin/when.sh"   # when_norm, when_calendar, when_human: one parser for every schedule

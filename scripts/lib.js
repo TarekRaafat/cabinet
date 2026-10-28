@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -18,7 +18,7 @@ if (parseInt(nodeVersion, 10) < NODE_MIN) {
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { spawnSync } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 
 // Read text as the scripts always have: UTF-8, with \r\n and \r read as \n.
 const read = (p) => fs.readFileSync(p, "utf8").replace(/\r\n?/g, "\n");
@@ -987,12 +987,90 @@ function modelCheck(runner, ...models) {
   for (const m of models) process.stdout.write((names.includes(m) ? "ok" : "missing") + "\t" + m + "\t" + how + "\n");
 }
 
+// ---- The release notice (cabinet next, status, outdated, doctor) -----------------------------------
+// Only a version is believed (x.y.z, no leading zero, at most 9 digits a part), and only here is one
+// ordered. The newest version seen on the registry is <logroot>/latest-version, one line, refreshed at
+// most once a day per machine by a background check that holds <logroot>/latest-version.lock.
+const VERSION_RE = /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/;
+const DAY_MS = 24 * 3600 * 1000;
+const vparts = (v) => { const m = VERSION_RE.exec(v); return m ? m.slice(1).map(Number) : null; };
+function vnewer(a, b) {
+  const x = vparts(a), y = vparts(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+// version-newer <a> <b>: exit 0 when both are versions and a is newer.
+function versionNewer(a, b) { process.exit(vnewer(a || "", b || "") ? 0 : 1); }
+// The version a regular file holds (never through a link), from at most its first 64 bytes: exactly one
+// line holding one version, else "".
+function versionIn(file) {
+  try {
+    if (!fs.lstatSync(file).isFile()) return "";
+    const fd = fs.openSync(file, "r"), b = Buffer.alloc(64);
+    const n = fs.readSync(fd, b, 0, 64, 0); fs.closeSync(fd);
+    const m = /^([^\n]*)\n?$/.exec(b.subarray(0, n).toString("latin1"));
+    return m && VERSION_RE.test(m[1]) ? m[1] : "";
+  } catch (e) { return ""; }
+}
+// writeLatest: write latest-version whole: a new file of its own in <logroot>, renamed over it (never
+// through a link, never into a folder). False, leaving nothing behind, when it cannot.
+function writeLatest(root, v) {
+  if (!VERSION_RE.test(v || "")) return false;
+  const tmp = path.join(root, ".latest-version." + crypto.randomBytes(8).toString("hex"));
+  try {
+    fs.writeFileSync(tmp, v + "\n", { flag: "wx", mode: 0o600 });
+    fs.renameSync(tmp, path.join(root, "latest-version"));
+    return true;
+  } catch (e) { try { fs.unlinkSync(tmp); } catch (e2) { /* never made */ } return false; }
+}
+// latest-write <logroot> <version>: the same for cabinet outdated; exit 1 when it could not.
+function latestWrite(root, v) { process.exit(writeLatest(root, v) ? 0 : 1); }
+// release-latest <logroot> <workspace version file>: print the latest version seen when it is newer than
+// the workspace's; first, when the file is missing, a day old or a link, start the day's check in the
+// background (detached, its output nowhere) and go on without waiting. A folder in its place starts none.
+function releaseLatest(root, vfile) {
+  const file = path.join(root, "latest-version");
+  let st = null;
+  try { st = fs.lstatSync(file); } catch (e) { /* missing */ }
+  if (!st || st.isSymbolicLink() || (st.isFile() && Date.now() - st.mtimeMs >= DAY_MS)) {
+    spawn(process.execPath, [__filename, "version-check", root], { cwd: root, detached: true, stdio: "ignore" }).unref();
+  }
+  const latest = versionIn(file);
+  if (latest && vnewer(latest, versionIn(vfile))) process.stdout.write(latest + "\n");
+}
+// version-check <logroot>: the background check. At most one at a time (the lock) and one a day (the
+// file's time, set before npm starts). A stale lock (over 60 seconds) is removed, and nothing else is done
+// in that run. npm runs in <logroot>, so it reads no project's files, with no shell, stopped at 30 seconds.
+// ponytail: two checks racing within a few system calls can still make one extra request; the day's bound is best effort.
+function versionCheck(root) {
+  const file = path.join(root, "latest-version"), lock = file + ".lock";
+  const age = (p) => { try { return Date.now() - fs.lstatSync(p).mtimeMs; } catch (e) { return -1; } };
+  const fresh = () => { try { const s = fs.lstatSync(file); return s.isFile() && Date.now() - s.mtimeMs < DAY_MS; } catch (e) { return false; } };
+  // A lock held: leave it, or, when stale, remove it (its age read just before) and do nothing more now.
+  if (age(lock) >= 0) { if (age(lock) > 60000) { try { fs.rmdirSync(lock); } catch (e) { /* taken or gone */ } } return; }
+  try { fs.mkdirSync(lock); } catch (e) { return; }
+  try {
+    if (fresh()) return;
+    let st = null;
+    try { st = fs.lstatSync(file); } catch (e) { /* missing */ }
+    if (st && st.isDirectory()) return;
+    if (st && st.isSymbolicLink()) { fs.unlinkSync(file); st = null; }
+    if (st) { const now = new Date(); fs.utimesSync(file, now, now); } else fs.writeFileSync(file, "", { flag: "wx", mode: 0o600 });
+    const r = spawnSync("npm", ["view", "@tarekraafat/cabinet", "version", "--no-update-notifier"],
+      { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, killSignal: "SIGKILL" });
+    const m = r.status === 0 && /^([^\n]*)\n?$/.exec(r.stdout || "");
+    if (m) writeLatest(root, m[1]);
+  } catch (e) { /* the file stays as it was */ } finally { try { fs.rmdirSync(lock); } catch (e) { /* gone */ } }
+}
+
 const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
+  "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

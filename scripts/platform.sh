@@ -345,3 +345,35 @@ deps_install() {
   # shellcheck disable=SC2086
   $c
 }
+
+# The release notice: the newest version this machine has seen on the registry, kept in
+# $LOGROOT/latest-version by a check at most once a day in the background (lib.js, release-latest).
+# The environment's CABINET_UPDATE_CHECK as it was before any cabinet.env was read (lib.sh keeps it).
+UPDATE_ENV="${CABINET_UPDATE_ENV-${CABINET_UPDATE_CHECK-}}"
+# update_on <workspace>: the notice and its check are on: not off in the environment (CABINET_UPDATE_CHECK,
+# NO_UPDATE_NOTIFIER, CI), nor in cabinet.local.env or else cabinet.env, read as text and only compared.
+update_on() {
+  [[ "$UPDATE_ENV" != off && -z "${NO_UPDATE_NOTIFIER:-}" && -z "${CI:-}" ]] || return 1
+  local f v=""
+  for f in "$1/cabinet.local.env" "$1/cabinet.env"; do
+    grep -q '^CABINET_UPDATE_CHECK=' "$f" 2>/dev/null || continue
+    v="$(sed -n "s/^CABINET_UPDATE_CHECK=[\"']\{0,1\}\([^\"']*\)[\"']\{0,1\}\$/\1/p" "$f" | tail -1)"; break
+  done
+  [[ "$v" != off ]]
+}
+# update_latest <workspace>: the newer version out, or nothing (also when off); starts the day's check when due.
+update_latest() {
+  update_on "$1" || return 0
+  mkdir -p -m 700 "$LOGROOT" 2>/dev/null || return 0
+  node "$LIBJS" release-latest "$LOGROOT" "$1/.cabinet/version" 2>/dev/null || true
+}
+# update_cmd <workspace> <latest> <installed kit version>: "<folder>\t<command>" that takes the newer kit
+# (the folder: the pin's package.json, the workspace's or the project's above), or nothing.
+update_cmd() {
+  local pin="$1"; [[ -f "$1/package.json" ]] || pin="$(dirname "$1")"
+  if [[ -n "$2" ]] && node "$LIBJS" version-newer "$2" "$3"; then
+    if grep -q '"@tarekraafat/cabinet"' "$pin/package.json" 2>/dev/null; then printf '%s\t%s\n' "$pin" "npm install @tarekraafat/cabinet@latest && cabinet update"
+    else printf '\t%s\n' "npm i -g @tarekraafat/cabinet@latest && cabinet update"; fi
+  elif node "$LIBJS" version-newer "$3" "$(head -c 64 "$1/.cabinet/version" 2>/dev/null | head -1)"; then printf '\t%s\n' "cabinet update"; fi
+  return 0
+}
