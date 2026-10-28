@@ -182,6 +182,25 @@ function readiness(spend, ...files) {
     }
   });
   const field = (e, k) => { const l = e.lines.find((x) => x.startsWith(k)); return l ? l.slice(k.length).trim() : ""; };
+  // Every BLOCK or CHANGES a reviewer ever recorded on an entry, though a later Verdict line replaced it:
+  // the lines HANDOFFS.md's git history added, each under the entry it sits in (git names the entry
+  // above each change, as a diff names a function), with the file as it is now.
+  const blockLines = {};
+  const addBlock = (id, l) => { const v = id && l.trim().match(VER); if (v && v[2] !== "PASS") (blockLines[id] = blockLines[id] || new Set()).add(l.trim()); };
+  let attrs = "";
+  try {
+    attrs = path.join(fs.mkdtempSync(path.join(require("node:os").tmpdir(), "cabinet-")), "attributes");
+    fs.writeFileSync(attrs, "HANDOFFS.md diff=cabinet-handoffs\n");
+    const log = spawnSync("git", ["-C", env("WSDIR"), "-c", "core.attributesFile=" + attrs, "-c", "diff.cabinet-handoffs.xfuncname=^### H-[0-9]+-[0-9]+:.*$",
+      "log", "-p", "-U0", "--no-color", "--no-ext-diff", "--no-renames", "--format=", "--", "HANDOFFS.md"], { encoding: "utf8", maxBuffer: 1 << 30 });
+    let at = "";
+    for (const l of (log.status === 0 ? log.stdout : "").split("\n")) {
+      if (/^@{2} /.test(l)) at = (l.match(/^@{2} [^@]* @{2} ### (H-\d{8}-\d+):/) || [])[1] || "";   // a hunk header (@{2}: setup's placeholders are two @)
+      else if (l.startsWith("+### H-")) at = words(l)[1].replace(/:+$/, "");
+      else if (l.startsWith("+- Verdict: ")) addBlock(at, l.slice(1));
+    }
+  } catch (e) { /* no git history: the file alone */ }
+  finally { if (attrs) fs.rmSync(path.dirname(attrs), { recursive: true, force: true }); }
   const specOf = {};
   for (const e of entries) specOf[e.id] = field(e, "- Spec:");
   const out = {};
@@ -229,10 +248,13 @@ function readiness(spend, ...files) {
       (passed.length ? stale : missing).push(w);
     }
     const st = field(e, "- Status:");
+    for (const l of e.lines) addBlock(e.id, l);
+    const blocks = {};
+    for (const l of blockLines[e.id] || []) { const r = l.match(VER)[1]; blocks[r] = (blocks[r] || 0) + 1; }
     out[e.id] = {
       areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
-      cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, needs, missing, blocking, stale,
+      cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
       ready: needs.length ? !missing.length && !blocking.length && !stale.length : null, unread_verdicts: unread,
     };
   }

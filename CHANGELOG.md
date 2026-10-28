@@ -18,6 +18,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 - In a terminal, control characters from project text show as `?`: handoff titles and entries in `handoff list`, the brief's sign-off queue and actions in `digest`, and project names and folders in `digest`, `list` and `next`, so an escape sequence written into a handoff or a brief can no longer hide or rewrite what you see. UTF-8 text is unchanged, and piped, in a file or with `--json` the text is as written.
 - Output is styled only when it goes to a terminal, `NO_COLOR` is unset or empty and `TERM` is not `dumb`. Piped, written to a file (`digest --write`), with `--json`, or with `NO_COLOR=1`, every command prints the same text as in 0.1.3, byte for byte, so agents and scripts read what they always did. `cabinet doctor` now also leaves color out with `TERM=dumb`.
 
+### Handoffs
+
+- The loop breaker: `cabinet handoff run` stops for you once the same reviewer has blocked the work more times than `--retries` allows (with the default 2, at the third BLOCK or CHANGES), counted over every run from the history of `HANDOFFS.md`, not only this run's rounds, and names the reviewer and the count. A scheduled run skips it until you run it by hand, `PIPELINE.md` says why, and the brief puts it in your sign-off queue with the options. `handoff list --json` gives each entry `blocks`, the count per reviewer.
+
 ### Fixes
 
 - `cabinet config` checks every setting it writes back to `cabinet.env` before writing anything, the ones it carries over unchanged included, so a value edited by hand that holds `$`, a backtick, a backslash, a double quote or a line break stops it, naming the setting, instead of becoming code the next time a script reads the file. A role's name is lowercase letters, digits and dashes, and a file under `roles/` with any other name is no longer taken as a role.

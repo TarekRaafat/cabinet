@@ -1957,6 +1957,21 @@ echo "$out" | grep -q "^web: fixes what qa blocked, round 1$" && [[ "$(echo "$ou
 c="$(work "Add a menu")"; echo 5 > "$FS/block-qa"
 rc=0; out="$(run "$c" --retries 1)" || rc=$?
 [[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: qa still block H-.* after 1 fix round(s): the owner decides" || fail "run past its retries: $out"
+# The loop breaker: a reviewer's BLOCKs count over every run (blocks, from HANDOFFS.md's history), so a
+# new run stops at the third before any fix round, and --dry-run says so.
+x="$(work "Add a search")"; echo 9 > "$FS/block-qa"
+rc=0; out="$(run "$x")" || rc=$?
+[[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: qa still block H-.* after 2 fix round(s)" || fail "loop breaker setup: $out"
+xv="$("$PW/bin/handoff.sh" list --json | j -r --arg i "$x" '$.find((h) => h.depends_on.includes($i)).id')"
+"$PW/bin/handoff.sh" list --json | j -e --arg v "$xv" '((h) => h.blocks.qa == 3 && h.verdicts.filter((v) => v.role == "qa").length == 1 && !("security" in h.blocks))($.find((h) => h.id == $v))' >/dev/null \
+  || fail "list --json blocks: $("$PW/bin/handoff.sh" list --json | j -c --arg v "$xv" '$.find((h) => h.id == $v)')"
+"$PW/bin/handoff.sh" list --json | j -e '$.every((h) => typeof h.blocks == "object")' >/dev/null || fail "an entry without blocks"
+h="$(git -C "$PW" rev-parse HEAD)"; out="$(run "$x" --dry-run)" && fail "run --dry-run went on past the loop breaker: $out"
+[[ "$out" == "Stopped: qa has blocked it 3 times on $xv, more than --retries allows (2): the owner decides (fix it another way, change the work, override the BLOCK, or drop it)" && "$(git -C "$PW" rev-parse HEAD)" == "$h" ]] || fail "run --dry-run at the loop breaker: $out"
+rc=0; out="$(run "$x")" || rc=$?
+[[ $rc == 1 ]] && echo "$out" | grep -qF "Stopped: qa has blocked it 3 times on $xv, more than --retries allows (2)" && ! echo "$out" | grep -q 'fixes\|verifies' || fail "a new run past the loop breaker: $out"
+out="$(run "$x" --retries 3)" || true
+echo "$out" | grep -q '^web: fixes what qa blocked, round 1$' && echo "$out" | tail -2 | grep -qF "Stopped: qa has blocked it 4 times on $xv, more than --retries allows (3)" || fail "--retries 3: one more round, then the fourth BLOCK stops it: $out"
 rm -f "$FS/block-qa"
 # An agent that leaves no trace, or work sent back: it stops, naming what happened.
 d="$(work "Add a logo")"; touch "$FS/silent-security"
@@ -2040,7 +2055,9 @@ cfgp --pipeline small >/dev/null && [[ -f "$PW/jobs/pipeline.job" ]] || fail "co
 # Work stopped for the owner is skipped until the owner runs it; the rest runs, oldest first.
 k="$(work "Fix a typo")"; m="$(work "Fix a label")"
 printf '%s %s\n' "$(date +%F)" "qa still blocks it." > "$PL/run-$m.stopped"
+y="$(work "Add a filter")"; echo 9 > "$FS/block-qa"; run "$y" >/dev/null || true; rm -f "$FS/block-qa" "$PL/run-$y.stopped"
 sched || fail "the pipeline job: $(tail -5 "$PL/pipeline.log")"
+grep -qF -- "- $y: Stopped: qa has blocked it 3 times on" "$PW/PIPELINE.md" || fail "a scheduled run past the loop breaker: $(cat "$PW/PIPELINE.md")"
 grep -q "^- $k: $k is ready to push" "$PW/PIPELINE.md" && grep -q "^- $m: skipped, stopped on $(date +%F) for you: qa still blocks it. Once settled, run it by hand: cabinet handoff run $m" "$PW/PIPELINE.md" \
   && grep -q '^Spent \$0.04 of the \$1 limit for one run.$' "$PW/PIPELINE.md" || fail "PIPELINE.md: $(cat "$PW/PIPELINE.md")"
 ! git -C "$PW" status --porcelain | grep -q PIPELINE.md || fail "PIPELINE.md is tracked"
@@ -2050,6 +2067,7 @@ cfgp --pipeline-limit 0.02 >/dev/null; sched
 grep -q "^- $m: Paused: this run's cost limit (\$0.02) is reached" "$PW/PIPELINE.md" && [[ ! -f "$PL/run-$m.stopped" ]] || fail "the cost limit: $(cat "$PW/PIPELINE.md")"
 cfgp --pipeline all --pipeline-limit 1 >/dev/null; sched
 grep -q "^- $m: $m is ready to push" "$PW/PIPELINE.md" && grep -q '^- specs/login.md: specs/login.md is ready to push' "$PW/PIPELINE.md" || fail "the next run, with specs: $(cat "$PW/PIPELINE.md")"
+grep -qF -- "- $y: skipped, stopped on $(date +%F) for you: qa has blocked it 3 times on" "$PW/PIPELINE.md" || fail "a scheduled run did not skip work past the loop breaker: $(cat "$PW/PIPELINE.md")"
 # A spent week, or the runner off: nothing runs.
 cfgp --budget 0.01 >/dev/null; sched; grep -q "budget (\$0.01) is spent, so nothing ran" "$PW/PIPELINE.md" || fail "the runner past the week's budget: $(cat "$PW/PIPELINE.md")"
 cfgp --budget off --pipeline off >/dev/null; sched; grep -q 'The pipeline is off' "$PW/PIPELINE.md" && [[ -f "$PW/jobs/pipeline.job" ]] || fail "the runner off: $(cat "$PW/PIPELINE.md")"

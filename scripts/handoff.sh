@@ -37,7 +37,9 @@
 #       the team already has, each an agent run, until it is ready to push or needs the owner: the
 #       builder builds it and hands it on for review with --depends-on <ID>; each reviewer missing or
 #       stale verifies and records; after a BLOCK the builder fixes it and the blocking reviewers
-#       check again, up to --retries rounds (default 2). It decides nothing: it reads the state
+#       check again, up to --retries rounds (default 2), and once one reviewer's BLOCK or CHANGES on
+#       the work, counted over every run (blocks in list --json), pass --retries, it stops for the
+#       owner before another round. It decides nothing: it reads the state
 #       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready.
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
 #       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
@@ -478,7 +480,7 @@ mark="$LOGDIR/run-$id.stopped"
 ((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
 spent() { local c; c="$(json -r --arg i "$id" '$[$i]?.cost_usd ?? undefined' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
-stop() { say "Stopped: $1"; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
+stop() { say "Stopped: $1"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
   if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
   say "$1: $2"
@@ -508,8 +510,12 @@ while :; do
   fi
   [[ "$(json -r '$.ready ?? null' <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
   if [[ "$(json '$.blocking.length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
+    # The loop breaker: a reviewer's BLOCK or CHANGES are counted over every run (blocks, from git's
+    # history of HANDOFFS.md), so one past --retries goes to the owner, though this run fixed nothing yet.
     rounds=$((rounds + 1))
     ((rounds <= retries)) || stop "$(json -r '$.blocking.join(", ")' <<<"$r") still block $v after $retries fix round(s): the owner decides (fix it, change the work, or override)"
+    x="$(json -r --argjson n "$retries" '$.blocking.filter((b) => ($.blocks[b] ?? 0) > $n).map((b) => b + " has blocked it " + $.blocks[b] + " times").join(", ")' <<<"$r")"
+    [[ -z "$x" ]] || stop "$x on $v, more than --retries allows ($retries): the owner decides (fix it another way, change the work, override the BLOCK, or drop it)"
     agent "$builder" "fixes what $(json -r '$.blocking.join(", ")' <<<"$r") blocked, round $rounds" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(json -r '$.blocking.join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
     fixed=1; continue
   fi
