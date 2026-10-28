@@ -620,7 +620,7 @@ Pick the place by what it is:
 
 **Or ask an agent:** "Add this as a guide every agent follows: <paste or file>". It saves the file, adds the row and commits, as `guides/README.md` says.
 
-**What wins:** a repo's `AGENTS.md` over the workspace's `AGENTS.md` and its guides, over the kit's `CABINET.md`. No rule or guide can loosen "Never push, merge on GitHub, publish or release" or "The builder never verifies"; the guardrails enforce the first anyway. Never edit `CABINET.md`: it is the kit's, and `cabinet update` stops on an edited kit file.
+**What wins:** a repo's `AGENTS.md` over the workspace's `AGENTS.md` and its guides, over the kit's `CABINET.md`. No rule or guide can loosen "Never push, merge on a shared host, publish or release" or "The builder never verifies"; the guardrails enforce the first anyway. Never edit `CABINET.md`: it is the kit's, and `cabinet update` stops on an edited kit file.
 
 **Folders:** the workspace's git tracks only the folders its `.gitignore` lists (`guides/`, `notes/`, `specs/`, `roles/` and the rest). A new top-level folder of your own is not committed until you add a `!/<folder>/` line to `.gitignore`; prefer `guides/` for documents agents follow.
 
@@ -1495,7 +1495,7 @@ What the agents follow, from the most general to the most specific:
 4. `roles/<role>.md`: what this project adds for one role, built into that role's definition.
 5. A repo's own `AGENTS.md`: rules for work in that repo.
 
-On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's `AGENTS.md` and guides, over `CABINET.md`. Nothing can loosen "Never push, merge on GitHub, publish or release" or "The builder never verifies". `notes/` is different: thinking and decisions on the record, read when relevant, not rules in force. How to add each: [recipes](recipes.md#add-your-own-rules-guidelines-and-business-documents).
+On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's `AGENTS.md` and guides, over `CABINET.md`. Nothing can loosen "Never push, merge on a shared host, publish or release" or "The builder never verifies". `notes/` is different: thinking and decisions on the record, read when relevant, not rules in force. How to add each: [recipes](recipes.md#add-your-own-rules-guidelines-and-business-documents).
 
 ## Repo ownership
 

@@ -39,7 +39,7 @@ What the agents follow, from the most general to the most specific:
 4. `roles/<role>.md`: what this project adds for one role, built into that role's definition.
 5. A repo's own `AGENTS.md`: rules for work in that repo.
 
-On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's `AGENTS.md` and guides, over `CABINET.md`. Nothing can loosen "Never push, merge on GitHub, publish or release" or "The builder never verifies". `notes/` is different: thinking and decisions on the record, read when relevant, not rules in force. How to add each: [recipes](recipes.md#add-your-own-rules-guidelines-and-business-documents).
+On a conflict the more specific wins: a repo's `AGENTS.md` over the workspace's `AGENTS.md` and guides, over `CABINET.md`. Nothing can loosen "Never push, merge on a shared host, publish or release" or "The builder never verifies". `notes/` is different: thinking and decisions on the record, read when relevant, not rules in force. How to add each: [recipes](recipes.md#add-your-own-rules-guidelines-and-business-documents).
 
 ## Repo ownership
 
