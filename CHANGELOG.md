@@ -30,6 +30,10 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - `cabinet config` checks every setting it writes back to `cabinet.env` before writing anything, the ones it carries over unchanged included, so a value edited by hand that holds `$`, a backtick, a backslash, a double quote or a line break stops it, naming the setting, instead of becoming code the next time a script reads the file. A role's name is lowercase letters, digits and dashes, and a file under `roles/` with any other name is no longer taken as a role.
 
+### Docs
+
+- The concepts page says how to call a role from a session: `@agent-<role>` in Claude Code (`@agent-product-manager`), and in every other tool plain words such as "As product-manager, read agents/product-manager.md and ...", which runs the role inside the current session. The website's tour says the same beside the team.
+
 ### Rules
 
 - Every role restates the real problem first: before acting on an owner request, it says in one line the problem the request solves; when a simpler way solves it, or the request would not, it says so with its recommendation and lets you choose before building either; and it names every tool, access, account or file the work needs before it starts, not partway through (`CABINET.md`). product-manager starts a spec's Problem from the real problem and names a simpler option you did not ask for under Decisions.

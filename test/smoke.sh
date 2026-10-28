@@ -268,6 +268,9 @@ grep -qxF 'Before acting on an owner request, say in one line the problem it sol
   && [[ "$(grep -n '^You work for the owner' "$W/CABINET.md" | cut -d: -f1)" == "$(( $(grep -n '^Before acting on an owner request' "$W/CABINET.md" | cut -d: -f1) - 2 ))" ]] || fail "CABINET.md does not restate the real problem right after 'You work for the owner'"
 grep -qF 'Start the Problem from the real problem the request solves, not the request as worded; when a simpler option the owner did not ask for would solve it, name it under "Decisions" beside what was asked.' "$W/agents/product-manager.md" \
   || fail "product-manager's spec step 3 does not start from the real problem"
+# How to call a role from a session: @agent-<role> in Claude Code, plain words in any other tool; the site says it too.
+grep -qF '`@agent-<role>`, for example `@agent-product-manager`' "$KIT/docs/concepts.md" && grep -qF 'As product-manager, read agents/product-manager.md and ...' "$KIT/docs/concepts.md" \
+  && grep -qF '@agent-product-manager' "$KIT/site/copy.js" || fail "the concepts page or the site does not say how to call a role from a session (@agent-)"
   return 0   # a last "check && fail" line must not end the run
 }
 
