@@ -423,7 +423,7 @@ Compares the workspace's kit version, the installed kit and the newest version o
 
 **What it sends:** one request a day, `npm view @tarekraafat/cabinet version --no-update-notifier`, from the machine's address, through your own npm and its settings (registry, proxy, mirror), run from Cabinet's log folder so npm reads no project file. It carries npm's usual details (npm and Node versions, operating system and processor type, a random session ID, the command name, and the name of the CI service when there is one) and, when you are logged in to npm for that registry, your npm login, as every npm command does. Nothing about the project, its files or its people. npm writes its own cache and logs (`~/.npm`), as with any npm command.
 
-**Turning it off:** `cabinet config --update-check off` (the workspace, in `cabinet.env`), `cabinet config --this-machine --update-check off` (this machine, in `cabinet.local.env`, which wins), or in the environment `CABINET_UPDATE_CHECK=off`, `NO_UPDATE_NOTIFIER` or `CI` set to anything. Scheduled jobs do not read your shell profile, so for them the setting in `cabinet.env` or `cabinet.local.env` is the one that counts. Turn it off if you want no request tied to your npm login.
+**Turning it off:** `cabinet config --update-check off` (the workspace, in `cabinet.env`), `cabinet config --this-machine --update-check off` (this machine, in `cabinet.local.env`, which wins), or in the environment `CABINET_UPDATE_CHECK=off`, `NO_UPDATE_NOTIFIER` or `CI` set to a non-empty value. Scheduled jobs do not read your shell profile, so for them the setting in `cabinet.env` or `cabinet.local.env` is the one that counts. Turn it off if you want no request tied to your npm login.
 
 ## cabinet changelog
 
