@@ -2,7 +2,9 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 29 Oct 2026
+
+Credit roles, color, parallel sessions, and a notice when a newer Cabinet is out. After updating, run `cabinet bootstrap` and add a line for `bin/session.sh` to `OPERATIONS.md`.
 
 ### Credit roles
 
