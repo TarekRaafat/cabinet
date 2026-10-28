@@ -335,6 +335,11 @@ safe() { [[ "$1" != *[\$\`\\\"]* && "$1" != *[[:cntrl:]]* ]]; }
 # A relative path (./x, ../x) is relative to the workspace, as bootstrap clones it.
 url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]+:|/|\./|\.\./)[^[:space:][:cntrl:]]*$ ]]; }
 name_ok() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != . && "$1" != .. ]]; }
+# A role name: lowercase ASCII letters, digits and dashes (C: a-z is ASCII only).
+role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
+# env_ok <setting> <value>: a value written to cabinet.env in double quotes, given now or carried
+# over, passes safe as well as its own check, before anything is written.
+env_ok() { safe "$2" || die "$1 is '$2', which cannot be written back: no \$, backtick, backslash, double quote or line break. Set it again with cabinet config, or correct it by hand"; }
 
 # The workspace that already uses a slug on this machine (its schedules or its log folder),
 # if not <ws>. Paths are compared with symlinks resolved.
@@ -375,6 +380,7 @@ check_answers() {
   roles="$(printf %s "$roles" | tr '[:upper:]' '[:lower:]')"; runner="$(printf %s "$runner" | tr '[:upper:]' '[:lower:]')"
   brief="$(printf %s "$brief" | tr '[:upper:]' '[:lower:]')"
   has "$roles" chief-of-staff || roles="chief-of-staff $roles"
+  for r in $roles; do role_ok "$r" || die "'$r' is not a role name: lowercase letters, digits and dashes"; done
   for r in $roles; do has "$ROLES_ALL $ROLES_OPT ${extra_roles:-}" "$r" || die "unknown role '$r' (kit roles: $ROLES_ALL $ROLES_OPT${extra_roles:+; project roles: $extra_roles})"; done
   [[ "$runner" != gemini ]] || die "gemini is no longer a runner (Gemini CLI users moved to Antigravity): use --runner antigravity"
   has "$RUNNERS custom" "$runner" || die "runner must be one of: $RUNNERS, custom"
@@ -1176,9 +1182,11 @@ cmd_config() {
   ((set_backup)) || backup="${o_backup:-off}"; ((set_btime)) || backup_time="$o_btime"; ((set_budget)) || budget="$o_budget"; ((set_price)) || price="$o_price"
   # Roles this project defines itself (roles/<role>.md) count as known roles too.
   local r2
-  for r2 in $o_roles; do has "$ROLES_ALL $ROLES_OPT" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
+  # A file whose name is not a role name is never a role (its name would reach cabinet.env).
+  for r2 in $o_roles; do role_ok "$r2" || continue; has "$ROLES_ALL $ROLES_OPT" "$r2" || { [[ -f "$ws/roles/$r2.md" ]] && extra_roles+="$r2 "; }; done
   for r2 in "$ws"/roles/*.md; do
     r2="$(basename "$r2" .md)"; [[ -f "$ws/roles/$r2.md" && "$r2" != README ]] || continue
+    role_ok "$r2" || { echo "Note: roles/$r2.md is not a role: a role's file name is lowercase letters, digits and dashes. Rename it to use it." >&2; continue; }
     has "$ROLES_ALL $ROLES_OPT $extra_roles" "$r2" || { head -1 "$ws/roles/$r2.md" | grep -qx -- '---' && extra_roles+="$r2 "; }
   done
   extra_roles="${extra_roles% }"
@@ -1234,6 +1242,13 @@ cmd_config() {
   hard="$(printf %s "$hard" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
   [[ "$(printf %s "$hard" | tr '[:upper:]' '[:lower:]')" == off ]] && hard=off
   [[ "$hard" == off || "$hard" == "$o_hard" ]] || hard_check "$ws" "$hard"
+  # Every value written back in double quotes, given now or carried over, before any other check.
+  env_ok CABINET_PROJECT "$name"; env_ok CABINET_SLUG "$slug"; env_ok CABINET_ROLES "$roles"; env_ok CABINET_RUNNER "$runner"
+  env_ok CABINET_BACKUP_DIR "$backup"; env_ok CABINET_BACKUP_TIME "$backup_time"; env_ok CABINET_BUDGET "$budget"; env_ok CABINET_PRICE "$price"
+  env_ok CABINET_PIPELINE "$pipe"; env_ok CABINET_PIPELINE_LIMIT "$plimit"
+  env_ok CABINET_CREDIT_ROLES "$( ((set_credit)) && printf %s "$credit" || printf %s "$o_cfile")"
+  env_ok CABINET_CREDIT_EMAIL "$( ((cemail_given)) && printf %s "$cemail" || printf %s "$o_cemail")"
+  env_ok "WHEN in jobs/brief.job" "$brief"; env_ok "WHEN in jobs/pipeline.job" "$ptime"
   # The scheduled runner: off by default, and never on without a cost limit it can hold (runners as
   # SPEND_DOLLARS and SPEND_TOKENS in lib.sh say).
   pipe="$(printf %s "$pipe" | tr '[:upper:]' '[:lower:]')"

@@ -671,6 +671,31 @@ grep -qx 'CABINET_PROJECT="Acme Co"' "$C/cabinet.env" && grep -qx 'WHEN=""' "$C/
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$C/AGENTS.md" && grep -qx 'CABINET_BUDGET="25"' "$C/cabinet.env" || fail "prompted writing or budget not written by config"
 fake_sched "$LA/ai.cabinet.old-name.brief$SX" "$(cd "$C" && pwd -P)/bin/job.sh"
 HOME="$H" "$C/bin/doctor.sh" 2>&1 | grep -q 'ai.cabinet.old-name.brief still runs this workspace under an old name' || fail "doctor missed a leftover schedule"
+# Every value config writes back in double quotes is checked first, carried over or not: a single-quoted
+# value holding a command, inert as written, would run on every later source once rewritten.
+PW="$T/cfgpwned"; "$F" new "$PW" --yes --backup-dir off >/dev/null || fail "new for carried-over values"
+cp "$PW/cabinet.env" "$T/pw.env"
+for k in CABINET_PROJECT CABINET_SLUG CABINET_ROLES CABINET_RUNNER CABINET_BACKUP_DIR CABINET_BACKUP_TIME CABINET_BUDGET CABINET_PRICE \
+  CABINET_PIPELINE CABINET_PIPELINE_LIMIT CABINET_CREDIT_ROLES CABINET_CREDIT_EMAIL; do
+  v='$(touch pwned)'; [[ "$k" == CABINET_ROLES ]] && v='chief-of-staff $(touch pwned)'
+  { grep -v "^$k=" "$T/pw.env"; printf "%s='%s'\n" "$k" "$v"; } > "$PW/cabinet.env"
+  [[ "$k" == CABINET_ROLES ]] && printf -- '---\nname: x\ndescription: x\n---\n' > "$PW/roles/\$(touch pwned).md"
+  cp "$PW/cabinet.env" "$T/pw.before"; st=0
+  out="$(cd "$PW" && "$F" config --yes --week-start monday 2>&1)" || st=$?
+  ((st != 0)) && grep -qF "$k is '" <<<"$out" && grep -qF "$v', which cannot be written back" <<<"$out" || fail "config wrote back $k='$v' (exit $st): $out"
+  cmp -s "$PW/cabinet.env" "$T/pw.before" || fail "a refused config changed cabinet.env ($k): $(diff "$T/pw.before" "$PW/cabinet.env")"
+  (cd "$PW" && "$F" doctor >/dev/null 2>&1) || true
+  [[ -z "$(find "$PW" "$HOME" -name pwned 2>/dev/null)" ]] || fail "a carried-over $k ran: $(find "$PW" "$HOME" -name pwned)"
+done
+# A roles/ file whose name is not a role name is never a known role: config says so and leaves it out.
+cp "$T/pw.env" "$PW/cabinet.env"
+out="$(cd "$PW" && "$F" config --yes --roles "qa \$(touch" 2>&1)" && fail "a role named from a roles/ file name was accepted: $out"
+out="$(cd "$PW" && "$F" config --yes --week-start monday 2>&1)" && grep -qF 'Note: roles/$(touch pwned).md is not a role' <<<"$out" \
+  && ! grep -q touch "$PW/cabinet.env" || fail "a roles/ file with a bad name: $out $(grep ROLES "$PW/cabinet.env")"
+rm -f "$PW/roles/\$(touch pwned).md"; [[ -z "$(find "$PW" "$HOME" -name pwned 2>/dev/null)" ]] || fail "a role file name ran"
+# A legitimate single-quoted value (the custom runner's command) still carries over.
+out="$(cd "$PW" && "$F" config --yes --runner custom --runner-cmd 'my-agent --prompt "$CABINET_PROMPT"' 2>&1)" && out="$(cd "$PW" && "$F" config --yes --week-start sunday 2>&1)" \
+  && grep -qxF "CABINET_RUNNER_CMD='my-agent --prompt \"\$CABINET_PROMPT\"'" "$PW/cabinet.env" || fail "the custom runner command no longer carries over: $out"
   return 0   # a last "check && fail" line must not end the run
 }
 
