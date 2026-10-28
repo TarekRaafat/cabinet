@@ -20,6 +20,15 @@ styles() {
 }
 styles 1
 ERR_TAG="cabinet:"; styled 2 && ERR_TAG=$'\033[31m'"cabinet:"$'\033[0m'
+# term_text: text from a workspace or project file on stdin, made safe to print: when stdout was a
+# terminal as this file was sourced (with color or without), each C0 control but tab and newline, DEL, and each C1 control (U+0080 to U+009F, as UTF-8;
+# never a raw byte, so UTF-8 text is unchanged) becomes '?', so it cannot move the cursor, clear the
+# screen or rename the window. Otherwise as it is. The kit's own codes are added after it.
+TERM_OUT=0; [[ -t 1 ]] && TERM_OUT=1
+term_text() {
+  if ((TERM_OUT == 0)); then cat; return 0; fi
+  LC_ALL=C tr '\000-\010\013-\037\177' '?' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]/?/g'
+}
 # term_width: the width to wrap at: COLUMNS when it is above 0, else the terminal's own (stty on
 # fd 3, the stream being written, else on stdin; never tput, which can miss a change), else 80.
 term_width() {

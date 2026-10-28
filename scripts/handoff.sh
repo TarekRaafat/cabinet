@@ -341,8 +341,8 @@ if [[ $# -gt 0 ]]; then
   ((ready == 0)) || { echo "--ready lists every entry ready to push; it takes no name (or add --json)" >&2; exit 2; }
   # "owner" and "founder" name the same person.
   who="$1"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
-  # Styled (platform.sh): on a Verdict line, PASS green, BLOCK and CHANGES red.
-  awk -v who="$who" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
+  # Styled (platform.sh): on a Verdict line, PASS green, BLOCK and CHANGES red, after term_text.
+  term_text < "$WS/HANDOFFS.md" | awk -v who="$who" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
   function flush() { if (e != "" && to ~ ("(^|[^a-z-])(" who ")([^a-z-]|$)") && st !~ /^(done|rejected)/) printf "%s\n", e; e=""; to=""; st="" }
   /^## / && $0 !~ /^## Open/ { flush(); on=0; if ($0 ~ /^## Archive/) on=1; next }
   /^## Open/ { flush(); on=1; next }
@@ -354,11 +354,11 @@ if [[ $# -gt 0 ]]; then
     $0 = substr($0, 1, p) ($4 == "PASS" ? g : r) $4 z substr($0, p + length($4) + 1) }
   e != "" || /^### H-/ { e = e $0 "\n" }
   END { flush() }
-  ' "$WS/HANDOFFS.md"
+  '
   exit 0
 fi
 
-awk '
+term_text < "$WS/HANDOFFS.md" | awk '
 # Entries live under "## Open"; the template above it is not one.
 /^## / { on = ($0 ~ /^## Open/); next }
 !on { next }
@@ -369,7 +369,7 @@ awk '
   d = match($0, /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) ? substr($0, RSTART, RLENGTH) : "9999-99-99"
   st=$3; sub(/[^a-z].*/, "", st); print d "\t" st "\t" id "\t" to "\t" title; id=""
 }
-' "$WS/HANDOFFS.md" | sort | while IFS=$'\t' read -r d st id to title; do
+' | sort | while IFS=$'\t' read -r d st id to title; do
   ((ready == 0)) || json -e --arg i "$id" '$[$i]?.ready === true' <<<"$rd" >/dev/null || continue
   if [[ "$d" == 9999-99-99 ]]; then age="?"
   else age=$(( (today - $(epoch "$d") + 43200) / 86400 )); fi  # rounded, so a DST day still counts as one

@@ -2914,6 +2914,46 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "control characters in project text show as ? in a terminal" ""
+s63() {
+# Its own HOME, so list and digest see only this section's workspace. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+export HOME="$T/ctl-home" GIT_CONFIG_GLOBAL="$T/ctl-home/.gitconfig"
+mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+tt() { TERM=xterm in_tty "$@" | tr -d '\r'; }
+local ESC=$'\033' BEL=$'\007' CAFE=$'caf\xc3\xa9' C1=$'\xc2\x9b'
+"$F" new "$T/ctl" --name "Ctl Co" --yes >/dev/null; CT="$T/ctl"
+# A project name, a handoff title and a brief's sign-off queue line, each holding escape sequences, as a
+# cloned project or a hand edit could write them; a C1 control (U+009B) too, and a UTF-8 word.
+sedi "s/^CABINET_PROJECT=.*/CABINET_PROJECT=\"Ctl ${ESC}[2J${C1}1m Co\"/" "$CT/cabinet.env"
+printf '\n### H-20260101-01: Red %s[31mtitle %s]0;x%s end\n- From: qa -> To: owner\n- Status: open (2026-01-01)\n- Changed: x\n- Needed: y\n' "$ESC" "$ESC" "$BEL" >> "$CT/HANDOFFS.md"
+printf '\n### H-20260101-02: Lunch at the %s\n- From: qa -> To: owner\n- Status: open (2026-01-01)\n- Changed: x\n- Needed: y\n' "$CAFE" >> "$CT/HANDOFFS.md"
+printf '# Brief\n\n## Sign-off queue\n\n1. **Clear?** %s[2J A. yes.\n' "$ESC" > "$CT/BRIEF.md"
+raw() { grep -q "${ESC}\[2J\|${ESC}\]0\|${ESC}\[31mtitle\|$BEL\|$C1" <<<"$1"; }
+local title="Red ?[31mtitle ?]0;x? end" o c
+for c in "handoff list" "handoff list owner" digest next list; do
+  o="$(cd "$CT" && tt "$F" $c)"
+  raw "$o" && fail "$c in a terminal printed a control character from project text: $(printf '%s' "$o" | od -c | grep -m3 '033\|007')"
+  case "$c" in
+    handoff*) grep -qF "$title" <<<"$o" && grep -qF "Lunch at the $CAFE" <<<"$o" || fail "$c in a terminal: the title is not shown with '?' or the UTF-8 word changed: $o" ;;
+    digest) grep -qF '1. **Clear?** ?[2J A. yes.' <<<"$o" && grep -qF 'Ctl ?[2J?1m Co' <<<"$o" || fail "digest in a terminal: $o" ;;
+    *) grep -qF 'Ctl ?[2J?1m Co' <<<"$o" || fail "$c in a terminal: the project name is not shown with '?': $o" ;;
+  esac
+done
+o="$(cd "$CT" && NO_COLOR=1 tt "$F" handoff list)"; ! raw "$o" && grep -qF "$title" <<<"$o" || fail "handoff list in a terminal with NO_COLOR printed a control character: $o"
+# Piped and --json, as written, byte for byte.
+(cd "$CT" && "$F" handoff list) | grep -qF "Red ${ESC}[31mtitle ${ESC}]0;x${BEL} end" || fail "handoff list piped changed the title"
+(cd "$CT" && "$F" handoff list owner) | grep -qF "Red ${ESC}[31mtitle ${ESC}]0;x${BEL} end" || fail "handoff list owner piped changed the title"
+(cd "$CT" && "$F" handoff list --json) | j -e '$.some((e) => e.title == "Red \u001b[31mtitle \u001b]0;x\u0007 end")' >/dev/null || fail "handoff list --json changed the title"
+(cd "$CT" && "$F" digest) | grep -qF "**Clear?** ${ESC}[2J A." || fail "digest piped changed the brief line"
+(cd "$CT" && "$F" next --json) | j -e '$.project == "Ctl \u001b[2J\u009b1m Co"' >/dev/null || fail "next --json changed the project name"
+(cd "$CT" && "$F" digest --json) | j -e '$[0].sign_off_queue.includes("\u001b[2J")' >/dev/null || fail "digest --json changed the brief line"
+grep -q 'control characters from project text show as `?`' "$KIT/docs/commands.md" || fail "the commands page does not say control characters show as ?"
+"$F" -C "$CT" remove --yes --force >/dev/null 2>&1 || true; rm -rf "$CT"
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

@@ -1673,8 +1673,9 @@ cmd_next() {
     return 0
   fi
   # Styled (platform.sh): the first line bold with its folder dim, step numbers yellow (they wait on
-  # the owner), the command to run bold.
-  echo "${S_B}Next in $(envget CABINET_PROJECT)${S_Z} ${S_D}($ws)${S_Z}${S_B}:${S_Z}"
+  # the owner), the command to run bold; the project's text through term_text first.
+  steps="$(printf '%s' "$steps" | term_text)"; optional="$(printf '%s' "$optional" | term_text)"
+  echo "${S_B}Next in $(envget CABINET_PROJECT | term_text)${S_Z} ${S_D}($(printf '%s' "$ws" | term_text))${S_Z}${S_B}:${S_Z}"
   local n=0 id text cmd
   while IFS=$'\t' read -r id text cmd; do
     [[ -n "$id" ]] || continue
@@ -1716,26 +1717,28 @@ cmd_digest() {
   if [[ -n "$when" ]]; then digest_schedule "$when" "${file:-$DIGEST_FILE_DEFAULT}" "$notify"; return; fi
   [[ -z "$file" ]] || die "--file goes with --schedule; to write the digest now: cabinet digest --write <file>"
 
-  local slug ws project brief written iso stale queue actions waiting spent budget n=0 rows=""
+  local slug ws wsd project brief written iso stale queue actions waiting spent budget n=0 rows=""
+  # Shown in a terminal, the project's text goes through term_text; --json and --write keep it as written.
+  tt() { if ((json)) || [[ -n "$write" ]]; then cat; else term_text; fi; }
   section_of() { awk -v h="## $2" '/^## / {on = ($0 == h); next} on' "$1" | sed -e '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'; }
   while IFS=$'\t' read -r slug ws; do
     n=$((n + 1))
-    [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$ws"$'\037'"gone"$'\037\037\037\037\037\037\037\n'; continue; }
-    project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) )"
+    [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$(printf %s "$ws" | tt)"$'\037'"gone"$'\037\037\037\037\037\037\037\n'; continue; }
+    project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) | tt)"
     waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
-    brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
+    wsd="$(printf %s "$ws" | tt)"; brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
     if [[ -f "$brief" ]]; then
       written="$(human_mtime "$brief")"; iso="$(date -u -r "$brief" +%Y-%m-%dT%H:%M:%SZ)"
       (( $(date +%s) - $(mtime "$brief") > 36 * 3600 )) && stale=1
-      grep -qx '## Sign-off queue' "$brief" && queue="$(section_of "$brief" "Sign-off queue")" || queue=$'\001'   # \001: no such heading
-      actions="$(section_of "$brief" "Actions for the owner")"
+      grep -qx '## Sign-off queue' "$brief" && queue="$(section_of "$brief" "Sign-off queue" | tt)" || queue=$'\001'   # \001: no such heading
+      actions="$(section_of "$brief" "Actions for the owner" | tt)"
       # Links in the brief start at its workspace (evidence, verdict notes); the digest is read elsewhere.
-      local rel='](specs/' to="]($ws/specs/"
+      local rel='](specs/' to="]($wsd/specs/"
       queue="${queue//"$rel"/$to}" actions="${actions//"$rel"/$to}"
     fi
     IFS='|' read -r spent budget <<<"$(ws_spend "$ws")" || true
     # One record per workspace; \002 stands for a line break inside a field.
-    rows+="$slug"$'\037'"$project"$'\037'"$ws"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\n'
+    rows+="$slug"$'\037'"$project"$'\037'"$wsd"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\n'
   done < <(known_workspaces)
 
   if ((json)); then
@@ -1944,7 +1947,7 @@ cmd_list() {
     END { for (row = 1; row <= NR; row++) { l = "  "
       for (i = 1; i < n[row]; i++) l = l cell(row, i, c[row, i]) sprintf("%" (w[i] - length(c[row, i]) + 2) "s", "")
       l = l cell(row, n[row], c[row, n[row]])
-      print (row == 1 && z != "" ? "  " d substr(l, 3) z : l) } }' "$tmp/table"
+      print (row == 1 && z != "" ? "  " d substr(l, 3) z : l) } }' < <(term_text < "$tmp/table")
   ((newer)) && echo "* not the installed kit ($VERSION): cabinet update in that workspace (after npm update there)."
   for slug in $gone; do
     echo "Folder gone for $slug: if it moved, run cabinet bootstrap in its new place; if it is deleted, free the slug with: rm -r $LOGROOT_SHOWN/$slug"
