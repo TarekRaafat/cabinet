@@ -789,7 +789,7 @@ touch "$I/cabinet/.cabinet/owner-note"
 (cd "$I" && "$F" update) | grep 'then commit' | grep -qv 'package-lock' || fail "update names a path that does not exist"
 rm -f "$I/cabinet/.cabinet/owner-note"
 git -C "$I" config core.hooksPath .husky
-"$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app sets its own core.hooksPath (.husky)" || fail "doctor missed the project's own hooks path"
+"$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app uses core.hooksPath .husky, set in .git/config, so the push gate does not run there" || fail "doctor missed the project's own hooks path"
 git -C "$I" config --unset core.hooksPath
 # The guardrails close the known ways around the push gate and to credentials.
 for r in 'Bash(*core.hooksPath*)' 'Bash(*GIT_CONFIG_*)' 'Bash(* --no-v*)' 'Bash(script *)' 'Bash(pnpm publish*)' 'Bash(yarn publish*)' 'Bash(gh auth token*)' 'Bash(security find-generic-password*)' 'Bash(secret-tool lookup*)' 'Bash(*cabinet/passphrases*)'; do
@@ -4079,6 +4079,301 @@ grep -qF -- '--model-light' "$KIT/docs/commands.md" && grep -qF -- '--light-role
   && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_MODEL_LIGHT' && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_LIGHT_ROLES' \
   && grep -q 'model-light\.roles' "$KIT/docs/troubleshooting.md" && ! grep -qE 'model-light|light-roles' "$KIT/site/copy.js" || fail "a light model doc is missing"
 for x in "$LW" "$LI"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "guardrails scope: the gate asks only in Cabinet's repos, older rule files completed" ""
+s70() {
+# specs/guardrails-scope.md, criteria 1 to 18. Its own HOME, global git config and log folder, restored at the
+# end; a local bare repo in the test folder is the only remote. Every push starts in a new session (setsid) with
+# its input from /dev/null, so the gate can never open a terminal, and nothing reaches a real remote.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+GH="$T/gs-home"; GS="$T/gs"; mkdir -p "$GH" "$GS"
+export HOME="$GH" GIT_CONFIG_GLOBAL="$GH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+GK="$GH/.config/git/hooks" LG="$GH/$LOGS" GR="$GS/remote.git" NODE="$(command -v node)"
+root=0; [[ "$(id -u)" == 0 ]] && root=1
+git init -q --bare "$GR"
+org() { git -C "$1" remote remove origin 2>/dev/null || true; git -C "$1" remote add origin "$GR"; }
+grepo() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add f && git -C "$1" commit -qm init && org "$1"; }
+# gp <repo> [<source ref>] [VAR=value...]: one push with no terminal; prints asks, passes, or what happened.
+gp() {
+  local d=$1 src=HEAD b="b$RANDOM$RANDOM" out rc=0; shift; [[ $# -gt 0 && "$1" != *=* ]] && { src=$1; shift; }
+  out="$(env "$@" "$NODE" -e '
+    const c = require("node:child_process").spawn("git", ["-C", process.argv[1], "push", "-q", "origin", process.argv[2] + ":refs/heads/" + process.argv[3]],
+      { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    let o = ""; c.stdout.on("data", (d) => (o += d)); c.stderr.on("data", (d) => (o += d));
+    c.on("error", (e) => { process.stdout.write(String(e)); process.exit(1); });
+    c.on("close", (code) => { process.stdout.write(o); process.exit(code === null ? 1 : code); });' "$d" "$src" "$b" 2>&1)" || rc=$?
+  if ((rc)) && [[ "$out" == *"push blocked"* ]] && ! git -C "$GR" rev-parse -q --verify "refs/heads/$b" >/dev/null; then echo asks
+  elif ((rc == 0)) && git -C "$GR" rev-parse -q --verify "refs/heads/$b" >/dev/null; then echo passes
+  else echo "other (exit $rc): $out"; fi
+}
+dj() { (cd "$1" && "$F" doctor --json 2>/dev/null) || true; }
+# res <doctor json> <id>: "<level> <message>" for each result with that ID.
+res() { j -r --arg i "$2" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$1"; }
+GW="$GS/ws"; "$F" new "$GW" --yes >/dev/null
+grepo "$GS/listed"; grepo "$GS/other"
+printf 'listed\t-\t-\tno\t%s\n' "$GS/listed" >> "$GW/repos.tsv"
+"$GW/bin/bootstrap.sh" > "$T/gs-boot.out" 2>&1 || true
+cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" && cmp -s "$KIT/guardrails/cabinet-push-gate.js" "$GK/cabinet-push-gate.js" || fail "bootstrap did not place the push gate and its helper"
+[[ -f "$LG/ws/workspace" ]] || fail "no claim for the test workspace in $LG"
+
+# Part 1. Criteria 1 and 2.
+[[ "$(gp "$GS/listed")" == asks ]] || fail "criterion 1: a push from a listed repo: $(gp "$GS/listed")"
+[[ "$(gp "$GS/other")" == passes ]] || fail "criterion 2: a push from a repo in no workspace: $(gp "$GS/other")"
+printf '#!/bin/sh\nexit 1\n' > "$GS/other/.git/hooks/pre-push"; chmod +x "$GS/other/.git/hooks/pre-push"
+[[ "$(gp "$GS/other")" == "other (exit 1)"* ]] || fail "criterion 2: the repo's own pre-push failing did not stop the push"
+printf '#!/bin/sh\necho "$@" > "%s"\ncat > "%s"\n' "$GS/args" "$GS/stdin" > "$GS/other/.git/hooks/pre-push"
+[[ "$(gp "$GS/other" refs/heads/main)" == passes ]] || fail "criterion 2: a push with the repo's own pre-push"
+[[ "$(cat "$GS/args")" == "origin $GR" ]] || fail "criterion 2: the repo's own pre-push got other arguments: $(cat "$GS/args")"
+[[ "$(wc -l < "$GS/stdin" | tr -d ' ')" == 1 ]] && grep -qE "^refs/heads/main $(git -C "$GS/other" rev-parse HEAD) refs/heads/b[0-9]+ 0{40}\$" "$GS/stdin" \
+  || fail "criterion 2: the repo's own pre-push got other input: $(cat "$GS/stdin")"
+rm -f "$GS/other/.git/hooks/pre-push"
+# 3(a) a session worktree of a listed repo; (b) the workspace itself; (c) a repo only the second workspace lists;
+# (d) a second clone of a listed repo, elsewhere; (e) a repo inside a workspace folder, in no repos.tsv.
+s="$("$GW/bin/session.sh" start gs1 --repo listed 2>/dev/null | tail -1)"; s="$GW/sessions/listed/gs1"
+[[ -e "$s/.git" ]] || fail "criterion 3(a): no session worktree"
+[[ "$(gp "$s")" == asks ]] || fail "criterion 3(a): a push from a session worktree: $(gp "$s")"
+org "$GW"
+[[ "$(gp "$GW")" == asks ]] || fail "criterion 3(b): a push from the workspace: $(gp "$GW")"
+GW2="$GS/ws2"; "$F" new "$GW2" --yes >/dev/null; grepo "$GS/second"
+printf 'second\t-\t-\tno\t%s\n' "$GS/second" >> "$GW2/repos.tsv"
+[[ -f "$LG/ws2/workspace" ]] || fail "no claim for the second workspace"
+[[ "$(gp "$GS/second")" == asks ]] || fail "criterion 3(c): a repo the second workspace lists: $(gp "$GS/second")"
+git clone -q "$GS/listed" "$GS/clone2"; org "$GS/clone2"
+[[ "$(gp "$GS/clone2")" == passes ]] || fail "criterion 3(d): a second clone of a listed repo: $(gp "$GS/clone2")"
+grepo "$GW/inner"
+[[ "$(gp "$GW/inner")" == asks ]] || fail "criterion 3(e): a repo inside a workspace: $(gp "$GW/inner")"
+# 3(f) a row in another letter case, on a volume that ignores case; 3(g) a row for a folder not on this machine.
+touch "$GS/CaseProbe"
+if [[ "$(uname)" == Darwin && -e "$GS/caseprobe" ]]; then
+  grepo "$GS/repo-a"; printf 'repo-a\t-\t-\tno\t%s\n' "$GS/Repo-A" >> "$GW/repos.tsv"
+  [[ "$(gp "$GS/repo-a")" == asks ]] || fail "criterion 3(f): a row in another letter case: $(gp "$GS/repo-a")"
+else echo "  note: criterion 3(f) skipped: this volume is case-sensitive (or this is Linux)"; fi
+printf 'ghost\t-\t-\tno\t%s\n' "$GS/not-here" >> "$GW/repos.tsv"
+[[ "$(gp "$GS/listed")" == asks && "$(gp "$GS/other")" == passes ]] || fail "criterion 3(g): a row for a folder not on this machine"
+
+# Criterion 4: the gate fails closed; the push of criterion 2 asks in each case.
+mv "$GW" "$GW-away"
+[[ "$(gp "$GS/other")" == asks ]] || fail "criterion 4(a): a claimed workspace renamed away: $(gp "$GS/other")"
+# Criterion 5: the doctor notes the claim, with the commands that free it.
+out="$(dj "$GW2")"
+res "$out" guardrails.stale-claim | grep -F "note the slug 'ws' is still held by a workspace at $(cd "$GS" && pwd -P)/ws, which no longer exists" | grep -F "$(pf sched_stop_cmd "ai.cabinet.ws.<job>")" \
+  | grep -qF "then delete $(pf eval 'echo $LOGROOT_SHOWN')/ws/workspace" || fail "criterion 5: the doctor did not note the stale claim: $(res "$out" guardrails.stale-claim)"
+mv "$GW-away" "$GW"
+if ((root)); then echo "  note: criteria 4(b), 4(c), 4(d) unreadable and 4(h) EACCES skipped as root"; else
+  chmod 000 "$LG"; r="$(gp "$GS/other")"; chmod 755 "$LG"
+  [[ "$r" == asks ]] || fail "criterion 4(b): the log folder unreadable: $r"
+  chmod 000 "$LG/ws2/workspace"; r="$(gp "$GS/other")"; chmod 644 "$LG/ws2/workspace"
+  [[ "$r" == asks ]] || fail "criterion 4(c): one claim unreadable: $r"
+fi
+mv "$GW/repos.tsv" "$GS/repos.tsv.away"; r="$(gp "$GS/other")"; mv "$GS/repos.tsv.away" "$GW/repos.tsv"
+[[ "$r" == asks ]] || fail "criterion 4(d): a workspace without repos.tsv: $r"
+if ((root == 0)); then
+  chmod 000 "$GW/repos.tsv"; r="$(gp "$GS/other")"; chmod 644 "$GW/repos.tsv"
+  [[ "$r" == asks ]] || fail "criterion 4(d): repos.tsv unreadable: $r"
+fi
+# 4(e) the log folder empty, then absent: on Linux through XDG_STATE_HOME, on macOS through HOME.
+if [[ "$(uname)" == Darwin ]]; then mkdir -p "$GS/eh/Library/Logs/cabinet"; e1=(HOME="$GS/eh"); e2=(HOME="$GS/ah")
+else mkdir -p "$GS/es/cabinet"; e1=(XDG_STATE_HOME="$GS/es"); e2=(XDG_STATE_HOME="$GS/as"); fi
+[[ "$(gp "$GS/other" HEAD "${e1[@]}")" == asks ]] || fail "criterion 4(e): an empty log folder: $(gp "$GS/other" HEAD "${e1[@]}")"
+[[ "$(gp "$GS/other" HEAD "${e2[@]}")" == asks ]] || fail "criterion 4(e): no log folder: $(gp "$GS/other" HEAD "${e2[@]}")"
+# 4(f) a bare repo has no top folder.
+git clone -q --bare "$GS/other" "$GS/bare.git"; org "$GS/bare.git"
+[[ "$(gp "$GS/bare.git")" == asks ]] || fail "criterion 4(f): a push from a bare repo: $(gp "$GS/bare.git")"
+# 4(g) no node on PATH, then a node that fails.
+mkdir -p "$GS/nonode" "$GS/badnode"
+for t in git sh cat dirname; do ln -sf "$(command -v "$t")" "$GS/nonode/$t"; done
+printf '#!/bin/sh\nexit 1\n' > "$GS/badnode/node"; chmod +x "$GS/badnode/node"
+[[ "$(gp "$GS/other" HEAD PATH="$GS/nonode")" == asks ]] || fail "criterion 4(g): no node: $(gp "$GS/other" HEAD PATH="$GS/nonode")"
+[[ "$(gp "$GS/other" HEAD PATH="$GS/badnode:$PATH")" == asks ]] || fail "criterion 4(g): a node that fails: $(gp "$GS/other" HEAD PATH="$GS/badnode:$PATH")"
+# 4(h) a row that cannot be resolved for another reason than ENOENT: EACCES, then ELOOP.
+cp "$GW/repos.tsv" "$GS/repos.tsv.before"
+if ((root == 0)); then
+  mkdir -p "$GS/locked"; chmod 000 "$GS/locked"; printf 'locked\t-\t-\tno\t%s\n' "$GS/locked/x" >> "$GW/repos.tsv"
+  r="$(gp "$GS/other")"; chmod 755 "$GS/locked"; cp "$GS/repos.tsv.before" "$GW/repos.tsv"
+  [[ "$r" == asks ]] || fail "criterion 4(h): a row in a folder no one can read: $r"
+fi
+ln -s loop "$GS/loop"; printf 'loop\t-\t-\tno\t%s\n' "$GS/loop" >> "$GW/repos.tsv"
+r="$(gp "$GS/other")"; cp "$GS/repos.tsv.before" "$GW/repos.tsv"
+[[ "$r" == asks ]] || fail "criterion 4(h): a row that is a symlink loop: $r"
+[[ "$(gp "$GS/other")" == passes ]] || fail "the push of criterion 2 does not pass again after the fail-closed cases"
+
+# Criterion 6(a): the gate and its helper read only HOME, XDG_STATE_HOME and PATH from the environment.
+SCAN='
+  const fs = require("node:fs"), ok = ["HOME", "XDG_STATE_HOME", "PATH"], bad = [];
+  const sh = fs.readFileSync(process.argv[1], "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+  const set = new Set([...sh.matchAll(/(?:^|[;&|\s])([A-Za-z_][A-Za-z0-9_]*)=/g)].map((m) => m[1]).concat([...sh.matchAll(/\bread\s+(?:-r\s+)?([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1])));
+  for (const m of sh.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)/g)) if (!set.has(m[1]) && !ok.includes(m[1])) bad.push("pre-push reads $" + m[1]);
+  if (/\$\{!|\beval\b|\bprintenv\b|(^|[;&|\s(])env\b|\bexport\s+-p\b|(^|[;&|(]\s*)set\s*($|[;&|)])/m.test(sh)) bad.push("pre-push reads the environment another way");
+  const js = fs.readFileSync(process.argv[2], "utf8");
+  for (const m of js.matchAll(/\bprocess\.env\b(\s*\.\s*([A-Za-z_$][\w$]*)|\s*\[\s*("([^"]*)"|\x27([^\x27]*)\x27)\s*\])?/g)) {
+    const name = m[2] ?? m[4] ?? m[5];
+    if (name === undefined) bad.push("cabinet-push-gate.js uses process.env as a whole, or with a computed name: " + m[0]);
+    else if (!ok.includes(name)) bad.push("cabinet-push-gate.js reads " + name);
+  }
+  if (/\{[^}]*\}\s*=\s*process\.env\b/.test(js)) bad.push("cabinet-push-gate.js destructures process.env");
+  if (bad.length) { console.log(bad.join("; ")); process.exit(1); }'
+node -e "$SCAN" "$KIT/guardrails/pre-push" "$KIT/guardrails/cabinet-push-gate.js" || fail "criterion 6(a): the gate reads more of the environment"
+# The scan catches what it should: one more variable, eval, or process.env passed on.
+{ cat "$KIT/guardrails/pre-push"; echo 'echo "${CABINET_AGENT:-}"'; } > "$GS/x1"; { cat "$KIT/guardrails/pre-push"; echo 'eval "$refs"'; } > "$GS/x2"
+{ cat "$KIT/guardrails/cabinet-push-gate.js"; echo 'f(process.env);'; } > "$GS/x3.js"; { cat "$KIT/guardrails/cabinet-push-gate.js"; echo 'process.env["CABINET_AGENT"];'; } > "$GS/x4.js"
+for x in "$GS/x1 $KIT/guardrails/cabinet-push-gate.js" "$GS/x2 $KIT/guardrails/cabinet-push-gate.js" "$KIT/guardrails/pre-push $GS/x3.js" "$KIT/guardrails/pre-push $GS/x4.js"; do
+  ! node -e "$SCAN" $x >/dev/null || fail "criterion 6(a): the scan missed a reading in $x"
+done
+# Criterion 6(b): the variables of a Cabinet run change nothing.
+[[ "$(gp "$GS/listed" HEAD CABINET_AGENT=backend CABINET_CREDIT=on)" == asks ]] || fail "criterion 6(b): a push in a Cabinet run"
+
+# Criterion 7: bootstrap replaces only the kit's own gate.
+boot() { "$GW/bin/bootstrap.sh" 2>&1 || true; }
+cp "$KIT/test/fixtures/30017c9/pre-push" "$GK/pre-push"; boot >/dev/null
+cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" || fail "criterion 7: the 0.1.0 gate was not replaced"
+{ sed -n 1p "$KIT/test/fixtures/30017c9/pre-push"; echo "# cabinet push gate v1"; sed 1d "$KIT/test/fixtures/30017c9/pre-push"; } > "$GK/pre-push"; boot >/dev/null
+cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" || fail "criterion 7: a v1 gate was not replaced"
+sed 's/push cancelled/push canceled/' "$KIT/test/fixtures/30017c9/pre-push" > "$GK/pre-push"; cp "$GK/pre-push" "$GS/gate-mine"
+out="$(boot)"; cmp -s "$GS/gate-mine" "$GK/pre-push" || fail "criterion 7: a changed gate was replaced"
+grep -qF "differs, left as is: $GK/pre-push" <<<"$out" || fail "criterion 7: bootstrap did not say it left the gate: $(grep -F pre-push <<<"$out")"
+out="$(dj "$GW")"
+res "$out" guardrails.push-gate | grep -q '^ok ' && res "$out" guardrails.push-gate | grep '^note ' | grep -F 'asks before every push in every repo' | grep -qF 'move or delete that file, then run cabinet bootstrap' \
+  || fail "criterion 7: the doctor on a changed gate: $(res "$out" guardrails.push-gate)"
+rm -f "$GK/pre-push"; boot >/dev/null; out="$(dj "$GW")"
+cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" && res "$out" guardrails.push-gate | grep -q '^ok ' && ! res "$out" guardrails.push-gate | grep -q '^note ' \
+  || fail "criterion 7: the doctor on the kit's gate: $(res "$out" guardrails.push-gate)"
+
+# Part 2. Criterion 8: a hooks folder set in any scope, in any of Cabinet's folders, is a FIX with both ways back.
+RS="$(cd "$GS" && pwd -P)" OH="$GS/own-hooks"
+hp() {  # hp <folder> <file that sets it> [VAR=value...]: the doctor's repo-hookspath FIX for that folder
+  local d=$1 f=$2 out; shift 2
+  out="$( (cd "$GW" && env "$@" "$F" doctor --json 2>/dev/null) || true)"
+  res "$out" guardrails.repo-hookspath | grep -F "fix $d uses core.hooksPath $OH, set in $f" | grep -F "unset it (git -C $d config --file $f --unset core.hooksPath)" \
+    | grep -qF "or add a pre-push in $OH that runs the global push gate" || { echo "$d: $(res "$out" guardrails.repo-hookspath)"; return 1; }
+}
+git -C "$GS/listed" config core.hooksPath "$OH"
+hp "$RS/listed" .git/config || fail "criterion 8: local config"
+git -C "$GS/listed" config --unset core.hooksPath
+git -C "$GS/listed" config extensions.worktreeConfig true; git -C "$GS/listed" config --worktree core.hooksPath "$OH"
+hp "$RS/listed" .git/config.worktree || fail "criterion 8: worktree config"
+git -C "$GS/listed" config --worktree --unset core.hooksPath
+printf '[core]\n\thooksPath = %s\n' "$OH" > "$GS/inc.gitconfig"; git -C "$GS/listed" config include.path "$GS/inc.gitconfig"
+hp "$RS/listed" "$GS/inc.gitconfig" || fail "criterion 8: an included file"
+git -C "$GS/listed" config --unset include.path
+printf '[core]\n\thooksPath = %s\n' "$OH" > "$GS/system.gitconfig"
+# Git reads the global config after the system one, so the system's value is the one git uses only while the global sets none.
+printf '[user]\n\tname = Test\n' > "$GS/global-nohooks"
+hp "$RS/listed" "$GS/system.gitconfig" -u GIT_CONFIG_NOSYSTEM GIT_CONFIG_SYSTEM="$GS/system.gitconfig" GIT_CONFIG_GLOBAL="$GS/global-nohooks" || fail "criterion 8: the system config"
+hp "$RS/listed" .git/config >/dev/null 2>&1 && fail "criterion 8: a FIX with nothing set"
+git -C "$GW" config core.hooksPath "$OH"
+hp "$RS/ws" .git/config || fail "criterion 8: the workspace"
+git -C "$GW" config --unset core.hooksPath
+git -C "$s" config --worktree core.hooksPath "$OH"
+hp "$RS/ws/sessions/listed/gs1" "$(git -C "$s" rev-parse --path-format=absolute --git-dir)/config.worktree" || hp "$RS/ws/sessions/listed/gs1" "$(cd "$(git -C "$s" rev-parse --git-dir)" && pwd -P)/config.worktree" \
+  || fail "criterion 8: a session worktree"
+git -C "$s" config --worktree --unset core.hooksPath; git -C "$GS/listed" config --unset extensions.worktreeConfig
+# Criterion 9: the global folder set locally is fine; a repo that is not Cabinet's is never read.
+git -C "$GS/listed" config core.hooksPath "$GK"; git -C "$GS/other" config core.hooksPath "$OH"
+out="$(dj "$GW")"; [[ -z "$(res "$out" guardrails.repo-hookspath)" ]] || fail "criterion 9: $(res "$out" guardrails.repo-hookspath)"
+git -C "$GS/listed" config --unset core.hooksPath; git -C "$GS/other" config --unset core.hooksPath
+
+# Part 3. Codex, Gemini CLI and agy: a PATH without the real tools (node and git linked), and a fake codex.
+mkdir -p "$GS/tools" "$GS/fake" "$GH/.codex/rules" "$GH/.gemini/policies" "$GH/.gemini/antigravity-cli"
+ln -sf "$NODE" "$GS/tools/node"; ln -sf "$(command -v git)" "$GS/tools/git"
+CP="$T/shim:$GS/tools:/usr/bin:/bin" FP="$GS/fake:$T/shim:$GS/tools:/usr/bin:/bin"
+for t in codex gemini agy; do ! PATH="$CP" command -v "$t" >/dev/null || fail "$t is in /usr/bin or /bin: the Part 3 tests need it off PATH"; done
+printf '#!/bin/sh\n[ "$1 $2" = "execpolicy check" ] || exit 1\nif [ -e "%s" ] && grep -qF %s "$4"; then echo %s; else echo %s; fi\n' \
+  "$GS/codex-forbids" "'prefix_rule(pattern = [\"git\", \"push\"]'" "'{\"decision\":\"forbidden\"}'" "'{\"decision\":\"allow\"}'" > "$GS/fake/codex"; chmod +x "$GS/fake/codex"
+CX="$GH/.codex/rules/default.rules" GM="$GH/.gemini/policies/owner-control.toml" AG="$GH/.gemini/antigravity-cli/settings.json" FX="$KIT/test/fixtures/30017c9"
+dp() { local p=$1; shift; (cd "$GW" && PATH="$p" "$F" doctor "$@" 2>/dev/null) || true; }
+three() { for i in guardrails.codex guardrails.gemini guardrails.agy; do res "$1" "$i"; done; }
+# Criterion 10: all present.
+cp "$KIT/guardrails/codex-default.rules" "$CX"; cp "$KIT/guardrails/gemini-owner-control.toml" "$GM"; cp "$KIT/guardrails/agy-permissions.json" "$AG"; touch "$GS/codex-forbids"
+out="$(dp "$FP" --json)"
+[[ "$(three "$out" | grep -c '^ok ')" == 3 && -z "$(three "$out" | grep -v '^ok ')" ]] || fail "criterion 10: $(three "$out")"
+rm -f "$GS/codex-forbids"; out="$(dp "$FP" --json)"
+res "$out" guardrails.codex | grep -q '^fix ' || fail "criterion 10: codex no longer forbidding git push: $(res "$out" guardrails.codex)"
+# Criterion 11: older files, and the kit's files less one rule.
+c11() {  # c11 <what>: each FIX names 1 missing rule and its file, and says run cabinet bootstrap
+  local out; out="$(dp "$CP" --json)"
+  res "$out" guardrails.codex | grep -qxF 'fix Codex is missing 1 kit rule(s) in ~/.codex/rules/default.rules (run cabinet bootstrap)' \
+    && res "$out" guardrails.gemini | grep -qxF 'fix Gemini CLI is missing 1 kit rule(s) in ~/.gemini/policies/owner-control.toml (run cabinet bootstrap)' \
+    && res "$out" guardrails.agy | grep -qxF 'fix agy is missing 1 deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)' \
+    && [[ "$(dp "$CP" | tail -1)" != "All good"* ]] || fail "criterion 11, $1: $(three "$out")"
+}
+j '({...$, permissions: {...$.permissions, deny: $.permissions.deny.slice(1)}})' "$KIT/guardrails/agy-permissions.json" > "$AG"
+cp "$FX/codex-default.rules" "$CX"; cp "$FX/gemini-owner-control.toml" "$GM"; c11 "the 0.1.0 files"
+grep -v 'gh", "release' "$KIT/guardrails/codex-default.rules" > "$CX"
+awk 'BEGIN { RS = ""; ORS = "\n\n" } !/commandPrefix = "gh release"/' "$KIT/guardrails/gemini-owner-control.toml" > "$GM"; c11 "the kit's files less one rule"
+cp "$KIT/guardrails/agy-permissions.json" "$AG"
+# Criterion 12: bootstrap adds the missing rules after the owner's lines, with one backup, once.
+own_c='prefix_rule(pattern = ["make", "deploy"], decision = "prompt")'
+own_g=$'\n[[rule]]\ntoolName = "run_shell_command"\ncommandPrefix = "make deploy"\ndecision = "ask_user"\npriority = 500\n'
+{ cat "$FX/codex-default.rules"; echo "$own_c"; } > "$GS/c12"; { cat "$FX/gemini-owner-control.toml"; printf '%s' "$own_g"; } > "$GS/g12"
+bk() { ls "$(dirname "$1")" | grep -c "^$(basename "$1")\.bak\." || true; }
+c12() {  # c12 <codex file> <gemini file>: the result of criterion 12 in each
+  [[ "$(head -c "$(wc -c < "$GS/c12")" "$1")" == "$(cat "$GS/c12")" ]] && [[ "$(tail -n +"$(($(wc -l < "$GS/c12") + 1))" "$1")" == "$(printf '%s\n%s' '# Added by cabinet bootstrap: rules from a newer Cabinet kit' "$(grep secret-tool "$KIT/guardrails/codex-default.rules")")" ]] \
+    && cmp -s <(head -c "$(wc -c < "$GS/g12")" "$2") "$GS/g12" && [[ "$(tail -n +"$(($(wc -l < "$GS/g12") + 1))" "$2" | head -1)" == '# Added by cabinet bootstrap: rules from a newer Cabinet kit' ]] \
+    && tail -n +"$(($(wc -l < "$GS/g12") + 2))" "$2" | head -1 | grep -qx '\[\[rule\]\]' && tail -4 "$2" | grep -qF 'cabinet/passphrases'
+}
+cp "$GS/c12" "$CX"; cp "$GS/g12" "$GM"; rm -f "$CX".bak.* "$GM".bak.*
+PATH="$CP" "$GW/bin/bootstrap.sh" > "$GS/boot12.out" 2>&1 || true
+c12 "$CX" "$GM" || { cat "$CX" "$GM"; fail "criterion 12: the files are not the owner's bytes, a comment line, then the missing rule"; }
+[[ "$(bk "$CX")" == 1 && "$(bk "$GM")" == 1 ]] && cmp -s "$CX".bak.* "$GS/c12" && cmp -s "$GM".bak.* "$GS/g12" || fail "criterion 12: not exactly one backup equal to the file before"
+grep -qF "added 1 kit rule(s) to $CX" "$GS/boot12.out" && grep -qF "added 1 kit rule(s) to $GM" "$GS/boot12.out" || fail "criterion 12: bootstrap did not say what it added: $(cat "$GS/boot12.out")"
+out="$(dp "$CP" --json)"; res "$out" guardrails.codex | grep -q '^ok ' && res "$out" guardrails.gemini | grep -q '^ok ' || fail "criterion 12: the doctor after bootstrap: $(three "$out")"
+cp "$CX" "$GS/c12-after"; cp "$GM" "$GS/g12-after"
+PATH="$CP" "$GW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+cmp -s "$CX" "$GS/c12-after" && cmp -s "$GM" "$GS/g12-after" && [[ "$(bk "$CX")" == 1 && "$(bk "$GM")" == 1 ]] || fail "criterion 12: a second bootstrap changed a file or made another backup"
+# Criterion 13: a symlinked file stays a link, and its target holds the result.
+mkdir -p "$GH/dotfiles"; cp "$GS/c12" "$GH/dotfiles/codex.rules"; cp "$GS/g12" "$GH/dotfiles/gemini.toml"
+rm -f "$CX" "$GM" "$CX".bak.* "$GM".bak.*; ln -s "$GH/dotfiles/codex.rules" "$CX"; ln -s "$GH/dotfiles/gemini.toml" "$GM"
+PATH="$CP" "$GW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+[[ -L "$CX" && "$(readlink "$CX")" == "$GH/dotfiles/codex.rules" && -L "$GM" && "$(readlink "$GM")" == "$GH/dotfiles/gemini.toml" ]] || fail "criterion 13: a symlink was replaced"
+cmp -s "$GH/dotfiles/codex.rules" "$GS/c12-after" && cmp -s "$GH/dotfiles/gemini.toml" "$GS/g12-after" || fail "criterion 13: the target does not hold the result"
+[[ "$(bk "$CX")" == 1 && ! -L "$(ls "$CX".bak.*)" ]] && cmp -s "$CX".bak.* "$GS/c12" || fail "criterion 13: the backup is not a copy beside the link"
+rm -f "$CX" "$GM" "$CX".bak.* "$GM".bak.*
+# Criterion 14: a backup that cannot be written leaves the file as it is.
+if ((root)); then echo "  note: criterion 14 skipped as root"; else
+  cp "$GS/c12" "$CX"; cp "$GS/g12" "$GM"; chmod 555 "$GH/.codex/rules" "$GH/.gemini/policies"
+  out="$(PATH="$CP" "$GW/bin/bootstrap.sh" 2>&1 || true)"; chmod 755 "$GH/.codex/rules" "$GH/.gemini/policies"
+  cmp -s "$CX" "$GS/c12" && cmp -s "$GM" "$GS/g12" && [[ "$(bk "$CX")" == 0 && "$(bk "$GM")" == 0 ]] || fail "criterion 14: a file changed, or a backup exists"
+  grep -F "$CX was not changed: its backup could not be written beside it (" <<<"$out" | grep -qi 'permission denied' && grep -qF "$GM was not changed" <<<"$out" \
+    || fail "criterion 14: bootstrap did not say why: $(grep -F 'not changed' <<<"$out")"
+fi
+# Criterion 15: Codex names. (a) the owner's own forbidden_why, a codex that accepts the result.
+mine() { sed 's/^forbidden_why = .*/forbidden_why = "Mine."/' "$KIT/guardrails/codex-default.rules" | grep -v 'gh", "release'; }
+mine > "$CX"; touch "$GS/codex-forbids"; rm -f "$CX".bak.*
+PATH="$FP" "$GW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+[[ "$(grep -c '^forbidden_why' "$CX")" == 1 ]] && grep -qx 'forbidden_why = "Mine."' "$CX" && [[ "$(tail -1 "$CX")" == "$(grep 'gh", "release' "$KIT/guardrails/codex-default.rules")" ]] \
+  && tail -1 "$CX" | grep -qF 'justification = forbidden_why' || fail "criterion 15(a): $(tail -3 "$CX")"
+# (b) a codex that no longer forbids git push on the result: left as is, the missing lines listed.
+mine > "$CX"; rm -f "$GS/codex-forbids" "$CX".bak.*; mine > "$GS/c15"
+out="$(PATH="$FP" "$GW/bin/bootstrap.sh" 2>&1 || true)"
+cmp -s "$CX" "$GS/c15" && [[ "$(bk "$CX")" == 0 ]] || fail "criterion 15(b): the file changed or a backup was made"
+grep -qF "$CX lacks 1 kit rule(s), and with them added it no longer checks out, so it is left as is. Add these lines by hand:" <<<"$out" \
+  && grep -qxF "    $(grep 'gh", "release' "$KIT/guardrails/codex-default.rules")" <<<"$out" || fail "criterion 15(b): the lines to add were not listed: $out"
+# (c) a file of the owner's own, with no forbidden_why, and no codex.
+echo "$own_c" > "$CX"; rm -f "$CX".bak.*
+PATH="$CP" "$GW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+[[ "$(head -1 "$CX")" == "$own_c" && "$(grep -c '^forbidden_why' "$CX")" == 1 ]] || fail "criterion 15(c): $(head -3 "$CX")"
+while IFS= read -r l; do grep -qxF "$l" "$CX" || fail "criterion 15(c): missing $l"; done < <(grep '^prefix_rule' "$KIT/guardrails/codex-default.rules")
+out="$(dp "$CP" --json)"; res "$out" guardrails.codex | grep -q '^ok ' || fail "criterion 15(c): the doctor: $(res "$out" guardrails.codex)"
+
+# Part 4 and the docs. Criterion 16: the hard boundary, named once in bootstrap's output.
+G="$KIT/docs/guardrails.md"
+hb="$(awk '/^## /{on = ($0 == "## A hard boundary")} on' "$G")"
+[[ -n "$hb" ]] && grep -qF 'ssh-add -c' <<<"$hb" && grep -qF -- '-sk' <<<"$hb" && grep -qi 'credential helper' <<<"$hb" && grep -qi 'login token' <<<"$hb" || fail "criterion 16: the section A hard boundary"
+! grep -qiE 'yubi|titan|solokey|nitrokey|1password|bitwarden|secretive|keepass|google|apple|microsoft|openssh' <<<"$hb" || fail "criterion 16: the hard boundary names a product"
+[[ "$(grep -c 'A hard boundary' "$T/gs-boot.out")" == 1 ]] && grep -qF '"A hard boundary" in the kit'"'"'s docs/guardrails.md' "$T/gs-boot.out" || fail "criterion 16: bootstrap does not name the section once"
+# Criterion 17: the changelog says to run cabinet bootstrap (the docs check covers each doctor message).
+awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'run `cabinet bootstrap` after updating' || fail "criterion 17: the changelog"
+for id in guardrails.stale-claim guardrails.repo-hookspath guardrails.push-gate guardrails.codex guardrails.gemini guardrails.agy; do grep -qF "\`$id\`" "$KIT/docs/troubleshooting.md" || fail "criterion 17: $id"; done
+# Criterion 18: the old wording is gone; the new says the gate asks in Cabinet's repos.
+! grep -qF 'A push gate for every repository' "$KIT/README.md" && ! grep -qF 'left as it is and checked, never replaced' "$G" \
+  && ! grep -qF 'a push gate asks you at your own terminal' "$KIT/site/copy.js" && ! grep -qF 'The push gate asks you, at your own terminal.' "$KIT/site/copy.js" \
+  && ! grep -qF 'a push gate asks you at your own terminal before any push' "$KIT/site/copy.js" || fail "criterion 18: old wording remains"
+grep -qF "Cabinet's repos" "$KIT/README.md" && [[ "$(grep -cF "Cabinet's repos" "$KIT/site/copy.js")" -ge 3 ]] && grep -qF "Cabinet's repos" "$G" || fail "criterion 18: the new wording"
+
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
