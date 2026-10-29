@@ -123,13 +123,30 @@ section "Push guardrails"
 hooks="$(git config --global core.hooksPath || true)"
 if [[ -n "$hooks" && -x "$hooks/pre-push" ]] && grep -q 'dev/tty' "$hooks/pre-push"; then ok guardrails.push-gate "git push gate at $hooks"
 else bad guardrails.push-gate "git push gate not installed (run bin/bootstrap.sh)"; fi
+# The kit's gate asks only in Cabinet's repos; any other (an edited copy, one of yours, its helper missing) asks in every repo.
+if [[ -n "$hooks" && -x "$hooks/pre-push" ]] && ! { cmp -s "$K/guardrails/pre-push" "$hooks/pre-push" && cmp -s "$K/guardrails/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js"; }; then
+  note guardrails.push-gate "the push gate at $hooks/pre-push is not the kit's, so it asks before every push in every repo, not only Cabinet's (to take the kit's: move or delete that file, then run cabinet bootstrap)"
+fi
+# A claim whose workspace is gone makes the gate ask in every repo: it cannot read that workspace's repos (cabinet-push-gate.js).
+for claim in "$LOGROOT"/*/workspace; do
+  [[ -f "$claim" ]] || continue
+  cw="$(head -1 "$claim" 2>/dev/null)"; cs="$(basename "$(dirname "$claim")")"
+  [[ -d "$cw" ]] && continue
+  stop="$(sched_stop_cmd "ai.cabinet.$cs.<job>")"
+  note guardrails.stale-claim "the slug '$cs' is still held by a workspace at $cw, which no longer exists, so the push gate asks in every repo. To free it: for each of its schedules, $stop; then delete $LOGROOT_SHOWN/$cs/workspace"
+done
 [[ -n "$hooks" && -x "$hooks/pre-commit" ]] && ok guardrails.hook-passthrough "repos' own hooks still run (pass-through stubs)" \
   || note guardrails.hook-passthrough "repos' own git hooks (pre-commit and others) do not run under the global hooks path: run bin/bootstrap.sh"
+# The hooks folder git really uses in each of Cabinet's folders (every scope: system, global, local, worktree,
+# included files), against the global one. Folders that are not Cabinet's are never read.
+gh_path="$(git config --global --type=path core.hooksPath 2>/dev/null || true)"
 while IFS= read -r d; do
   [[ -e "$d/.git" ]] || continue
-  lh="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
-  [[ -n "$lh" ]] && bad guardrails.repo-hookspath "$d sets its own core.hooksPath ($lh), which bypasses the push gate"
-done < <(data_dirs | awk '!seen[$0]++')
+  lh="$(git -C "$d" config --show-origin --type=path --get core.hooksPath 2>/dev/null || true)"
+  [[ -z "$lh" || "${lh#*$'\t'}" == "$gh_path" ]] && continue
+  lf="${lh%%$'\t'*}"; lf="${lf#file:}"; lh="${lh#*$'\t'}"
+  bad guardrails.repo-hookspath "$d uses core.hooksPath $lh, set in $lf, so the push gate does not run there: unset it (git -C $d config --file $lf --unset core.hooksPath), or add a pre-push in $lh that runs the global push gate${gh_path:+ ($gh_path/pre-push)}"
+done < <({ data_dirs; while IFS=$'\t' read -r name url files link path; do sessions_of "$name" "$(repo_dir "$path")" | cut -f2; done < <(repos 2>/dev/null); } | awk '!seen[$0]++')
 # Unattended runs never rewrite: the kit's prepare-commit-msg refuses an amend in a Cabinet run, its pre-rebase a rebase.
 rr=""
 for h in prepare-commit-msg:amend pre-rebase:rebase; do
@@ -142,16 +159,21 @@ done
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
 missing="$(json -s "$deny_missing" ~/.claude/settings.json "$K/guardrails/claude-permissions.json" 2>/dev/null || echo all)"
 [[ "$missing" == 0 ]] && ok guardrails.claude "Claude Code denies push and publish" || bad guardrails.claude "Claude Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
-if command -v codex >/dev/null; then
-  [[ "$(codex execpolicy check --rules ~/.codex/rules/default.rules git push origin main 2>/dev/null | json -r '$.decision')" == "forbidden" ]] \
-    && ok guardrails.codex "Codex forbids git push" || bad guardrails.codex "Codex push rule missing (run bin/bootstrap.sh)"
+# Codex, agy and Gemini CLI: every kit rule, counted in the file (an older copy lacks the newer ones); Codex is also asked itself.
+if [[ -e ~/.codex/rules/default.rules ]] || command -v codex >/dev/null; then
+  missing="$(node "$LIBJS" rules-missing codex ~/.codex/rules/default.rules "$K/guardrails/codex-default.rules" 2>/dev/null || echo all)"
+  if [[ "$missing" != 0 ]]; then bad guardrails.codex "Codex is missing $missing kit rule(s) in ~/.codex/rules/default.rules (run cabinet bootstrap)"
+  elif command -v codex >/dev/null && [[ "$(codex execpolicy check --rules ~/.codex/rules/default.rules git push origin main 2>/dev/null | json -r '$.decision')" != "forbidden" ]]; then
+    bad guardrails.codex "Codex push rule missing (run bin/bootstrap.sh)"
+  else ok guardrails.codex "Codex holds the kit's rules and forbids git push"; fi
 fi
-if command -v agy >/dev/null; then
-  json -e 'list(obj(obj($).permissions).deny).includes("command(git push)")' ~/.gemini/antigravity-cli/settings.json >/dev/null 2>&1 \
-    && ok guardrails.agy "agy denies git push" || bad guardrails.agy "agy push deny rule missing (run bin/bootstrap.sh)"
+if [[ -e ~/.gemini/antigravity-cli/settings.json ]] || command -v agy >/dev/null; then
+  missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$K/guardrails/agy-permissions.json" 2>/dev/null || echo all)"
+  [[ "$missing" == 0 ]] && ok guardrails.agy "agy denies push and publish" || bad guardrails.agy "agy is missing $missing deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)"
 fi
-if command -v gemini >/dev/null; then
-  [[ -f ~/.gemini/policies/owner-control.toml ]] && ok guardrails.gemini "Gemini CLI policy present" || bad guardrails.gemini "Gemini CLI policy missing (run bin/bootstrap.sh)"
+if [[ -e ~/.gemini/policies/owner-control.toml ]] || command -v gemini >/dev/null; then
+  missing="$(node "$LIBJS" rules-missing gemini ~/.gemini/policies/owner-control.toml "$K/guardrails/gemini-owner-control.toml" 2>/dev/null || echo all)"
+  [[ "$missing" == 0 ]] && ok guardrails.gemini "Gemini CLI policy holds the kit's rules" || bad guardrails.gemini "Gemini CLI is missing $missing kit rule(s) in ~/.gemini/policies/owner-control.toml (run cabinet bootstrap)"
 fi
 kit_deny="$(json -c '$.permissions.deny' "$K/guardrails/claude-permissions.json")"
 if command -v qwen >/dev/null; then

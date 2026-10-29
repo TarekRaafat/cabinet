@@ -1,16 +1,26 @@
 #!/bin/sh
-# Owner push gate: every push needs "yes" typed at a real terminal.
-# Agents and scripts have no terminal, so their pushes are refused.
+# cabinet push gate v2
+# Owner push gate: in Cabinet's repos every push needs "yes" typed at a real terminal.
+# Agents and scripts have no terminal, so their pushes are refused there.
+# Cabinet's repos are the workspaces on this machine, the repos each one lists in repos.tsv
+# and the project around a cabinet/ folder, found by cabinet-push-gate.js beside this file.
+# Only when that check completes and prints "outside" does a push go on without asking:
+# a bare repo, a missing node or any failure asks, as every push did before.
 refs=$(cat)
-if ! { exec 3</dev/tty; } 2>/dev/null; then
-  echo "push blocked: pushes need the owner's confirmation at a terminal" >&2
-  exit 1
-fi
-printf '\nPush to %s\n%s\nType yes to push: ' "$2" "$refs" > /dev/tty
-read -r answer <&3
-if [ "$answer" != "yes" ]; then
-  echo "push cancelled" >&2
-  exit 1
+top=$(git rev-parse --show-toplevel 2>/dev/null) &&
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+  where=$(node "$(dirname "$0")/cabinet-push-gate.js" "$top" "$common" 2>/dev/null) || where=""
+if [ "$where" != "outside" ]; then
+  if ! { exec 3</dev/tty; } 2>/dev/null; then
+    echo "push blocked: pushes need the owner's confirmation at a terminal" >&2
+    exit 1
+  fi
+  printf '\nPush to %s\n%s\nType yes to push: ' "$2" "$refs" > /dev/tty
+  read -r answer <&3
+  if [ "$answer" != "yes" ]; then
+    echo "push cancelled" >&2
+    exit 1
+  fi
 fi
 # Chain to a repo's own pre-push hook, if it has one.
 # The repo's own hooks folder: the common dir, so it is also right inside a worktree.

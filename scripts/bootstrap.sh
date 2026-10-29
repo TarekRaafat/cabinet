@@ -80,6 +80,36 @@ merge_permissions() {
   return 0
 }
 
+# Complete an older copy of the Codex rules or the Gemini policy with the kit's rules it lacks (counted as
+# the doctor counts them): the result is built and checked first, then the file is backed up (a plain copy
+# beside the path given), then written in place; it only adds lines at the end, after a comment line. A file
+# that holds every rule is not touched; a check or a backup that fails leaves it as it is, with the reason.
+add_rules() {  # add_rules codex|gemini <file> <kit's file>
+  local kind=$1 f=$2 kit=$3 n tmp bak err
+  n="$(node "$LIBJS" rules-missing "$kind" "$f" "$kit" 2>/dev/null)" || { echo "  $f could not be read, left as is: add the rules in $kit by hand"; failures=1; return 0; }
+  [[ "$n" == 0 ]] && return 0
+  if ((DRY)); then echo "  would add $n kit rule(s) to $f, after a backup"; return 0; fi
+  tmp="$(mktemp)"
+  if ! node "$LIBJS" rules-add "$kind" "$f" "$kit" > "$tmp" 2>/dev/null || [[ ! -s "$tmp" ]] ||
+     { [[ "$kind" == gemini ]] && [[ "$(node "$LIBJS" rules-missing gemini "$tmp" "$kit" 2>/dev/null)" != 0 ]]; } ||
+     { [[ "$kind" == codex ]] && command -v codex >/dev/null &&
+       [[ "$(codex execpolicy check --rules "$tmp" git push origin main 2>/dev/null | json -r '$.decision' 2>/dev/null)" != "forbidden" ]]; }; then
+    rm -f "$tmp"
+    echo "  $f lacks $n kit rule(s), and with them added it no longer checks out, so it is left as is. Add these lines by hand:"
+    node "$LIBJS" rules-missing "$kind" "$f" "$kit" --list 2>/dev/null | sed 's/^/    /'
+    failures=1; return 0
+  fi
+  bak="$f.bak.$(date +%Y%m%d%H%M%S)"
+  if ! err="$(cp -p "$f" "$bak" 2>&1)"; then
+    rm -f "$tmp" "$bak" 2>/dev/null
+    echo "  $f was not changed: its backup could not be written beside it (${err:-cp failed}). Free the folder, then run cabinet bootstrap again"
+    failures=1; return 0
+  fi
+  write_into "$f" text cat "$tmp" && echo "  added $n kit rule(s) to $f (a newer kit has them; the file was backed up to $bak)"
+  rm -f "$tmp"
+  return 0
+}
+
 # A clone URL from repos.tsv: a plain git URL, never an option or a line with control characters.
 # A relative path (./x, ../x) is relative to the workspace.
 url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]+:|/|\./|\.\./)[^[:space:][:cntrl:]]*$ ]]; }
@@ -151,28 +181,37 @@ echo "== Git push gate"
 # secret scanners keep working). pre-push is the gate itself, and passes on too.
 # Not push-to-checkout or fsmonitor-watchman: git changes its behavior when those merely exist.
 hooks="$HOME/.config/git/hooks"
-place "$G/pre-push" "$hooks/pre-push"
 for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg \
          post-commit post-checkout post-merge post-rewrite pre-auto-gc reference-transaction \
          post-index-change sendemail-validate; do
   place "$G/hook-passthrough" "$hooks/$h"
 done
-# Two hooks are the kit's own, and pass the call on too: prepare-commit-msg is the credit hook (credit
-# roles), which also refuses an amend in a Cabinet run, and pre-rebase refuses a rebase there. Each
-# replaces only what the kit put there: no file, the pass-through stub, or an earlier version of the same
-# hook (its line 2, "# cabinet <what> v<N>", with a lower N). Anything else is yours, and left as it is.
+# Three hooks are the kit's own, and pass the call on too: pre-push is the push gate, prepare-commit-msg
+# is the credit hook (credit roles), which also refuses an amend in a Cabinet run, and pre-rebase refuses
+# a rebase there. Each replaces only what the kit put there: no file, the pass-through stub, an earlier
+# version of the same hook (its line 2, "# cabinet <what> v<N>", with a lower N), or a kit copy from
+# before line 2, known by its SHA-256. Anything else is yours, and left as it is.
 hook_v() { sed -n "2s/^# cabinet $2 v\\([0-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
-kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is>
+sha256() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" 2>/dev/null; }
+kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a kit copy before line 2>]
   local h="$hooks/$1" src="$G/$1" old=""
   [[ -f "$h" && ! -L "$h" ]] && old="$(hook_v "$h" "$2")"
   if [[ -f "$h" && ! -L "$h" ]] && cmp -s "$src" "$h"; then :
-  elif [[ ! -e "$h" && ! -L "$h" ]] || { [[ -f "$h" && ! -L "$h" ]] && { cmp -s "$G/hook-passthrough" "$h" || [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$2")" ]]; }; }; then
+  elif [[ ! -e "$h" && ! -L "$h" ]] || { [[ -f "$h" && ! -L "$h" ]] && { cmp -s "$G/hook-passthrough" "$h" || [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$2")" ]] ||
+       [[ -n "${4:-}" && "$(sha256 "$h")" == "$4" ]]; }; }; then
     if ((DRY)); then echo "  would place the $2 at $h"
     else mkdir -p "$hooks"; cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $2 at $h"; fi
   else
     echo "  differs, left as is: $h ($3 on this machine; cabinet doctor says why)"
   fi
 }
+# The push gate's 0.1.0 copy had no line 2. Left as is, a gate of your own still asks before every push, in every repo.
+kit_hook pre-push "push gate" "the gate asks in every repo, not only Cabinet's," de138ae20c0786fd3125a7202e900b1bb49085b8963265f57473a0825ea8cfc5
+# Its helper, beside it, whenever the gate there is the kit's: it finds Cabinet's repos.
+if cmp -s "$G/pre-push" "$hooks/pre-push" && ! cmp -s "$G/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js"; then
+  if ((DRY)); then echo "  would place the push gate's helper at $hooks/cabinet-push-gate.js"
+  else cp "$G/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js.cabinet-new" && mv -f "$hooks/cabinet-push-gate.js.cabinet-new" "$hooks/cabinet-push-gate.js" && echo "  placed the push gate's helper at $hooks/cabinet-push-gate.js"; fi
+fi
 kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend,"
 kit_hook pre-rebase "pre-rebase hook" "runs are not refused a rebase"
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done
@@ -182,6 +221,7 @@ if [[ -z "$current" ]]; then
 elif [[ "$current" != "$hooks" ]]; then
   echo "  core.hooksPath is $current, not $hooks. Left as is: check the gate there (bin/doctor.sh)."
 fi
+echo "  The strongest guardrail is a key that asks you on every push: see \"A hard boundary\" in the kit's docs/guardrails.md."
 
 echo "== Secrets check"
 # The workspace's own pre-commit hook refuses a commit that adds a likely secret. Only in a
@@ -200,7 +240,8 @@ merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
 
 echo "== Codex"
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
-  place "$G/codex-default.rules" "$HOME/.codex/rules/default.rules"
+  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules"
+  else place "$G/codex-default.rules" "$HOME/.codex/rules/default.rules"; fi
   cfg="$HOME/.codex/config.toml"
   if [[ -f "$cfg" ]] && ! grep -q '^approval_policy' "$cfg"; then
     backup "$cfg"
@@ -220,7 +261,8 @@ fi
 
 echo "== Gemini CLI"
 if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
-  place "$G/gemini-owner-control.toml" "$HOME/.gemini/policies/owner-control.toml"
+  if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml"
+  else place "$G/gemini-owner-control.toml" "$HOME/.gemini/policies/owner-control.toml"; fi
   g="$HOME/.gemini/settings.json"
   if ! json_ok "$g"; then
     echo "  $g is not plain JSON, or a rewrite would change one of its values, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1

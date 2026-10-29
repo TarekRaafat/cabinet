@@ -1084,7 +1084,65 @@ function versionCheck(root) {
   } catch (e) { /* the file stays as it was */ } finally { try { fs.rmdirSync(lock); } catch (e) { /* gone */ } }
 }
 
+// The kit's rules in a Codex rules file or a Gemini CLI policy, and the ones a live copy lacks, for the
+// doctor and bootstrap (docs/guardrails.md). Codex: each prefix_rule(...) line, compared with the
+// surrounding spaces trimmed. Gemini: each [[rule]] table, present when the live file has a rule with the
+// same toolName, decision, and commandPrefix or commandRegex. A live file that does not exist lacks all.
+const RULES_NOTE = "# Added by cabinet bootstrap: rules from a newer Cabinet kit";
+function kitRules(kind, file) {
+  const ls = read(file).split("\n");
+  if (kind === "codex") return ls.filter((l) => l.trim().startsWith("prefix_rule(")).map((l) => ({ key: l.trim(), text: l.trim() }));
+  // Gemini: a table's text runs from [[rule]] to the first blank, comment or table line.
+  const val = (v) => {
+    const m = /^"((?:[^"\\]|\\.)*)"/.exec(v) || /^'([^']*)'/.exec(v);
+    if (!m) return v.replace(/\s+#.*$/, "").trim();
+    return v[0] === "'" ? m[1] : JSON.parse('"' + m[1] + '"');
+  };
+  const rules = [];
+  let cur = null;
+  for (const l of ls) {
+    const t = l.trim();
+    if (t === "[[rule]]") { cur = { f: {}, text: [t] }; rules.push(cur); continue; }
+    if (!cur) continue;
+    if (t === "" || t.startsWith("#") || t.startsWith("[")) { cur = null; continue; }
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(t);
+    if (m) cur.f[m[1]] = val(m[2]);
+    cur.text.push(l);
+  }
+  return rules.map((r) => ({ key: JSON.stringify([r.f.toolName, r.f.decision, "commandPrefix" in r.f ? "p" : "r", r.f.commandPrefix ?? r.f.commandRegex]), text: r.text.join("\n") }));
+}
+function rulesMissing(kind, live, kit) {
+  let have = [];
+  try { have = kind === "codex" ? read(live).split("\n").map((l) => l.trim()) : kitRules(kind, live).map((r) => r.key); }
+  catch (e) { if (e.code !== "ENOENT") throw e; }
+  return kitRules(kind, kit).filter((r) => !have.includes(r.key));
+}
+// rules-missing <codex|gemini> <live> <kit> [--list]: how many kit rules the live file lacks, or (--list) their text.
+function rulesMissingCmd(kind, live, kit, list) {
+  const miss = rulesMissing(kind, live, kit);
+  process.stdout.write(list === "--list" ? miss.map((r) => r.text + "\n").join("") : miss.length + "\n");
+}
+// rules-add <codex|gemini> <live> <kit>: the live file's bytes, then a comment line and the rules it lacks. For
+// Codex, the kit's definitions (name = ...) those rules use and the file does not define come first, so the file
+// never defines a name twice nor uses one it does not define. Prints nothing when no rule is missing.
+function rulesAdd(kind, live, kit) {
+  const miss = rulesMissing(kind, live, kit);
+  if (!miss.length) return;
+  const text = fs.readFileSync(live, "latin1");
+  const add = [RULES_NOTE];
+  if (kind === "codex") {
+    for (const l of read(kit).split("\n")) {
+      const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(l.trim());
+      const used = m && miss.some((r) => new RegExp("=\\s*" + m[1] + "\\b").test(r.text));
+      if (used && !new RegExp("^\\s*" + m[1] + "\\s*=", "m").test(text)) add.push(l.trim());
+    }
+    add.push(...miss.map((r) => r.text));
+  } else add.push(miss.map((r) => r.text).join("\n\n"));
+  process.stdout.write(Buffer.concat([Buffer.from(text, "latin1"), Buffer.from((text === "" || text.endsWith("\n") ? "" : "\n") + add.join("\n") + "\n")]));
+}
+
 const COMMANDS = {
+  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
