@@ -180,9 +180,9 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "             cabinet 0.2.0",
-   "⬤            One person, a whole team.",
-   "             Build anything with AI agents, and stay in charge.",
+   "               cabinet 0.2.0",
+   "⬤              One person, a whole team.",
+   "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
    "      ⬤"
   ]

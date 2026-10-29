@@ -2255,8 +2255,9 @@ version_mark() {
   case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="⬤" ;; esac
   # Seven rows for a radius of three: a terminal cell is about twice as tall as it is wide.
   # The version and the tagline as brand/BRAND.md approves it, on rows 3 to 5 in the opening between
-  # the right-hand seats, from column 14: one right of the open place (column 13), which stays empty.
-  printf '\n      %s\n  %s       %s\n             cabinet %s\n%s            One person, a whole team.\n             Build anything with AI agents, and stay in charge.\n  %s       %s\n      %s\n\n' \
+  # the right-hand seats, from column 16: three right of the open place (column 13), which stays empty,
+  # so the text keeps clear of the ring.
+  printf '\n      %s\n  %s       %s\n               cabinet %s\n%s              One person, a whole team.\n               Build anything with AI agents, and stay in charge.\n  %s       %s\n      %s\n\n' \
     "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o" "$o"
 }
 cmd_version() {
