@@ -2254,9 +2254,10 @@ version_mark() {
   local o=o
   case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) o="⬤" ;; esac
   # Seven rows for a radius of three: a terminal cell is about twice as tall as it is wide.
-  # The tagline as brand/BRAND.md approves it, on two lines beside the open place.
-  printf '\n      %s\n  %s       %s\n\n%s               cabinet %s\n                One person, a whole team.\n  %s       %s     Build anything with AI agents, and stay in charge.\n      %s\n\n' \
-    "$o" "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o"
+  # The version and the tagline as brand/BRAND.md approves it, on rows 3 to 5 in the opening between
+  # the right-hand seats, from column 14: one right of the open place (column 13), which stays empty.
+  printf '\n      %s\n  %s       %s\n             cabinet %s\n%s            One person, a whole team.\n             Build anything with AI agents, and stay in charge.\n  %s       %s\n      %s\n\n' \
+    "$o" "$o" "$o" "$VERSION" "$o" "$o" "$o" "$o"
 }
 cmd_version() {
   case "${1:-}" in "") if [[ -t 1 ]]; then version_mark; else echo "cabinet $VERSION"; fi ;; --json) json -n --arg v "$VERSION" '({name: "cabinet", version: $v})' ;; *) bad_usage "unknown argument $1 (see: cabinet version --help)" ;; esac

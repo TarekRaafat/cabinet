@@ -1505,7 +1505,7 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(j -r '$.version' "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(j -r '$.version' "$KIT/package.json")"
-[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n\no               cabinet %s\n                One person, a whole team.\n  o       o     Build anything with AI agents, and stay in charge.\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
+[[ "$(LC_ALL=C in_tty "$F" version | tr -d '\r')" == "$(printf '\n      o\n  o       o\n             cabinet %s\no            One person, a whole team.\n             Build anything with AI agents, and stay in charge.\n  o       o\n      o' "$v")" ]] || fail "version in a terminal should print the round mark"
 # The banner and the brand guide's sample of it carry the tagline BRAND.md approves.
 tag="$(sed -n 's/^The tagline: \*\*\(.*\)\*\* (Approved)$/\1/p' "$KIT/brand/BRAND.md")"
 [[ "$tag" == "One person, a whole team. Build anything with AI agents, and stay in charge." ]] || fail "BRAND.md's approved tagline changed: update the version banner and its sample with it ($tag)"

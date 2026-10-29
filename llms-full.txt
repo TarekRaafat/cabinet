@@ -2332,6 +2332,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `CABINET.md` and the docs for `handoff add` say that text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes, since the shell would run it before Cabinet sees it.
 - `cabinet handoff list --ready` prints the `cabinet session end <name>` command for work held on a session branch only when the branch name is a session name; a branch made with git whose name holds shell characters is named, with no command to paste.
 - `cabinet doctor`'s note that opencode cannot be checked from here (`guardrails.opencode`) reads whole when `opencode --version` prints nothing or fails: it starts "opencode cannot be checked", and names the version only when there is one.
+- `cabinet version` in a terminal shows the version and the tagline inside the opening of the mark: on the three rows between the right-hand seats, just right of the open place, which stays empty. Piped output and `--json` are unchanged.
 
 ## 0.2.0 - 29 Oct 2026
 
