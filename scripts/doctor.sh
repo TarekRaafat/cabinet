@@ -216,32 +216,47 @@ if [[ "$CABINET_RUNNER" == custom ]] && ! has "claude codex gemini qwen grok ope
 fi
 # Models (cabinet config --model, MODEL in a job): a name first; then, for a tool that lists its models
 # without a run, that the name is in its list. No run starts, and no list command gets the model.
-mods=() mfrom=() good=() gfrom=()
-[[ -z "$CABINET_MODEL" ]] || { mods+=("$CABINET_MODEL"); mfrom+=(cabinet.env); }
+# The light model (cabinet config --model-light) is checked the same way, under its own IDs.
+mods=() mfrom=() mid=() good=() gfrom=() gid=()
+[[ -z "$CABINET_MODEL" ]] || { mods+=("$CABINET_MODEL"); mfrom+=(cabinet.env); mid+=(model); }
+[[ -z "$CABINET_MODEL_LIGHT" ]] || { mods+=("$CABINET_MODEL_LIGHT"); mfrom+=(cabinet.env); mid+=(model-light); }
 for jf in "$WS"/jobs/*.job; do
   [[ -f "$jf" ]] || continue
   m="$(MODEL=""; source "$jf" >/dev/null 2>&1; printf '%s' "$MODEL")"
-  [[ -z "$m" ]] || { mods+=("$m"); mfrom+=("jobs/${jf##*/}"); }
+  [[ -z "$m" ]] || { mods+=("$m"); mfrom+=("jobs/${jf##*/}"); mid+=(model); }
 done
 for ((i = 0; i < ${#mods[@]}; i++)); do
-  if model_ok "${mods[$i]}"; then good+=("${mods[$i]}"); gfrom+=("${mfrom[$i]}")
-  else bad model.name "the model '${mods[$i]}' in ${mfrom[$i]} is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model off"; fi
+  if model_ok "${mods[$i]}"; then good+=("${mods[$i]}"); gfrom+=("${mfrom[$i]}"); gid+=("${mid[$i]}")
+  elif [[ "${mid[$i]}" == model ]]; then bad model.name "the model '${mods[$i]}' in ${mfrom[$i]} is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model off"
+  else bad model-light.name "the light model '${mods[$i]}' in ${mfrom[$i]} is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model-light off"; fi
 done
 if ((${#good[@]})); then
-  if [[ "$CABINET_RUNNER" == custom ]]; then note model.exists "not checked: the custom runner cannot list its models without a run (${good[*]})"
+  # mx <ok|bad|note> <message>: a result under model.exists, or model-light.exists for the light model ($id).
+  mx() { if [[ "$id" == model ]]; then "$1" model.exists "$2"; else "$1" model-light.exists "$2"; fi; }
+  if [[ "$CABINET_RUNNER" == custom ]]; then
+    for id in model model-light; do has "${gid[*]}" "$id" && mx note "not checked: the custom runner cannot list its models without a run (${good[*]})"; done
   else
     i=0
     while IFS=$'\t' read -r st m how; do
-      f="${gfrom[$i]}"; i=$((i + 1))
+      f="${gfrom[$i]}" id="${gid[$i]}"; i=$((i + 1))
       case "$st" in
-        ok) ok model.exists "$m ($f) is one of $CABINET_RUNNER's models" ;;
-        missing) fx="MODEL in $f"; [[ "$f" != cabinet.env ]] || fx="cabinet config --model <name>|off"
-          bad model.exists "$m in $f is not in $CABINET_RUNNER's model list ($how): fix the name ($fx)" ;;
-        unlisted) note model.exists "not checked: $CABINET_RUNNER cannot list its models without a run ($m in $f)" ;;
-        *) note model.exists "not checked: $CABINET_RUNNER's model list could not be read ($how), for $m in $f" ;;
+        ok) mx ok "$m ($f) is one of $CABINET_RUNNER's models" ;;
+        missing) fx="MODEL in $f"; [[ "$f" != cabinet.env ]] || fx="cabinet config --$id <name>|off"
+          mx bad "$m in $f is not in $CABINET_RUNNER's model list ($how): fix the name ($fx)" ;;
+        unlisted) mx note "not checked: $CABINET_RUNNER cannot list its models without a run ($m in $f)" ;;
+        *) mx note "not checked: $CABINET_RUNNER's model list could not be read ($how), for $m in $f" ;;
       esac
     done < <(node "$LIBJS" model-check "$LOGROOT" "$CABINET_RUNNER" "${good[@]}")
   fi
+fi
+# A role in CABINET_LIGHT_ROLES that is not on the team (removed, or never added) changes nothing: a note.
+if [[ -n "$CABINET_MODEL_LIGHT" ]]; then
+  gone="" kept=""
+  set -f   # the list as words, never file names
+  for r in $CABINET_LIGHT_ROLES; do if has "$(team_roles)" "$r"; then kept+="${kept:+ }$r"; else gone+="${gone:+ }$r"; fi; done
+  set +f
+  if [[ -n "$gone" ]]; then note model-light.roles "CABINET_LIGHT_ROLES names $gone, not on the team, so it changes nothing: to drop it, cabinet config --light-roles \"$kept\""
+  else ok model-light.roles "the light model runs for: ${CABINET_LIGHT_ROLES:-no role}"; fi
 fi
 
 section "Credit roles"

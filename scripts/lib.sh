@@ -16,6 +16,8 @@ CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
 CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
 CABINET_MODEL="${CABINET_MODEL:-}"   # the model every run asks for; empty: the tool's default
+CABINET_MODEL_LIGHT="${CABINET_MODEL_LIGHT:-}"   # the light model, for the roles in CABINET_LIGHT_ROLES; empty: none
+CABINET_LIGHT_ROLES="${CABINET_LIGHT_ROLES:-}"
 # A model name, checked before it reaches a tool (bin/cabinet checks the same): never a leading -, which
 # a tool would read as an option of its own.
 model_ok() {
@@ -177,11 +179,13 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit> [<mode
 
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
 # scheduled jobs and role drafts.
-run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else CABINET_MODEL from cabinet.env
-  local model="${1:-}" from="${2:-}"
+run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else the light model for a role in
+  # CABINET_LIGHT_ROLES when CABINET_MODEL_LIGHT is set, else CABINET_MODEL, from cabinet.env
+  local model="${1:-}" from="${2:-}" setting=model
   [[ -n "$model" ]] || { model="$CABINET_MODEL"; from=cabinet.env; }
+  [[ -n "${1:-}" || -z "$CABINET_MODEL_LIGHT" ]] || ! has "$CABINET_LIGHT_ROLES" "$AGENT" || { model="$CABINET_MODEL_LIGHT" setting=model-light; }
   # First, for every runner: a model reaches a tool only as a name, never as code or an option.
-  [[ -z "$model" ]] || model_ok "$model" || { echo "the model '$model' in $from is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --model off" >&2; return 2; }
+  [[ -z "$model" ]] || model_ok "$model" || { echo "the model '$model' in $from is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --$setting off" >&2; return 2; }
   local -a mo
   mo=(); [[ -z "$model" ]] || mo=(--model "$model")
   # Tools without cabinet's named agents get the role file as their first instruction.

@@ -71,6 +71,10 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `note not checked: <...> cannot list its models without a run (<...>)` | `model.exists` | Claude Code and Qwen Code have no free model list, and Cabinet never pays for a run to check one. | Nothing; a mistyped model shows as a failed run. |
 | `note not checked: <...>'s model list could not be read (<...>), for <...>` | `model.exists` | The tool's list command failed (no network, not logged in). | Run the command it names yourself to see why. |
 | `note not checked: the custom runner cannot list its models without a run (<...>)` | `model.exists` | A custom runner has no known model list. | Nothing. |
+| `FIX the light model '<...>' in <...> is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -), so no run starts with it: fix it, or cabinet config --model-light off` | `model-light.name` | `CABINET_MODEL_LIGHT` holds something other than a model name. Runs of the roles in `CABINET_LIGHT_ROLES` are refused before the agent tool starts; other roles run as before. | `cabinet config --model-light <name>\|off`. |
+| Each `model.exists` message, for the light model | `model-light.exists` | The same check as `model.exists`, for `CABINET_MODEL_LIGHT`. | As for `model.exists`, with `cabinet config --model-light <name>\|off`. |
+| `note CABINET_LIGHT_ROLES names <...>, not on the team, so it changes nothing: to drop it, cabinet config --light-roles "<...>"` | `model-light.roles` | A role in the list is not on the team (removed, or never added). Never a problem: the list is kept for when it comes back. | The command it gives, or nothing. |
+| `ok the light model runs for: <...>` | `model-light.roles` | Every role in the list is on the team. | Nothing. |
 
 ## Credit roles
 
