@@ -51,7 +51,10 @@ write_into() {
   local target=$1 kind=$2 tmp; shift 2
   tmp="$(mktemp)"
   if "$@" > "$tmp" 2>/dev/null && [[ -s "$tmp" ]] && { [[ "$kind" != json ]] || json -e '$' "$tmp" >/dev/null 2>&1; }; then
-    cat "$tmp" > "$target"; rm -f "$tmp"; return 0
+    if { cat "$tmp" > "$target"; } 2>/dev/null; then rm -f "$tmp"; return 0; fi
+    rm -f "$tmp"
+    echo "  $target could not be written, so it may be cut short: restore it from its newest .bak copy beside it, then run cabinet bootstrap again"
+    failures=1; return 1
   fi
   rm -f "$tmp"
   echo "  $target: the merge did not produce a valid file (its shape is not what the kit expects), left as is: add the kit's rules by hand"
@@ -365,17 +368,22 @@ schedule() {  # schedule <name> <program> <verb> <arg> <when>
   if sched_load "$label" "$new"; then echo "  $past $label ($when)"
   else echo "  $label could not be loaded by $SCHEDULER (see above); nothing installed"; failures=1; fi
 }
+# The log folder records which workspace owns this slug, whatever the scheduler: the push gate reads it.
+# Claimed only when it is free, already ours, or its workspace folder is gone. A workspace that finds it held
+# by another is listed in its shared file instead, so the gate still asks in this workspace's repos.
+if ((DRY == 0)); then
+  mkdir -p -m 700 "$LOGDIR"
+  owner_ws="$(head -1 "$LOGDIR/workspace" 2>/dev/null || true)"
+  if [[ -z "$owner_ws" || "$owner_ws" == "$WS" || ! -d "$owner_ws" ]]; then
+    printf '%s\n' "$WS" > "$LOGDIR/workspace" || { echo "  $LOGDIR/workspace could not be written, so the push gate may not ask in this workspace's repos"; failures=1; }
+  else
+    grep -qxF "$WS" "$LOGDIR/shared" 2>/dev/null || printf '%s\n' "$WS" >> "$LOGDIR/shared" || { echo "  $LOGDIR/shared could not be written, so the push gate may not ask in this workspace's repos"; failures=1; }
+    echo "  the log folder $LOGDIR belongs to the workspace at $owner_ws: give this one its own slug (cabinet config --slug); until then the push gate still asks in this workspace's repos"; failures=1
+  fi
+fi
 if [[ "$SCHEDULER" == none ]]; then
   echo "  no scheduler found (a running systemd user session, or cron): install cron, or run cabinet job run <job> by hand"
 else
-  # The log folder records which workspace owns this slug.
-  # Claimed only when it is free, already ours, or its workspace folder is gone.
-  if ((DRY == 0)); then
-    mkdir -p -m 700 "$LOGDIR"
-    owner_ws="$(cat "$LOGDIR/workspace" 2>/dev/null || true)"
-    if [[ -z "$owner_ws" || "$owner_ws" == "$WS" || ! -d "$owner_ws" ]]; then printf '%s\n' "$WS" > "$LOGDIR/workspace"
-    else echo "  the log folder $LOGDIR belongs to the workspace at $owner_ws: give this one its own slug (cabinet config --slug)"; failures=1; fi
-  fi
   # Every job runs the runner with this PATH: say so now if it cannot find it there.
   runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
   [[ "$runner" == cursor ]] && runner="$(basename "$(cursor_bin || echo cursor-agent)")"

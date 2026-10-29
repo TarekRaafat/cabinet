@@ -133,7 +133,7 @@ cabinet -C ~/dev/taskly bootstrap --dry-run
 
 What to tell the person it does ([guardrails](guardrails.md)):
 
-- **A push gate in Cabinet's repos on this machine:** a global git pre-push hook (through `core.hooksPath`) that asks for `yes` at their terminal before a `git push` in each workspace, the repos it lists, and the project around it. Agents have no terminal, so their pushes there are refused. Other repositories are not asked, and a repository's own hooks still run.
+- **A push gate in each Cabinet workspace on this machine and the repos it lists:** a global git pre-push hook (through `core.hooksPath`) that asks for `yes` at their terminal before a `git push` in each workspace, the repos it lists, and the project around it. Agents have no terminal, so their pushes there are refused. Other repositories are not asked, and a repository's own hooks still run.
 - **Deny rules in each agent tool it finds** (for example `~/.claude/settings.json`, `~/.codex/rules/default.rules`): push, merge, release and publish commands are blocked. Rules are only added, and a backup copy of each file is made first.
 - **Schedules:** the daily brief (and backups when they are on), through launchd on macOS or systemd or cron on Linux.
 - **A secrets check** before each commit in the workspace.

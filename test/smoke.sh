@@ -4112,7 +4112,7 @@ gp() {
 dj() { (cd "$1" && "$F" doctor --json 2>/dev/null) || true; }
 # res <doctor json> <id>: "<level> <message>" for each result with that ID.
 res() { j -r --arg i "$2" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$1"; }
-GW="$GS/ws"; "$F" new "$GW" --yes >/dev/null
+GW="$GS/ws"; "$F" new "$GW" --yes >/dev/null; RS="$(cd "$GS" && pwd -P)"
 grepo "$GS/listed"; grepo "$GS/other"
 printf 'listed\t-\t-\tno\t%s\n' "$GS/listed" >> "$GW/repos.tsv"
 "$GW/bin/bootstrap.sh" > "$T/gs-boot.out" 2>&1 || true
@@ -4199,6 +4199,39 @@ ln -s loop "$GS/loop"; printf 'loop\t-\t-\tno\t%s\n' "$GS/loop" >> "$GW/repos.ts
 r="$(gp "$GS/other")"; cp "$GS/repos.tsv.before" "$GW/repos.tsv"
 [[ "$r" == asks ]] || fail "criterion 4(h): a row that is a symlink loop: $r"
 [[ "$(gp "$GS/other")" == passes ]] || fail "the push of criterion 2 does not pass again after the fail-closed cases"
+# The project around a workspace named cabinet, with no row for it (init --inside writes one with the path ..):
+# the project asks, a repo beside it does not.
+grepo "$GS/proj"; (cd "$GS/proj" && "$F" init --yes --inside) >/dev/null 2>&1 || fail "init --inside for the project case"
+awk -F'\t' '$5 != ".."' "$GS/proj/cabinet/repos.tsv" > "$GS/proj.tsv" && cat "$GS/proj.tsv" > "$GS/proj/cabinet/repos.tsv"
+! grep -q $'\t\\.\\.$' "$GS/proj/cabinet/repos.tsv" || fail "the project case: $(cat "$GS/proj/cabinet/repos.tsv")"
+grepo "$GS/projsib"
+[[ "$(gp "$GS/proj")" == asks ]] || fail "the project around a cabinet/ workspace, with no .. row: $(gp "$GS/proj")"
+[[ "$(gp "$GS/projsib")" == passes ]] || fail "a repo beside the project around a cabinet/ workspace: $(gp "$GS/projsib")"
+# A workspace with no claim: the doctor says so, and bootstrap with no scheduler writes it.
+GW4="$GS/ws4"; "$F" new "$GW4" --yes >/dev/null; rm -f "$LG/ws4/workspace"; grepo "$GW4/inner"
+res "$(dj "$GW4")" guardrails.claim | grep -qxF "fix no claim in $(pf eval 'echo $LOGROOT_SHOWN')/ws4 names this workspace, so the push gate does not ask in its repos (run bin/bootstrap.sh)" \
+  || fail "the doctor on a workspace with no claim: $(res "$(dj "$GW4")" guardrails.claim)"
+CABINET_SCHEDULER=none "$GW4/bin/bootstrap.sh" > "$GS/boot4.out" 2>&1 || true
+grep -qF 'no scheduler found' "$GS/boot4.out" && [[ "$(cat "$LG/ws4/workspace" 2>/dev/null)" == "$RS/ws4" ]] || fail "bootstrap with no scheduler did not write the claim: $(cat "$LG/ws4/workspace" 2>&1)"
+[[ "$(gp "$GW4/inner")" == asks ]] || fail "a repo in a workspace bootstrapped with no scheduler: $(gp "$GW4/inner")"
+res "$(dj "$GW4")" guardrails.claim | grep -q '^ok ' || fail "the doctor after bootstrap wrote the claim: $(res "$(dj "$GW4")" guardrails.claim)"
+# A second workspace with the slug another holds: the doctor says so, and after bootstrap the gate asks in its repos.
+GW3="$GS/ws3"; "$F" new "$GW3" --yes >/dev/null; rm -rf "$LG/ws3"; grepo "$GW3/inner"
+sed 's/^CABINET_SLUG=.*/CABINET_SLUG="ws"/' "$GW3/cabinet.env" > "$GS/ws3.env" && cat "$GS/ws3.env" > "$GW3/cabinet.env"
+res "$(dj "$GW3")" guardrails.claim | grep -qxF "fix the slug 'ws' is held by the workspace at $RS/ws and no claim in $(pf eval 'echo $LOGROOT_SHOWN')/ws names this one, so the push gate does not ask in its repos (run bin/bootstrap.sh, then give this one its own slug: cabinet config --slug <name>)" \
+  || fail "the doctor on a workspace whose slug another holds: $(res "$(dj "$GW3")" guardrails.claim)"
+out="$("$GW3/bin/bootstrap.sh" 2>&1 || true)"
+grep -qF "until then the push gate still asks in this workspace's repos" <<<"$out" && grep -qxF "$RS/ws3" "$LG/ws/shared" && [[ "$(head -1 "$LG/ws/workspace")" == "$RS/ws" ]] \
+  || fail "bootstrap of a workspace whose slug another holds: $(grep -F 'log folder' <<<"$out"); shared: $(cat "$LG/ws/shared" 2>&1)"
+"$GW3/bin/bootstrap.sh" >/dev/null 2>&1 || true; [[ "$(grep -cxF "$RS/ws3" "$LG/ws/shared")" == 1 ]] || fail "a second bootstrap listed the workspace twice"
+org "$GW3"
+[[ "$(gp "$GW3/inner")" == asks && "$(gp "$GW3")" == asks ]] || fail "a workspace whose slug another holds, after bootstrap: $(gp "$GW3/inner"), $(gp "$GW3")"
+res "$(dj "$GW3")" guardrails.claim | grep -qxF "fix the slug 'ws' is held by the workspace at $RS/ws: the push gate still asks in this workspace's repos, but its schedules and log folder are that workspace's (give this one its own slug: cabinet config --slug <name>)" \
+  || fail "the doctor after bootstrap listed it: $(res "$(dj "$GW3")" guardrails.claim)"
+res "$(dj "$GW")" guardrails.claim | grep -q '^ok ' || fail "the doctor of the slug's owner: $(res "$(dj "$GW")" guardrails.claim)"
+# A listed workspace that is gone has nothing left to guard: it makes no other push ask.
+mv "$GW3" "$GW3-away"; r="$(gp "$GS/other")"; mv "$GW3-away" "$GW3"
+[[ "$r" == passes ]] || fail "a listed workspace that is gone: $r"
 
 # Criterion 6(a): the gate and its helper read only HOME, XDG_STATE_HOME and PATH from the environment.
 SCAN='
@@ -4242,7 +4275,7 @@ cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" && res "$out" guardrails.push-g
   || fail "criterion 7: the doctor on the kit's gate: $(res "$out" guardrails.push-gate)"
 
 # Part 2. Criterion 8: a hooks folder set in any scope, in any of Cabinet's folders, is a FIX with both ways back.
-RS="$(cd "$GS" && pwd -P)" OH="$GS/own-hooks"
+OH="$GS/own-hooks"
 hp() {  # hp <folder> <file that sets it> [VAR=value...]: the doctor's repo-hookspath FIX for that folder
   local d=$1 f=$2 out; shift 2
   out="$( (cd "$GW" && env "$@" "$F" doctor --json 2>/dev/null) || true)"
@@ -4338,6 +4371,13 @@ if ((root)); then echo "  note: criterion 14 skipped as root"; else
   cmp -s "$CX" "$GS/c12" && cmp -s "$GM" "$GS/g12" && [[ "$(bk "$CX")" == 0 && "$(bk "$GM")" == 0 ]] || fail "criterion 14: a file changed, or a backup exists"
   grep -F "$CX was not changed: its backup could not be written beside it (" <<<"$out" | grep -qi 'permission denied' && grep -qF "$GM was not changed" <<<"$out" \
     || fail "criterion 14: bootstrap did not say why: $(grep -F 'not changed' <<<"$out")"
+  # A rules file that cannot be written, in a folder that can: bootstrap says so and reports a failure, never "added".
+  cp "$GS/c12" "$CX"; cp "$KIT/guardrails/gemini-owner-control.toml" "$GM"; chmod 444 "$CX"
+  out="$(PATH="$CP" "$GW/bin/bootstrap.sh" 2>&1 || true)"; chmod 644 "$CX"
+  grep -qF "$CX could not be written, so it may be cut short: restore it from its newest .bak copy beside it, then run cabinet bootstrap again" <<<"$out" \
+    && ! grep -qF "added 1 kit rule(s) to $CX" <<<"$out" && grep -qF 'Some steps did not complete' <<<"$out" && cmp -s "$CX" "$GS/c12" \
+    || fail "a rules file that cannot be written: $(grep -F "$CX" <<<"$out")"
+  rm -f "$CX" "$GM" "$CX".bak.* "$GM".bak.*
 fi
 # Criterion 15: Codex names. (a) the owner's own forbidden_why, a codex that accepts the result.
 mine() { sed 's/^forbidden_why = .*/forbidden_why = "Mine."/' "$KIT/guardrails/codex-default.rules" | grep -v 'gh", "release'; }
@@ -4367,11 +4407,12 @@ hb="$(awk '/^## /{on = ($0 == "## A hard boundary")} on' "$G")"
 # Criterion 17: the changelog says to run cabinet bootstrap (the docs check covers each doctor message).
 awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'run `cabinet bootstrap` after updating' || fail "criterion 17: the changelog"
 for id in guardrails.stale-claim guardrails.repo-hookspath guardrails.push-gate guardrails.codex guardrails.gemini guardrails.agy; do grep -qF "\`$id\`" "$KIT/docs/troubleshooting.md" || fail "criterion 17: $id"; done
-# Criterion 18: the old wording is gone; the new says the gate asks in Cabinet's repos.
+# Criterion 18: the old wording is gone; the new says where the gate asks, in words the site's visitors know.
 ! grep -qF 'A push gate for every repository' "$KIT/README.md" && ! grep -qF 'left as it is and checked, never replaced' "$G" \
   && ! grep -qF 'a push gate asks you at your own terminal' "$KIT/site/copy.js" && ! grep -qF 'The push gate asks you, at your own terminal.' "$KIT/site/copy.js" \
   && ! grep -qF 'a push gate asks you at your own terminal before any push' "$KIT/site/copy.js" || fail "criterion 18: old wording remains"
-grep -qF "Cabinet's repos" "$KIT/README.md" && [[ "$(grep -cF "Cabinet's repos" "$KIT/site/copy.js")" -ge 3 ]] && grep -qF "Cabinet's repos" "$G" || fail "criterion 18: the new wording"
+grep -qF "your Cabinet workspace and the repos it lists" "$KIT/README.md" && [[ "$(grep -cF "your Cabinet workspace and the repos it lists" "$KIT/site/copy.js")" -ge 3 ]] \
+  && ! grep -qF "Cabinet's repos" "$KIT/site/copy.js" && grep -qF "Cabinet's repos" "$G" || fail "criterion 18: the new wording"
 
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run

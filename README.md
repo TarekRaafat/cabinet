@@ -131,7 +131,7 @@ Every workspace also pins its own copy as a dev dependency. Inside a workspace, 
 
 Creating a workspace changes only its folder (and, inside a project, the few lines [layouts](docs/layouts.md) lists). `cabinet bootstrap`, which `new` and `init` offer at the end and always show as a dry run first, also sets up this machine for every project on it ([guardrails](docs/guardrails.md)):
 
-- **A push gate in Cabinet's repos:** a global git pre-push hook (`core.hooksPath`) asks for `yes` at your terminal before a `git push` in Cabinet's repos (each workspace, the repos it lists, and the project around it), so agents, which have no terminal, cannot push them. Other repositories are not asked, and each repository's own hooks still run.
+- **A push gate in your Cabinet workspace and the repos it lists:** a global git pre-push hook (`core.hooksPath`) asks for `yes` at your terminal before a `git push` in each Cabinet workspace on this machine, the repos it lists, and the project around it, so agents, which have no terminal, cannot push them. Other repositories are not asked, and each repository's own hooks still run.
 - **Deny rules in each agent tool it finds,** such as `~/.claude/settings.json` or `~/.codex/rules/default.rules`, blocking push, merge, release and publish. Rules are only added, and each file is backed up first.
 - **Schedules** for the daily brief and backups: launchd on macOS, systemd or cron on Linux.
 - **A secrets check** before each commit in the workspace.

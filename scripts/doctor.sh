@@ -135,6 +135,15 @@ for claim in "$LOGROOT"/*/workspace; do
   stop="$(sched_stop_cmd "ai.cabinet.$cs.<job>")"
   note guardrails.stale-claim "the slug '$cs' is still held by a workspace at $cw, which no longer exists, so the push gate asks in every repo. To free it: for each of its schedules, $stop; then delete $LOGROOT_SHOWN/$cs/workspace"
 done
+# The gate knows this workspace only from a claim naming it (bootstrap writes it; cabinet-push-gate.js reads it).
+cw="$(head -1 "$LOGDIR/workspace" 2>/dev/null || true)"
+cl="$LOGROOT_SHOWN/$CABINET_SLUG"
+if [[ -n "$cw" && -d "$cw" && "$(cd "$cw" && pwd -P)" == "$WS" ]]; then ok guardrails.claim "this workspace holds its claim in $cl, so the push gate asks in its repos"
+elif [[ -n "$cw" && -d "$cw" ]] && grep -qxF "$WS" "$LOGDIR/shared" 2>/dev/null; then
+  bad guardrails.claim "the slug '$CABINET_SLUG' is held by the workspace at $cw: the push gate still asks in this workspace's repos, but its schedules and log folder are that workspace's (give this one its own slug: cabinet config --slug <name>)"
+elif [[ -n "$cw" && -d "$cw" ]]; then
+  bad guardrails.claim "the slug '$CABINET_SLUG' is held by the workspace at $cw and no claim in $cl names this one, so the push gate does not ask in its repos (run bin/bootstrap.sh, then give this one its own slug: cabinet config --slug <name>)"
+else bad guardrails.claim "no claim in $cl names this workspace, so the push gate does not ask in its repos (run bin/bootstrap.sh)"; fi
 [[ -n "$hooks" && -x "$hooks/pre-commit" ]] && ok guardrails.hook-passthrough "repos' own hooks still run (pass-through stubs)" \
   || note guardrails.hook-passthrough "repos' own git hooks (pre-commit and others) do not run under the global hooks path: run bin/bootstrap.sh"
 # The hooks folder git really uses in each of Cabinet's folders (every scope: system, global, local, worktree,

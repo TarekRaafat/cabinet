@@ -2,7 +2,8 @@
 // Run by the push gate (pre-push, beside this file): node cabinet-push-gate.js <top folder> <common git folder>.
 // Prints "cabinet" when the repo is one of Cabinet's on this machine, "outside" when the check completes and
 // finds it in no workspace; any failure throws, exits 1, and the gate asks. Reads only HOME and
-// XDG_STATE_HOME, the log folder and its claims, each claimed workspace's repos.tsv, and the folders it resolves.
+// XDG_STATE_HOME, the log folder and its claims (each slug's workspace and shared files), each claimed
+// workspace's repos.tsv, and the folders it resolves.
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -24,12 +25,23 @@ let claims = 0;
 for (const slug of fs.readdirSync(logs)) {
   const d = path.join(logs, slug);
   if (!fs.statSync(d).isDirectory()) continue;
-  let ws;
-  try { ws = fs.readFileSync(path.join(d, "workspace"), "utf8"); } catch (e) { if (e.code === "ENOENT") continue; throw e; }
-  claims++;
-  ws = ws.split("\n")[0];
+  // The slug's owner, then any workspace bootstrap found it held by (one per line): each is Cabinet's.
+  const ws = read(path.join(d, "workspace"));
+  if (ws !== null) { claims++; check(ws.split("\n")[0], false); }
+  for (const s of (read(path.join(d, "shared")) || "").split("\n")) if (s) { claims++; check(s, true); }
+}
+if (!claims) throw new Error("no workspace claimed on this machine");
+out("outside");
+
+function read(f) { try { return fs.readFileSync(f, "utf8"); } catch (e) { if (e.code === "ENOENT") return null; throw e; } }
+
+// check <workspace folder> <whether a folder that is gone is skipped>: out("cabinet") when the repo is that
+// workspace's. An owner that is gone throws (the doctor's stale-claim note frees it); a shared one that is
+// gone has nothing left in it to guard.
+function check(ws, goneOk) {
   if (!path.isAbsolute(ws)) throw new Error("a claim that is not a folder");
-  const wr = real(ws);
+  let wr;
+  try { wr = real(ws); } catch (e) { if (goneOk && e.code === "ENOENT") return; throw e; }
   if (within(wr)) out("cabinet");
   // The project around a workspace inside it: init --inside always names that folder cabinet.
   if (path.basename(wr) === "cabinet" && is(path.dirname(wr))) out("cabinet");
@@ -44,7 +56,5 @@ for (const slug of fs.readdirSync(logs)) {
     if (is(r)) out("cabinet");
   }
 }
-if (!claims) throw new Error("no workspace claimed on this machine");
-out("outside");
 
 function out(word) { process.stdout.write(word + "\n"); process.exit(0); }
