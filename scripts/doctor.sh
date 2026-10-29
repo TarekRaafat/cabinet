@@ -183,7 +183,9 @@ if command -v opencode >/dev/null; then
       ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs")"
     [[ -z "$open_rules" ]] && ok guardrails.opencode "opencode denies push and publish" || bad guardrails.opencode "opencode does not deny: $open_rules (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)"
   else
-    note guardrails.opencode "$(opencode --version 2>/dev/null | sed 's/^opencode //') of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)"
+    # Its version leads the note only when the version check works and prints one.
+    ov="$(opencode --version 2>/dev/null)" || ov=""; ov="${ov%%$'\n'*}"; ov="${ov#opencode }"
+    note guardrails.opencode "${ov:+$ov of }opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)"
   fi
 fi
 # Agent tools cabinet installs no guardrails for: only the git push gate covers them.

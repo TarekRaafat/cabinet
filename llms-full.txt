@@ -1903,7 +1903,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `note the Cursor editor keeps its agent's command rules in its own settings, which the kit does not set: only the git push gate applies there` | `guardrails.cursor-editor` | Information: the kit cannot set the editor's rules. | Set its command denylist in the Cursor editor's settings if you want more than the push gate. |
 | `FIX Grok does not load the rules in ~/.claude/settings.json (check: grok inspect)` | `guardrails.grok` | Grok is not reading the Claude Code rules (its Claude compatibility may be off). | Turn it on in Grok, or add the rules to `~/.grok/config.toml` by hand. |
 | `FIX opencode does not deny: <...> (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)` | `guardrails.opencode` | On opencode 1.x, the resolved rules do not end with the kit's denies. | `bin/bootstrap.sh`; if it still fails, remove the overriding rule from `opencode.jsonc`. |
-| `note <...> of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)` | `guardrails.opencode` | opencode 2.x has no command to print its resolved rules. | Check in opencode that it refuses `git push`. |
+| `note [<version> of ]opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)` | `guardrails.opencode` | opencode 2.x has no command to print its resolved rules. The version leads the note when `opencode --version` prints one. | Check in opencode that it refuses `git push`. |
 | `note <...> is installed and cabinet has no guardrails for it: only the git push gate above applies` | `guardrails.unguarded-tool` | An agent tool the kit does not cover. | Use it for reading and local edits, or add its own deny rules by hand. |
 | `FIX scheduled jobs cannot find the runner '<...>' (install it, or fix CABINET_RUNNER / CABINET_RUNNER_CMD, then run bin/bootstrap.sh)` | `runner.found` | The runner is not on the PATH scheduled jobs get. | Install it, or fix the setting; then `bin/bootstrap.sh` from a shell where it is on your PATH, so the schedule gets its folder. |
 | `FIX scheduled jobs find <...> but not node, which it needs (run bin/bootstrap.sh after installing node)` | `runner.node` | The runner is a Node script and Node is not on the scheduled PATH. | Install Node, then `bin/bootstrap.sh`. |
@@ -2331,6 +2331,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - `CABINET.md` and the docs for `handoff add` say that text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes, since the shell would run it before Cabinet sees it.
 - `cabinet handoff list --ready` prints the `cabinet session end <name>` command for work held on a session branch only when the branch name is a session name; a branch made with git whose name holds shell characters is named, with no command to paste.
+- `cabinet doctor`'s note that opencode cannot be checked from here (`guardrails.opencode`) reads whole when `opencode --version` prints nothing or fails: it starts "opencode cannot be checked", and names the version only when there is one.
 
 ## 0.2.0 - 29 Oct 2026
 

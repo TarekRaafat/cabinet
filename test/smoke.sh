@@ -1044,6 +1044,13 @@ out="$(cd "$W" && NO_COLOR=1 in_tty "$F" doctor)"
 (cd "$W" && "$F" doctor --fix 2>&1 </dev/null) | grep -q 'run it in a terminal, or add --yes' || fail "doctor --fix ran without asking"
 (cd "$W" && "$F" doctor --fix --yes) >/dev/null 2>&1 || true
 [[ -f "$W/agents/qa.md" ]] || fail "doctor --fix --yes did not rebuild the roles"
+# An opencode whose rules cannot be read: the note names its version, and reads whole when the version is empty or fails.
+mkdir -p "$T/oc"; for v in 'echo "opencode 9.9.9"' 'true' 'echo partial; exit 3'; do
+  printf '#!/bin/sh\n[ "$1" = --version ] && { %s; exit 0; }\nexit 1\n' "$v" > "$T/oc/opencode"; chmod +x "$T/oc/opencode"
+  m="$(cd "$W" && PATH="$T/oc:$PATH" "$F" doctor --json | j -r '$.results.find((r) => r.id == "guardrails.opencode")?.message')"
+  case "$v" in echo\ \"*) w='9.9.9 of opencode cannot be checked from here' ;; *) w='opencode cannot be checked from here' ;; esac
+  [[ "$m" == "$w: "* ]] || fail "doctor's opencode note with a version check that runs $v: $m"
+done
   return 0   # a last "check && fail" line must not end the run
 }
 
