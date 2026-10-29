@@ -71,7 +71,7 @@ cabinet bootstrap
 
 ```
 == Git push gate
-  placed ~/.config/git/hooks/pre-push
+  placed the push gate at ~/.config/git/hooks/pre-push
   ...
 == Claude Code
   added 61 permission rule(s) to ~/.claude/settings.json

@@ -4,14 +4,28 @@ How Cabinet keeps every push, merge, release and publish with you, what each age
 
 ## The two layers
 
-1. **The push gate.** A global git pre-push hook asks for `yes` at your terminal for every `git push`, from any tool. Agents run without a terminal, so their pushes are refused.
+1. **The push gate.** A global git pre-push hook asks for `yes` at your terminal before a `git push` in Cabinet's repos, from any tool: each workspace on this machine and everything inside it (session worktrees too), every repo a workspace lists in `repos.tsv`, and the project around a `cabinet/` folder. Agents run without a terminal, so their pushes there are refused. In any other repo it asks nothing and runs that repo's own `pre-push`, if any. It reads the workspaces Cabinet records on this machine (in the log folder) at each push, so a repo added today counts at once; whenever it cannot tell (`node` not on the `PATH`, as under some GUI git clients, a workspace or its `repos.tsv` it cannot read, a recorded workspace that is gone, a bare repo), it asks. Nothing turns it off: no variable, file or option.
 2. **Deny rules in each agent tool.** They block push, merge, release and publish commands, and the known ways around the push gate (git can be told to skip hooks).
 
-Together they are a strong speed bump, not a boundary. For a hard boundary, protect your branches on the server (GitHub branch protection).
+Together they are a strong speed bump, not a boundary. For a hard boundary, protect your branches on the server (GitHub branch protection), and use [a credential that needs you on every push](#a-hard-boundary).
+
+## A hard boundary
+
+The push gate and the deny rules guard against mistakes; a process set on getting round them could still push with your credentials. A credential that needs your confirmation each time it is used closes that: no push reaches the remote without you, even if every rule on this page were bypassed. Two kinds, both from the ssh tools' own documentation:
+
+- **A key the ssh agent confirms on each use.** `ssh-add -c <key>` adds a key to the agent so that every use of it is confirmed first, in a dialog shown by an askpass program (`ssh-askpass`, or the program `SSH_ASKPASS` names where the agent starts). With no askpass program, every use of that key is refused. macOS ships none, so one must be installed and named in `SSH_ASKPASS`; on Linux it is a package of its own (`ssh-askpass` on Debian).
+- **A hardware security key that needs a touch.** A key of an `-sk` type (`ssh-keygen -t ed25519-sk`, or `ecdsa-sk`) lives on a FIDO security key, and each use needs a touch on it. On Linux the system ssh supports it (`ssh -Q key` lists the `sk-` types). The ssh that comes with macOS lists the types but cannot reach a security key by itself (`ssh-keygen` says "No FIDO SecurityKeyProvider specified"): use an ssh built with security key support, or set `SecurityKeyProvider` to a provider library.
+
+Its limits:
+
+- It covers a push only while the remote is reached over ssh with that key, and no other stored credential reaches the same host. A token in a git credential helper (for an HTTPS remote), or another key in the agent or in `~/.ssh` that the host accepts, pushes without asking. `git remote -v` shows how each repo reaches its remote; `ssh-add -l` lists the keys the agent holds.
+- It does not cover what goes through the GitHub login token (`gh`: merges, releases, repository settings). Branch protection and the deny rules cover those.
+
+`cabinet bootstrap` points here once, at the end of its push gate section; it detects and changes nothing.
 
 ## What bootstrap installs
 
-`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, whose shape is unexpected, or that holds a value a rewrite would change (a number written as `1.0` or `1e3`, one too large to keep exactly, or a key that is a whole number), is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. A file that already exists (the push gate, the Codex rules, the Gemini policy) is left as it is and checked, never replaced.
+`bin/bootstrap.sh` installs the guardrails machine-wide, for every tool it finds. It is safe with several workspaces: rules are only ever added, never removed; a config file that is not plain JSON, whose shape is unexpected, or that holds a value a rewrite would change (a number written as `1.0` or `1e3`, one too large to keep exactly, or a key that is a whole number), is left exactly as it was, with a message; files are written in place, so their permissions and symlinks stay; and a backup copy `<file>.bak.<timestamp>` is made before any change. The push gate is replaced only where it is the kit's own earlier copy; a `pre-push` of yours there is left as it is, and then asks before every push in every repo, as the doctor says. An older copy of the Codex rules or the Gemini policy, missing rules a newer kit added, gets the missing rules at its end, after a comment line and a backup copy beside it; no line already there is removed or changed, a symlink stays a link (its target gets the rules), and the result is written only when it checks out: for Gemini, when it holds every kit rule; for Codex, when it defines no name twice and, with `codex` installed, `codex execpolicy check` still forbids `git push`. Otherwise, or when the backup cannot be written, the file is left as it is and bootstrap says why, with the lines to add by hand. Run `cabinet bootstrap` after each kit update.
 
 | Tool | Reads `AGENTS.md` | Guardrails | Checked by `bin/doctor.sh` |
 |---|---|---|---|
@@ -19,16 +33,16 @@ Together they are a strong speed bump, not a boundary. For a hard boundary, prot
 | Grok | yes, in folders you trust | reads the Claude Code rules | yes, with `grok inspect` |
 | Qwen Code | yes | `~/.qwen/settings.json`, the same rule list | yes |
 | opencode | yes | `~/.config/opencode/opencode.json` `permission.bash`, placed last because its last matching rule wins. A commented `opencode.jsonc` is never rewritten; opencode reads it after the `.json`, so a rule there can still override | on opencode 1.x; on 2.x it cannot (its debug commands need a background service), so check by hand |
-| Gemini CLI | bootstrap sets `context.fileName` in `~/.gemini/settings.json` | `~/.gemini/policies/owner-control.toml` | yes |
-| Codex | yes | `~/.codex/rules/default.rules`; also `approval_policy = "on-request"` in `~/.codex/config.toml`, so Codex asks before anything its sandbox does not allow | yes |
-| Antigravity CLI | yes | its `settings.json` | yes |
+| Gemini CLI | bootstrap sets `context.fileName` in `~/.gemini/settings.json` | `~/.gemini/policies/owner-control.toml` | yes, every kit rule |
+| Codex | yes | `~/.codex/rules/default.rules`; also `approval_policy = "on-request"` in `~/.codex/config.toml`, so Codex asks before anything its sandbox does not allow | yes, every kit rule, and `codex execpolicy check` |
+| Antigravity CLI | yes | its `settings.json` | yes, every kit deny rule |
 | Cursor CLI (`cursor-agent` / `agent`) | yes | `~/.cursor/cli-config.json` `permissions.deny` | yes (the file) |
 | Cursor editor | yes | none: its agent's command rules live in the editor's own settings, which the kit does not change. The push gate applies | noted |
 | Any other tool | point it at `AGENTS.md` | the push gate only | named, as a note |
 
 Two more machine-wide settings come with the push gate:
 
-- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. `prepare-commit-msg` is the credit hook instead ([credit roles](concepts.md#credit-roles)): it runs the repo's own `prepare-commit-msg` in the same way, whose failure still stops the commit, then adds the role's line to a commit made in a Cabinet run. It also refuses an amend in a Cabinet run, and `pre-rebase` is the kit's too, refusing a rebase there ([runs never rewrite](#runs-never-rewrite)). Bootstrap places each where there is no hook, or where the stub or an earlier version of the same hook is, and never replaces a hook of yours; `--no-verify` does not skip `prepare-commit-msg`. A repo that sets its own `core.hooksPath` (husky does) bypasses the gate; the doctor names it.
+- **`git config --global core.hooksPath ~/.config/git/hooks`**, where the gate lives, with its helper `cabinet-push-gate.js`, which finds Cabinet's repos. A global hooks path makes git skip every repo's own `.git/hooks`, so bootstrap also places a pass-through stub there for the other client hooks (pre-commit, commit-msg, post-checkout and the rest; not push-to-checkout or fsmonitor-watchman, which change git's behavior just by existing). A repo's own hooks, such as a secret scanner, keep running. `prepare-commit-msg` is the credit hook instead ([credit roles](concepts.md#credit-roles)): it runs the repo's own `prepare-commit-msg` in the same way, whose failure still stops the commit, then adds the role's line to a commit made in a Cabinet run. It also refuses an amend in a Cabinet run, and `pre-rebase` is the kit's too, refusing a rebase there ([runs never rewrite](#runs-never-rewrite)). Bootstrap places each where there is no hook, or where the stub or an earlier version of the same hook is, and never replaces a hook of yours; `--no-verify` does not skip `prepare-commit-msg`. A Cabinet repo where git uses another hooks folder skips the gate: its own `core.hooksPath` (husky sets one), set in the repo, a worktree, a file its config includes, or the system config. The doctor reads the value git really uses in the workspace, each repo it lists and each session worktree, and names the folder, the value and the file that sets it; it never reads other repos.
 - **The workspace's secrets check,** a `pre-commit` hook in the workspace's own `.git/hooks` (bootstrap runs it through the pass-through stub). It runs `bin/secret.sh check --staged` and refuses a commit that adds a likely key, token or password, naming the file and line, never the value. A false alarm passes once its line has `not-a-secret` on it. An existing `pre-commit` hook is left as it is (the doctor notes it; your hook can call `bin/secret.sh check --staged` itself). A shared `cabinet/` inside a project gets none, since the project's own hooks run there; `bin/doctor.sh` still scans its files. It is a safety net, not a guarantee: it knows common key formats, not every secret.
 - **Gemini CLI's `context.fileName`** is set to read `AGENTS.md` everywhere, so Gemini also loads `AGENTS.md` in folders that are not Cabinet workspaces.
 
@@ -83,6 +97,6 @@ These are on the [roadmap](../ROADMAP.md):
 The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
-- **The push gate, the hook stubs, the credit hook and `pre-rebase`:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
-- **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules`.
+- **The push gate, its helper, the hook stubs, the credit hook and `pre-rebase`:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
+- **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules` (rules bootstrap added later follow the line `# Added by cabinet bootstrap: rules from a newer Cabinet kit`).
 - **Gemini:** delete `~/.gemini/policies/owner-control.toml` and remove `context.fileName` from `~/.gemini/settings.json`.
