@@ -450,7 +450,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.2.0).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.2.1).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -526,7 +526,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.2.0
+  ok    cabinet 0.2.1
 ...
 ```
 
@@ -2327,12 +2327,14 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.2.1 - Unreleased
+## 0.2.1 - 29 Oct 2026
+
+Fixes and polish. Nothing to do by hand after updating.
 
 - `CABINET.md` and the docs for `handoff add` say that text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes, since the shell would run it before Cabinet sees it.
 - `cabinet handoff list --ready` prints the `cabinet session end <name>` command for work held on a session branch only when the branch name is a session name; a branch made with git whose name holds shell characters is named, with no command to paste.
 - `cabinet doctor`'s note that opencode cannot be checked from here (`guardrails.opencode`) reads whole when `opencode --version` prints nothing or fails: it starts "opencode cannot be checked", and names the version only when there is one.
-- `cabinet version` in a terminal shows the version and the tagline inside the opening of the mark: on the three rows between the right-hand seats, just right of the open place, which stays empty. Piped output and `--json` are unchanged.
+- `cabinet version` in a terminal shows the version and the tagline inside the opening of the mark: on the three rows between the right-hand seats, clear of the mark, with the open place left empty. Piped output and `--json` are unchanged.
 
 ## 0.2.0 - 29 Oct 2026
 
