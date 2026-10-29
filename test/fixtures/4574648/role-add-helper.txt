@@ -1,0 +1,4 @@
+Added the helper role: roles/helper.md, and its rows in AGENTS.md and OPERATIONS.md.
+Committed in the workspace: roles: helper added from the owner's brief
+Next, draft it from your brief and the project: in your agent session, ask to "draft the helper role" (CABINET.md, "Drafting a role"),
+or run cabinet role draft helper. Until then the doctor reminds you.

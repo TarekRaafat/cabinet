@@ -113,10 +113,11 @@ out="$("$O/bin/doctor.sh" 2>&1 || true)"; echo "$out" | grep -q 'ok    manual na
 
 section "new, answered at the prompts" ""
 s2() {
-# Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, model (Enter: the tool's), brief,
+# Name, folder, owner, email, 6 roles (product-manager no, finance no), 4 optional roles (Enter: off), runner, model (Enter: the tool's),
+# light model (Enter: none), brief,
 # budget and price (antigravity reports only tokens), week, writing, credit roles (Enter: on), backup, one repo then done, create, no npm install,
 # no machine setup.
-printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity "" 5 "1  2" "8:30 am" sunday short "" off git@example.com:me/acme-app.git "" y n n > "$T/answers"
+printf '%s\n' "Acme Labs" "$T/acme" "" "" n "" "" "" "" n "" "" "" "" antigravity "" "" 5 "1  2" "8:30 am" sunday short "" off git@example.com:me/acme-app.git "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 || fail "prompted setup failed"
 A="$T/acme"
 grep -q '^# AGENTS.md - Acme Labs$' "$A/AGENTS.md" && grep -qx 'CABINET_SLUG="acme"' "$A/cabinet.env" || fail "prompted name or folder"
@@ -125,11 +126,11 @@ grep -qx 'CABINET_RUNNER="antigravity"' "$A/cabinet.env" && grep -qx 'WHEN="8:30
 grep -q $'^acme-app\t' "$A/repos.tsv" || fail "prompted repo"
 grep -q '^- \*\*Writing to the owner:\*\* short\.' "$A/AGENTS.md" || fail "prompted writing"
 # With claude (the fake comes first on PATH) setup asks for a budget, and no price: claude reports dollars.
-printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" "" y n n > "$T/answers"
+printf '%s\n' "Budgeted" "$T/budgeted" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" 15 "" "" "" "" "" "" y n n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_BUDGET="15"' "$T/budgeted/cabinet.env" || fail "prompted budget with claude"
 grep -qx 'CABINET_BUDGET="5"' "$A/cabinet.env" && grep -qx 'CABINET_PRICE="1 2"' "$A/cabinet.env" || fail "prompted budget and price with antigravity"
 grep -qx 'CABINET_PRICE=""' "$T/budgeted/cabinet.env" || fail "a price was set with claude"
-printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
+printf '%s\n' "Nope" "$T/nope" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" n > "$T/answers"
 CABINET_TTY="$T/answers" "$F" new >/dev/null 2>&1 && fail "declined setup reported success"
 [[ ! -e "$T/nope" ]] || fail "declined setup created files"
 
@@ -2514,12 +2515,12 @@ grep -qx 'CABINET_CREDIT_ROLES="on"' "$CW/cabinet.env" || fail "new does not wri
 mkdir -p "$T/credit-init"; "$F" init "$T/credit-init" --yes >/dev/null || fail "init"
 grep -qx 'CABINET_CREDIT_ROLES="on"' "$T/credit-init/cabinet.env" || fail "init does not write credit roles on by default"
 # Prompted: new with Enter keeps on; new answering off; init answering off; config with Enter keeps the value.
-printf '%s\n' "Cr One" "$T/credit-p1" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr One" "$T/credit-p1" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="on"' "$T/credit-p1/cabinet.env" || fail "prompted new: Enter does not keep on"
-printf '%s\n' "Cr Two" "$T/credit-p2" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr Two" "$T/credit-p2" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" new >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted new: off not written"
 mkdir -p "$T/credit-p3"
-printf '%s\n' "Cr Three" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
+printf '%s\n' "Cr Three" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" off "" "" y n n > "$T/credit-answers"
 CABINET_TTY="$T/credit-answers" "$F" init "$T/credit-p3" >/dev/null 2>&1 && grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p3/cabinet.env" || fail "prompted init: off not written"
 printf '\n%.0s' $(seq 40) > "$T/credit-answers"
 (cd "$T/credit-p2" && CABINET_TTY="$T/credit-answers" "$F" config >/dev/null 2>&1); grep -qx 'CABINET_CREDIT_ROLES="off"' "$T/credit-p2/cabinet.env" || fail "prompted config: Enter did not keep off"
@@ -3359,7 +3360,7 @@ mkdir -p "$T/model-p2"; echo x > "$T/model-p2/f"; git -C "$T/model-p2" init -q; 
 [[ -s "$ML.cwd" ]] && ! grep -q "^$(cd "$T/model-p2" && pwd -P)" "$ML.cwd" || fail "a model list ran in the project: $(cat "$ML.cwd" 2>/dev/null)"
 "$F" -C "$T/model-p2" remove --yes --force >/dev/null 2>&1 || true
 # 15. The setup question, right after the runner's: Enter, a name, and a refused name then a good one.
-q() { printf '%s\n' "Mq" "$T/$1" "" "" "" "" "" "" "" "" "" "" "" "" claude "${@:2}" "" "" "" "" "" "" "" y n n > "$T/m-answers"; CABINET_TTY="$T/m-answers" m "$F" new 2>&1; }
+q() { printf '%s\n' "Mq" "$T/$1" "" "" "" "" "" "" "" "" "" "" "" "" claude "${@:2}" "" "" "" "" "" "" "" "" y n n > "$T/m-answers"; CABINET_TTY="$T/m-answers" m "$F" new 2>&1; }
 q model-q1 "" >/dev/null; grep -qx 'CABINET_MODEL=""' "$T/model-q1/cabinet.env" || fail "the model question: Enter"
 q model-q2 m-1 >/dev/null; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q2/cabinet.env" || fail "the model question: m-1"
 out="$(q model-q3 'x;y' m-1)"; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q3/cabinet.env" && grep -qF "'x;y' is not a model name" <<<"$out" || fail "the model question: x;y then m-1: $out"
@@ -3812,6 +3813,267 @@ for f in docs/commands.md docs/concepts.md docs/guardrails.md docs/backups.md RE
 done
 grep -q 'sessions.gone' "$KIT/docs/troubleshooting.md" && grep -q 'guardrails.run-refusal' "$KIT/docs/troubleshooting.md" || fail "a new doctor check is not in troubleshooting"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "light model: the light one only for the roles listed, every other role on the main model" ""
+s69() {
+# Token cost, Part 1 (criteria 1 to 11). The baseline is the kit at 4574648: its scripts/lib.sh and scripts/role.sh,
+# kept in test/fixtures/4574648/ and run on the same inputs, and the output of role add it printed.
+local LW="$T/light" LF="$T/lfakes" LL="$T/light-calls.log" FX="$KIT/test/fixtures/4574648" LP="$T/lightp" LI r mm ml lr st out v wq wd wr x d cur
+mkdir -p "$LF"
+# One fake for every built-in tool: it logs each call as "<tool> [arg] [arg]...", and codex's model list (the
+# one the doctor reads here) holds the names in $LMODELS.
+cat > "$LF/fake" <<'FAKE'
+#!/bin/bash
+n="${0##*/}"
+{ printf '%s' "$n"; for a in "$@"; do printf ' [%s]' "$a"; done; echo; } >> "$MLOG"
+case "$n $*" in
+  "codex debug models") printf '{"models":[%s]}\n' "$(for x in ${LMODELS:-m-main}; do printf '{"slug":"%s"},' "$x"; done | sed 's/,$//')" ;;
+  *" --version") echo "$n 1.0" ;;
+  *) echo '{}' ;;
+esac
+FAKE
+chmod +x "$LF/fake"
+for r in claude codex agy qwen grok opencode cursor-agent; do ln -sf fake "$LF/$r"; done
+lm() { PATH="$LF:$PATH" MLOG="$LL" "$@"; }
+runs() { grep -v -e ' \[--version\]$' -e '^codex \[debug\] \[models\]$' -e '^\(agy\|grok\|opencode\|cursor-agent\) \[models\]$' -e '^codex \[execpolicy\]' -e '^opencode \[debug\] \[agent\] \[build\]$' -e '^grok \[inspect\] \[--json\]$' "$LL" 2>/dev/null || true; }
+# le <workspace> <key> [<line>]: the key's line in cabinet.env replaced by <line>, or removed when none is given.
+le() { { grep -v "^$2=" "$1/cabinet.env" || true; [[ -z "${3+x}" ]] || printf '%s\n' "$3"; } > "$T/l.env"; mv "$T/l.env" "$1/cabinet.env"; }
+lset() { le "$LW" CABINET_MODEL "CABINET_MODEL=\"$1\""; le "$LW" CABINET_MODEL_LIGHT "CABINET_MODEL_LIGHT=\"$2\""; le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$3\""; }
+# mods <role>: the model each recorded claude run of the role passed ("none" for none, "many" for more than one).
+mods() {
+  runs | grep -F "[--agent] [$1] " | while IFS= read -r l; do
+    case "$(grep -o '\[--model\]' <<<"$l" | wc -l | tr -d ' ')" in 0) echo none ;; 1) sed 's/.*\[--model\] \[\([^]]*\)\].*/\1/' <<<"$l" ;; *) echo many ;; esac
+  done | paste -sd ' ' -
+}
+jr() { printf 'AGENT=%s\nPROMPT="p"\nQUIET_DAYS="0"\n' "$1" > "$LW/jobs/t.job"; : > "$LL"; lm "$LW/bin/job.sh" run t >/dev/null 2>&1 || true; mods "$1"; }
+br() { : > "$LL"; lm "$LW/bin/job.sh" run brief >/dev/null 2>&1 || true; mods chief-of-staff; }
+bj() { cp "$LW/jobs/brief.job" "$T/l-brief"; echo 'MODEL="m-job"' >> "$LW/jobs/brief.job"; br; cp "$T/l-brief" "$LW/jobs/brief.job"; }
+hr() { : > "$LL"; lm "$LW/bin/handoff.sh" run "$1" >/dev/null 2>&1 || true; mods "$2"; }
+sr() { : > "$LL"; lm "$LW/bin/spec.sh" run "$1" >/dev/null 2>&1 || true; mods "$2"; }
+lc() { git -C "$LW" add -A >/dev/null 2>&1; git -C "$LW" commit -qm "$1" >/dev/null 2>&1 || true; }
+lres() { lm "$F" -C "$LW" doctor --json | j -r --arg id "$1" '$.results.filter((r) => r.id == $id).map((r) => r.level + " " + r.message).join("\n")'; }
+lfix() { lm "$F" -C "$LW" doctor --json | j -r '$.results.filter((r) => r.level == "fix" && r.id.startsWith("model-light")).map((r) => r.id).join(" ")'; }
+: > "$LL"
+lm "$F" new "$LW" --yes --runner claude --roles "chief-of-staff product-manager architect qa security design-lead" >/dev/null || fail "new for the light model"
+! grep -q -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$LW/cabinet.env" || fail "new --yes wrote a light model line"
+# 8. bootstrap leaves a cabinet.env from before the light model as it is.
+cp "$LW/cabinet.env" "$T/l-new.env"; lm "$LW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+cmp -s "$T/l-new.env" "$LW/cabinet.env" || fail "bootstrap changed cabinet.env: $(diff "$T/l-new.env" "$LW/cabinet.env")"
+# A repo backend owns, two ready specs for it (s2 with its work routed, so its next step is backend's plan),
+# and two pieces of work, each with a review handoff: one to qa (design-lead has passed it, so qa runs next)
+# and one to design-lead.
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$LW/jobs/brief.job"
+git init -q "$LW/app" && echo x > "$LW/app/a" && git -C "$LW/app" add -A && git -C "$LW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$LW/repos.tsv"; L before "$LW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The API | backend |'
+for x in s1 s2; do
+  printf -- '---\nfeature: %s\nstatus: ready\nrepos: [app]\n---\n\n# S\n\n## Rules\n\nOne.\n\n## Acceptance criteria\n\n- One works.\n\n## Decisions\n\n| # | Question | Options | Recommendation | Owner answer (date) |\n|---|---|---|---|---|\n\n## Plan\n\nLater.\n\n## Reviews\n' "$x" > "$LW/specs/$x.md"
+done
+mkdir -p "$LW/specs/qa"; echo ok > "$LW/specs/qa/n.md"; lc "specs and a repo"
+for x in s1 s2; do "$LW/bin/spec.sh" record "specs/$x.md" --role qa PASS --note specs/qa/n.md >/dev/null || fail "test setup: $x ready"; done
+"$LW/bin/handoff.sh" add --from chief-of-staff --to app --spec specs/s2.md --changed x --needed y "Plan it" >/dev/null || fail "test setup: s2's work"
+work() { local i; i="$("$LW/bin/handoff.sh" add --from chief-of-staff --to app --small --changed x --needed y "$1")"; echo "${i%% *}"; }
+review() { local i; i="$("$LW/bin/handoff.sh" add --from backend --to "$2" --changed x --needed y --depends-on "$1" --evidence https://example.com/e "Review $1")"; echo "${i%% *}"; }
+wq="$(work "For qa")"; v="$(review "$wq" "qa, security")"
+"$LW/bin/handoff.sh" record "$v" --role design-lead PASS --commits a1b2c3d --note specs/qa/n.md >/dev/null || fail "test setup: design-lead on $v"
+wd="$(work "For design-lead")"; review "$wd" design-lead >/dev/null
+lc "work"
+[[ "$(hr "$wq" qa)" == none && "$(hr "$wd" design-lead)" == none && "$(sr specs/s1.md chief-of-staff)" == none && "$(sr specs/s2.md backend)" == none ]] \
+  || fail "test setup: the steps: $(hr "$wq" qa) $(hr "$wd" design-lead) $(sr specs/s1.md chief-of-staff) $(sr specs/s2.md backend)"
+# 7. No regression, run lines: the brief, a qa job, the brief with MODEL, the handoff run's qa step and the spec run's
+# routing step, for every built-in runner, with CABINET_MODEL set and absent: 4574648's lib.sh first (the baseline),
+# then today's with the light settings absent, empty and set, the light model never set.
+seven() {
+  : > "$LL"
+  lm "$LW/bin/job.sh" run brief >/dev/null 2>&1 || true
+  printf 'AGENT=qa\nPROMPT="p"\nQUIET_DAYS="0"\n' > "$LW/jobs/t.job"; lm "$LW/bin/job.sh" run t >/dev/null 2>&1 || true
+  cp "$LW/jobs/brief.job" "$T/l-brief"; echo 'MODEL="m-job"' >> "$LW/jobs/brief.job"; lm "$LW/bin/job.sh" run brief >/dev/null 2>&1 || true; cp "$T/l-brief" "$LW/jobs/brief.job"
+  lm "$LW/bin/handoff.sh" run "$wq" >/dev/null 2>&1 || true
+  lm "$LW/bin/spec.sh" run specs/s1.md >/dev/null 2>&1 || true
+  runs
+}
+cp "$LW/bin/lib.sh" "$T/l-lib.sh"; cp "$FX/lib.sh" "$LW/bin/lib.sh"
+for r in claude codex antigravity qwen grok opencode cursor; do
+  le "$LW" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  for mm in "" m-main; do
+    if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
+    seven > "$T/l7-$r-$mm"; [[ "$(wc -l < "$T/l7-$r-$mm" | tr -d ' ')" == 5 ]] || fail "the baseline with $r: $(cat "$T/l7-$r-$mm")"
+  done
+done
+cp "$T/l-lib.sh" "$LW/bin/lib.sh"
+for r in claude codex antigravity qwen grok opencode cursor; do
+  le "$LW" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  for mm in "" m-main; do
+    if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
+    for ml in absent ""; do for lr in absent chief-of-staff; do
+      if [[ "$ml" == absent ]]; then le "$LW" CABINET_MODEL_LIGHT; else le "$LW" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
+      if [[ "$lr" == absent ]]; then le "$LW" CABINET_LIGHT_ROLES; else le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
+      seven > "$T/l7-now"; cmp -s "$T/l7-$r-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$r-$mm" "$T/l7-now")"
+    done; done
+  done
+done
+le "$LW" CABINET_RUNNER 'CABINET_RUNNER="claude"'; le "$LW" CABINET_MODEL 'CABINET_MODEL=""'; le "$LW" CABINET_MODEL_LIGHT; le "$LW" CABINET_LIGHT_ROLES; lc "settings"
+# 4 (the baseline). With no light model, role add prints what it printed at 4574648.
+out="$(cd "$LW" && lm "$F" role add helper --does "test" 2>&1)" || fail "role add helper: $out"
+[[ "$out" == "$(cat "$FX/role-add-helper.txt")" ]] || fail "role add with no light model: $out"
+le "$LW" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff"'
+(cd "$LW" && "$F" role remove helper) >/dev/null && rm "$LW/roles/helper.md" && lc "helper off"
+out="$(cd "$LW" && lm "$F" role add helper --does "test" 2>&1)" && [[ "$out" == "$(cat "$FX/role-add-helper.txt")" ]] || fail "role add with an empty light model: $out"
+(cd "$LW" && "$F" role remove helper) >/dev/null && rm "$LW/roles/helper.md"; le "$LW" CABINET_MODEL_LIGHT; le "$LW" CABINET_LIGHT_ROLES; lc "helper off"
+# 1. The light model, with no list yet: the list of the four on the team (finance off). An existing list is kept.
+cfl() { (cd "$LW" && lm "$F" config --yes "$@" 2>&1); }
+cfl --model-light m-light >/dev/null || fail "config --model-light m-light"
+grep -qx 'CABINET_MODEL_LIGHT="m-light"' "$LW/cabinet.env" && grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff product-manager design-lead"' "$LW/cabinet.env" \
+  && [[ "$(grep -c -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$LW/cabinet.env")" == 2 ]] || fail "config --model-light: $(grep LIGHT "$LW/cabinet.env")"
+cp "$LW/cabinet.env" "$T/l.keep"; st=0; out="$(cfl --model-light 'a$b')" || st=$?
+((st)) && grep -qF 'CABINET_MODEL_LIGHT' <<<"$out" && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the light model a\$b (exit $st): $out"
+# 2. A role name that is not one.
+st=0; out="$(cfl --light-roles "chief-of-staff Bad_Name")" || st=$?
+((st)) && grep -qF 'Bad_Name' <<<"$out" && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the role Bad_Name (exit $st): $out"
+for v in 'qa;id' '$(id)' 'qa`id`'; do st=0; cfl --light-roles "$v" >/dev/null || st=$?; ((st)) && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the roles '$v'"; done
+# 4a. A kit role turned on later: the main model, and a line saying how to move it.
+cfl --model m-main >/dev/null; lc "main model"
+out="$(cd "$LW" && lm "$F" role add finance 2>&1)" || fail "role add finance: $out"
+[[ "$(grep -c finance <<<"$out")" -ge 1 && "$(grep -c 'main model' <<<"$out")" == 1 ]] \
+  && grep 'main model' <<<"$out" | grep -qF -- '--light-roles "chief-of-staff product-manager design-lead finance"' && grep 'main model' <<<"$out" | grep -q '^finance ' \
+  || fail "role add finance: $out"
+grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff product-manager design-lead"' "$LW/cabinet.env" || fail "role add finance changed the list"
+[[ "$(jr finance)" == m-main ]] || fail "a finance job: $(runs)"
+# 4b. A listed kit role turned back on: the light model.
+(cd "$LW" && "$F" role remove design-lead) >/dev/null || fail "role remove design-lead"
+out="$(cd "$LW" && lm "$F" role add design-lead 2>&1)" || fail "role add design-lead: $out"
+[[ "$(grep -cx 'design-lead runs on the light model\.' <<<"$out")" == 1 ]] && ! grep -q 'main model' <<<"$out" || fail "role add design-lead: $out"
+[[ "$(jr design-lead)" == m-light ]] || fail "a design-lead job: $(runs)"
+# 1 (an existing list), set off then on again.
+cfl --model-light off >/dev/null && grep -qx 'CABINET_MODEL_LIGHT=""' "$LW/cabinet.env" || fail "config --model-light off"
+le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="qa"'; cfl --model-light m-light >/dev/null || fail "config --model-light again"
+grep -qx 'CABINET_LIGHT_ROLES="qa"' "$LW/cabinet.env" && grep -qx 'CABINET_MODEL_LIGHT="m-light"' "$LW/cabinet.env" || fail "config replaced an existing list: $(grep LIGHT "$LW/cabinet.env")"
+cfl --light-roles " chief-of-staff   design-lead " >/dev/null && grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff design-lead"' "$LW/cabinet.env" || fail "config --light-roles"
+cfl --light-roles "" >/dev/null && grep -qx 'CABINET_LIGHT_ROLES=""' "$LW/cabinet.env" || fail "config --light-roles \"\""
+# 3. Which wins: a job's MODEL, then the light model for a listed role, then CABINET_MODEL.
+lset m-main m-light chief-of-staff
+[[ "$(br)" == m-light && "$(jr qa)" == m-main && "$(bj)" == m-job && "$(hr "$wq" qa)" == m-main ]] || fail "criterion 3: $(br) $(jr qa) $(bj) $(hr "$wq" qa)"
+# 3a. Steps of handoff run and spec run.
+lset m-main m-light "chief-of-staff design-lead"
+[[ "$(hr "$wd" design-lead)" == m-light && "$(sr specs/s1.md chief-of-staff)" == m-light && "$(sr specs/s2.md backend)" == m-main ]] \
+  || fail "criterion 3a: $(hr "$wd" design-lead) $(sr specs/s1.md chief-of-staff) $(sr specs/s2.md backend)"
+# 3b. An empty list: every run on the main model, but for a job's own.
+lset m-main m-light ""
+[[ "$(br)" == m-main && "$(jr qa)" == m-main && "$(bj)" == m-job && "$(hr "$wq" qa)" == m-main && "$(hr "$wd" design-lead)" == m-main \
+  && "$(sr specs/s1.md chief-of-staff)" == m-main && "$(sr specs/s2.md backend)" == m-main ]] || fail "criterion 3b: $(runs)"
+# A light model that is not a model name starts no run, and names its own setting.
+le "$LW" CABINET_MODEL_LIGHT "CABINET_MODEL_LIGHT='--yolo'"; le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff"'
+: > "$LL"; : > "$HOME/$LOGS/light/brief.log"; lm "$LW/bin/job.sh" run brief >/dev/null 2>&1 && fail "a run took the light model --yolo"
+[[ -z "$(runs)" ]] && grep -qF "the model '--yolo' in cabinet.env is not a model name" "$HOME/$LOGS/light/brief.log" && grep -qF 'cabinet config --model-light off' "$HOME/$LOGS/light/brief.log" \
+  || fail "a bad light model: $(runs) $(tail -2 "$HOME/$LOGS/light/brief.log")"
+[[ "$(jr qa)" == m-main ]] || fail "a bad light model stopped a role not in the list"
+# 4. A role of the project's own added later: the main model, the line, and its Claude Code file.
+lset m-main m-light chief-of-staff; lc "light"
+out="$(cd "$LW" && lm "$F" role add helper --does "test" 2>&1)" || fail "role add helper: $out"
+[[ "$(grep -c helper <<<"$out")" -ge 1 && "$(grep -c 'main model' <<<"$out")" == 1 ]] && grep 'main model' <<<"$out" | grep -q '^helper ' \
+  && grep 'main model' <<<"$out" | grep -qF -- '--light-roles "chief-of-staff helper"' || fail "role add helper with a light model: $out"
+"$LW/bin/role.sh" build >/dev/null || fail "role build"
+[[ "$(grep -c '^model:' "$LW/.claude/agents/helper.md")" == 1 ]] && grep -qx 'model: m-main' "$LW/.claude/agents/helper.md" || fail "helper's Claude Code file: $(grep '^model' "$LW/.claude/agents/helper.md")"
+! grep -q '^model:' "$LW/agents/helper.md" || fail "agents/helper.md got a model line"
+[[ "$(jr helper)" == m-main ]] || fail "a helper job: $(runs)"
+# 10. A listed role removed: the list stays, a doctor note, and the brief still on the light model.
+le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff helper"'; lc "helper listed"
+(cd "$LW" && "$F" role remove helper) >/dev/null || fail "role remove helper"
+grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff helper"' "$LW/cabinet.env" || fail "role remove changed the list"
+out="$(lres model-light.roles)"; grep -q '^note .*helper' <<<"$out" && grep -qF -- '--light-roles "chief-of-staff"' <<<"$out" && [[ -z "$(lfix)" ]] || fail "doctor after helper left: $out $(lfix)"
+[[ "$(br)" == m-light ]] || fail "the brief after helper left: $(runs)"
+# 4c. A sub-team role: the main model in a job and in handoff run's steps (qa's first, then rev's).
+le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff"'; lc "list"
+out="$(cd "$LW" && lm "$F" role add rev --reports-to qa --covers backend --does "test" 2>&1)" || fail "role add rev: $out"
+[[ "$(grep -c 'main model' <<<"$out")" == 1 ]] && grep 'main model' <<<"$out" | grep -q '^rev ' && grep 'main model' <<<"$out" | grep -qF -- '--light-roles "chief-of-staff rev"' || fail "role add rev: $out"
+[[ "$(jr rev)" == m-main ]] || fail "a rev job: $(runs)"
+wr="$(work "For rev")"; v="$(review "$wr" qa)"
+"$LW/bin/handoff.sh" record "$v" --role design-lead PASS --commits a1b2c3d --note specs/qa/n.md >/dev/null || fail "test setup: design-lead on $v"
+[[ "$(hr "$wr" qa)" == m-main ]] || fail "handoff run's qa step for rev's work: $(runs)"
+# After its trial, rev reviews in qa's place, so its step comes next.
+L sub "$LW/roles/rev.md" -- '/^- Trial until: .*/' '- Trial until: 2020-01-01'
+[[ "$(hr "$wr" rev)" == m-main ]] || fail "handoff run's rev step: $(runs)"
+# 9. A listed name not on the team: a note, never a problem.
+le "$LW" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="nosuchrole"'
+out="$(lres model-light.roles)"; grep -q '^note .*nosuchrole' <<<"$out" && grep -qF -- '--light-roles' <<<"$out" && [[ -z "$(lfix)" ]] || fail "doctor with nosuchrole: $out $(lfix)"
+# 9a. The doctor checks the name as it does the main model's.
+le "$LW" CABINET_MODEL_LIGHT "CABINET_MODEL_LIGHT='a\$b'"
+grep -q '^fix ' <<<"$(lres model-light.name)" || fail "doctor model-light.name: $(lres model-light.name)"
+le "$LW" CABINET_RUNNER 'CABINET_RUNNER="codex"'; lset m-main m-light chief-of-staff
+out="$(LMODELS=m-main lres model-light.exists)"; grep -q '^fix .*m-light' <<<"$out" && grep -q '^ok ' <<<"$(LMODELS=m-main lres model.exists)" || fail "doctor model-light.exists: $out"
+lset m-light "" chief-of-staff; grep -q '^fix ' <<<"$(LMODELS=m-main lres model.exists)" || fail "doctor model.exists with m-light"
+lset m-main m-light chief-of-staff; grep -q '^ok ' <<<"$(LMODELS="m-main m-light" lres model-light.exists)" || fail "doctor model-light.exists listed: $(LMODELS="m-main m-light" lres model-light.exists)"
+le "$LW" CABINET_RUNNER 'CABINET_RUNNER="claude"'
+# 1a, 8. The setup question: a light model writes the same two lines as config; Enter writes neither.
+q1() {   # q1 <home> <light model answer>: setup in its own HOME, default team but finance
+  mkdir -p "$1"; printf '%s\n' "Lq" "$1/p" "" "" "" "" "" "" "" n "" "" "" "" claude "" "$2" "" "" "" "" "" "" "" y n n > "$T/l-answers"
+  HOME="$1" CABINET_TTY="$T/l-answers" lm "$F" new >/dev/null 2>&1 || fail "the light model question with '$2'"
+}
+q1 "$T/lh1" m-light; q1 "$T/lh2" ""
+grep -qx 'CABINET_MODEL_LIGHT="m-light"' "$T/lh1/p/cabinet.env" && grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff product-manager design-lead"' "$T/lh1/p/cabinet.env" || fail "setup with a light model: $(grep LIGHT "$T/lh1/p/cabinet.env")"
+! grep -q -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh2/p/cabinet.env" || fail "setup with Enter wrote a light model line"
+[[ "$(grep -v -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh1/p/cabinet.env")" == "$(grep -v -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh2/p/cabinet.env")" ]] \
+  || fail "setup with and without a light model differ: $(diff "$T/lh1/p/cabinet.env" "$T/lh2/p/cabinet.env")"
+for x in lh1 lh2; do HOME="$T/$x" "$F" -C "$T/$x/p" remove --yes --force >/dev/null 2>&1 || true; done
+# 5, 5a, 6, 8 (role files), in a workspace inside a project, so the project's .claude/agents/ is built too: the kit
+# roles, helper, x (its own model: line) and y (frontmatter, no model: line).
+mkdir -p "$LP"; git -C "$LP" init -q; echo x > "$LP/f"; git -C "$LP" add -A; git -C "$LP" commit -qm init
+(cd "$LP" && lm "$F" init --yes --runner claude) >/dev/null || fail "init for the light model"
+LI="$LP/cabinet"; [[ -f "$LI/cabinet.env" && -n "$(grep '^CABINET_LAYOUT="inside"' "$LI/cabinet.env")" ]] || fail "test setup: an inside workspace"
+(cd "$LI" && "$F" role add helper --does "test") >/dev/null || fail "role add helper inside"
+printf -- '---\nname: x\ndescription: X.\nmodel: own\n---\n\nYou are x.\n' > "$LI/roles/x.md"
+printf -- '---\nname: y\ndescription: Y.\ntools: Read\n---\n\nYou are y.\n' > "$LI/roles/y.md"
+cp "$LI/roles/x.md" "$T/l-x.md"; cp "$LI/roles/y.md" "$T/l-y.md"
+cur="$(sed -n 's/^CABINET_ROLES="\(.*\)"$/\1/p' "$LI/cabinet.env")"
+"$F" -C "$LI" config --yes --roles "$cur x y" >/dev/null || fail "test setup: x and y on the team"
+snap() { rm -rf "$1"; mkdir -p "$1"; cp -R "$LI/agents" "$1/agents"; cp -R "$LI/.claude/agents" "$1/claude"; cp -R "$LP/.claude/agents" "$1/project"; }
+cp "$LI/bin/lib.sh" "$T/l-lib.sh"; cp "$LI/bin/role.sh" "$T/l-role.sh"; cp "$FX/lib.sh" "$LI/bin/lib.sh"; cp "$FX/role.sh" "$LI/bin/role.sh"
+"$LI/bin/role.sh" build >/dev/null || fail "4574648's role build"; snap "$T/lb-base"
+cp "$T/l-lib.sh" "$LI/bin/lib.sh"; cp "$T/l-role.sh" "$LI/bin/role.sh"
+[[ -f "$T/lb-base/project/x.md" && -f "$T/lb-base/claude/helper.md" && -f "$T/lb-base/agents/y.md" ]] || fail "test setup: the baseline: $(ls "$T/lb-base"/*)"
+for r in claude codex antigravity qwen grok opencode cursor; do
+  le "$LI" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  for mm in "" m-main; do
+    if [[ -n "$mm" ]]; then le "$LI" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LI" CABINET_MODEL; fi
+    for ml in absent ""; do for lr in absent chief-of-staff; do
+      if [[ "$ml" == absent ]]; then le "$LI" CABINET_MODEL_LIGHT; else le "$LI" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
+      if [[ "$lr" == absent ]]; then le "$LI" CABINET_LIGHT_ROLES; else le "$LI" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
+      "$LI/bin/role.sh" build >/dev/null || fail "role build with $r"; snap "$T/lb-now"
+      diff -r "$T/lb-base" "$T/lb-now" >/dev/null || fail "role files with $r, model '$mm', light model $ml, roles $lr: $(diff -r "$T/lb-base" "$T/lb-now" | head -20)"
+    done; done
+  done
+done
+# 5. Claude Code and a light model: one model: line in .claude/agents/, none in agents/; x keeps its own.
+le "$LI" CABINET_RUNNER 'CABINET_RUNNER="claude"'; le "$LI" CABINET_MODEL 'CABINET_MODEL="m-main"'
+le "$LI" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT="m-light"'; le "$LI" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff"'
+ml1() { [[ "$(grep '^model:' "$1" | paste -sd '|' -)" == "${2:-}" ]]; }   # ml1 <file> [<the model: lines, | between>]
+"$LI/bin/role.sh" build >/dev/null || fail "role build with a light model"
+for d in "$LI/.claude/agents" "$LP/.claude/agents"; do
+  ml1 "$d/chief-of-staff.md" "model: m-light" && ml1 "$d/qa.md" "model: m-main" && ml1 "$d/x.md" "model: own" && ml1 "$d/y.md" "model: m-main" && ml1 "$d/helper.md" "model: m-main" \
+    || fail "criterion 5 in $d: $(grep -H '^model:' "$d"/*.md)"
+  awk 'NR == 1 && $0 == "---" { f = 1; next } f && $0 == "---" { exit } f && /^model:/ { m = 1 } END { exit !m }' "$d/y.md" || fail "y's model line is not in its frontmatter: $(head -6 "$d/y.md")"
+done
+[[ "$(grep -l '^model:' "$LI/agents"/*.md)" == "$LI/agents/x.md" ]] || fail "agents/ got a model line: $(grep -H '^model:' "$LI/agents"/*.md)"
+cmp -s "$T/l-x.md" "$LI/roles/x.md" && cmp -s "$T/l-y.md" "$LI/roles/y.md" || fail "role build changed roles/"
+"$LI/bin/role.sh" build --check >/dev/null || fail "build --check after a build with model lines"
+# 6. Another runner: the lines it added are gone; x's own stays.
+le "$LI" CABINET_RUNNER 'CABINET_RUNNER="codex"'
+"$LI/bin/role.sh" build >/dev/null || fail "role build with codex"
+[[ "$(grep -l '^model:' "$LI/agents"/*.md "$LI/.claude/agents"/*.md "$LP/.claude/agents"/*.md | paste -sd ' ' -)" == "$LI/agents/x.md $LI/.claude/agents/x.md $LP/.claude/agents/x.md" ]] \
+  && ml1 "$LI/.claude/agents/x.md" "model: own" || fail "criterion 6: $(grep -H '^model:' "$LI/agents"/*.md "$LI/.claude/agents"/*.md "$LP/.claude/agents"/*.md)"
+cmp -s "$T/l-x.md" "$LI/roles/x.md" && cmp -s "$T/l-y.md" "$LI/roles/y.md" || fail "role build changed roles/ (codex)"
+# 5a. No main model: only the listed role gets a line.
+le "$LI" CABINET_RUNNER 'CABINET_RUNNER="claude"'; le "$LI" CABINET_MODEL
+"$LI/bin/role.sh" build >/dev/null || fail "role build with no main model"
+ml1 "$LI/.claude/agents/chief-of-staff.md" "model: m-light" && ml1 "$LI/.claude/agents/qa.md" && ml1 "$LI/.claude/agents/y.md" && ml1 "$LI/.claude/agents/x.md" "model: own" \
+  || fail "criterion 5a: $(grep -H '^model:' "$LI/.claude/agents"/*.md)"
+# 11. The docs.
+grep -qF -- '--model-light' "$KIT/docs/commands.md" && grep -qF -- '--light-roles' "$KIT/docs/commands.md" && grep -qF 'runs on the main model. To put it on the light one' "$KIT/docs/commands.md" \
+  && grep -qF 'runs on the light model.' "$KIT/docs/commands.md" && grep -qF -- '`--model-light' "$KIT/docs/agent-setup.md" && grep -qF 'CABINET_MODEL_LIGHT' "$KIT/docs/agent-setup.md" \
+  && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_MODEL_LIGHT' && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_LIGHT_ROLES' \
+  && grep -q 'model-light\.roles' "$KIT/docs/troubleshooting.md" && ! grep -qE 'model-light|light-roles' "$KIT/site/copy.js" || fail "a light model doc is missing"
+for x in "$LW" "$LI"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
   return 0   # a last "check && fail" line must not end the run
 }
 
