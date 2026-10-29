@@ -111,6 +111,8 @@ function hlCmd(text) {
 // An output line, already HTML: section headings, "Run: <command>", role states, placed and added.
 function hlOut(l) {
   var m;
+  // A line the capture already colored is shown as it is.
+  if (/<span class="/.test(l)) return l;
   if ((m = l.match(/^== (.*)$/))) return '<span class="d">== </span><span class="hd">' + m[1] + "</span>";
   if ((m = l.match(/^(.*Run: )(.*)$/))) return m[1] + hlCmd(m[2].replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
   if ((m = l.match(/^(\S+)(\s+)(kit|optional)(\s+)(on|off)$/))) return '<span class="verb">' + m[1] + "</span>" + m[2] + '<span class="d">' + m[3] + "</span>" + m[4] + (m[5] === "on" ? '<span class="on">on</span>' : '<span class="d">off</span>');
