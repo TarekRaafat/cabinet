@@ -50,6 +50,7 @@ Ask the first three, then propose the rest as defaults in one message and let th
 | Is it a new project, or one that exists already (a folder or a code repository)? | `cabinet new` or `cabinet init` | |
 | Which AI tool do you use? | `--runner claude\|codex\|antigravity\|qwen\|grok\|opencode\|cursor` | the first one installed |
 | Which model should its runs use? Only ask when the person names one. | `--model <name>` ([models](#models)) | the tool's own default |
+| A lighter model for the roles that plan and route? Only ask when the person names one. | `--model-light <name>`, with `cabinet config` after setup ([models](#models)) | none |
 | Where should its folder go? (new projects) | `[dir]` | `~/dev/<name>`; suggest a folder they know, such as `~/Documents/<name>`, to someone who is not a developer |
 | What kind of work is it: code, or something else such as design, writing or music? | `--roles "..."` | the seven core roles: chief-of-staff, product-manager, architect, qa, security, design-lead, finance |
 | Any code repositories to include? (new projects) | `--repo <url>`, repeatable | none |
@@ -85,6 +86,8 @@ A website that is only designed (mockups) is design work: HTML and SVG pages in 
 | `custom` | `$CABINET_MODEL` in its environment | none | not checked (a note) |
 
 A list that needs the network or a login and cannot be read gives a note, never a problem.
+
+A second, lighter model, `CABINET_MODEL_LIGHT` (`cabinet config --model-light <name>`), runs the roles in `CABINET_LIGHT_ROLES` (by default chief-of-staff, product-manager, design-lead and finance, those on the team); every other role keeps `--model`. It reaches the tool the same way, and with Claude Code also as a `model:` line in each role's file in `.claude/agents/`. The doctor checks it as `model-light.exists` ([a light model for some roles](commands.md#a-light-model-for-some-roles)).
 
 ## 4. Create the workspace
 

@@ -134,6 +134,8 @@ O	new,init,config	--roles	"qa security ..."	Roles to enable; chief-of-staff is a
 O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, antigravity, qwen, grok, opencode, cursor or custom.
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
 O	new,init,config	--model	<name>|off	The model every run asks the agent tool for; off (default) leaves it to the tool. A job's MODEL line overrides it.
+O	config	--model-light	<name>|off	A lighter model for the roles in --light-roles; every other role keeps --model. off (default): none. Setting it writes the default list once.
+O	config	--light-roles	"<roles>"	The roles that run on the light model (default, written with the first light model: chief-of-staff, product-manager, design-lead and finance, those on the team); "" for none.
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
@@ -349,6 +351,8 @@ role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 # A model name (scripts/lib.sh checks the same before every run): never a leading -, which a tool would
 # read as an option of its own (C: A-Z is ASCII only).
 model_ok() { local LC_ALL=C re='^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$'; [[ "$1" =~ $re ]]; }
+# term_say <text>: the text for an error message, with control characters shown as ? in a terminal.
+term_say() { if [[ -t 2 ]]; then printf '%s' "$1" | TERM_OUT=1 term_text; else printf '%s' "$1"; fi; }
 check_model() {   # the model about to be written, given now or carried over
   local v="$model"; [[ -t 2 ]] && v="$(printf '%s' "$v" | TERM_OUT=1 term_text)"
   [[ -z "$model" ]] || model_ok "$model" || die "CABINET_MODEL is '$v', which is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -. Give one with cabinet config --model <name>, or cabinet config --model off"
@@ -454,6 +458,17 @@ model_question() {   # the setup and config question, asked until the answer is 
     echo "  '$(printf '%s' "$a" | TERM_OUT=1 term_text)' is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -."
   done
 }
+model_light_question() {   # the setup question after the model's: a light model for the roles that plan and route
+  local a
+  echo "  A light model: a smaller one for chief-of-staff, product-manager, design-lead and finance, when on the team."
+  echo "  Every other role keeps the model above. Enter keeps none."
+  while :; do
+    a="$(ask "Light model (a name $runner knows, or none)" "${mlight:-none}")"
+    [[ "$a" == none || "$a" == off ]] && a=""
+    if [[ -z "$a" ]] || model_ok "$a"; then mlight="$a"; return 0; fi
+    echo "  '$(printf '%s' "$a" | TERM_OUT=1 term_text)' is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -."
+  done
+}
 credit_question() {   # the setup question, the offered answer in $credit
   echo "  Credit roles: each commit a role makes in a Cabinet run credits that role beside you, with one Co-authored-by line"
   echo "  that shows the Cabinet Team avatar on GitHub. on, or off.$([[ -n "${1:-}" ]] && printf ' %s' "$1")"
@@ -482,7 +497,7 @@ cmd_init() { setup init "$@"; }
 setup() {
   local how=$1; shift
   local dir="" name="" owner="" email="" roles="" runner="" runner_cmd="" brief="7:00 AM" week="sunday" writing="standard" budget="" price="" backup="" yes=0 repos=() r
-  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="on" cemail="" cemail_given=0 model=""
+  local place="" visibility="" wsflag="" slug="" extra_roles="" dry=0 credit="on" cemail="" cemail_given=0 model="" mlight=""
   while (($#)); do
     case "$1" in
       --name) need "--name needs a value" "$@"; name="$2"; shift 2 ;;
@@ -610,6 +625,7 @@ setup() {
       runner_cmd="$(ask "Command" "$runner_cmd")"
     fi
     model_question
+    model_light_question
     ask_budget
     brief="$(ask "Brief time: a time every day (7 AM), days and a time (fri 4 PM, sun,mon,tue,wed,thu 8 AM), or off" "$brief")"
     week="$(ask "Week starts on" "$week")"
@@ -743,7 +759,7 @@ setup() {
     [[ -n "$pkg_desc" ]] && echo "  About     $pkg_desc (from package.json)"
     ((${#pkg_scripts[@]})) && echo "  Scripts   $(printf '%s, ' "${pkg_scripts[@]}" | sed 's/, $//') (from package.json)"
     echo "  Roles     $roles"
-    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, model ${model:-the tool default}, brief ${brief:-off}, week starts $week, writing $writing"
+    echo "  Runner    $runner${runner_cmd:+ ($runner_cmd)}, model ${model:-the tool default}${mlight:+, light model $mlight}, brief ${brief:-off}, week starts $week, writing $writing"
     echo "  Credit    roles credited on commits from Cabinet runs: $credit${cemail:+, as $cemail}"
     [[ -n "$budget" ]] && echo "  Budget    \$$budget a week${price:+, priced at $price per million tokens}"
     echo "  Backups   ${backup:-off}"
@@ -795,6 +811,12 @@ setup() {
       '/^CABINET_LAYOUT=.*/' 'CABINET_LAYOUT="${L}"' '/^CABINET_VISIBILITY=.*/' 'CABINET_VISIBILITY="${V}"'
     CR="$credit" CE="$cemail" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_CREDIT_ROLES=.*/' 'CABINET_CREDIT_ROLES="${CR}"' '/^CABINET_CREDIT_EMAIL=.*/' 'CABINET_CREDIT_EMAIL="${CE}"'
     M="$model" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_MODEL=.*/' 'CABINET_MODEL="${M}"'
+    # A light model (asked, so a model name): it and the default list of its roles on the team; none, no line.
+    if [[ -n "$mlight" ]]; then
+      local lr="" r2
+      for r2 in chief-of-staff product-manager design-lead finance; do has "$roles" "$r2" && lr+="${lr:+ }$r2"; done
+      printf 'CABINET_MODEL_LIGHT="%s"\nCABINET_LIGHT_ROLES="%s"\n' "$mlight" "$lr" >> "$ws/cabinet.env"
+    fi
     # Shared, each machine answers for itself (cabinet.local.env, never committed): this one just did.
     [[ "$layout" == inside && "$visibility" == shared ]] && printf 'CABINET_CREDIT_ROLES="%s"\n' "$credit" >> "$ws/cabinet.local.env"
   fi
@@ -970,6 +992,15 @@ cmd_role() {
   local cur runner; cur="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_ROLES:-}" ) )"
   runner="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_RUNNER:-claude}" ) )"
   local dryflag=(); ((dry)) && dryflag=(--dry-run)
+  light_say() {  # after a role is added, one line on its model: only when a light model is set (token cost)
+    local ml lr
+    ml="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_MODEL_LIGHT:-}" ) )"
+    [[ -n "$ml" ]] || return 0
+    lr="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_LIGHT_ROLES:-}" ) | tr -s ' \t\n' '   ' | sed 's/^ //; s/ $//')"
+    if has "$lr" "$name"; then echo "$name runs on the light model."; return 0; fi
+    [[ -t 1 ]] && lr="$(printf '%s' "$lr" | TERM_OUT=1 term_text)"
+    echo "$name runs on the main model. To put it on the light one: cabinet config --light-roles \"${lr:+$lr }$name\""
+  }
   # A role change is committed when the workspace has its own git and the files it touches held no
   # edits of the owner's before; otherwise the owner reviews and commits it, as after cabinet config.
   local team_paths=(AGENTS.md OPERATIONS.md ORG.md cabinet.env roles agents .claude/agents)
@@ -1011,6 +1042,7 @@ cmd_role() {
     ((dry)) && { echo "would turn on the kit role $name, with its rows in the team tables"; return 0; }
     echo "Turned on the kit role $name, with its rows in the team tables of AGENTS.md and OPERATIONS.md."
     team_commit "roles: $name on"
+    light_say
     return 0
   fi
   [[ -e "$ws/roles/$name.md" ]] && die "roles/$name.md exists: turn it on with cabinet config --roles, or redraft it with cabinet role draft $name"
@@ -1088,9 +1120,10 @@ ROLE
   echo "Added the $name role: roles/$name.md, and its rows in AGENTS.md and OPERATIONS.md."
   team_commit "roles: $name added from the owner's brief"
   if ((draft == 0 && tty)); then confirm "Draft it now with $runner? It runs your agent tool for a few minutes, which may cost money" n && draft=1; fi
-  ((draft)) && exec "$ws/bin/role.sh" draft "$name"
+  ((draft)) && { light_say; exec "$ws/bin/role.sh" draft "$name"; }
   echo "Next, draft it from your brief and the project: in your agent session, ask to \"draft the $name role\" (CABINET.md, \"Drafting a role\"),"
   echo "or run cabinet role draft $name. Until then the doctor reminds you."
+  light_say
 }
 
 # "Hard to undo" in AGENTS.md: paths a small task never touches (.cabinet/rules/ready-to-build.md).
@@ -1140,6 +1173,7 @@ cmd_config() {
   local name="" slug="" owner="" email="" roles="" runner="" runner_cmd="" brief="" week="" backup="" backup_time="" budget="" price="" writing="" repos=()
   local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
   local credit="" cemail="" set_credit=0 cemail_given=0 model="" set_model=0 o_model uc="" set_uc=0
+  local mlight="" set_mlight=0 o_mlight lroles="" set_lroles=0 o_lroles o_lroles_set=0
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1151,6 +1185,8 @@ cmd_config() {
       --runner) need "--runner needs a value" "$@"; runner="$2"; set_runner=1; shift 2 ;;
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; set_cmd=1; shift 2 ;;
       --model) need "--model needs a model name, or off" "$@"; model="$2"; set_model=1; shift 2 ;;
+      --model-light) need "--model-light needs a model name, or off" "$@"; mlight="$2"; set_mlight=1; shift 2 ;;
+      --light-roles) (($# >= 2)) || bad_usage "--light-roles needs role names, like \"chief-of-staff finance\", or \"\" for none"; lroles="$2"; set_lroles=1; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
       --writing) need "--writing needs short or standard" "$@"; writing="$2"; set_writing=1; shift 2 ;;
@@ -1177,7 +1213,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_mlight || set_lroles || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir, --backup-time, --credit-roles and --update-check: the other settings are shared by every machine"
     (( set_backup || set_btime || clear || set_credit || set_uc )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, --update-check off|on, or --clear"
     (( clear && (set_credit || set_uc) )) && die "--clear cannot be combined with --credit-roles or --update-check"
@@ -1205,6 +1241,9 @@ cmd_config() {
   ((set_name)) || name="$o_name"; ((set_slug)) || slug="$o_slug"; ((set_owner)) || owner="$o_owner"; ((set_email)) || email="$o_email"
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
   o_model="$(envget CABINET_MODEL)"; ((set_model)) || model="$o_model"
+  o_mlight="$(envget CABINET_MODEL_LIGHT)"; ((set_mlight)) || mlight="$o_mlight"
+  grep -q '^CABINET_LIGHT_ROLES=' "$ws/cabinet.env" && o_lroles_set=1
+  o_lroles="$(envget CABINET_LIGHT_ROLES)"; ((set_lroles)) || lroles="$o_lroles"
   ((set_brief)) || brief="${o_brief:-off}"; ((set_week)) || week="${o_week:-sunday}"
   ((set_writing)) || writing="${o_writing:-standard}"
   o_hard="$(hard_now "$ws")"; ((set_hard)) || hard="$o_hard"
@@ -1296,6 +1335,15 @@ cmd_config() {
   # quotes, given now or carried over, before any other check.
   [[ "$model" == off ]] && model=""
   check_model
+  # The light model and its roles, given or carried, the same way (token cost).
+  [[ "$mlight" == off ]] && mlight=""
+  [[ -z "$mlight" ]] || model_ok "$mlight" || die "CABINET_MODEL_LIGHT is '$(term_say "$mlight")', which is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -. Give one with cabinet config --model-light <name>, or cabinet config --model-light off"
+  lroles="$(printf '%s' "$lroles" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
+  ( set -f; for r in $lroles; do role_ok "$r" || die "--light-roles: '$(term_say "$r")' is not a role name: lowercase letters, digits and dashes"; done ) || exit 1
+  # The default list, written once: when a light model is first set and cabinet.env has no list.
+  if ((set_mlight && !set_lroles && !o_lroles_set)) && [[ -n "$mlight" ]]; then
+    lroles=""; for r in chief-of-staff product-manager design-lead finance; do has "$roles" "$r" && lroles+="${lroles:+ }$r"; done; set_lroles=1
+  fi
   env_ok CABINET_PROJECT "$name"; env_ok CABINET_SLUG "$slug"; env_ok CABINET_ROLES "$roles"; env_ok CABINET_RUNNER "$runner"
   env_ok CABINET_BACKUP_DIR "$backup"; env_ok CABINET_BACKUP_TIME "$backup_time"; env_ok CABINET_BUDGET "$budget"; env_ok CABINET_PRICE "$price"
   env_ok CABINET_PIPELINE "$pipe"; env_ok CABINET_PIPELINE_LIMIT "$plimit"
@@ -1383,6 +1431,8 @@ cmd_config() {
   [[ "$roles" != "$o_roles" ]] && changes+=("roles: $o_roles -> $roles")
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
   [[ "$model" != "$o_model" ]] && changes+=("model: ${o_model:-the tool default} -> ${model:-the tool default}")
+  [[ "$mlight" != "$o_mlight" ]] && changes+=("light model: ${o_mlight:-none} -> ${mlight:-none}")
+  ((set_lroles)) && { [[ "$lroles" != "$o_lroles" ]] || ((!o_lroles_set)); } && changes+=("light model roles: $( ((o_lroles_set)) && printf '%s' "${o_lroles:-none}" || echo "not set") -> ${lroles:-none}")
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
   [[ "$writing" != "${o_writing:-standard}" ]] && changes+=("writing to the owner: ${o_writing:-standard} -> $writing")
@@ -1433,6 +1483,9 @@ cmd_config() {
   setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$model" == "$o_model" ]] || setenv CABINET_MODEL "$model"
+  [[ "$mlight" == "$o_mlight" ]] || setenv CABINET_MODEL_LIGHT "$mlight"
+  ((set_lroles)) && { [[ "$lroles" != "$o_lroles" ]] || ((!o_lroles_set)); } && setenv CABINET_LIGHT_ROLES "$lroles"
+  [[ "$mlight" == "$o_mlight" ]] || model_say "$runner" "$mlight"
   ((set_uc)) && [[ "$uc" != "$o_uc" ]] && setenv CABINET_UPDATE_CHECK "$uc"
   # A new model, or a new tool for the one set: whether the tool lists it (said, never refused).
   [[ "$model" == "$o_model" && "$runner" == "$o_runner" ]] || model_say "$runner" "$model"

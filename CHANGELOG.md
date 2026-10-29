@@ -2,6 +2,12 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.3.0 - Unreleased
+
+- A light model for some roles: `cabinet config --model-light <name>` sets `CABINET_MODEL_LIGHT`, a second, lighter model for the roles in `CABINET_LIGHT_ROLES` (`cabinet config --light-roles "<roles>"`). The first light model set writes the default list, chief-of-staff, product-manager, design-lead and finance, those of them on the team then; a list already there is kept. Every other role runs on `--model` as before, whatever kind it is and whenever it was added, and a job's `MODEL` line still wins. With Claude Code as the runner, `role build` also writes each role's model into its file in `.claude/agents/` as a `model:` line; a project role's own `model:` line is kept. Setup asks for it right after the model; Enter keeps none.
+- When a light model is set, `cabinet role add` ends with one line saying which model the role runs on, and the command that moves it. `role remove` leaves the list as it is. New doctor checks `model-light.name`, `model-light.exists` and `model-light.roles` (a listed role not on the team: a note).
+- With no light model set, the default for every workspace, nothing changes: every run and every role file is exactly as before.
+
 ## 0.2.1 - 29 Oct 2026
 
 Fixes and polish. Nothing to do by hand after updating.
