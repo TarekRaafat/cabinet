@@ -963,13 +963,17 @@ for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" ||
 # CABINET.md holds what every agent needs on every session; the rest is in core/rules/, each file named
 # from it with when to read it, and every reference to one names a file that exists.
 # 3460 since 0.2.0: the git actions rule and the amend rule are owner decisions, quoted word for word.
-w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3460)) || fail "CABINET.md has $w words, over its 3460: move what only some roles or tasks need to core/rules/"
+w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3485)) || fail "CABINET.md has $w words, over its 3485: move what only some roles or tasks need to core/rules/"
 for f in "$KIT"/core/rules/*.md; do
   grep -q "^   | \`.cabinet/rules/${f##*/}\` | " "$KIT/core/CABINET.md" || fail "CABINET.md does not say when to read .cabinet/rules/${f##*/}"
 done
 for r in $(grep -rhoE '\.cabinet/rules/[a-z-]+\.md' "$KIT/core" "$KIT/roles" "$KIT/scripts" "$KIT/bin" "$KIT/templates" "$KIT/docs" | sort -u); do
   [[ -f "$KIT/core/rules/${r##*/}" ]] || fail "$r is named, but the kit has no core/rules/${r##*/}"
 done
+# Handoff text in double quotes lets the shell run a command substitution first: the docs say to use single quotes.
+qs='Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes: the shell would run it first.'
+grep -qF "$qs" "$KIT/core/CABINET.md" && grep -qF "$qs" "$KIT/docs/commands.md" || fail "CABINET.md or docs/commands.md does not say to put handoff text in single quotes"
+sed -n '/^#   bin\/handoff.sh add /,/^#   bin\/handoff.sh attach /p' "$KIT/scripts/handoff.sh" | sed 's/^# *//' | tr '\n' ' ' | grep -qF "$qs" || fail "the usage of handoff add in scripts/handoff.sh does not say to put text in single quotes"
   return 0   # a last "check && fail" line must not end the run
 }
 

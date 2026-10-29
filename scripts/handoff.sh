@@ -13,6 +13,8 @@
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
+#       Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document,
+#       never double quotes: the shell would run it first.
 #   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."] --from <name>
 #       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
 #       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.

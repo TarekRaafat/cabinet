@@ -972,7 +972,7 @@ cabinet handoff run --scheduled
 cabinet handoff archive
 ```
 
-**`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs: each write takes a lock (`.cabinet/handoff.lock`), and a lock left for more than a minute by a writer that was stopped is taken over. Entries are filed only this way, never by hand, so no two take the same ID. Two copies of a workspace (a teammate's clone) do not share the lock; `cabinet doctor` flags an ID used twice after they are merged (`handoffs.unique-ids`).
+**`add`** files one handoff: appends the entry at the bottom of "Open" in `HANDOFFS.md` with the next free ID for today (`H-20261019-01`, unique across `HANDOFFS.md` and the archives), today's date, status `open` and the template's lines, then commits it on its own (`handoffs: <ID> <title>`). `--depends-on` defaults to `none`. Each value is kept on one line. Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes: the shell would run it first. It prints the new ID first. When `HANDOFFS.md` already has someone else's uncommitted lines, it writes the entry but does not commit, so their lines never go into its commit. Two agents filing at once get different IDs: each write takes a lock (`.cabinet/handoff.lock`), and a lock left for more than a minute by a writer that was stopped is taken over. Entries are filed only this way, never by hand, so no two take the same ID. Two copies of a workspace (a teammate's clone) do not share the lock; `cabinet doctor` flags an ID used twice after they are merged (`handoffs.unique-ids`).
 
 `--spec specs/<feature>.md` names the spec the handoff builds, on a `Spec:` line, and refuses (exit 1) unless the spec is committed, `ready` or `building`, and passes `cabinet spec check`: work bigger than a small task is routed only from a spec that is ready to build ([concepts](concepts.md#ready-to-build)). `--small` instead marks a small task (one repo, no contract change, no decision for you, easy to undo) with a `Size: small` line. A handoff to a repo, a kit builder, or a role that owns a repo in the team table needs one of the two (exit 2 with neither, or both).
 
@@ -2120,7 +2120,7 @@ Nothing is built before it is defined, and nothing bigger than a small task befo
 
 `HANDOFFS.md` is the one channel between agents. It is durable, so work is never lost when a session ends, and it gives the owner one place to see everything in flight.
 
-- **When your change affects another repo,** file an entry with `bin/handoff.sh add --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it; never by hand, since a hand-numbered entry can take an ID another agent is filing. It records who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary.
+- **When your change affects another repo,** file an entry with `bin/handoff.sh add --from <you> --to <them> --changed "..." --needed "..." [--depends-on "..."] "<title>"`, which picks the next free ID and commits it; never by hand, since a hand-numbered entry can take an ID another agent is filing. It records who it is for, exactly what changed (endpoint, field, limit, status code, default, version, file), what they need to do, and the commit or branch it depends on. Name the entry ID in your summary. Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes: the shell would run it first.
 - **Evidence is a link the owner can click:** what shows the work, filed with `--evidence <file or URL>`, or later with `bin/handoff.sh attach` (`.cabinet/rules/reviews.md`).
 - **When an entry is addressed to you,** verify it against the code before acting: a handoff describes a change, the code is the truth. Set it to `acknowledged` when you start and `done` when your side lands, with the date and your commit. If it is wrong or not needed, set it to `rejected` with the reason.
 - **Commit every edit to `HANDOFFS.md` at once,** as its own commit (`handoffs: ...`). If the file holds someone else's uncommitted lines, stage only yours and name the leftovers in your summary; chief-of-staff commits leftovers in its daily run.
@@ -2326,6 +2326,10 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.2.1 - Unreleased
+
+- `CABINET.md` and the docs for `handoff add` say that text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes, since the shell would run it before Cabinet sees it.
 
 ## 0.2.0 - 29 Oct 2026
 
