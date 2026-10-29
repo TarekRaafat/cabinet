@@ -11,7 +11,8 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) &&
   common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
   where=$(node "$(dirname "$0")/cabinet-push-gate.js" "$top" "$common" 2>/dev/null) || where=""
 if [ "$where" != "outside" ]; then
-  if ! { exec 3</dev/tty; } 2>/dev/null; then
+  # Tried in a subshell first: in dash (Debian's sh) a failed exec ends the shell before the message.
+  if ! (: </dev/tty) 2>/dev/null || ! { exec 3</dev/tty; } 2>/dev/null; then
     echo "push blocked: pushes need the owner's confirmation at a terminal" >&2
     exit 1
   fi
