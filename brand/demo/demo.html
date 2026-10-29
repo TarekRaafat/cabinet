@@ -27,6 +27,7 @@ html, body { margin: 0; background: #101216; overflow: hidden; }
 .screen .green { color: #6CC08B; }
 .screen .blue { color: #7FB0E8; }
 .screen .red { color: #F2867D; }
+.screen .yellow { color: #D7A54B; }
 .screen .seat { display: inline-block; width: 1ch; text-align: center; }
 .screen h, .screen .hd { font-weight: 700; color: #B9A3FF; }
 /* Terminal syntax: hues the status colors (green, blue, red) and the owner's brass leave free. */
@@ -111,8 +112,8 @@ function hlCmd(text) {
 // An output line, already HTML: section headings, "Run: <command>", role states, placed and added.
 function hlOut(l) {
   var m;
-  // A line the capture already colored is shown as it is.
-  if (/<span class="/.test(l)) return l;
+  // A line the capture already colored is shown as it is, apart from a command after "Run: ", which takes the film's command colors.
+  if (/<span class="/.test(l)) return l.replace(/(Run: )<span class="b">(.*?)<\/span>/, function (_, r, c) { return r + hlCmd(c.replace(/&lt;/g, "<").replace(/&gt;/g, ">")); });
   if ((m = l.match(/^== (.*)$/))) return '<span class="d">== </span><span class="hd">' + m[1] + "</span>";
   if ((m = l.match(/^(.*Run: )(.*)$/))) return m[1] + hlCmd(m[2].replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
   if ((m = l.match(/^(\S+)(\s+)(kit|optional)(\s+)(on|off)$/))) return '<span class="verb">' + m[1] + "</span>" + m[2] + '<span class="d">' + m[3] + "</span>" + m[4] + (m[5] === "on" ? '<span class="on">on</span>' : '<span class="d">off</span>');

@@ -17,6 +17,8 @@ mkdir -p "$T/shim"
 for t in launchctl systemctl security secret-tool osascript notify-send claude opencode brew apt-get dnf pacman sudo; do
   printf '#!/bin/sh\necho "%s $*" >> "%s"\ncase "$1" in find-generic-password|lookup) exit 44 ;; esac\n' "$t" "$T/fake.log" > "$T/shim/$t"; chmod +x "$T/shim/$t"
 done
+# The fake opencode names a version, so the doctor's opencode line reads whole.
+printf 'case "$1" in --version) echo v2.2.0 ;; esac\n' >> "$T/shim/opencode"
 printf '#!/bin/sh\ncase "$1" in -l) cat "%s" 2>/dev/null ;; -) cat > "%s" ;; *) exit 1 ;; esac\n' "$T/crontab" "$T/crontab" > "$T/shim/crontab"; chmod +x "$T/shim/crontab"
 mkdir -p "$T/bin"; ln -s "$KIT/bin/cabinet" "$T/bin/cabinet"
 export PATH="$T/shim:$T/bin:$PATH"
