@@ -298,7 +298,7 @@ A session is a git worktree of a repo: a folder of its own, on a branch of its o
 
 **`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when it has no uncommitted or untracked changes and no ignored `.env` file (git would delete it with the folder), and keeps the branch.
 
-Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch.
+Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch, with the `cabinet session end <name>` command that shows how to merge it when the branch is `session/<name>` with a session name; any other branch you merge with git yourself.
 
 Exit 0; 1 for a name already used, an existing branch, a repo that is not a git repo or has no commit, no such session, or a session with uncommitted changes; 2 for a name that is not a session name, a missing `--repo` with several repos, or wrong usage.
 

@@ -407,9 +407,11 @@ term_text < "$WS/HANDOFFS.md" | awk '
   [[ "$to" == owner || "$to" == founder ]] && pto="$S_Y$to$S_Z${pto:${#to}}"
   printf '%s%3sd%s  %-12s  %s%-14s%s  %s  %s\n' "$S_D" "$age" "$S_Z" "$st" "$S_D" "$id" "$S_Z" "$pto" "$title"
 done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || { ((ready)) && echo "No handoffs ready to push." || echo "No open handoffs."; }; }
-# Passed work held only because its commits are on a session branch: said, with the command that shows the merge.
+# Passed work held only because its commits are on a session branch: said, with the command that shows the merge
+# when the name is one session end takes (name_ok in session.sh), never a branch name that could hold shell characters.
 ((ready == 0)) || json -r --each 'Object.entries($).filter(([i, e]) => e.session_branch && !e.archived && /^(open|acknowledged)$/.test(e.status_now))
-  .map(([i, e]) => i + ": passed, but its commits are only on " + e.session_branch + ", not on the branch you push: cabinet session end " + e.session_branch.replace(/^session\//, "") + " shows how to merge it")' <<<"$rd"
+  .map(([i, e]) => ((n) => i + ": passed, but its commits are only on " + e.session_branch + ", not on the branch you push: "
+    + (/^[a-z0-9][a-z0-9-]{0,39}$/.test(n) ? "cabinet session end " + n + " shows how to merge it" : "its name is not a session name, so merge it with git yourself"))(e.session_branch.replace(/^session\//, "")))' <<<"$rd"
 }
 
 h_archive() {

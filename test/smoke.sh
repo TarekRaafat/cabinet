@@ -3652,6 +3652,14 @@ o="$(ses end moved)" && grep -qF "git -C $S/app/moved rebase main" <<<"$o" && gr
 # A branch name holding shell characters is printed quoted in every command (security S1).
 ses start odd --repo app >/dev/null; git -C "$S/app/odd" checkout -q -b 'session/odd;id'
 L1="$(ses list --json)"; j -e --arg m "git -C $(printf %q "$A") merge --ff-only $(printf %q 'session/odd;id')" '$.find((x) => x.name == "odd").merge == $m' <<<"$L1" >/dev/null || fail "list --json with a branch holding shell characters: $L1"
+# list --ready names such a branch, but prints no session end command with it (security S4).
+echo o > "$S/app/odd/o"; git -C "$S/app/odd" add o; git -C "$S/app/odd" commit -qm "odd work"; oc="$(git -C "$S/app/odd" rev-parse --short HEAD)"
+"$PW/bin/handoff.sh" add --from backend --to "qa, security" --changed 'odd work' --needed 'review it' --evidence "$S/app/odd/o" 'odd session work' >/dev/null || fail "handoff add"
+oid="$(grep -o '^### H-[0-9]*-[0-9]*' "$PW/HANDOFFS.md" | tail -1 | cut -c5-)"
+for r in qa security code-reviewer; do (cd "$PW" && bin/handoff.sh record "$oid" --role "$r" PASS --commits "$oc" --note specs/qa/ps.md) >/dev/null 2>&1 || fail "record $r of an odd session commit"; done
+o="$(cd "$PW" && bin/handoff.sh list --ready)"
+grep -qF "$oid: passed, but its commits are only on session/odd;id, not on the branch you push: its name is not a session name, so merge it with git yourself" <<<"$o" \
+  && ! grep -q 'session end' <<<"$o" || fail "list --ready printed a session end command for a branch holding shell characters: $o"
 git -C "$S/app/odd" checkout -q session/odd; git -C "$A" branch -q -D 'session/odd;id'
 mb='m$(id);x'; git -C "$A" branch -m main "$mb"; echo odd >> "$A/f"; git -C "$A" commit -qam "odd moves"
 o="$(ses end odd)" && grep -qF "rebase $(printf %q "$mb")" <<<"$o" && ! grep -qF "rebase $mb" <<<"$o" || fail "end with a main branch holding shell characters: $o"

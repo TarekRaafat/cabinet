@@ -5,6 +5,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ## 0.2.1 - Unreleased
 
 - `CABINET.md` and the docs for `handoff add` say that text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes, since the shell would run it before Cabinet sees it.
+- `cabinet handoff list --ready` prints the `cabinet session end <name>` command for work held on a session branch only when the branch name is a session name; a branch made with git whose name holds shell characters is named, with no command to paste.
 
 ## 0.2.0 - 29 Oct 2026
 
