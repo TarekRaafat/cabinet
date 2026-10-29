@@ -3931,7 +3931,8 @@ cp "$LW/cabinet.env" "$T/l.keep"; st=0; out="$(cfl --model-light 'a$b')" || st=$
 # 2. A role name that is not one.
 st=0; out="$(cfl --light-roles "chief-of-staff Bad_Name")" || st=$?
 ((st)) && grep -qF 'Bad_Name' <<<"$out" && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the role Bad_Name (exit $st): $out"
-for v in 'qa;id' '$(id)' 'qa`id`'; do st=0; cfl --light-roles "$v" >/dev/null || st=$?; ((st)) && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the roles '$v'"; done
+for v in 'qa;id' '$(id)' 'qa`id`' $'qa\nchief-of-staff'; do st=0; cfl --light-roles "$v" >/dev/null || st=$?; ((st)) && cmp -s "$T/l.keep" "$LW/cabinet.env" || fail "config took the roles '$v'"; done
+st=0; out="$(cfl --light-roles $'qa\nchief-of-staff')" || st=$?; ((st)) && grep -qF CABINET_LIGHT_ROLES <<<"$out" || fail "a line break in --light-roles (exit $st): $out"
 # 4a. A kit role turned on later: the main model, and a line saying how to move it.
 cfl --model m-main >/dev/null; lc "main model"
 out="$(cd "$LW" && lm "$F" role add finance 2>&1)" || fail "role add finance: $out"
@@ -4004,6 +4005,10 @@ le "$LW" CABINET_RUNNER 'CABINET_RUNNER="codex"'; lset m-main m-light chief-of-s
 out="$(LMODELS=m-main lres model-light.exists)"; grep -q '^fix .*m-light' <<<"$out" && grep -q '^ok ' <<<"$(LMODELS=m-main lres model.exists)" || fail "doctor model-light.exists: $out"
 lset m-light "" chief-of-staff; grep -q '^fix ' <<<"$(LMODELS=m-main lres model.exists)" || fail "doctor model.exists with m-light"
 lset m-main m-light chief-of-staff; grep -q '^ok ' <<<"$(LMODELS="m-main m-light" lres model-light.exists)" || fail "doctor model-light.exists listed: $(LMODELS="m-main m-light" lres model-light.exists)"
+# config's note on a light model the runner does not list names the light model and its own option.
+lset m-main "" chief-of-staff; out="$(cfl --model-light m-x)" || fail "config --model-light m-x with codex: $out"
+grep -qxF "Light model m-x: not in codex's model list (codex debug models). It is written anyway; a run with it may fail. Change it with cabinet config --model-light <name>|off." <<<"$out" \
+  && ! grep -q '^Model ' <<<"$out" || fail "config --model-light m-x note: $out"
 le "$LW" CABINET_RUNNER 'CABINET_RUNNER="claude"'
 # 1a, 8. The setup question: a light model writes the same two lines as config; Enter writes neither.
 q1() {   # q1 <home> <light model answer>: setup in its own HOME, default team but finance

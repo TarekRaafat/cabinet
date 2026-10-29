@@ -357,18 +357,20 @@ check_model() {   # the model about to be written, given now or carried over
   local v="$model"; [[ -t 2 ]] && v="$(printf '%s' "$v" | TERM_OUT=1 term_text)"
   [[ -z "$model" ]] || model_ok "$model" || die "CABINET_MODEL is '$v', which is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -. Give one with cabinet config --model <name>, or cabinet config --model off"
 }
-# model_say <runner> <model>: whether the agent tool lists the model, without a run (lib.js, model-check).
+# model_say <runner> <model> [<option>]: whether the agent tool lists the model, without a run (lib.js,
+# model-check); <option> is the config option that sets it, --model (the default) or --model-light.
 # A model missing from its list is said, never refused: the owner may know one the list does not show.
 model_say() {
   [[ -n "$2" ]] || return 0
-  [[ "$1" != custom ]] || { echo "Model $2: not checked: the custom runner cannot list its models without a run."; return 0; }
-  local st m how
+  local st m how o="${3:---model}" w=Model
+  [[ "$o" == --model-light ]] && w="Light model"
+  [[ "$1" != custom ]] || { echo "$w $2: not checked: the custom runner cannot list its models without a run."; return 0; }
   IFS=$'\t' read -r st m how < <(node "$LIBJS" model-check "$LOGROOT" "$1" "$2") || true
   case "$st" in
-    ok) echo "Model $2: one of $1's models." ;;
-    missing) echo "Model $2: not in $1's model list ($how). It is written anyway; a run with it may fail. Change it with cabinet config --model <name>|off." ;;
-    unlisted) echo "Model $2: not checked: $1 cannot list its models without a run." ;;
-    *) echo "Model $2: not checked: $1's model list could not be read ($how)." ;;
+    ok) echo "$w $2: one of $1's models." ;;
+    missing) echo "$w $2: not in $1's model list ($how). It is written anyway; a run with it may fail. Change it with cabinet config $o <name>|off." ;;
+    unlisted) echo "$w $2: not checked: $1 cannot list its models without a run." ;;
+    *) echo "$w $2: not checked: $1's model list could not be read ($how)." ;;
   esac
 }
 # env_ok <setting> <value>: a value written to cabinet.env in double quotes, given now or carried
@@ -1346,7 +1348,7 @@ cmd_config() {
   fi
   env_ok CABINET_PROJECT "$name"; env_ok CABINET_SLUG "$slug"; env_ok CABINET_ROLES "$roles"; env_ok CABINET_RUNNER "$runner"
   env_ok CABINET_BACKUP_DIR "$backup"; env_ok CABINET_BACKUP_TIME "$backup_time"; env_ok CABINET_BUDGET "$budget"; env_ok CABINET_PRICE "$price"
-  env_ok CABINET_PIPELINE "$pipe"; env_ok CABINET_PIPELINE_LIMIT "$plimit"
+  env_ok CABINET_PIPELINE "$pipe"; env_ok CABINET_PIPELINE_LIMIT "$plimit"; env_ok CABINET_MODEL_LIGHT "$mlight"; env_ok CABINET_LIGHT_ROLES "$lroles"
   env_ok CABINET_CREDIT_ROLES "$( ((set_credit)) && printf %s "$credit" || printf %s "$o_cfile")"
   env_ok CABINET_CREDIT_EMAIL "$( ((cemail_given)) && printf %s "$cemail" || printf %s "$o_cemail")"
   env_ok "WHEN in jobs/brief.job" "$brief"; env_ok "WHEN in jobs/pipeline.job" "$ptime"
@@ -1485,7 +1487,7 @@ cmd_config() {
   [[ "$model" == "$o_model" ]] || setenv CABINET_MODEL "$model"
   [[ "$mlight" == "$o_mlight" ]] || setenv CABINET_MODEL_LIGHT "$mlight"
   ((set_lroles)) && { [[ "$lroles" != "$o_lroles" ]] || ((!o_lroles_set)); } && setenv CABINET_LIGHT_ROLES "$lroles"
-  [[ "$mlight" == "$o_mlight" ]] || model_say "$runner" "$mlight"
+  [[ "$mlight" == "$o_mlight" && "$runner" == "$o_runner" ]] || model_say "$runner" "$mlight" --model-light
   ((set_uc)) && [[ "$uc" != "$o_uc" ]] && setenv CABINET_UPDATE_CHECK "$uc"
   # A new model, or a new tool for the one set: whether the tool lists it (said, never refused).
   [[ "$model" == "$o_model" && "$runner" == "$o_runner" ]] || model_say "$runner" "$model"
