@@ -2730,12 +2730,20 @@ for taken in file link; do
   out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
   cmp -s "$T/credit-older" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited earlier credit hook whose keep name was taken ($taken)"
   if [[ $taken == file ]]; then [[ ! -L "$ck" && "$(cat "$ck")" == other ]]; else [[ -L "$ck" && ! -e "$ck" && "$(readlink "$ck")" == "$T/no-such-hook" ]]; fi || fail "bootstrap changed the $taken at the keep name"
-  grep -qF "left as is: $HK/prepare-commit-msg, since $ck holds something else (move it, then run bin/bootstrap.sh again; credit roles cannot add their line" <<<"$out" || fail "bootstrap did not name the $taken in the way: $(grep -F prepare-commit-msg <<<"$out")"
+  grep -qF "left as is: $HK/prepare-commit-msg, since $ck holds something else (move it, then run bin/bootstrap.sh again; until then your edited v$((v - 1)) of the credit hook stays in use)" <<<"$out" || fail "bootstrap did not name the $taken in the way: $(grep -F prepare-commit-msg <<<"$out")"
   rm "$ck"
 done
 out="$(HOME="$CH" "$CW/bin/bootstrap.sh" --dry-run 2>&1 || true)"
 cmp -s "$T/credit-older" "$HK/prepare-commit-msg" && [[ ! -e "$ck" && ! -L "$ck" ]] || fail "bootstrap --dry-run changed the edited earlier credit hook or kept a copy"
 grep -F -A1 "would keep your edited copy of the earlier credit hook as $ck" <<<"$out" | grep -qF "would place the credit hook at $HK/prepare-commit-msg" || fail "bootstrap --dry-run did not say it would keep, then place: $(grep -F prepare-commit-msg <<<"$out")"
+# A hooks folder bootstrap cannot write to (skipped where the test runs as root): the hook is left as it is, and says why.
+chmod a-w "$HK"
+if ! touch "$HK/.w" 2>/dev/null; then
+  out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
+  cmp -s "$T/credit-older" "$HK/prepare-commit-msg" && [[ ! -e "$ck" ]] || { chmod u+w "$HK"; fail "bootstrap changed the edited earlier credit hook in a read-only folder"; }
+  grep -qF "could not keep your edited copy as $ck, so left as is: $HK/prepare-commit-msg (your edited v$((v - 1)) of the credit hook stays in use)" <<<"$out" || { chmod u+w "$HK"; fail "bootstrap did not say it could not keep the edited hook: $(grep -F prepare-commit-msg <<<"$out")"; }
+fi
+chmod u+w "$HK"; rm -f "$HK/.w"
 out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
 cmp -s "$T/credit-older" "$HK/prepare-commit-msg.cabinet-v$((v - 1))" && [[ -x "$HK/prepare-commit-msg.cabinet-v$((v - 1))" ]] || fail "bootstrap did not keep the edited earlier credit hook"

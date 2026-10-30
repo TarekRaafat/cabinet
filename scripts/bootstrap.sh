@@ -216,13 +216,13 @@ kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SH
     else
       mkdir -p "$hooks"
       if [[ -n "$keep" ]]; then
-        cp -p "$h" "$keep" || { echo "  could not keep your edited copy as $keep, so left as is: $h ($lost on this machine)"; return 0; }
+        cp -p "$h" "$keep" || { echo "  could not keep your edited copy as $keep, so left as is: $h (your edited v$old of the $what stays in use)"; return 0; }
         echo "  kept your edited copy of the earlier $what as $keep"
       fi
       cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $what at $h"
     fi
   elif [[ -n "$taken" ]]; then
-    echo "  left as is: $h, since $taken holds something else (move it, then run bin/bootstrap.sh again; $lost on this machine)"
+    echo "  left as is: $h, since $taken holds something else (move it, then run bin/bootstrap.sh again; until then your edited v$old of the $what stays in use)"
   else
     echo "  differs, left as is: $h ($lost on this machine; cabinet doctor says why)"
   fi
