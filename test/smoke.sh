@@ -2071,6 +2071,11 @@ git -C "$PW" commit -qam "app3, built by backend"
 read -r i v <<<"$(rv "Fix in another builder's repo")"; n=$((n + 300))
 A="$(GIT_COMMITTER_DATE="@$n +0000" cm n1)"; echo n2 >> "$PW/app3/a.txt"; GIT_COMMITTER_DATE="@$((n + 1)) +0000" git -C "$PW/app3" commit -qam n2
 out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a fix in a repo no verdict names, not the builder's: $out"
+# security I3: such a repo whose HEAD git cannot read (a branch with no commits) never says none either.
+read -r i v <<<"$(rv "Other repo unreadable")"; hd="$(git -C "$PW/app3" symbolic-ref HEAD)"
+git -C "$PW/app3" symbolic-ref HEAD refs/heads/no-commits-yet; A="$(GIT_COMMITTER_DATE="@$((n + 300)) +0000" cm n3)"
+out="$(blk "$A")"; git -C "$PW/app3" symbolic-ref HEAD "$hd"
+[[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "another builder's repo git cannot read said none: $out"
 grep -v '^app3	' "$PW/repos.tsv" > "$T/rr-repos" && cp "$T/rr-repos" "$PW/repos.tsv"; git -C "$PW" commit -qm "app3 out" -- repos.tsv
 # A repo of the builder's whose HEAD git cannot read (here a branch with no commits) never says none.
 read -r i v <<<"$(rv "Builder repo unreadable")"; hd="$(git -C "$PW/app2" symbolic-ref HEAD)"

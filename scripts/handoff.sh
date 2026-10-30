@@ -531,7 +531,7 @@ agent() {  # agent <role> <what it does> <prompt>
 # another product repo with commits since that no verdict names), it says so and the reviewer reads the
 # whole change.
 again() {
-  local a o c d n h s="" u="" t=0 x e name url files link path rows left
+  local a o c d n h s="" u="" t=0 x name url files link path rows left
   a="$(json -r --arg x "$1" '($.verdicts.filter((w) => w.role == $x).pop()?.commits ?? []).join(",")' <<<"$r")"
   [[ -n "$a" ]] || return 0
   o="$(json -r --arg a "$a" '[...new Set($.verdicts.flatMap((w) => w.commits))].filter((c) => !$a.split(",").includes(c)).join(" ")' <<<"$r")"
@@ -559,15 +559,14 @@ again() {
     for c in ${a//,/ }; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && continue 2; done
     # Every commit on HEAD down to the deepest one dated at or after t, oldest first ("<full> <short>"):
     # one dated earlier above it is listed too, where git's --since would stop at it. Not for the
-    # workspace (no name), which uses only the commits other verdicts name. e is set when git cannot
-    # read HEAD (no commits, or a broken repo).
-    x="" e=""
+    # workspace (no name), which uses only the commits other verdicts name. When git cannot read HEAD
+    # (no commits, or a broken repo), what is new there cannot be told, in any product repo: unknown.
+    x=""
     if [[ -n "$n" ]]; then
-      x="$(git -C "$d" log --topo-order --format='%H %h %ct' HEAD 2>/dev/null)" || e=1
+      x="$(git -C "$d" log --topo-order --format='%H %h %ct' HEAD 2>/dev/null)" || u=1
       [[ -z "$x" ]] || x="$(awk -v t="$t" '{ l[NR] = $1 " " $2 } $3 >= t { k = NR } END { for (i = k; i > 0; i--) print l[i] }' <<<"$x")"
     fi
     if [[ -n "$n" && ( "$n" == "$builder" || "$(owner_of "$n")" == "$builder" ) ]]; then
-      [[ -z "$e" ]] || u=1
       s="$s $(awk '{ print $2 }' <<<"$x")"
     else
       h=" "
