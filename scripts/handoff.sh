@@ -42,10 +42,11 @@
 #       Move one piece of work (a handoff to one builder, filed --small or --spec) through the steps
 #       the team already has, each an agent run, until it is ready to push or needs the owner: the
 #       builder builds it and hands it on for review with --depends-on <ID>; each reviewer missing or
-#       stale verifies and records; after a BLOCK the builder fixes it and the blocking reviewers
-#       check again, up to --retries rounds (default 2), and once one reviewer's BLOCK or CHANGES on
-#       the work, counted over every run (blocks in list --json), pass --retries, it stops for the
-#       owner before another round. It decides nothing: it reads the state
+#       stale verifies and records (one asked again is told its last verdict's commits and the ones
+#       since: .cabinet/rules/reviews.md, "A re-review"); after a BLOCK the builder fixes it and the
+#       blocking reviewers check again, up to --retries rounds (default 2), and once one reviewer's
+#       BLOCK or CHANGES on the work, counted over every run (blocks in list --json), pass --retries,
+#       it stops for the owner before another round. It decides nothing: it reads the state
 #       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready.
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
 #       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
@@ -474,7 +475,7 @@ report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for on
 h_run() {
 usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
 [[ "${1:-}" != --scheduled ]] || { (($# == 1)) || { echo "--scheduled takes nothing else. usage: bin/handoff.sh run --scheduled" >&2; exit 2; }; h_scheduled; exit $?; }
-local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v r todo x before
+local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v r todo x before ag
 while (($#)); do
   case "$1" in
     --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; shift 2 ;;
@@ -520,6 +521,21 @@ agent() {  # agent <role> <what it does> <prompt>
   AGENT=$1 PROMPT=$3
   run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
+# again <role>: for a reviewer asked again, the commits its last verdict on the review entry ($r) names
+# and the ones made after them, so it reads only those (.cabinet/rules/reviews.md, "A re-review");
+# nothing for a reviewer with no verdict yet.
+again() {
+  local a s="" d name url files link path
+  a="$(json -r --arg x "$1" '($.verdicts.filter((w) => w.role == $x).pop()?.commits ?? []).join(",")' <<<"$r")"
+  [[ -n "$a" ]] || return 0
+  while IFS= read -r d; do
+    git -C "$d" cat-file -e "${a%%,*}^{commit}" 2>/dev/null || continue
+    # ponytail: every later commit on the repo's HEAD, this work's or not; one batch is one piece of work.
+    s="$(git -C "$d" rev-list --reverse --abbrev-commit HEAD --not ${a//,/ } 2>/dev/null | paste -sd, -)"
+    break
+  done < <(echo "$WS"; repos 2>/dev/null | while IFS=$'\t' read -r name url files link path; do repo_dir "$path"; done)
+  echo "$1's last verdict covers $a, commits since: ${s:-none}"
+}
 while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
@@ -548,14 +564,16 @@ while :; do
     ((rounds <= retries)) || stop "$(json -r '$.blocking.join(", ")' <<<"$r") still block $v after $retries fix round(s): the owner decides (fix it, change the work, or override)"
     x="$(json -r --argjson n "$retries" '$.blocking.filter((b) => ($.blocks[b] ?? 0) > $n).map((b) => b + " has blocked it " + $.blocks[b] + " times").join(", ")' <<<"$r")"
     [[ -z "$x" ]] || stop "$x on $v, more than --retries allows ($retries): the owner decides (fix it another way, change the work, override the BLOCK, or drop it)"
-    agent "$builder" "fixes what $(json -r '$.blocking.join(", ")' <<<"$r") blocked, round $rounds" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(json -r '$.blocking.join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
+    ag="$(for x in $(json -r --each '$.blocking' <<<"$r"); do again "$x"; done | sed '1!s/^/; /' | tr -d '\n')"
+    agent "$builder" "fixes what $(json -r '$.blocking.join(", ")' <<<"$r") blocked, round $rounds${ag:+ ($ag)}" "Handoff $v, your work for $id, has a BLOCK or CHANGES from $(json -r '$.blocking.join(", ")' <<<"$r"): their notes (the Verdict lines on $v) say what to fix. Fix it in your repo with a test, commit, and attach new evidence to $v (bin/handoff.sh attach $v <file or URL> --from $builder) when what people see changed. The reviewers check again after you."
     fixed=1; continue
   fi
   todo="$(json -r --each '[...new Set([...$.blocking, ...$.stale, ...$.missing])].sort()' <<<"$r")"
   [[ -n "$todo" ]] || stop "$v is not ready, and no reviewer is waiting: see bin/handoff.sh list --json"
   for x in $todo; do
     before="$(json -c --arg x "$x" '$.verdicts.filter((w) => w.role == $x)' <<<"$r")"
-    agent "$x" "verifies $v" "Verify handoff $v as your role says, then record your verdict with bin/handoff.sh record $v --role $x PASS|BLOCK|CHANGES --commits <every commit of the work> --note <your note>."
+    ag="$(again "$x")"
+    agent "$x" "verifies $v${ag:+ again ($ag)}" "Verify handoff $v as your role says, then record your verdict with bin/handoff.sh record $v --role $x PASS|BLOCK|CHANGES --commits <every commit of the work> --note <your note>.${ag:+ You are asked again: $ag. Read as .cabinet/rules/reviews.md says under A re-review: your last note, the commits since and the files they change, with each of your earlier findings checked against them.}"
     [[ "$(json -c --arg x "$x" --arg v "$v" '$[$v].verdicts.filter((w) => w.role == $x)' <<<"$(readiness)")" != "$before" ]] || stop "$x recorded no verdict on $v"
   done
   fixed=0

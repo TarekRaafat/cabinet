@@ -1929,6 +1929,7 @@ cat > "$T/pfakes/claude" <<'FAKE'
 #!/bin/bash
 agent="" prompt=""
 while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+printf '%s\n' "$prompt" >> "$FS/prompts"
 id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
 repo=app; [[ "$agent" == backend ]] && repo=api
 spec="$(printf '%s' "$prompt" | grep -oE 'specs/[a-z-]+\.md' | head -1)"
@@ -1979,7 +1980,7 @@ grep -q "builds $a" "$HOME/$LOGS/pipe/run-$a.log" || fail "the run's log"
 # A BLOCK: the builder fixes it, the blocker checks again, and earlier passes now stale are run again.
 b="$(work "Add a header")"; echo 1 > "$FS/block-qa"
 out="$(run "$b")" || fail "run with a BLOCK: $out"
-echo "$out" | grep -q "^web: fixes what qa blocked, round 1$" && [[ "$(echo "$out" | grep -c ': verifies ')" == 6 ]] && echo "$out" | tail -1 | grep -q "^$b is ready to push" || fail "run after a BLOCK: $out"
+echo "$out" | grep -q "^web: fixes what qa blocked, round 1 (qa's last verdict covers [0-9a-f,]*, commits since: none)$" && [[ "$(echo "$out" | grep -c ': verifies ')" == 6 ]] && echo "$out" | tail -1 | grep -q "^$b is ready to push" || fail "run after a BLOCK: $out"
 # Still blocked after the set rounds: it stops and asks.
 c="$(work "Add a menu")"; echo 5 > "$FS/block-qa"
 rc=0; out="$(run "$c" --retries 1)" || rc=$?
@@ -2001,8 +2002,34 @@ h="$(git -C "$PW" rev-parse HEAD)"; out="$(run "$x" --dry-run)" && fail "run --d
 rc=0; out="$(run "$x")" || rc=$?
 [[ $rc == 1 ]] && echo "$out" | grep -qF "Stopped: qa has blocked it 3 times on $xv, more than --retries allows (2)" && ! echo "$out" | grep -q 'fixes\|verifies' || fail "a new run past the loop breaker: $out"
 out="$(run "$x" --retries 3)" || true
-echo "$out" | grep -q '^web: fixes what qa blocked, round 1$' && echo "$out" | tail -2 | grep -qF "Stopped: qa has blocked it 4 times on $xv, more than --retries allows (3)" || fail "--retries 3: one more round, then the fourth BLOCK stops it: $out"
+echo "$out" | grep -q "^web: fixes what qa blocked, round 1 (qa's last verdict covers [0-9a-f,]*, commits since: none)$" && echo "$out" | tail -2 | grep -qF "Stopped: qa has blocked it 4 times on $xv, more than --retries allows (3)" || fail "--retries 3: one more round, then the fourth BLOCK stops it: $out"
 rm -f "$FS/block-qa"
+# A re-review reads only what changed: a reviewer asked again is told its last verdict's commits and the
+# ones since, in its step and its prompt; who runs next, and readiness, are as before.
+grep -q "You are asked again: qa's last verdict covers [0-9a-f,]*, commits since: [0-9a-f,]*\. Read as .cabinet/rules/reviews.md says" "$FS/prompts" \
+  || fail "a re-reviewer's prompt: $(grep 'asked again' "$FS/prompts")"
+p="$(grep '^- \*\*A re-review reads only what changed\.\*\*' "$KIT/core/rules/reviews.md")"
+for t in "its own last note, the commits after those its last verdict names" "runs only the test sections those files touch" "The builder still runs the full suite once per review round" "for each one, whether it is fixed" "Any reviewer may read more than the fix, up to the whole change"; do
+  [[ "$p" == *"$t"* ]] || fail "reviews.md, a re-review: $t"
+done
+echo checked > "$PW/specs/rr.md" && git -C "$PW" add specs/rr.md && git -C "$PW" commit -qm note -- specs/rr.md
+hs() { (cd "$PW" && bin/handoff.sh "$@"); }
+cm() { echo "$1" >> "$PW/app/a.txt"; git -C "$PW/app" commit -qam "$1"; git -C "$PW/app" rev-parse --short HEAD; }
+# Each work entry is set rejected at once, so the scheduled run below leaves it alone; run follows its review entry.
+rv() { local i r; i="$(work "$1")"; sed -i.bak "/^### $i:/,/^### /s/^- Status: open/- Status: rejected/" "$PW/HANDOFFS.md" && rm "$PW/HANDOFFS.md.bak"; git -C "$PW" commit -qm rej -- HANDOFFS.md; r="$(hs add --from web --to "qa, security" --changed built --needed verify --depends-on "$i" --evidence https://example.com/p "Review $1")"; echo "$i ${r%% *}"; }
+rec() { hs record "$1" --role "$2" "$3" --commits "$4" --note specs/rr.md >/dev/null || fail "record $*"; }
+others() { hs list --json | j -r --arg v "$1" '$.find((h) => h.id == $v).needs.filter((n) => n != "qa").join(" ")'; }
+read -r i v <<<"$(rv "Stale qa")"; A="$(cm s1)"; B="$(cm s2)"
+for r in $(others "$v"); do rec "$v" "$r" PASS "$A,$B"; done; rec "$v" qa PASS "$A"
+out="$(run "$i" --dry-run)"; [[ "$out" == "qa: verifies $v again (qa's last verdict covers $A, commits since: $B)" ]] || fail "re-review of a stale PASS: $out"
+read -r i v <<<"$(rv "Blocked qa")"; A="$(cm b1)"
+for r in $(others "$v"); do rec "$v" "$r" PASS "$A"; done; rec "$v" qa BLOCK "$A"; B="$(cm b2)"
+out="$(run "$i" --dry-run)"; [[ "$out" == "web: fixes what qa blocked, round 1 (qa's last verdict covers $A, commits since: $B)" ]] || fail "re-review after a BLOCK: $out"
+read -r i v <<<"$(rv "Reverted qa")"; A="$(cm r1)"; git -C "$PW/app" revert --no-edit "$A" >/dev/null; B="$(git -C "$PW/app" rev-parse --short HEAD)"
+for r in $(others "$v"); do rec "$v" "$r" PASS "$A,$B"; done; rec "$v" qa PASS "$A"
+out="$(run "$i" --dry-run)"; [[ "$out" == "qa: verifies $v again (qa's last verdict covers $A, commits since: $B)" ]] || fail "re-review of a revert: $out"
+read -r i v <<<"$(rv "Missing qa")"; A="$(cm m1)"; for r in $(others "$v"); do rec "$v" "$r" PASS "$A"; done
+out="$(run "$i" --dry-run)"; [[ "$out" == "qa: verifies $v" ]] || fail "a first review is not a re-review: $out"
 # An agent that leaves no trace, or work sent back: it stops, naming what happened.
 d="$(work "Add a logo")"; touch "$FS/silent-security"
 out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"
