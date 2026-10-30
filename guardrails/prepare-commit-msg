@@ -20,7 +20,8 @@
 # stripped for the message. An allowed amend keeps that line. With neither variable set (the owner in a
 # terminal) nothing is checked: a guard against a mistake, not a lock.
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
-# replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
+# replace an earlier one (keeping an edited one first as prepare-commit-msg.cabinet-v<N>). An edited copy of
+# this version is left as it is, and the doctor says credit is not installed.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
 if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
 

@@ -2713,10 +2713,18 @@ cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the pas
 touch -t 202001010000 "$HK/prepare-commit-msg"; boot
 cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -newer "$CW/cabinet.env")" == "" ]] || fail "bootstrap rewrote the current credit hook"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed"
-# The hook one version back, a comment apart, as a machine set up before this kit has it: bootstrap replaces it.
+# The hook one version back, a comment apart, as a machine set up before this kit has it: no released copy, so
+# an edited one. Bootstrap keeps it as prepare-commit-msg.cabinet-v<N>, then replaces it; with something
+# else under that name, it leaves the hook as it is.
 v="$(sed -n '2s/^# cabinet credit hook v//p' "$KH")"; ((v > 1)) || fail "the credit hook's version is not above 1: $v"
-{ sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"; boot
+{ sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"
+chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-older"; echo other > "$HK/prepare-commit-msg.cabinet-v$((v - 1))"; boot
+cmp -s "$T/credit-older" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited earlier credit hook whose keep name was taken"
+rm "$HK/prepare-commit-msg.cabinet-v$((v - 1))"; out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
+cmp -s "$T/credit-older" "$HK/prepare-commit-msg.cabinet-v$((v - 1))" && [[ -x "$HK/prepare-commit-msg.cabinet-v$((v - 1))" ]] || fail "bootstrap did not keep the edited earlier credit hook"
+grep -qF "kept your edited copy of the earlier credit hook as $HK/prepare-commit-msg.cabinet-v$((v - 1))" <<<"$out" || fail "bootstrap did not say it kept the edited hook: $out"
+rm "$HK/prepare-commit-msg.cabinet-v$((v - 1))"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed after the earlier hook was replaced"
 printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-mine"; boot
 cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the owner's own prepare-commit-msg"
@@ -2819,10 +2827,14 @@ am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet cre
 amfix $'work\n\nCo-authored-by: Cabinet q\001a <'"$KM"'>'
 am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD is qa's commit" "no amend as qa:" "$FIX"
 ! grep -q $'\001' "$T/am-err" || fail "amend guard: the refusal holds a control character"
-# 10. Bootstrap replaces v3 with the current hook byte for byte, and leaves an edited copy of it as it is.
+# 10. Bootstrap replaces the released v3 and v4 with the current hook byte for byte, keeping no copy of
+# them, and leaves an edited copy of the current one as it is.
 [[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v5" ]] || fail "the credit hook is not v5"
-cp "$KIT/test/fixtures/def9076/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
-cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the v3 credit hook with v5"
+for c in def9076 d2d3ceb; do
+  cp "$KIT/test/fixtures/$c/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
+  cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the released credit hook of $c with v5"
+done
+[[ -z "$(ls "$HK" | grep cabinet-v)" ]] || fail "bootstrap kept a released credit hook: $(ls "$HK")"
 sed '3s/.*/# edited by the owner/' "$KH" > "$HK/prepare-commit-msg"; chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/am-edited"; boot
 cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v5"
 cp "$KH" "$HK/prepare-commit-msg"; rm -rf "$T/am" "$T/am-base"

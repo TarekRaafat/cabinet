@@ -192,20 +192,37 @@ done
 # Three hooks are the kit's own, and pass the call on too: pre-push is the push gate, prepare-commit-msg
 # is the credit hook (credit roles), which also refuses an amend in a Cabinet run, and pre-rebase refuses
 # a rebase there. Each replaces only what the kit put there: no file, the pass-through stub, an earlier
-# version of the same hook (its line 2, "# cabinet <what> v<N>", with a lower N), or a kit copy from
-# before line 2, known by its SHA-256. Anything else is yours, and left as it is.
+# version of the same hook (its line 2, "# cabinet <what> v<N>", with a lower N), or a released kit copy,
+# known by its SHA-256 (the push gate's from before line 2 too). An earlier version that is no released
+# copy was edited: it is kept first as <hook>.cabinet-v<N>, where git never runs it, and when that name
+# holds something else, the hook is left as it is. Anything else is yours, and left as it is.
 hook_v() { sed -n "2s/^# cabinet $2 v\\([0-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
 sha256() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" 2>/dev/null; }
-kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a kit copy before line 2>]
-  local h="$hooks/$1" src="$G/$1" old=""
-  [[ -f "$h" && ! -L "$h" ]] && old="$(hook_v "$h" "$2")"
+kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a released kit copy>...]
+  local h="$hooks/$1" src="$G/$1" what="$2" lost="$3" old="" kit=0 keep="" sum s
+  shift 3
+  if [[ -f "$h" && ! -L "$h" ]]; then
+    old="$(hook_v "$h" "$what")"; sum="$(sha256 "$h")"
+    for s in "$@"; do [[ "$sum" != "$s" ]] || kit=1; done
+    cmp -s "$G/hook-passthrough" "$h" && kit=1
+    if ((kit == 0)) && [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$what")" ]]; then
+      keep="$h.cabinet-v$old"
+      [[ ! -e "$keep" && ! -L "$keep" ]] || cmp -s "$h" "$keep" || keep="!"
+    fi
+  fi
   if [[ -f "$h" && ! -L "$h" ]] && cmp -s "$src" "$h"; then :
-  elif [[ ! -e "$h" && ! -L "$h" ]] || { [[ -f "$h" && ! -L "$h" ]] && { cmp -s "$G/hook-passthrough" "$h" || [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$2")" ]] ||
-       [[ -n "${4:-}" && "$(sha256 "$h")" == "$4" ]]; }; }; then
-    if ((DRY)); then echo "  would place the $2 at $h"
-    else mkdir -p "$hooks"; cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $2 at $h"; fi
+  elif [[ "$keep" != "!" ]] && { [[ ! -e "$h" && ! -L "$h" ]] || ((kit)) || [[ -n "$keep" ]]; }; then
+    if ((DRY)); then echo "  would place the $what at $h"; [[ -z "$keep" ]] || echo "  would keep your edited copy of the earlier $what as $keep"
+    else
+      mkdir -p "$hooks"
+      if [[ -n "$keep" ]]; then
+        cp -p "$h" "$keep" || { echo "  could not keep your edited copy as $keep, so left as is: $h ($lost on this machine)"; return 0; }
+        echo "  kept your edited copy of the earlier $what as $keep"
+      fi
+      cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $what at $h"
+    fi
   else
-    echo "  differs, left as is: $h ($3 on this machine; cabinet doctor says why)"
+    echo "  differs, left as is: $h ($lost on this machine; cabinet doctor says why)"
   fi
 }
 # The push gate's 0.1.0 copy had no line 2. Left as is, a gate of your own still asks before every push, in every repo.
@@ -215,7 +232,9 @@ if cmp -s "$G/pre-push" "$hooks/pre-push" && ! cmp -s "$G/cabinet-push-gate.js" 
   if ((DRY)); then echo "  would place the push gate's helper at $hooks/cabinet-push-gate.js"
   else cp "$G/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js.cabinet-new" && mv -f "$hooks/cabinet-push-gate.js.cabinet-new" "$hooks/cabinet-push-gate.js" && echo "  placed the push gate's helper at $hooks/cabinet-push-gate.js"; fi
 fi
-kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend,"
+# The credit hook as released: v3 in 0.2.0 and 0.2.1, v4 in 0.3.0. Add the current one's here when it changes.
+kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend," \
+  7184259644c63e37567e8b7d41b278f6534cfac98a05afcee543cf69b868c706 7f3e0132d1f4b10b9b5a76e6d3e3863714fd8e71ad762c4efd9d97ca4320bbca
 kit_hook pre-rebase "pre-rebase hook" "runs are not refused a rebase"
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done
 current="$(git config --global core.hooksPath || true)"

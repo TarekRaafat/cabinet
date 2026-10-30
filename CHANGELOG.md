@@ -7,6 +7,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 Run `cabinet bootstrap` after updating, for the new credit hook.
 
 - The amend guard compares the role in a commit's credit line exactly as it is written, so a line whose role holds a hidden character counts as another role's. Its refusals also say to give the message with `-F <file>` when the commit is a new one whose message mentions `--amend`, which on macOS is taken as an amend. The guardrails page now says that deleting the role's line in the editor during an amend drops it, and that `-c` and `-C` count as amends.
+- Bootstrap keeps your edits to an earlier kit hook: when it replaces an earlier version of the credit hook, the push gate or the pre-rebase hook that you changed, it first keeps your copy beside it as `<hook>.cabinet-v<N>`, and says so. Before, it replaced an edited earlier copy whose version line was unchanged.
 
 ## 0.3.0 - 30 Oct 2026
 
