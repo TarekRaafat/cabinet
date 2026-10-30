@@ -57,7 +57,7 @@ Creates a workspace in an empty or missing folder. In a terminal it asks a quest
 | `--price "<input> <output> [<cached>]"\|off` | off | Dollars per million tokens, for a runner that reports only tokens (`codex`, `cursor`, `qwen`, `antigravity`), in `cabinet.env`. Asked after the budget for those runners. |
 | `--writing short\|standard` | `standard` | How agents write to you, written into `AGENTS.md` house rules. `short` gives the shortest briefs, questions and answers: answer first, one point per line, three points at most, a decision in three lines. See [writing to the owner](concepts.md#writing-to-the-owner). |
 | `--credit-roles off\|on` | `on` | [Credit roles](concepts.md#credit-roles): each commit a role makes in a Cabinet run ends with one line crediting that role beside you, `Co-authored-by: Cabinet <role> <email>`, which shows the Cabinet Team avatar on GitHub. Exactly `off` or `on`. Written into `cabinet.env`; the "Commits." house rule in `AGENTS.md` follows it. |
-| `--credit-email <email>\|off` | none | With `--credit-roles on`: your own GitHub App's bot noreply email (`<user ID>+<app>[bot]@users.noreply.github.com`, lower case) in place of the Cabinet Team app's; `off` goes back to it. Refused with credit off. |
+| `--credit-email <email>\|off` | none | With `--credit-roles on`: your own GitHub noreply email (`<user ID>+<login>@users.noreply.github.com` for a user account, `<user ID>+<app>[bot]@users.noreply.github.com` for a GitHub App, lower case) in place of the Cabinet Team account's; `off` goes back to it. Refused with credit off. |
 | `--backup-dir <folder>` | `off` | Made absolute. Refused when it is inside the workspace or any repo it lists. |
 | `--repo <git url>` | none | Repeatable. `https://`, `http://`, `ssh://`, `git://`, `file://`, `git@host:path`, an absolute path, or `./` / `../` (relative to the workspace). Two repos with the same name are refused. |
 | `--dry-run` | | Prints everything setup would write and change, then stops: `Nothing was written.` |
@@ -556,7 +556,7 @@ In a terminal, text output is styled for people, in the terminal's own colors: h
 | `CABINET_BUDGET` | A weekly budget in US dollars for the agent runs Cabinet starts; empty for none. The doctor warns from 80% (`spend.budget`). See [what agent runs cost](concepts.md#what-agent-runs-cost). |
 | `CABINET_PRICE` | Dollars per million tokens, `"<input> <output> [<cached input>]"`, to count runs of a runner that reports only tokens; empty for none. |
 | `CABINET_CREDIT_ROLES` | [Credit roles](concepts.md#credit-roles): `on` or `off`. Missing (a workspace from before it): off, and `cabinet next` and the brief ask once. Any other value is off, and the doctor reports it (`credit.setting`). |
-| `CABINET_CREDIT_EMAIL` | With `on`: your own GitHub App's bot noreply email; empty for the Cabinet Team app's. A value that is not that format credits nothing, and the doctor reports it (`credit.email`). |
+| `CABINET_CREDIT_EMAIL` | With `on`: your own GitHub noreply email, of a user account or a GitHub App; empty for the Cabinet Team account's. A value that is not one of those formats credits nothing, and the doctor reports it (`credit.email`). |
 | `CABINET_SKILLS`, `CABINET_PLUGINS` | Claude Code skills and plugins the doctor expects (a missing one is a note). |
 
 ### jobs/&lt;job&gt;.job

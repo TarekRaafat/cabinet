@@ -140,7 +140,7 @@ O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
 O	new,init,config	--writing	short|standard	How agents write to you: short gives the shortest briefs, questions and answers (default: standard).
 O	new,init,config	--credit-roles	off|on	Credit roles: each commit a role makes in a Cabinet run credits that role beside you, as one Co-authored-by line with the Cabinet Team avatar on GitHub (default: on; asked once in an older workspace).
-O	new,init,config	--credit-email	<email>|off	With --credit-roles on: your own GitHub App's bot noreply email instead of the Cabinet Team's; off goes back to it.
+O	new,init,config	--credit-email	<email>|off	With --credit-roles on: your own GitHub noreply email, of a user account or an app's bot, instead of the Cabinet Team's; off goes back to it.
 O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backup, outside the workspace (default: off).
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
 O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
@@ -438,16 +438,16 @@ check_answers() {
   if [[ -n "$backup" ]]; then [[ "$backup" == /* ]] || die "the backup folder must be an absolute path, not '$backup'"; fi
 }
 
-# Credit roles, for setup and config: the mode is exactly off or on, and a project's own app is
-# named by its bot noreply email, exactly (scripts/lib.sh and the credit hook check the same).
+# Credit roles, for setup and config: the mode is exactly off or on, and a project's own account or app
+# is named by its noreply email, exactly (scripts/lib.sh and the credit hook check the same).
 credit_email_ok() {
-  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
+  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*(\[bot\])?@users\.noreply\.github\.com$'   # C: a-z is ASCII only
   [[ "$1" =~ $re ]]
 }
 check_credit() {   # check_credit <the mode the result has>: credit and cemail (cemail_given) can be written
   [[ -z "$credit" || "$credit" == off || "$credit" == on ]] || die "--credit-roles must be off or on"
   ((cemail_given)) || return 0
-  [[ "$cemail" == off ]] || credit_email_ok "$cemail" || die "--credit-email must be a GitHub App's bot noreply email, like 123+my-app[bot]@users.noreply.github.com, or off"
+  [[ "$cemail" == off ]] || credit_email_ok "$cemail" || die "--credit-email must be a GitHub noreply email with its ID, like 123+my-user@users.noreply.github.com or 123+my-app[bot]@users.noreply.github.com, or off"
   [[ "$1" == on ]] || die "--credit-email goes with --credit-roles on: with credit off, no email is used"
 }
 model_question() {   # the setup and config question, asked until the answer is a model name or the default
@@ -1368,7 +1368,7 @@ cmd_config() {
   check_credit "$credit_after"
   ((set_credit || !credit_bad)) || echo "Note: CABINET_CREDIT_ROLES is \"$o_credit\", which is not off or on, so no commit is credited. It stays until you set it: cabinet config --credit-roles off|on"
   if ((!cemail_given)) && [[ -n "$o_cemail" ]] && ! credit_email_ok "$o_cemail"; then
-    echo "Note: CABINET_CREDIT_EMAIL is \"$o_cemail\", which is not a GitHub App's bot noreply email, so no commit is credited. It stays until you set it: cabinet config --credit-email <email>|off"
+    echo "Note: CABINET_CREDIT_EMAIL is \"$o_cemail\", which is not a GitHub noreply email with its ID, so no commit is credited. It stays until you set it: cabinet config --credit-email <email>|off"
   fi
   [[ "$slug" == "$(slugify "$slug")" && -n "$slug" ]] || die "the slug must be lowercase letters, digits and dashes, like $(slugify "$slug")"
   backup_time="$(when_time_only "$backup_time")" || die "the backup time must be a time like \"1 PM\" or \"1:30 PM\", with no day: backups run every day"

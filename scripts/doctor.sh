@@ -304,8 +304,8 @@ elif credit_answered; then
 elif credit_shared && ! credit_project_wins; then note credit.setting "this machine has not answered whether its Cabinet runs credit their roles, so they do not yet (cabinet config --this-machine --credit-roles on, or off)"
 else note credit.setting "credit roles not set, so no commit is credited until you answer (cabinet config --credit-roles on, or off)"; fi
 if [[ -n "${CABINET_CREDIT_EMAIL:-}" ]]; then
-  credit_email_ok "$CABINET_CREDIT_EMAIL" && ok credit.email "credit names the app of $CABINET_CREDIT_EMAIL" \
-    || bad credit.email "CABINET_CREDIT_EMAIL is not a GitHub App's bot noreply email, so no commit is credited (cabinet config --credit-email <email>, or off)"
+  credit_email_ok "$CABINET_CREDIT_EMAIL" && ok credit.email "credit names the GitHub identity of $CABINET_CREDIT_EMAIL" \
+    || bad credit.email "CABINET_CREDIT_EMAIL is not a GitHub noreply email with its ID, so no commit is credited (cabinet config --credit-email <email>, or off)"
 fi
 pcm="$hooks/prepare-commit-msg"
 if [[ -n "$hooks" && -f "$pcm" ]] && cmp -s "$K/guardrails/prepare-commit-msg" "$pcm"; then ok credit.hook "credit installed: the credit hook is at $pcm"

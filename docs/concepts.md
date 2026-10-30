@@ -110,15 +110,15 @@ The rules are in `CABINET.md`, "Writing to the owner", which every agent reads. 
 A commit a role makes in a Cabinet run can credit that role beside you. Its message then ends with one line:
 
 ```
-Co-authored-by: Cabinet backend <347351783+cabinet-team[bot]@users.noreply.github.com>
+Co-authored-by: Cabinet backend <350503452+cabinet-team@users.noreply.github.com>
 ```
 
-GitHub links that email to the Cabinet Team app, so the commit shows you and `cabinet-team[bot]` with the Cabinet Team avatar; the role's name is in the message. You stay the author and the committer, and you still push. Nothing is set up on GitHub, and nothing is paid for.
+GitHub links that email to the [`cabinet-team`](https://github.com/cabinet-team) account, so the commit shows you and `cabinet-team`, with its avatar and profile page; the role's name is in the message. You stay the author and the committer, and you still push. Nothing is set up on GitHub, and nothing is paid for.
 
 - **On for a new workspace** (`on`), asked at setup; `cabinet config --credit-roles off|on` changes it. A workspace from before it stays off: `cabinet next` and the brief ask once, and nothing changes until you answer. In a shared `cabinet/`, each machine answers for itself (`cabinet config --this-machine --credit-roles off|on`), so a teammate's runs credit nothing until they say so; and off for everyone wins: while the project's setting (`cabinet config --credit-roles`) is off or not set, no machine's runs credit, and a machine's on counts only while the project's setting is on.
 - **Only commits made in a Cabinet run:** scheduled jobs, `cabinet handoff run`, `cabinet spec run` and `cabinet role draft`, which tell the agent tool the role (`CABINET_AGENT`). Your own commits, and the ones `cabinet` makes for you, get nothing. A session you open in an agent tool yourself is not credited yet.
 - **Only new commits:** never an amend (a run is refused one: [git actions](#git-actions); an agent's own amend keeps its commit's line), a merge or a squash, nor a commit that a rebase or cherry-pick replays. One line per commit, for the role that made it, never added twice. An empty message stays empty, so git still refuses it.
-- **Your own app:** `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` shows your GitHub App instead; `off` goes back to the Cabinet Team.
+- **Your own account or app:** `--credit-email <user ID>+<login>@users.noreply.github.com` shows your GitHub account instead, and `--credit-email <user ID>+<app>[bot]@users.noreply.github.com` your GitHub App; `off` goes back to the Cabinet Team. Commits already credited keep the line they have.
 - **The house rule follows it:** the "Commits." line in `AGENTS.md` allows this one line while credit is on, and no other attribution.
 
 The line is added by the credit hook, `prepare-commit-msg` in the global hooks folder ([guardrails](guardrails.md#what-bootstrap-installs)), which `cabinet bootstrap` places. It needs git 2.15 or later. A `prepare-commit-msg` of your own there is left as it is, and then nothing is credited on that machine: `cabinet doctor` says so and why (`credit.hook`).

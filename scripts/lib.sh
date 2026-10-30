@@ -47,9 +47,9 @@ if local_has CABINET_BACKUP_DIR; then CABINET_BACKUP_DIR="$(local_get CABINET_BA
 if local_has CABINET_BACKUP_TIME; then CABINET_BACKUP_TIME="$(local_get CABINET_BACKUP_TIME)"; fi
 # Credit roles (cabinet config --credit-roles off|on): a commit made in a Cabinet run credits its role
 # (guardrails/prepare-commit-msg). Read as written; only an exact "on" turns it on.
-CREDIT_KIT_EMAIL="347351783+cabinet-team[bot]@users.noreply.github.com"
-credit_email_ok() {   # a GitHub App's bot noreply email, exactly
-  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com$'   # C: a-z is ASCII only
+CREDIT_KIT_EMAIL="350503452+cabinet-team@users.noreply.github.com"
+credit_email_ok() {   # a GitHub noreply email with its ID, of a user account or an app's bot, exactly
+  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*(\[bot\])?@users\.noreply\.github\.com$'   # C: a-z is ASCII only
   [[ "$1" =~ $re ]]
 }
 credit_shared() { [[ "${CABINET_LAYOUT:-}" == inside && "${CABINET_VISIBILITY:-}" == shared ]]; }

@@ -10,6 +10,8 @@ Run `cabinet bootstrap` after updating, for the new credit hook.
 - Bootstrap keeps your edits to an earlier kit hook: when it replaces an earlier version of the credit hook, the push gate or the pre-rebase hook that you changed, it first keeps your copy beside it as `<hook>.cabinet-v<N>`, and says so. Before, it replaced an edited earlier copy whose version line was unchanged.
 - `cabinet handoff run` no longer tells a reviewer asked again that no commits are new when a product repo has a history git cannot read (no commits yet, or a broken repo), the builder's or another's: it says it cannot tell, and the reviewer reads the whole change.
 - Bootstrap and `cabinet doctor` no longer print a shell error for a hook whose version line has a leading zero (such as `v08`); such a hook counts as yours and is left as it is.
+- Credit roles now credit the `cabinet-team` GitHub user account, with a profile page, in place of the `cabinet-team[bot]` app: the default email is `350503452+cabinet-team@users.noreply.github.com`. Until you run `cabinet bootstrap`, the earlier credit hook credits nothing, and `cabinet doctor` says it is out of date. Commits already made keep their line, and an agent can still amend its own commit credited with the old email.
+- `--credit-email` also takes a user account's noreply email, `<user ID>+<login>@users.noreply.github.com`; an app's bot email keeps working. The `credit.email` doctor messages and the option's error say so; the check ID is unchanged.
 
 ## 0.3.0 - 30 Oct 2026
 
