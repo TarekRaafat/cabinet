@@ -1,0 +1,56 @@
+#!/bin/sh
+# cabinet credit hook v3
+# Credit roles (cabinet config --credit-roles on): a commit made in a Cabinet run ends with one line,
+#   Co-authored-by: Cabinet <role> <email>
+# naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
+# (run_agent in bin/lib.sh); a commit made anywhere else has none of them, so it gets nothing. Each value
+# is checked here and none reaches a shell. Only new commits: never an amend, merge or squash, nor a
+# commit a rebase or cherry-pick replays. First, as the pass-through stub does, the repo's own
+# prepare-commit-msg runs with the same arguments, and its failure still stops the commit.
+# Unattended runs never rewrite: in a Cabinet run (CABINET_AGENT set), every amend is refused, since no
+# owner is there to ask for one. git gives an amend the source "commit" (as it gives -c and -C <commit>,
+# refused too), but "message" with -m or -F, as it gives a new commit: so the arguments of the git command
+# that runs this hook (its parent process) are read too, for --amend or an abbreviation of it. On Linux each
+# argument is read on its own, so a -m message that mentions --amend is a new commit; ps (elsewhere) joins
+# them with spaces, so there such a message is refused too, and the refusal says to give it with -F <file>.
+# Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
+# replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
+own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
+if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
+
+# An amend in the git command's arguments: one argument --am, --ame, --amen or --amend from /proc on Linux;
+# elsewhere, " --am" anywhere in what ps prints, the arguments joined by spaces.
+amend_arg() {
+  if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' '\n' < "/proc/$PPID/cmdline" | grep -qxE -e '--am(e(n(d)?)?)?'
+  else case " $(ps -o args= -p "$PPID" 2>/dev/null) " in *" --am"*) return 0 ;; esac; return 1; fi
+}
+amend() { [ "${2:-}" = commit ] && return 0; amend_arg; }
+if [ -n "${CABINET_AGENT:-}" ] && amend "$@"; then
+  echo "cabinet: no amend in a Cabinet run: no owner is there to ask for one. Commit the fix as a new commit. If this is a new commit whose message mentions --amend, give the message with -F <file> instead of -m." >&2
+  exit 1
+fi
+
+[ "${CABINET_CREDIT:-}" = on ] || exit 0
+case "${2:-}" in ""|message|template) ;; *) exit 0 ;; esac
+LC_ALL=C; export LC_ALL
+nl='
+'
+# one <value> <pattern>: the value is one line that matches the whole pattern.
+one() { case "$1" in *"$nl"*) return 1 ;; esac; printf '%s\n' "$1" | grep -qxE "$2"; }
+# email_for <role>: the one place in this hook the email of a role's line is chosen, into $email. Today
+# it is the same for every role: the address the run passes (run_agent picks it), else the Cabinet Team app's.
+email_for() {
+  email="${CABINET_CREDIT_ADDRESS:-}"
+  [ -n "$email" ] || email='347351783+cabinet-team[bot]@users.noreply.github.com'
+}
+role="${CABINET_AGENT:-}"
+one "$role" '[a-z][a-z0-9-]*' || exit 0
+email_for "$role"
+one "$email" '[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*\[bot\]@users\.noreply\.github\.com' || exit 0
+dir="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
+for s in rebase-merge rebase-apply CHERRY_PICK_HEAD; do [ -e "$dir/$s" ] && exit 0; done
+# An empty message (comments aside) stays empty, so git still refuses it.
+grep -q -v -e '^#' -e '^[[:space:]]*$' "$1" 2>/dev/null || exit 0
+git interpret-trailers --in-place --where end --if-exists addIfDifferent \
+  --trailer "Co-authored-by: Cabinet $role <$email>" "$1" 2>/dev/null || :
+exit 0

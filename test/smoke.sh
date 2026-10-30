@@ -16,7 +16,7 @@ F="$KIT/bin/cabinet"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com
 # Started from a Cabinet run, the suite would inherit the credit hook's variables: no commit it makes is a run's.
-unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS
+unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS CABINET_AMEND_AS
 # No section reaches the registry: the release notice is off everywhere but its own section, which fakes npm.
 export CABINET_UPDATE_CHECK=off
 # The real home folder, git config and agent tool settings are never read or written.
@@ -963,8 +963,9 @@ j -e 'JSON.stringify($.os) == "[\"darwin\",\"linux\"]"' "$KIT/package.json" >/de
 for p in .DS_Store node_modules/ '*.tgz'; do grep -qxF "$p" "$KIT/.gitignore" || fail ".gitignore does not ignore $p"; done
 # CABINET.md holds what every agent needs on every session; the rest is in core/rules/, each file named
 # from it with when to read it, and every reference to one names a file that exists.
-# 3460 since 0.2.0: the git actions rule and the amend rule are owner decisions, quoted word for word.
-w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3485)) || fail "CABINET.md has $w words, over its 3485: move what only some roles or tasks need to core/rules/"
+# 3460 since 0.2.0: the git actions rule and the amend rule are owner decisions, quoted word for word;
+# 3503 since 0.3.0, with the amend guard's sentence.
+w="$(wc -w < "$KIT/core/CABINET.md")"; ((w <= 3503)) || fail "CABINET.md has $w words, over its 3503: move what only some roles or tasks need to core/rules/"
 for f in "$KIT"/core/rules/*.md; do
   grep -q "^   | \`.cabinet/rules/${f##*/}\` | " "$KIT/core/CABINET.md" || fail "CABINET.md does not say when to read .cabinet/rules/${f##*/}"
 done
@@ -2730,6 +2731,74 @@ git -C "$CR" commit -qam "refused" 2>/dev/null && fail "the repo's own hook fail
 [[ "$(git -C "$CR" rev-parse HEAD)" == "$h" ]] || fail "a commit went in though the repo's hook failed"
 rm -f "$CR/.git/hooks/prepare-commit-msg"; git -C "$CR" checkout -q -- f
 
+# The amend guard (specs/amend-guard.md): an agent amends as CABINET_AMEND_AS=<role>, and only a commit that
+# ends with that role's one credit line. amfix sets HEAD's message in a fixture repo; am runs one git commit on
+# a fresh copy of it, with the four variables unset but for the assignments before "--".
+AQ="Co-authored-by: Cabinet qa <$KM>" FIX="Commit the fix as a new commit"
+amfix() { rm -rf "$T/am-base"; git init -q -b main "$T/am-base"; echo a > "$T/am-base/f"; git -C "$T/am-base" add f
+  printf '%s\n' "$1" > "$T/am-fixmsg"; env -u CABINET_AMEND_AS git -C "$T/am-base" commit -q --cleanup=verbatim -F "$T/am-fixmsg"
+  bh="$(git -C "$T/am-base" rev-parse HEAD)" bm="$(git -C "$T/am-base" log -1 --format=%B)"; [[ "$bm" == "$1" ]] || fail "amend guard fixture: $bm"; }
+amgo() { (cd "$T/am" && env -u CABINET_AGENT -u CABINET_CREDIT -u CABINET_CREDIT_ADDRESS -u CABINET_AMEND_AS "$@") 2>"$T/am-err" && ams=0 || ams=$?; }
+am() { local e=(); while [[ "$1" != -- ]]; do e+=("$1"); shift; done; shift; rm -rf "$T/am"; cp -R "$T/am-base" "$T/am"; amgo ${e[@]+"${e[@]}"} git commit -q "$@"; }
+amsg() { git -C "$T/am" log -1 --format=%B; }
+amok() { [[ "$ams" == 0 && "$(amsg)" == "$1" ]] || fail "amend guard: not made with the message wanted ($ams): $(amsg) / $(cat "$T/am-err")"; }
+amno() { local w; [[ "$ams" != 0 && "$(git -C "$T/am" rev-parse HEAD)" == "$bh" && "$(amsg)" == "$bm" ]] || fail "amend guard: not refused, or HEAD changed ($ams): $(amsg)"
+  for w; do grep -qF -- "$w" "$T/am-err" || fail "amend guard: the refusal lacks '$w': $(cat "$T/am-err")"; done; }
+printf 'x\n' > "$T/am-msg"; printf 'x\n\n%s\n' "$AQ" > "$T/am-msg2"
+# 1. qa's commit: qa amends it, keeping its line; another role, or a prefix of qa, is refused in every form.
+amfix $'work\n\n'"$AQ"
+am CABINET_AMEND_AS=qa -- --amend -m x; amok $'x\n\n'"$AQ"
+am CABINET_AMEND_AS=code-reviewer -- --amend -m x; amno "HEAD is qa's commit" code-reviewer "$FIX"
+am CABINET_AMEND_AS=code-reviewer -- --amend -F "$T/am-msg"; amno "HEAD is qa's commit" code-reviewer "$FIX"
+am CABINET_AMEND_AS=code-reviewer -- --amend --no-edit; amno "HEAD is qa's commit" code-reviewer "$FIX"
+am CABINET_AMEND_AS=q -- --amend -m x; amno "HEAD is qa's commit" "no amend as q:" "$FIX"
+# 6. A value that is not a role name is refused, never repeated, never run.
+for v in Qa "qa;touch $T/m1" "\$(touch $T/m2)" $'qa\nqa'; do
+  am "CABINET_AMEND_AS=$v" -- --amend -m x; amno "CABINET_AMEND_AS is not a role name" "$FIX"
+  ! grep -q -e Qa -e touch -e m1 -e m2 "$T/am-err" || fail "amend guard: the refusal repeats the value: $(cat "$T/am-err")"
+done
+[[ ! -e "$T/m1" && ! -e "$T/m2" ]] || fail "amend guard: a CABINET_AMEND_AS value ran"
+# 7. An allowed amend keeps the line, once, and the role can amend again; an empty message stays refused.
+am CABINET_AMEND_AS=qa -- --amend --no-edit; amok "$bm"
+am CABINET_AMEND_AS=qa -- --amend -F "$T/am-msg2"; amok $'x\n\n'"$AQ"
+am CABINET_AMEND_AS=qa -- --amend -m x; amgo CABINET_AMEND_AS=qa git commit -q --amend -m z; amok $'z\n\n'"$AQ"
+am CABINET_AMEND_AS=qa -- --amend -m ""; amno
+# R3: a new message that already carries another role's line is taken as it is; qa's line follows it.
+am CABINET_AMEND_AS=qa -- --amend -m $'x\n\nCo-authored-by: Cabinet web <'"$KM"'>'; amok $'x\n\nCo-authored-by: Cabinet web <'"$KM"$'>\n'"$AQ"
+# 8. In a run, every amend is refused as v3 refuses it, whatever CABINET_AMEND_AS holds.
+mkdir -p "$T/am-v3"; cp "$KIT/test/fixtures/def9076/prepare-commit-msg" "$T/am-v3/"; chmod +x "$T/am-v3/prepare-commit-msg"
+for c in "-m x" --no-edit; do
+  am CABINET_AGENT=qa CABINET_AMEND_AS=qa -- --amend $c; amno; cp "$T/am-err" "$T/am-err4"
+  rm -rf "$T/am"; cp -R "$T/am-base" "$T/am"; amgo CABINET_AGENT=qa CABINET_AMEND_AS=qa git -c core.hooksPath="$T/am-v3" commit -q --amend $c
+  [[ "$ams" != 0 && -s "$T/am-err4" ]] && cmp -s "$T/am-err" "$T/am-err4" || fail "amend guard: a run's refusal differs from v3's ($c): $(cat "$T/am-err4") / $(cat "$T/am-err")"
+done
+# 9. A new commit with CABINET_AMEND_AS set is made as before, with no credit line.
+am CABINET_AMEND_AS=qa -- --allow-empty -m y; amok y
+# 2. A role that starts with the amending one is another role.
+amfix $'work\n\nCo-authored-by: Cabinet qa-lead <'"$KM"'>'
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD is qa-lead's commit" "no amend as qa:" "$FIX"
+# 3. No credit line: refused to an agent; the owner (no variable, or an empty one) amends as before.
+amfix work
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has no Cabinet credit line at the end" "no amend as qa:" "$FIX"
+am -- --amend -m x; amok x
+am CABINET_AMEND_AS= -- --amend -m x; amok x
+# 4. Two credit lines.
+amfix $'work\n\n'"$AQ"$'\n'"$AQ"
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet credit line" "no amend as qa:" "$FIX"
+# 5 and R1: a trailer after the line. R2: two lines and a trailer after them give one reason, more than one.
+amfix $'work\n\n'"$AQ"$'\nSigned-off-by: O <o@example.com>'
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has no Cabinet credit line at the end" "no amend as qa:" "$FIX"
+amfix $'work\n\n'"$AQ"$'\n'"$AQ"$'\nSigned-off-by: O <o@example.com>'
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet credit line" "no amend as qa:" "$FIX"
+! grep -q 'at the end' "$T/am-err" || fail "amend guard: more than one reason given: $(cat "$T/am-err")"
+# 10. Bootstrap replaces v3 with v4 byte for byte, and leaves an edited copy of v4 as it is.
+[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v4" ]] || fail "the credit hook is not v4"
+cp "$KIT/test/fixtures/def9076/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
+cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the v3 credit hook with v4"
+sed '3s/.*/# edited by the owner/' "$KH" > "$HK/prepare-commit-msg"; chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/am-edited"; boot
+cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v4"
+cp "$KH" "$HK/prepare-commit-msg"; rm -rf "$T/am" "$T/am-base"
+
 # Existing and shared workspaces (criteria 27 to 29).
 OW="$T/credit-old"; "$F" new "$OW" --yes >/dev/null
 sedi '/^CABINET_CREDIT_/d' "$OW/cabinet.env"; git -C "$OW" commit -qam "a workspace from before credit roles"
@@ -3780,10 +3849,11 @@ for w in 'push, merge on a shared host (a pull request), deploy, publish, releas
   grep -qF -- "$w" <<<"$c" || fail "core/CABINET.md lacks: $w"
 done
 # The amend rule (owner decision, 28 Oct 2026): one's own newest, unpushed, unnamed commit needs no ask; never in a run.
-am='One amend needs no ask: your own commit, while it is the newest on the branch, is not pushed, and no handoff, verdict or note names its hash; check `git diff --cached` first, since the amend takes everything staged.'
+am='One amend needs no ask: your own commit, while it is the newest on the branch, is not pushed, and no handoff, verdict or note names its hash; check `git diff --cached` first, since the amend takes everything staged. Amend as `CABINET_AMEND_AS=<role> git commit --amend`: the hooks refuse it unless the commit ends with your role'"'"'s credit line.'
 grep -qF "$am It never runs in an unattended run, where the hooks refuse it." <<<"$c" && grep -qF 'and an amend with anything staged that is not yours need the owner'"'"'s explicit ask' <<<"$c" \
   && grep -qF 'Once a handoff or verdict names a commit, a fix is a new commit: a commit that fails review is reverted, or fixed in a follow-up commit, never amended.' <<<"$c" \
   && grep -qF "$am Once a handoff or verdict names a commit, a fix is a new commit." "$KIT/AGENTS.md" || fail "the amend rule is not in core/CABINET.md and the kit's rule 12"
+for f in docs/guardrails.md docs/concepts.md CHANGELOG.md; do grep -qF 'CABINET_AMEND_AS=<role> git commit --amend' "$KIT/$f" || fail "$f does not name CABINET_AMEND_AS"; done
 grep -qxF '4. **You push** what has passed review, from your own terminal. No agent can push, merge on GitHub, release or publish.' "$KIT/README.md" || fail "README step 4 is not the owner's sentence"
 n="$(tr '\n' ' ' < "$KIT/docs/concepts.md")"
 grep -qF 'One exception: an agent may amend its own newest commit without asking, while it is not pushed and no handoff, verdict or note names it; once one does, a fix is a new commit.' <<<"$n" \
