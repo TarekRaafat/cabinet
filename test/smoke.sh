@@ -4230,7 +4230,7 @@ ml1 "$LI/.claude/agents/chief-of-staff.md" "model: m-light" && ml1 "$LI/.claude/
 # 11. The docs.
 grep -qF -- '--model-light' "$KIT/docs/commands.md" && grep -qF -- '--light-roles' "$KIT/docs/commands.md" && grep -qF 'runs on the main model. To put it on the light one' "$KIT/docs/commands.md" \
   && grep -qF 'runs on the light model.' "$KIT/docs/commands.md" && grep -qF -- '`--model-light' "$KIT/docs/agent-setup.md" && grep -qF 'CABINET_MODEL_LIGHT' "$KIT/docs/agent-setup.md" \
-  && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_MODEL_LIGHT' && awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_LIGHT_ROLES' \
+  && awk '/^## /{on = /^## 0\.3\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_MODEL_LIGHT' && awk '/^## /{on = /^## 0\.3\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_LIGHT_ROLES' \
   && grep -q 'model-light\.roles' "$KIT/docs/troubleshooting.md" && ! grep -qE 'model-light|light-roles' "$KIT/site/copy.js" || fail "a light model doc is missing"
 for x in "$LW" "$LI"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
   return 0   # a last "check && fail" line must not end the run
@@ -4573,8 +4573,8 @@ hb="$(awk '/^## /{on = ($0 == "## A hard boundary")} on' "$G")"
 [[ -n "$hb" ]] && grep -qF 'ssh-add -c' <<<"$hb" && grep -qF -- '-sk' <<<"$hb" && grep -qi 'credential helper' <<<"$hb" && grep -qi 'login token' <<<"$hb" || fail "criterion 16: the section A hard boundary"
 ! grep -qiE 'yubi|titan|solokey|nitrokey|1password|bitwarden|secretive|keepass|google|apple|microsoft|openssh' <<<"$hb" || fail "criterion 16: the hard boundary names a product"
 [[ "$(grep -c 'A hard boundary' "$T/gs-boot.out")" == 1 ]] && grep -qF '"A hard boundary" in the kit'"'"'s docs/guardrails.md' "$T/gs-boot.out" || fail "criterion 16: bootstrap does not name the section once"
-# Criterion 17: the changelog says to run cabinet bootstrap (the docs check covers each doctor message).
-awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -qF 'run `cabinet bootstrap` after updating' || fail "criterion 17: the changelog"
+# Criterion 17: the changelog's 0.3.0 entry says to run cabinet bootstrap (the docs check covers each doctor message).
+awk '/^## /{on = /^## 0\.3\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'run `cabinet bootstrap` after updating' || fail "criterion 17: the changelog"
 for id in guardrails.stale-claim guardrails.repo-hookspath guardrails.push-gate guardrails.codex guardrails.gemini guardrails.agy; do grep -qF "\`$id\`" "$KIT/docs/troubleshooting.md" || fail "criterion 17: $id"; done
 # Criterion 18: the old wording is gone; the new says where the gate asks, in words the site's visitors know.
 ! grep -qF 'A push gate for every repository' "$KIT/README.md" && ! grep -qF 'left as it is and checked, never replaced' "$G" \
