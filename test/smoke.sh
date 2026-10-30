@@ -982,11 +982,15 @@ section "no project data in the kit" ""
 s24() {
 # No local paths anywhere (the brand demo's made-up person, /Users/maya, is the one exception); and, when set,
 # none of the owner's private words (CABINET_PRIVATE_WORDS="word1 word2", kept out of this file so it names none).
-p="$(grep -rIoh -E '/(Users|home)/[a-z][A-Za-z0-9_-]*' "$KIT" --exclude-dir=.git --exclude-dir=node_modules --exclude=smoke.sh | sort -u | grep -vx '/Users/maya' || true)"
+# A git worktree has a .git file, not a folder, naming the main repo by its path: skipped as the folder is.
+paths() { grep -rIoh -E '/(Users|home)/[a-z][A-Za-z0-9_-]*' "$1" --exclude-dir=.git --exclude=.git --exclude-dir=node_modules --exclude=smoke.sh | sort -u | grep -vx '/Users/maya' || true; }
+mkdir -p "$T/wt/docs" && echo "gitdir: /Users/someone/kit/.git/worktrees/wt" > "$T/wt/.git" && echo "see /home/someone/x" > "$T/wt/docs/a.md"
+[[ "$(paths "$T/wt")" == /home/someone ]] || fail "the local path check in a worktree: $(paths "$T/wt")"
+p="$(paths "$KIT")"
 [[ -z "$p" ]] || fail "a local path in the kit: $p"
 for w in ${CABINET_PRIVATE_WORDS:-}; do
   # Whole words, in any case: "nova" is caught in "Nova" and "nova.io", not in "supernova" or "novel".
-  ! grep -rIilw -e "$w" "$KIT" --exclude-dir=.git --exclude-dir=node_modules --exclude=LICENSE --exclude=package.json || fail "a private word in the kit: $w"
+  ! grep -rIilw -e "$w" "$KIT" --exclude-dir=.git --exclude=.git --exclude-dir=node_modules --exclude=LICENSE --exclude=package.json || fail "a private word in the kit: $w"
 done
   return 0   # a last "check && fail" line must not end the run
 }
