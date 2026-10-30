@@ -2072,6 +2072,11 @@ read -r i v <<<"$(rv "Fix in another builder's repo")"; n=$((n + 300))
 A="$(GIT_COMMITTER_DATE="@$n +0000" cm n1)"; echo n2 >> "$PW/app3/a.txt"; GIT_COMMITTER_DATE="@$((n + 1)) +0000" git -C "$PW/app3" commit -qam n2
 out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a fix in a repo no verdict names, not the builder's: $out"
 grep -v '^app3	' "$PW/repos.tsv" > "$T/rr-repos" && cp "$T/rr-repos" "$PW/repos.tsv"; git -C "$PW" commit -qm "app3 out" -- repos.tsv
+# A repo of the builder's whose HEAD git cannot read (here a branch with no commits) never says none.
+read -r i v <<<"$(rv "Builder repo unreadable")"; hd="$(git -C "$PW/app2" symbolic-ref HEAD)"
+git -C "$PW/app2" symbolic-ref HEAD refs/heads/no-commits-yet; A="$(cm e1)"
+out="$(blk "$A")"; git -C "$PW/app2" symbolic-ref HEAD "$hd"
+[[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a builder's repo git cannot read said none: $out"
 # An agent that leaves no trace, or work sent back: it stops, naming what happened.
 d="$(work "Add a logo")"; touch "$FS/silent-security"
 out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"

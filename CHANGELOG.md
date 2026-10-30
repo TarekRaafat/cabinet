@@ -8,6 +8,7 @@ Run `cabinet bootstrap` after updating, for the new credit hook.
 
 - The amend guard compares the role in a commit's credit line exactly as it is written, so a line whose role holds a hidden character counts as another role's. Its refusals also say to give the message with `-F <file>` when the commit is a new one whose message mentions `--amend`, which on macOS is taken as an amend. The guardrails page now says that deleting the role's line in the editor during an amend drops it, and that `-c` and `-C` count as amends.
 - Bootstrap keeps your edits to an earlier kit hook: when it replaces an earlier version of the credit hook, the push gate or the pre-rebase hook that you changed, it first keeps your copy beside it as `<hook>.cabinet-v<N>`, and says so. Before, it replaced an edited earlier copy whose version line was unchanged.
+- `cabinet handoff run` no longer tells a reviewer asked again that no commits are new when a repo of the builder's has a history git cannot read (no commits yet, or a broken repo): it says it cannot tell, and the reviewer reads the whole change.
 
 ## 0.3.0 - 30 Oct 2026
 
