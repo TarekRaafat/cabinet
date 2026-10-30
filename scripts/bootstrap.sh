@@ -371,10 +371,12 @@ schedule() {  # schedule <name> <program> <verb> <arg> <when>
 # The log folder records which workspace owns this slug, whatever the scheduler: the push gate reads it.
 # Claimed only when it is free, already ours, or its workspace folder is gone. A workspace that finds it held
 # by another is listed in its shared file instead, so the gate still asks in this workspace's repos.
-if ((DRY == 0)); then
-  mkdir -p -m 700 "$LOGDIR"
+# Compared as real paths, as the doctor compares them, so a claim naming this workspace through a link is its own.
+if ((DRY == 0)) && ! mkdir -p -m 700 "$LOGDIR"; then
+  echo "  the log folder $LOGDIR could not be made, so the push gate may not ask in this workspace's repos"; failures=1
+elif ((DRY == 0)); then
   owner_ws="$(head -1 "$LOGDIR/workspace" 2>/dev/null || true)"
-  if [[ -z "$owner_ws" || "$owner_ws" == "$WS" || ! -d "$owner_ws" ]]; then
+  if [[ -z "$owner_ws" || ! -d "$owner_ws" || "$(cd "$owner_ws" && pwd -P)" == "$WS" ]]; then
     printf '%s\n' "$WS" > "$LOGDIR/workspace" || { echo "  $LOGDIR/workspace could not be written, so the push gate may not ask in this workspace's repos"; failures=1; }
   else
     grep -qxF "$WS" "$LOGDIR/shared" 2>/dev/null || printf '%s\n' "$WS" >> "$LOGDIR/shared" || { echo "  $LOGDIR/shared could not be written, so the push gate may not ask in this workspace's repos"; failures=1; }

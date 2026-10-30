@@ -187,7 +187,7 @@ As a project grows, one role per function becomes a bottleneck. A lead can then 
 
 ## Slugs and isolation
 
-Every workspace has a slug. Everything it puts on the machine is named by it: schedules `ai.cabinet.<slug>.<job>`, its log folder `<slug>/` (below), the backup key `cabinet.<slug>.backup`, archives `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`. The log folder holds a `workspace` file naming its owner, and a `shared` file naming any other workspace bootstrap found with the same slug, so the push gate still asks in that one's repos until it gets a slug of its own. Setup and `cabinet config` refuse a slug another workspace holds, bootstrap never replaces or removes a schedule that runs another workspace, and backup cleanup removes only the slug's own archives. Paths are compared with symlinks resolved, so a workspace reached through a link is still the same one.
+Every workspace has a slug. Everything it puts on the machine is named by it: schedules `ai.cabinet.<slug>.<job>`, its log folder `<slug>/` (below), the backup key `cabinet.<slug>.backup`, archives `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`. The log folder holds a `workspace` file naming its owner, and a `shared` file naming any other workspace bootstrap found with the same slug, so the push gate still asks in that one's repos; give it a slug of its own (`cabinet config --slug`). Its line in `shared` stays after that, and only means the gate asks there too. Setup and `cabinet config` refuse a slug another workspace holds, bootstrap never replaces or removes a schedule that runs another workspace, and backup cleanup removes only the slug's own archives. Paths are compared with symlinks resolved, so a workspace reached through a link is still the same one.
 
 ## macOS and Linux
 

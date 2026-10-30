@@ -4253,6 +4253,15 @@ CABINET_SCHEDULER=none "$GW4/bin/bootstrap.sh" > "$GS/boot4.out" 2>&1 || true
 grep -qF 'no scheduler found' "$GS/boot4.out" && [[ "$(cat "$LG/ws4/workspace" 2>/dev/null)" == "$RS/ws4" ]] || fail "bootstrap with no scheduler did not write the claim: $(cat "$LG/ws4/workspace" 2>&1)"
 [[ "$(gp "$GW4/inner")" == asks ]] || fail "a repo in a workspace bootstrapped with no scheduler: $(gp "$GW4/inner")"
 res "$(dj "$GW4")" guardrails.claim | grep -q '^ok ' || fail "the doctor after bootstrap wrote the claim: $(res "$(dj "$GW4")" guardrails.claim)"
+# A claim naming this workspace through a link is its own, as the doctor reads it: bootstrap lists it nowhere else.
+ln -s "$GW4" "$GS/ws4-link"; echo "$GS/ws4-link" > "$LG/ws4/workspace"; out="$("$GW4/bin/bootstrap.sh" 2>&1 || true)"
+! grep -qF "belongs to" <<<"$out" && [[ ! -e "$LG/ws4/shared" && "$(cat "$LG/ws4/workspace")" == "$RS/ws4" ]] || fail "a claim through a link: $(grep -F "log folder" <<<"$out"); $(cat "$LG/ws4/shared" 2>&1)"
+# A log folder that cannot be made: bootstrap says so and fails, and goes on with the rest.
+if ((root == 0)); then
+  mv "$LG/ws4" "$GS/ws4-logs"; chmod 555 "$LG"; out="$("$GW4/bin/bootstrap.sh" 2>&1)" && fail "bootstrap with no log folder succeeded"; chmod 755 "$LG"
+  grep -qF "the log folder $LG/ws4 could not be made, so the push gate may not ask in this workspace's repos" <<<"$out" || fail "a log folder that cannot be made: $out"
+  rm -rf "$LG/ws4"; mv "$GS/ws4-logs" "$LG/ws4"
+fi
 # A second workspace with the slug another holds: the doctor says so, and after bootstrap the gate asks in its repos.
 GW3="$GS/ws3"; "$F" new "$GW3" --yes >/dev/null; rm -rf "$LG/ws3"; grepo "$GW3/inner"
 sed 's/^CABINET_SLUG=.*/CABINET_SLUG="ws"/' "$GW3/cabinet.env" > "$GS/ws3.env" && cat "$GS/ws3.env" > "$GW3/cabinet.env"
@@ -4270,6 +4279,12 @@ res "$(dj "$GW")" guardrails.claim | grep -q '^ok ' || fail "the doctor of the s
 # A listed workspace that is gone has nothing left to guard: it makes no other push ask.
 mv "$GW3" "$GW3-away"; r="$(gp "$GS/other")"; mv "$GW3-away" "$GW3"
 [[ "$r" == passes ]] || fail "a listed workspace that is gone: $r"
+# Only gone workspaces claimed (the owner's claim deleted, every listed one gone): no workspace is left that the
+# gate could know, so it asks, as with no claim at all; one live listed workspace, and it says outside.
+I1="$GS/i1-home"; mkdir -p "$I1/$LOGS/x"; echo "$GS/gone" > "$I1/$LOGS/x/shared"
+r="$(HOME="$I1" XDG_STATE_HOME= "$NODE" "$GK/cabinet-push-gate.js" "$GS/other" "$GS/other/.git" 2>/dev/null)" && fail "only gone workspaces claimed, the helper said: $r"
+echo "$GW" >> "$I1/$LOGS/x/shared"; r="$(HOME="$I1" XDG_STATE_HOME= "$NODE" "$GK/cabinet-push-gate.js" "$GS/other" "$GS/other/.git" 2>&1)"
+[[ "$r" == outside ]] || fail "a gone and a live workspace claimed: $r"
 
 # Criterion 6(a): the gate and its helper read only HOME, XDG_STATE_HOME and PATH from the environment.
 SCAN='

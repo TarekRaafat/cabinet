@@ -27,8 +27,8 @@ for (const slug of fs.readdirSync(logs)) {
   if (!fs.statSync(d).isDirectory()) continue;
   // The slug's owner, then any workspace bootstrap found it held by (one per line): each is Cabinet's.
   const ws = read(path.join(d, "workspace"));
-  if (ws !== null) { claims++; check(ws.split("\n")[0], false); }
-  for (const s of (read(path.join(d, "shared")) || "").split("\n")) if (s) { claims++; check(s, true); }
+  if (ws !== null) check(ws.split("\n")[0], false);
+  for (const s of (read(path.join(d, "shared")) || "").split("\n")) if (s) check(s, true);
 }
 if (!claims) throw new Error("no workspace claimed on this machine");
 out("outside");
@@ -37,11 +37,12 @@ function read(f) { try { return fs.readFileSync(f, "utf8"); } catch (e) { if (e.
 
 // check <workspace folder> <whether a folder that is gone is skipped>: out("cabinet") when the repo is that
 // workspace's. An owner that is gone throws (the doctor's stale-claim note frees it); a shared one that is
-// gone has nothing left in it to guard.
+// gone has nothing left in it to guard, and is not counted: with no workspace left to know, the gate asks.
 function check(ws, goneOk) {
   if (!path.isAbsolute(ws)) throw new Error("a claim that is not a folder");
   let wr;
   try { wr = real(ws); } catch (e) { if (goneOk && e.code === "ENOENT") return; throw e; }
+  claims++;
   if (within(wr)) out("cabinet");
   // The project around a workspace inside it: init --inside always names that folder cabinet.
   if (path.basename(wr) === "cabinet" && is(path.dirname(wr))) out("cabinet");
