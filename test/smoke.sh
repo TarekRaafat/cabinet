@@ -2058,6 +2058,20 @@ read -r i v <<<"$(rv "Unknown commit")"; A="$(cm u1)"
 out="$(blk "$A,0123456789abc")"; [[ "$out" == "$fx $A,0123456789abc, commits since: unknown, read the whole change)" ]] || fail "a commit in no repo: $out"
 read -r i v <<<"$(rv "Off HEAD")"; git -C "$PW/app" checkout -qb side; A="$(cm h1)"; git -C "$PW/app" checkout -q -; git -C "$PW/app" branch -qD side
 out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a commit not on its repo's HEAD: $out"
+# Clock skew (H-20261030-16): a commit dated before the verdict's newest, above the fix in the builder's
+# other repo, is listed with it and does not hide it.
+read -r i v <<<"$(rv "Clock skew")"; n=$(($(date +%s) + 300))
+A="$(GIT_COMMITTER_DATE="@$n +0000" cm k1)"; B2="$(GIT_COMMITTER_DATE="@$((n + 1)) +0000" cm2 k2)"; C2="$(GIT_COMMITTER_DATE="@$((n - 1000)) +0000" cm2 k3)"
+out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: $B2,$C2)" ]] || fail "a commit dated earlier above the fix hid it: $out"
+# qa N7: a fix in a product repo neither the builder's nor named in a verdict cannot be told: unknown.
+git init -q "$PW/app3" && echo x > "$PW/app3/a.txt" && git -C "$PW/app3" add -A && git -C "$PW/app3" commit -qm init
+printf 'app3\t-\t-\tno\n' >> "$PW/repos.tsv"
+L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app3` | Another app | backend |'
+git -C "$PW" commit -qam "app3, built by backend"
+read -r i v <<<"$(rv "Fix in another builder's repo")"; n=$((n + 300))
+A="$(GIT_COMMITTER_DATE="@$n +0000" cm n1)"; echo n2 >> "$PW/app3/a.txt"; GIT_COMMITTER_DATE="@$((n + 1)) +0000" git -C "$PW/app3" commit -qam n2
+out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a fix in a repo no verdict names, not the builder's: $out"
+grep -v '^app3	' "$PW/repos.tsv" > "$T/rr-repos" && cp "$T/rr-repos" "$PW/repos.tsv"; git -C "$PW" commit -qm "app3 out" -- repos.tsv
 # An agent that leaves no trace, or work sent back: it stops, naming what happened.
 d="$(work "Add a logo")"; touch "$FS/silent-security"
 out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"

@@ -527,7 +527,8 @@ agent() {  # agent <role> <what it does> <prompt>
 # nothing for a reviewer with no verdict yet. Worked out per repo: one holding some of those commits
 # lists the commits on its HEAD after them; one of the builder's that holds none lists those made after
 # the newest of them; any other lists the commits other verdicts name there. When it cannot tell (a
-# commit in no repo, or not on its repo's HEAD), it says so and the reviewer reads the whole change.
+# commit in no repo, or not on its repo's HEAD, or another product repo with commits since that no
+# verdict names), it says so and the reviewer reads the whole change.
 again() {
   local a o c d n h s="" u="" t=0 x name url files link path rows left
   a="$(json -r --arg x "$1" '($.verdicts.filter((w) => w.role == $x).pop()?.commits ?? []).join(",")' <<<"$r")"
@@ -537,6 +538,8 @@ again() {
   left=" ${a//,/ } "
   # ponytail: "since" is every later commit on the repo's HEAD (or, in a repo the verdict never named,
   # every one after its newest commit), this work's or not: it reads more than it needs, never less.
+  # In a repo the verdict never named it goes by commit dates: a commit made after the verdict but dated
+  # before it (another machine's clock behind) is missed only when no commit dated after it sits above.
   while IFS=$'\t' read -r n d; do
     [[ -e "$d/.git" ]] || continue
     h=""
@@ -553,11 +556,16 @@ again() {
   while IFS=$'\t' read -r n d; do
     [[ -e "$d/.git" ]] || continue
     for c in ${a//,/ }; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && continue 2; done
+    # Every commit on HEAD down to the deepest one dated at or after t, oldest first ("<full> <short>"):
+    # one dated earlier above it is listed too, where git's --since would stop at it.
+    x="$(git -C "$d" log --topo-order --format='%H %h %ct' HEAD 2>/dev/null | awk -v t="$t" '{ l[NR] = $1 " " $2 } $3 >= t { k = NR } END { for (i = k; i > 0; i--) print l[i] }')"
     if [[ -n "$n" && ( "$n" == "$builder" || "$(owner_of "$n")" == "$builder" ) ]]; then
-      x="$(git -C "$d" rev-list --reverse --abbrev-commit --since="@$t" HEAD 2>/dev/null)" || u=1
-      s="$s $x"
+      s="$s $(awk '{ print $2 }' <<<"$x")"
     else
-      for c in $o; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && s="$s $c"; done
+      h=" "
+      for c in $o; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && s="$s $c" && h="$h$(git -C "$d" rev-parse "$c^{commit}") "; done
+      # Another product repo: a fix there that no verdict names cannot be told from other work.
+      if [[ -n "$n" ]]; then for c in $(awk '{ print $1 }' <<<"$x"); do [[ "$h" == *" $c "* ]] || u=1; done; fi
     fi
   done <<<"$rows"
   s="$(echo $s | tr ' ' ',')"
