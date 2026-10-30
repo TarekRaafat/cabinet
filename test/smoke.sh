@@ -2720,12 +2720,23 @@ cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -ne
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level == "ok" && r.message.includes("credit installed"))' >/dev/null || fail "the doctor does not report credit installed"
 # The hook one version back, a comment apart, as a machine set up before this kit has it: no released copy, so
 # an edited one. Bootstrap keeps it as prepare-commit-msg.cabinet-v<N>, then replaces it; with something
-# else under that name, it leaves the hook as it is.
+# else under that name (a file, or a dangling symlink), it leaves the hook and that name as they are, and
+# names the path in the way. A dry run says it would keep the copy, before placing the hook, and writes nothing.
 v="$(sed -n '2s/^# cabinet credit hook v//p' "$KH")"; ((v > 1)) || fail "the credit hook's version is not above 1: $v"
 { sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"
-chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-older"; echo other > "$HK/prepare-commit-msg.cabinet-v$((v - 1))"; boot
-cmp -s "$T/credit-older" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited earlier credit hook whose keep name was taken"
-rm "$HK/prepare-commit-msg.cabinet-v$((v - 1))"; out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
+chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-older"; ck="$HK/prepare-commit-msg.cabinet-v$((v - 1))"
+for taken in file link; do
+  if [[ $taken == file ]]; then echo other > "$ck"; else ln -s "$T/no-such-hook" "$ck"; fi
+  out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
+  cmp -s "$T/credit-older" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited earlier credit hook whose keep name was taken ($taken)"
+  if [[ $taken == file ]]; then [[ ! -L "$ck" && "$(cat "$ck")" == other ]]; else [[ -L "$ck" && ! -e "$ck" && "$(readlink "$ck")" == "$T/no-such-hook" ]]; fi || fail "bootstrap changed the $taken at the keep name"
+  grep -qF "left as is: $HK/prepare-commit-msg, since $ck holds something else (move it, then run bin/bootstrap.sh again; credit roles cannot add their line" <<<"$out" || fail "bootstrap did not name the $taken in the way: $(grep -F prepare-commit-msg <<<"$out")"
+  rm "$ck"
+done
+out="$(HOME="$CH" "$CW/bin/bootstrap.sh" --dry-run 2>&1 || true)"
+cmp -s "$T/credit-older" "$HK/prepare-commit-msg" && [[ ! -e "$ck" && ! -L "$ck" ]] || fail "bootstrap --dry-run changed the edited earlier credit hook or kept a copy"
+grep -F -A1 "would keep your edited copy of the earlier credit hook as $ck" <<<"$out" | grep -qF "would place the credit hook at $HK/prepare-commit-msg" || fail "bootstrap --dry-run did not say it would keep, then place: $(grep -F prepare-commit-msg <<<"$out")"
+out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace an earlier credit hook"
 cmp -s "$T/credit-older" "$HK/prepare-commit-msg.cabinet-v$((v - 1))" && [[ -x "$HK/prepare-commit-msg.cabinet-v$((v - 1))" ]] || fail "bootstrap did not keep the edited earlier credit hook"
 grep -qF "kept your edited copy of the earlier credit hook as $HK/prepare-commit-msg.cabinet-v$((v - 1))" <<<"$out" || fail "bootstrap did not say it kept the edited hook: $out"

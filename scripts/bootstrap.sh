@@ -199,7 +199,7 @@ done
 hook_v() { sed -n "2s/^# cabinet $2 v\\([0-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
 sha256() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" 2>/dev/null; }
 kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a released kit copy>...]
-  local h="$hooks/$1" src="$G/$1" what="$2" lost="$3" old="" kit=0 keep="" sum s
+  local h="$hooks/$1" src="$G/$1" what="$2" lost="$3" old="" kit=0 keep="" taken="" sum s
   shift 3
   if [[ -f "$h" && ! -L "$h" ]]; then
     old="$(hook_v "$h" "$what")"; sum="$(sha256 "$h")"
@@ -207,12 +207,12 @@ kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SH
     cmp -s "$G/hook-passthrough" "$h" && kit=1
     if ((kit == 0)) && [[ -n "$old" && "$old" -lt "$(hook_v "$src" "$what")" ]]; then
       keep="$h.cabinet-v$old"
-      [[ ! -e "$keep" && ! -L "$keep" ]] || cmp -s "$h" "$keep" || keep="!"
+      [[ ! -e "$keep" && ! -L "$keep" ]] || cmp -s "$h" "$keep" || { taken="$keep"; keep=""; }
     fi
   fi
   if [[ -f "$h" && ! -L "$h" ]] && cmp -s "$src" "$h"; then :
-  elif [[ "$keep" != "!" ]] && { [[ ! -e "$h" && ! -L "$h" ]] || ((kit)) || [[ -n "$keep" ]]; }; then
-    if ((DRY)); then echo "  would place the $what at $h"; [[ -z "$keep" ]] || echo "  would keep your edited copy of the earlier $what as $keep"
+  elif [[ -z "$taken" ]] && { [[ ! -e "$h" && ! -L "$h" ]] || ((kit)) || [[ -n "$keep" ]]; }; then
+    if ((DRY)); then [[ -z "$keep" ]] || echo "  would keep your edited copy of the earlier $what as $keep"; echo "  would place the $what at $h"
     else
       mkdir -p "$hooks"
       if [[ -n "$keep" ]]; then
@@ -221,11 +221,14 @@ kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SH
       fi
       cp "$src" "$h.cabinet-new" && chmod +x "$h.cabinet-new" && mv -f "$h.cabinet-new" "$h" && echo "  placed the $what at $h"
     fi
+  elif [[ -n "$taken" ]]; then
+    echo "  left as is: $h, since $taken holds something else (move it, then run bin/bootstrap.sh again; $lost on this machine)"
   else
     echo "  differs, left as is: $h ($lost on this machine; cabinet doctor says why)"
   fi
 }
-# The push gate's 0.1.0 copy had no line 2. Left as is, a gate of your own still asks before every push, in every repo.
+# The push gate's 0.1.0 copy had no line 2; v2 in 0.3.0 is the current one. Add its SHA-256 here when it changes.
+# Left as is, a gate of your own still asks before every push, in every repo.
 kit_hook pre-push "push gate" "the gate asks in every repo, not only Cabinet's," de138ae20c0786fd3125a7202e900b1bb49085b8963265f57473a0825ea8cfc5
 # Its helper, beside it, whenever the gate there is the kit's: it finds Cabinet's repos.
 if cmp -s "$G/pre-push" "$hooks/pre-push" && ! cmp -s "$G/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js"; then
@@ -235,6 +238,7 @@ fi
 # The credit hook as released: v3 in 0.2.0 and 0.2.1, v4 in 0.3.0. Add the current one's here when it changes.
 kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend," \
   7184259644c63e37567e8b7d41b278f6534cfac98a05afcee543cf69b868c706 7f3e0132d1f4b10b9b5a76e6d3e3863714fd8e71ad762c4efd9d97ca4320bbca
+# The pre-rebase hook as released: v1 in 0.3.0 is the current one. Add its SHA-256 here when it changes.
 kit_hook pre-rebase "pre-rebase hook" "runs are not refused a rebase"
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done
 current="$(git config --global core.hooksPath || true)"
