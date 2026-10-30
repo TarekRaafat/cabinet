@@ -312,7 +312,7 @@ if [[ -n "$hooks" && -f "$pcm" ]] && cmp -s "$K/guardrails/prepare-commit-msg" "
 elif [[ -z "$hooks" ]]; then note credit.hook "credit not installed: git has no global hooks path (run bin/bootstrap.sh)"
 elif [[ "$hooks" != "$HOME/.config/git/hooks" && ! -e "$pcm" ]]; then note credit.hook "credit not installed: the global hooks path is $hooks, which bootstrap leaves as it is, and it holds no credit hook"
 elif [[ ! -e "$pcm" && ! -L "$pcm" ]]; then note credit.hook "credit not installed: no prepare-commit-msg in $hooks (run bin/bootstrap.sh)"
-elif [[ "$hooks" == "$HOME/.config/git/hooks" && -f "$pcm" && ! -L "$pcm" ]] && hv="$(sed -n '2s/^# cabinet credit hook v\([0-9][0-9]*\)$/\1/p' "$pcm")" && [[ -n "$hv" && "$hv" -lt "$(sed -n '2s/^# cabinet credit hook v//p' "$K/guardrails/prepare-commit-msg")" ]]; then
+elif [[ "$hooks" == "$HOME/.config/git/hooks" && -f "$pcm" && ! -L "$pcm" ]] && hv="$(sed -n '2s/^# cabinet credit hook v\([1-9][0-9]*\)$/\1/p' "$pcm")" && [[ -n "$hv" && "$hv" -lt "$(sed -n '2s/^# cabinet credit hook v//p' "$K/guardrails/prepare-commit-msg")" ]]; then
   note credit.hook "credit hook out of date: $pcm is an earlier version of the kit's (run bin/bootstrap.sh, which replaces it)"
 else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks and remove it from $hooks, then run bin/bootstrap.sh)"; fi
 

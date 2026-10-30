@@ -192,11 +192,11 @@ done
 # Three hooks are the kit's own, and pass the call on too: pre-push is the push gate, prepare-commit-msg
 # is the credit hook (credit roles), which also refuses an amend in a Cabinet run, and pre-rebase refuses
 # a rebase there. Each replaces only what the kit put there: no file, the pass-through stub, an earlier
-# version of the same hook (its line 2, "# cabinet <what> v<N>", with a lower N), or a released kit copy,
+# version of the same hook (its line 2, "# cabinet <what> v<N>", with a lower N and no leading zero), or a released kit copy,
 # known by its SHA-256 (the push gate's from before line 2 too). An earlier version that is no released
 # copy was edited: it is kept first as <hook>.cabinet-v<N>, where git never runs it, and when that name
 # holds something else, the hook is left as it is. Anything else is yours, and left as it is.
-hook_v() { sed -n "2s/^# cabinet $2 v\\([0-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
+hook_v() { sed -n "2s/^# cabinet $2 v\\([1-9][0-9]*\\)\$/\\1/p" "$1" 2>/dev/null; }
 sha256() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" 2>/dev/null; }
 kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a released kit copy>...]
   local h="$hooks/$1" src="$G/$1" what="$2" lost="$3" old="" kit=0 keep="" taken="" sum s

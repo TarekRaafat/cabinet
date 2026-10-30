@@ -2758,6 +2758,13 @@ rm "$HK/prepare-commit-msg.cabinet-v$((v - 1))"
 printf '#!/bin/sh\n# mine\nexit 0\n' > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-mine"; boot
 cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the owner's own prepare-commit-msg"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.level != "ok" && r.message.includes("not the kit"))' >/dev/null || fail "the doctor did not say why credit is not installed"
+# security I4: a version line with a leading zero (v08, which bash reads as octal) is no kit version: the
+# hook is left as it is, nothing is kept, and neither bootstrap nor the doctor prints a shell error.
+{ sed -n 1p "$KH"; echo "# cabinet credit hook v08"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-v08"
+out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
+cmp -s "$T/credit-v08" "$HK/prepare-commit-msg" && [[ -z "$(ls "$HK" | grep cabinet-v)" ]] || fail "bootstrap changed a credit hook whose version line is v08: $(ls "$HK")"
+grep -qF "differs, left as is: $HK/prepare-commit-msg" <<<"$out" && ! grep -q "bootstrap.sh: line" <<<"$out" || fail "bootstrap on a v08 credit hook: $(grep -F -e prepare-commit-msg -e 'bootstrap.sh: line' <<<"$out")"
+out="$( (cd "$CW" && "$F" doctor --json) 2>&1 >/dev/null)"; ! grep -q "doctor.sh: line" <<<"$out" || fail "the doctor on a v08 credit hook: $out"
 # A prepare-commit-msg that is a symlink to another file: bootstrap leaves the link and its target as they are.
 printf '#!/bin/sh
 # linked
