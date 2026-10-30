@@ -1,5 +1,5 @@
 #!/bin/sh
-# cabinet credit hook v4
+# cabinet credit hook v5
 # Credit roles (cabinet config --credit-roles on): a commit made in a Cabinet run ends with one line,
 #   Co-authored-by: Cabinet <role> <email>
 # naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
@@ -12,11 +12,13 @@
 # refused too), but "message" with -m or -F, as it gives a new commit: so the arguments of the git command
 # that runs this hook (its parent process) are read too, for --amend or an abbreviation of it. On Linux each
 # argument is read on its own, so a -m message that mentions --amend is a new commit; ps (elsewhere) joins
-# them with spaces, so there such a message is refused too, and the refusal says to give it with -F <file>.
+# them with spaces, so there such a message is refused too (with CABINET_AMEND_AS set, it is taken as an
+# amend), and each refusal says to give it with -F <file>.
 # An agent amends its own commit as CABINET_AMEND_AS=<role> git commit --amend: the amend is refused unless
 # HEAD's message holds exactly one Cabinet credit line, as its last line, for that role, so no agent
-# rewrites another role's commit or the owner's. An allowed amend keeps that line. With neither variable
-# set (the owner in a terminal) nothing is checked: a guard against a mistake, not a lock.
+# rewrites another role's commit or the owner's. The role is compared as it is written, before anything is
+# stripped for the message. An allowed amend keeps that line. With neither variable set (the owner in a
+# terminal) nothing is checked: a guard against a mistake, not a lock.
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
 # replace an earlier one. An edited copy is left as it is, and the doctor says credit is not installed.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
@@ -43,9 +45,10 @@ one() { case "$1" in *"$nl"*) return 1 ;; esac; printf '%s\n' "$1" | grep -qxE "
 has_text() { grep -q -v -e '^#' -e '^[[:space:]]*$' "$1" 2>/dev/null; }
 
 as="${CABINET_AMEND_AS:-}"
+mf=" If this is a new commit whose message mentions --amend, give the message with -F <file> instead of -m."
 if [ -n "$as" ] && amend "$@"; then
   if ! one "$as" '[a-z][a-z0-9-]*'; then
-    echo "cabinet: no amend: CABINET_AMEND_AS is not a role name. Commit the fix as a new commit." >&2
+    echo "cabinet: no amend: CABINET_AMEND_AS is not a role name. Commit the fix as a new commit.$mf" >&2
     exit 1
   fi
   head="$(git log -1 --format=%B HEAD 2>/dev/null)"
@@ -53,14 +56,14 @@ if [ -n "$as" ] && amend "$@"; then
   last="$(printf '%s\n' "$head" | grep -v '^[[:space:]]*$' | tail -n 1)"
   why=""
   case "$last" in
-    "Co-authored-by: Cabinet "*) r="${last#Co-authored-by: Cabinet }"; r="$(printf '%s' "${r%% *}" | tr -cd '[:graph:]')" ;;
+    "Co-authored-by: Cabinet "*) r="${last#Co-authored-by: Cabinet }"; r="${r%% *}" ;;
     *) why="HEAD has no Cabinet credit line at the end" ;;
   esac
   # More than one line wins over any other reason: the guard cannot tell whose commit it is.
   if [ "$n" -gt 1 ]; then why="HEAD has more than one Cabinet credit line"
-  elif [ -z "$why" ] && [ "$r" != "$as" ]; then why="HEAD is $r's commit"; fi
+  elif [ -z "$why" ] && [ "$r" != "$as" ]; then why="HEAD is $(printf '%s' "$r" | tr -cd '[:graph:]')'s commit"; fi
   if [ -n "$why" ]; then
-    echo "cabinet: no amend as $as: $why. Commit the fix as a new commit." >&2
+    echo "cabinet: no amend as $as: $why. Commit the fix as a new commit.$mf" >&2
     exit 1
   fi
   # Allowed: the new message keeps HEAD's line, added once; an empty one stays empty, so git still refuses it.

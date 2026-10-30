@@ -2,6 +2,12 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.3.1 - Unreleased
+
+Run `cabinet bootstrap` after updating, for the new credit hook.
+
+- The amend guard compares the role in a commit's credit line exactly as it is written, so a line whose role holds a hidden character counts as another role's. Its refusals also say to give the message with `-F <file>` when the commit is a new one whose message mentions `--amend`, which on macOS is taken as an amend. The guardrails page now says that deleting the role's line in the editor during an amend drops it, and that `-c` and `-C` count as amends.
+
 ## 0.3.0 - 30 Oct 2026
 
 Run `cabinet bootstrap` after updating, for the new push gate, the completed agent tool rules and the new credit hook.

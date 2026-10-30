@@ -2748,7 +2748,7 @@ rm -f "$CR/.git/hooks/prepare-commit-msg"; git -C "$CR" checkout -q -- f
 # The amend guard (specs/amend-guard.md): an agent amends as CABINET_AMEND_AS=<role>, and only a commit that
 # ends with that role's one credit line. amfix sets HEAD's message in a fixture repo; am runs one git commit on
 # a fresh copy of it, with the four variables unset but for the assignments before "--".
-AQ="Co-authored-by: Cabinet qa <$KM>" FIX="Commit the fix as a new commit"
+AQ="Co-authored-by: Cabinet qa <$KM>" FIX="Commit the fix as a new commit" MF="give the message with -F <file> instead of -m"
 amfix() { rm -rf "$T/am-base"; git init -q -b main "$T/am-base"; echo a > "$T/am-base/f"; git -C "$T/am-base" add f
   printf '%s\n' "$1" > "$T/am-fixmsg"; env -u CABINET_AMEND_AS git -C "$T/am-base" commit -q --cleanup=verbatim -F "$T/am-fixmsg"
   bh="$(git -C "$T/am-base" rev-parse HEAD)" bm="$(git -C "$T/am-base" log -1 --format=%B)"; [[ "$bm" == "$1" ]] || fail "amend guard fixture: $bm"; }
@@ -2765,10 +2765,19 @@ am CABINET_AMEND_AS=qa -- --amend -m x; amok $'x\n\n'"$AQ"
 am CABINET_AMEND_AS=code-reviewer -- --amend -m x; amno "HEAD is qa's commit" code-reviewer "$FIX"
 am CABINET_AMEND_AS=code-reviewer -- --amend -F "$T/am-msg"; amno "HEAD is qa's commit" code-reviewer "$FIX"
 am CABINET_AMEND_AS=code-reviewer -- --amend --no-edit; amno "HEAD is qa's commit" code-reviewer "$FIX"
-am CABINET_AMEND_AS=q -- --amend -m x; amno "HEAD is qa's commit" "no amend as q:" "$FIX"
+am CABINET_AMEND_AS=q -- --amend -m x; amno "HEAD is qa's commit" "no amend as q:" "$FIX" "$MF"
+# With -c or -C, git gives the source commit, so it counts as an amend, as in v3.
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -C HEAD; amno "HEAD is qa's commit" "$MF"
+# A new commit whose -m mentions --amend: on Linux it commits; where ps joins the arguments, it is taken as
+# an amend and the refusal says to use -F.
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix the --amend doc"
+if [[ -r /proc/self/cmdline ]]; then amok "fix the --amend doc"; else amno "HEAD is qa's commit" "$MF"; fi
+# An editor amend that deletes the line makes the commit without it; then the role's next amend is refused.
+am CABINET_AMEND_AS=qa "GIT_EDITOR=sed -i.b /^Co-authored-by/d" -- --amend; amok work
+amgo CABINET_AMEND_AS=qa git commit -q --amend -m z; [[ "$ams" != 0 ]] && grep -qF "HEAD has no Cabinet credit line at the end" "$T/am-err" || fail "amend guard: an amend after the line was deleted: $(cat "$T/am-err")"
 # 6. A value that is not a role name is refused, never repeated, never run.
 for v in Qa "qa;touch $T/m1" "\$(touch $T/m2)" $'qa\nqa'; do
-  am "CABINET_AMEND_AS=$v" -- --amend -m x; amno "CABINET_AMEND_AS is not a role name" "$FIX"
+  am "CABINET_AMEND_AS=$v" -- --amend -m x; amno "CABINET_AMEND_AS is not a role name" "$FIX" "$MF"
   ! grep -q -e Qa -e touch -e m1 -e m2 "$T/am-err" || fail "amend guard: the refusal repeats the value: $(cat "$T/am-err")"
 done
 [[ ! -e "$T/m1" && ! -e "$T/m2" ]] || fail "amend guard: a CABINET_AMEND_AS value ran"
@@ -2805,12 +2814,17 @@ am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has no Cabinet credit line at
 amfix $'work\n\n'"$AQ"$'\n'"$AQ"$'\nSigned-off-by: O <o@example.com>'
 am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet credit line" "no amend as qa:" "$FIX"
 ! grep -q 'at the end' "$T/am-err" || fail "amend guard: more than one reason given: $(cat "$T/am-err")"
-# 10. Bootstrap replaces v3 with v4 byte for byte, and leaves an edited copy of v4 as it is.
-[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v4" ]] || fail "the credit hook is not v4"
+# The role is compared as written, so a control character inside it makes it another role's; the refusal
+# shows it stripped.
+amfix $'work\n\nCo-authored-by: Cabinet q\001a <'"$KM"'>'
+am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD is qa's commit" "no amend as qa:" "$FIX"
+! grep -q $'\001' "$T/am-err" || fail "amend guard: the refusal holds a control character"
+# 10. Bootstrap replaces v3 with the current hook byte for byte, and leaves an edited copy of it as it is.
+[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v5" ]] || fail "the credit hook is not v5"
 cp "$KIT/test/fixtures/def9076/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
-cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the v3 credit hook with v4"
+cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the v3 credit hook with v5"
 sed '3s/.*/# edited by the owner/' "$KH" > "$HK/prepare-commit-msg"; chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/am-edited"; boot
-cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v4"
+cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v5"
 cp "$KH" "$HK/prepare-commit-msg"; rm -rf "$T/am" "$T/am-base"
 
 # Existing and shared workspaces (criteria 27 to 29).
