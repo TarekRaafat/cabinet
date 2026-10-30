@@ -1,6 +1,6 @@
 {
   "name": "@tarekraafat/cabinet",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A productivity kit that makes one person a whole team: build anything with AI agents while you bring the vision and the final say. Roles with clear authority, handoffs, a daily brief and sign-off queue, independent review, push guardrails, schedules and encrypted backups. Works with any agent tool.",
   "keywords": [
     "productivity",

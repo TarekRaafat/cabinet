@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.2.0).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.3.0).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -54,7 +54,6 @@ var CAPTURED = {
    "== Shared instructions and roles",
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Git push gate",
-   "  placed /Users/maya/.config/git/hooks/pre-push",
    "  placed /Users/maya/.config/git/hooks/applypatch-msg",
    "  placed /Users/maya/.config/git/hooks/pre-applypatch",
    "  placed /Users/maya/.config/git/hooks/post-applypatch",
@@ -69,8 +68,11 @@ var CAPTURED = {
    "  placed /Users/maya/.config/git/hooks/reference-transaction",
    "  placed /Users/maya/.config/git/hooks/post-index-change",
    "  placed /Users/maya/.config/git/hooks/sendemail-validate",
+   "  placed the push gate at /Users/maya/.config/git/hooks/pre-push",
+   "  placed the push gate's helper at /Users/maya/.config/git/hooks/cabinet-push-gate.js",
    "  placed the credit hook at /Users/maya/.config/git/hooks/prepare-commit-msg",
    "  placed the pre-rebase hook at /Users/maya/.config/git/hooks/pre-rebase",
+   "  The strongest guardrail is a key that asks you on every push: see \"A hard boundary\" in the kit's docs/guardrails.md.",
    "== Secrets check",
    "  placed /Users/maya/acme/.git/hooks/pre-commit",
    "== Claude Code",
@@ -112,7 +114,7 @@ var CAPTURED = {
    "<span class=\"b\">Product repos</span>",
    "  <span class=\"green\">ok   </span> product repos checked",
    "<span class=\"b\">Kit and roles</span>",
-   "  <span class=\"green\">ok   </span> cabinet 0.2.0",
+   "  <span class=\"green\">ok   </span> cabinet 0.3.0",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -121,12 +123,13 @@ var CAPTURED = {
    "  <span class=\"green\">ok   </span> roles built: chief-of-staff product-manager architect qa security design-lead finance",
    "<span class=\"b\">Push guardrails</span>",
    "  <span class=\"green\">ok   </span> git push gate at /Users/maya/.config/git/hooks",
+   "  <span class=\"green\">ok   </span> this workspace holds its claim in ~/Library/Logs/cabinet/acme, so the push gate asks in its repos",
    "  <span class=\"green\">ok   </span> repos' own hooks still run (pass-through stubs)",
    "  <span class=\"green\">ok   </span> Cabinet runs are refused an amend or a rebase (the kit's hooks in /Users/maya/.config/git/hooks)",
    "  <span class=\"green\">ok   </span> Claude Code denies push and publish",
-   "  <span class=\"green\">ok   </span> Codex forbids git push",
-   "  <span class=\"green\">ok   </span> agy denies git push",
-   "  <span class=\"green\">ok   </span> Gemini CLI policy present",
+   "  <span class=\"green\">ok   </span> Codex holds the kit's rules and forbids git push",
+   "  <span class=\"green\">ok   </span> agy denies push and publish",
+   "  <span class=\"green\">ok   </span> Gemini CLI policy holds the kit's rules",
    "  <span class=\"green\">ok   </span> Qwen Code denies push and publish",
    "  <span class=\"green\">ok   </span> Cursor CLI config holds the deny rules (rule shapes probed live on Cursor CLI 2026.10.16)",
    "  <span class=\"blue\">note </span> the Cursor editor keeps its agent's command rules in its own settings, which the kit does not set: only the git push gate applies there",
@@ -180,7 +183,7 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "               cabinet 0.2.0",
+   "               cabinet 0.3.0",
    "⬤              One person, a whole team.",
    "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
@@ -190,13 +193,13 @@ var CAPTURED = {
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261029-01 filed for qa and committed"
+   "H-20261030-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261029-01 </span>  qa                        Checkout screens ready"
+   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261030-01 </span>  qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -209,7 +212,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.2.0).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.3.0).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",

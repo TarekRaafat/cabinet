@@ -453,7 +453,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.2.1).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.3.0).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -529,7 +529,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.2.1
+  ok    cabinet 0.3.0
 ...
 ```
 
@@ -2371,7 +2371,9 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.3.0 - Unreleased
+## 0.3.0 - 30 Oct 2026
+
+Run `cabinet bootstrap` after updating, for the new push gate, the completed agent tool rules and the new credit hook.
 
 - A light model for some roles: `cabinet config --model-light <name>` sets `CABINET_MODEL_LIGHT`, a second, lighter model for the roles in `CABINET_LIGHT_ROLES` (`cabinet config --light-roles "<roles>"`). The first light model set writes the default list, chief-of-staff, product-manager, design-lead and finance, those of them on the team then; a list already there is kept. Every other role runs on `--model` as before, whatever kind it is and whenever it was added, and a job's `MODEL` line still wins. With Claude Code as the runner, `role build` also writes each role's model into its file in `.claude/agents/` as a `model:` line; a project role's own `model:` line is kept. Setup asks for it right after the model; Enter keeps none.
 - When a light model is set, `cabinet role add` ends with one line saying which model the role runs on, and the command that moves it. `role remove` leaves the list as it is. New doctor checks `model-light.name`, `model-light.exists` and `model-light.roles` (a listed role not on the team: a note).
