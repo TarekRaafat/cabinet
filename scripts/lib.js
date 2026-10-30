@@ -1141,6 +1141,14 @@ function rulesAdd(kind, live, kit) {
   process.stdout.write(Buffer.concat([Buffer.from(text, "latin1"), Buffer.from((text === "" || text.endsWith("\n") ? "" : "\n") + add.join("\n") + "\n")]));
 }
 
+// week-start <first day, 0 Sunday to 6 Saturday> [now, in seconds]: the local midnight this week began,
+// in seconds. Date keeps a day with a clock change whole, and a midnight the clock skips becomes the
+// first time that day has. "now" is for the tests.
+function weekStart(first, now) {
+  const n = now ? new Date(now * 1000) : new Date();
+  process.stdout.write(new Date(n.getFullYear(), n.getMonth(), n.getDate() - (n.getDay() - first + 7) % 7).getTime() / 1000 + "\n");
+}
+
 const COMMANDS = {
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
@@ -1148,7 +1156,7 @@ const COMMANDS = {
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
-  "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck,
+  "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck, "week-start": weekStart,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

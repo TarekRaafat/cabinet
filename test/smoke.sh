@@ -1705,10 +1705,15 @@ dr | grep -q '^ok agent runs cost \$1.50 this week, as claude reports it; no bud
 # Runs from before this week do not count.
 printf '%s\tbrief\tclaude\t9\n' "$(( $(bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$S") - 1 ))" >> "$HOME/$LOGS/spend/spend.tsv"
 dr | grep -q 'cost \$1.50 this week' || fail "a run from last week was counted"
-# The week starts on the day AGENTS.md names: today, so it began at midnight.
-sedi "s/^- \*\*Week starts on:\*\* [A-Za-z]*\./- **Week starts on:** $(LC_ALL=C date +%A)./" "$S/AGENTS.md"
+# The week starts on the day AGENTS.md names, at midnight, in the last seven days; true at any time of day.
+sedi "s/^- \*\*Week starts on:\*\* [A-Za-z]*\./- **Week starts on:** Wednesday./" "$S/AGENTS.md"
 ws="$(bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$S")"; now="$(date +%s)"
-(( now - ws >= 0 && now - ws < 86400 )) && [[ "$(pf epoch_date "$ws" +%H%M%S)" == 000000 ]] || fail "the week does not start today at midnight"
+(( ws <= now && now - ws < 7 * 86400 + 3600 )) && [[ "$(pf epoch_date "$ws" "+%A %H%M%S")" == "Wednesday 000000" ]] || fail "the week does not start on Wednesday at midnight: $ws"
+# A fixed clock for a day the clock changes, in Cairo: the hour repeated just before midnight on 29 Oct
+# 2026, and the midnight skipped on 24 Apr 2026, which starts that day at 1 AM.
+wk() { TZ=Africa/Cairo node "$KIT/scripts/lib.js" week-start "$@"; }
+[[ "$(wk 4 1793309400)" == 1793221200 && "$(wk 0 1793309400)" == 1792875600 && "$(wk 5 1777010400)" == 1776981600 && "$(TZ=UTC node "$KIT/scripts/lib.js" week-start 0 1793309400)" == 1792886400 ]] \
+  || fail "week start on a day the clock changes: $(wk 4 1793309400) $(wk 0 1793309400) $(wk 5 1777010400)"
 git -C "$S" checkout -q -- AGENTS.md
 # A budget: warned from 80%, and when passed.
 (cd "$S" && "$F" config --yes --budget 1.8) >/dev/null || fail "config --budget"
@@ -3429,8 +3434,10 @@ RW="$(cd "$RW" && pwd -P)"; LR="$(cd "$LR" && pwd -P)"
 calls() { if [[ -f "$NL" ]]; then wc -l < "$NL" | tr -d ' '; else echo 0; fi; }
 clean() { rm -f "$LR/latest-version" "$NL" "$NP/pid"; rmdir "$LR/latest-version.lock" 2>/dev/null || true; }
 put() { clean; printf '%s' "$1" > "$LR/latest-version"; }
-ago() { if [[ "$(uname)" == Darwin ]]; then date -v-"$1"H +%Y%m%d%H%M; else date -d "$1 hours ago" +%Y%m%d%H%M; fi; }
-stale() { touch -h -t "$(ago 25)" "$LR/latest-version"; }
+# age <seconds> <file>: the file (not a link it is) last changed that long ago, counted in seconds, so a
+# clock change, as on a night the clock goes back, moves nothing.
+age() { node -e 'const t = Date.now() / 1000 - process.argv[1]; require("fs").lutimesSync(process.argv[2], t, t)' "$@"; }
+stale() { age $((25 * 3600)) "$LR/latest-version"; }
 # settled: the background check has started and ended (no lock), at most 10 seconds.
 settle() { sleep 0.5; local n; for n in $(seq 36); do [[ -e "$LR/latest-version.lock" ]] || return 0; sleep 0.25; done; }
 # out <command>: the output and exit code of next, status or bin/doctor.sh in the workspace.
@@ -3501,14 +3508,14 @@ for c in next status doctor; do clean; [[ "$(PATH="$T/rn-nonpm" out $c)" == "$(P
 rm -f "$NP/fail"
 # 6. Once a day, one check at a time, a stale lock taken over.
 put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 1 ]] || fail "two runs with a stale file made $(calls) calls"
-put 9.9.9; touch -t "$(ago 23)" "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 0 ]] || fail "a file 23 hours old was checked"
+put 9.9.9; age $((23 * 3600)) "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 0 ]] || fail "a file 23 hours old was checked"
 put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; settle; [[ "$(calls)" == 1 ]] || fail "a stale file: $(calls) calls"
 for i in 1 2 3 4 5; do
   clean; "$F" -C "$RW" next >/dev/null & p=$!; "$F" -C "$RW" next >/dev/null & q=$!; wait "$p" "$q" || true; settle
   [[ "$(calls)" == 1 ]] || fail "two commands at once, round $i: $(calls) calls"
 done
 put 9.9.9; stale; mkdir "$LR/latest-version.lock"
-touch -t "$(if [[ "$(uname)" == Darwin ]]; then date -v-2M +%Y%m%d%H%M; else date -d '2 minutes ago' +%Y%m%d%H%M; fi)" "$LR/latest-version.lock"
+age 120 "$LR/latest-version.lock"
 "$F" -C "$RW" next >/dev/null; settle; "$F" -C "$RW" next >/dev/null; settle
 [[ "$(calls)" == 1 && ! -e "$LR/latest-version.lock" ]] || fail "a stale lock: $(calls) calls, $(ls -A "$LR")"
 # 7. Not newer: nothing (the doctor's text holds kit.newer's message when it has one).
@@ -3536,7 +3543,7 @@ for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c with a fo
 rmdir "$LR/latest-version"; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"
 for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c through a link"; same $c "$o" || fail "$c exit through a link"; done
 settle; rm -f "$NP/fail"
-clean; mkdir "$LR/latest-version"; touch -t "$(ago 25)" "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle
+clean; mkdir "$LR/latest-version"; age $((25 * 3600)) "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle
 [[ "$(calls)" == 0 && -z "$(ls -A "$LR/latest-version")" ]] || fail "a folder in its place was checked or written into"
 rmdir "$LR/latest-version"
 q="$(ls -lT "$T/rn-elsewhere/target" 2>/dev/null || ls -l --time-style=full-iso "$T/rn-elsewhere/target")"
@@ -3577,7 +3584,7 @@ grep -qxF "CABINET_UPDATE_CHECK='\$(touch pwned)'" "$RW/cabinet.local.env" || fa
 [[ -z "$(find "$T" -name pwned 2>/dev/null)" ]] || fail "a hand-written update check ran as code"
 sedi '/^CABINET_UPDATE_CHECK=/d' "$RW/cabinet.local.env"
 # 11. outdated asks by hand, even with the check off, writes the file, and orders versions; a folder in the way.
-put 1.0.0; touch -t "$(ago 1)" "$LR/latest-version"
+put 1.0.0; age 3600 "$LR/latest-version"
 CABINET_UPDATE_CHECK=off "$F" -C "$RW" outdated >/dev/null; [[ "$(calls)" == 1 && "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "outdated with the check off: $(calls) calls, $(cat "$LR/latest-version")"
 printf '0.0.1\n' > "$NP/answer"; "$F" -C "$RW" outdated --json | j -e '$.update_available === false && $.command === null' >/dev/null || fail "outdated with a registry older than the kit"
 printf '9.9.9\n' > "$NP/answer"; clean; mkdir "$LR/latest-version"; st=0; o="$("$F" -C "$RW" outdated)" || st=$?

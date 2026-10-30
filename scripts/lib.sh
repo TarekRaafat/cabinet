@@ -123,13 +123,11 @@ spend_report() {
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$usd" "${tin/-/}" "${tc/-/}" "${tout/-/}" >> "$SPEND"
 }
 # Midnight at the start of this week, the day "Week starts on" in AGENTS.md names (Sunday by default).
-# ponytail: counts days as 24 hours, so in the week a clock changes the week starts an hour off.
 week_start() {
-  local d i=0 s=0 x now w h m sec
+  local d i=0 s=0 x
   d="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$WS/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
   for x in sun mon tue wed thu fri sat; do [[ "$x" == "${d:-sun}" ]] && s=$i; i=$((i + 1)); done
-  read -r now w h m sec <<<"$(date '+%s %w %H %M %S')"
-  echo $(( now - 10#$h * 3600 - 10#$m * 60 - 10#$sec - (w - s + 7) % 7 * 86400 ))
+  node "$LIBJS" week-start "$s"
 }
 # ws_md <what> <file>: a committed .md file under specs/ (a verdict's note, a spec), read from the
 # caller's folder or else the workspace; printed from the workspace root. Safe characters only: the

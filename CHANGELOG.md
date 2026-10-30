@@ -14,6 +14,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - On Linux, where `sh` is dash, the push gate now says "push blocked" when it refuses a push with no terminal; before, it refused without a word.
 - The guardrails page has a new section, "A hard boundary": a key that needs your confirmation or a touch on every use, so no push leaves without you; bootstrap points to it once.
 - A re-review reads only what changed: a reviewer asked again after a fix reads its last note, the commits since its last verdict and the files they change, and checks the fix against each of its earlier findings; the builder still runs the full suite once per round, and any reviewer may read the whole change when the fix touches what it reviewed before (`.cabinet/rules/reviews.md`). `cabinet handoff run` names the reviewer's last verdict's commits and the new ones in its step and its prompt. What counts as ready to push, and who is sent back, are unchanged.
+- The week the spend and the budget count starts at midnight on the day `Week starts on` names, also in a week the clock changes for summer or winter time; before, it started an hour off until the next week.
 
 ## 0.2.1 - 29 Oct 2026
 
