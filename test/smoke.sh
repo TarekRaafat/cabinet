@@ -2640,7 +2640,8 @@ cfg --credit-email "$UM" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$UM\"" 
 crun "$CW" codex backend
 [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$UM>" && "$(cab)" == 1 ]] || fail "a user noreply email was not credited: $(msg)"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "ok" && r.message.includes("456+my-user"))' >/dev/null || fail "the doctor did not accept a user noreply email"
-cfg --credit-email off >/dev/null; grep -qx 'CABINET_CREDIT_EMAIL=""' "$CW/cabinet.env" || fail "--credit-email off did not remove it"
+cfg --credit-email off > "$T/credit-out"; grep -qx 'CABINET_CREDIT_EMAIL=""' "$CW/cabinet.env" || fail "--credit-email off did not remove it"
+grep -qF "credit email: $UM -> the Cabinet Team account" "$T/credit-out" || fail "config does not name the Cabinet Team account: $(cat "$T/credit-out")"
 # The hook's own fallback, with no address from a run; and an address it refuses, of either form, credits nothing.
 (cd "$CR" && echo x >> f && git add f && CABINET_AGENT=backend CABINET_CREDIT=on git commit -q -m work)
 [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" ]] || fail "the credit hook's fallback is not the Cabinet Team account: $(msg)"

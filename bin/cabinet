@@ -1446,7 +1446,7 @@ cmd_config() {
   fi
   ((cemail_given)) && { [[ "$cemail" == off ]] && new_cemail="" || new_cemail="$cemail"; }
   ((set_credit)) && [[ "$credit" == off ]] && new_cemail=""   # off uses no email, so none is kept
-  [[ "$new_cemail" != "$o_cemail" ]] && changes+=("credit email: ${o_cemail:-the Cabinet Team app} -> ${new_cemail:-the Cabinet Team app}")
+  [[ "$new_cemail" != "$o_cemail" ]] && changes+=("credit email: ${o_cemail:-the Cabinet Team account} -> ${new_cemail:-the Cabinet Team account}")
   [[ "$hard" != "$o_hard" ]] && changes+=("hard to undo: ${o_hard:-not set} -> ${hard:-not set}")
   # The update check is written only when given, never carried over (a value there is only compared).
   local o_uc=""; grep -q '^CABINET_UPDATE_CHECK=' "$ws/cabinet.env" && o_uc="$(sed -n 's/^CABINET_UPDATE_CHECK="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$ws/cabinet.env" | tail -1)"
