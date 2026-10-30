@@ -43,7 +43,8 @@
 #       the team already has, each an agent run, until it is ready to push or needs the owner: the
 #       builder builds it and hands it on for review with --depends-on <ID>; each reviewer missing or
 #       stale verifies and records (one asked again is told its last verdict's commits and the ones
-#       since: .cabinet/rules/reviews.md, "A re-review"); after a BLOCK the builder fixes it and the
+#       since, in each repo, or to read the whole change when that cannot be told:
+#       .cabinet/rules/reviews.md, "A re-review"); after a BLOCK the builder fixes it and the
 #       blocking reviewers check again, up to --retries rounds (default 2), and once one reviewer's
 #       BLOCK or CHANGES on the work, counted over every run (blocks in list --json), pass --retries,
 #       it stops for the owner before another round. It decides nothing: it reads the state
@@ -523,17 +524,44 @@ agent() {  # agent <role> <what it does> <prompt>
 }
 # again <role>: for a reviewer asked again, the commits its last verdict on the review entry ($r) names
 # and the ones made after them, so it reads only those (.cabinet/rules/reviews.md, "A re-review");
-# nothing for a reviewer with no verdict yet.
+# nothing for a reviewer with no verdict yet. Worked out per repo: one holding some of those commits
+# lists the commits on its HEAD after them; one of the builder's that holds none lists those made after
+# the newest of them; any other lists the commits other verdicts name there. When it cannot tell (a
+# commit in no repo, or not on its repo's HEAD), it says so and the reviewer reads the whole change.
 again() {
-  local a s="" d name url files link path
+  local a o c d n h s="" u="" t=0 x name url files link path rows left
   a="$(json -r --arg x "$1" '($.verdicts.filter((w) => w.role == $x).pop()?.commits ?? []).join(",")' <<<"$r")"
   [[ -n "$a" ]] || return 0
-  while IFS= read -r d; do
-    git -C "$d" cat-file -e "${a%%,*}^{commit}" 2>/dev/null || continue
-    # ponytail: every later commit on the repo's HEAD, this work's or not; one batch is one piece of work.
-    s="$(git -C "$d" rev-list --reverse --abbrev-commit HEAD --not ${a//,/ } 2>/dev/null | paste -sd, -)"
-    break
-  done < <(echo "$WS"; repos 2>/dev/null | while IFS=$'\t' read -r name url files link path; do repo_dir "$path"; done)
+  o="$(json -r --arg a "$a" '[...new Set($.verdicts.flatMap((w) => w.commits))].filter((c) => !$a.split(",").includes(c)).join(" ")' <<<"$r")"
+  rows="$(printf '\t%s\n' "$WS"; repos 2>/dev/null | while IFS=$'\t' read -r name url files link path; do printf '%s\t%s\n' "$name" "$(repo_dir "$path")"; done)"
+  left=" ${a//,/ } "
+  # ponytail: "since" is every later commit on the repo's HEAD (or, in a repo the verdict never named,
+  # every one after its newest commit), this work's or not: it reads more than it needs, never less.
+  while IFS=$'\t' read -r n d; do
+    [[ -e "$d/.git" ]] || continue
+    h=""
+    for c in ${a//,/ }; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && h="$h $c" && left="${left/ $c / }"; done
+    [[ -n "$h" ]] || continue
+    for c in $h; do
+      git -C "$d" merge-base --is-ancestor "$c" HEAD 2>/dev/null || u=1
+      x="$(git -C "$d" log -1 --format=%ct "$c")"; ((x > t)) && t=$x
+    done
+    x="$(git -C "$d" rev-list --reverse --abbrev-commit HEAD --not $h)" || u=1
+    s="$s $x"
+  done <<<"$rows"
+  [[ -z "${left// /}" ]] || u=1
+  while IFS=$'\t' read -r n d; do
+    [[ -e "$d/.git" ]] || continue
+    for c in ${a//,/ }; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && continue 2; done
+    if [[ -n "$n" && ( "$n" == "$builder" || "$(owner_of "$n")" == "$builder" ) ]]; then
+      x="$(git -C "$d" rev-list --reverse --abbrev-commit --since="@$t" HEAD 2>/dev/null)" || u=1
+      s="$s $x"
+    else
+      for c in $o; do git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null && s="$s $c"; done
+    fi
+  done <<<"$rows"
+  s="$(echo $s | tr ' ' ',')"
+  [[ -z "$u" ]] || s="unknown, read the whole change"
   echo "$1's last verdict covers $a, commits since: ${s:-none}"
 }
 while :; do

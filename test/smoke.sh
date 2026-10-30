@@ -2039,6 +2039,24 @@ for r in $(others "$v"); do rec "$v" "$r" PASS "$A,$B"; done; rec "$v" qa PASS "
 out="$(run "$i" --dry-run)"; [[ "$out" == "qa: verifies $v again (qa's last verdict covers $A, commits since: $B)" ]] || fail "re-review of a revert: $out"
 read -r i v <<<"$(rv "Missing qa")"; A="$(cm m1)"; for r in $(others "$v"); do rec "$v" "$r" PASS "$A"; done
 out="$(run "$i" --dry-run)"; [[ "$out" == "qa: verifies $v" ]] || fail "a first review is not a re-review: $out"
+# Work in two repos of one builder: each repo lists what is new after the commits it holds; a repo the
+# verdict never named lists those after its newest commit; when it cannot tell, it never says none.
+git init -q "$PW/app2" && echo x > "$PW/app2/a.txt" && git -C "$PW/app2" add -A && git -C "$PW/app2" commit -qm init
+printf 'app2\t-\t-\tno\n' >> "$PW/repos.tsv"
+L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app2` | The web app, part two | web |'
+git -C "$PW" commit -qam "app2, built by web"
+cm2() { echo "$1" >> "$PW/app2/a.txt"; git -C "$PW/app2" commit -qam "$1"; git -C "$PW/app2" rev-parse --short HEAD; }
+blk() { for r in $(others "$v"); do rec "$v" "$r" PASS "$1"; done; rec "$v" qa BLOCK "$1"; run "$i" --dry-run; }
+fx="web: fixes what qa blocked, round 1 (qa's last verdict covers"
+read -r i v <<<"$(rv "Two repos")"; A="$(cm t1)"; A2="$(cm2 t2)"; B="$(cm t3)"; B2="$(cm2 t4)"
+out="$(blk "$A,$A2")"; [[ "$out" == "$fx $A,$A2, commits since: $B,$B2)" ]] || fail "re-review of work in two repos: $out"
+read -r i v <<<"$(rv "Fix in the other repo")"; n=$(($(date +%s) + 100))
+A="$(GIT_COMMITTER_DATE="@$n +0000" cm o1)"; B2="$(GIT_COMMITTER_DATE="@$((n + 1)) +0000" cm2 o2)"
+out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: $B2)" ]] || fail "a fix in a repo the verdict did not name: $out"
+read -r i v <<<"$(rv "Unknown commit")"; A="$(cm u1)"
+out="$(blk "$A,0123456789abc")"; [[ "$out" == "$fx $A,0123456789abc, commits since: unknown, read the whole change)" ]] || fail "a commit in no repo: $out"
+read -r i v <<<"$(rv "Off HEAD")"; git -C "$PW/app" checkout -qb side; A="$(cm h1)"; git -C "$PW/app" checkout -q -; git -C "$PW/app" branch -qD side
+out="$(blk "$A")"; [[ "$out" == "$fx $A, commits since: unknown, read the whole change)" ]] || fail "a commit not on its repo's HEAD: $out"
 # An agent that leaves no trace, or work sent back: it stops, naming what happened.
 d="$(work "Add a logo")"; touch "$FS/silent-security"
 out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"
