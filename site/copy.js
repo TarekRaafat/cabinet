@@ -31,7 +31,7 @@ module.exports = {
   copyButton: { copy: "Copy", copied: "Copied", failed: "Could not copy. Select the text and copy it." },
 
   hero: {
-    headline: "One person, a whole team.",
+    headline: "One person, <br>a whole team.",
     subline: "Build anything with AI agents, and stay in charge.",
     lead: "Cabinet is an open source kit that gives your project a small company of AI agent roles. They bring the skills and the hours. You bring the vision, the judgment and the final say.",
     install: "npm i -g @tarekraafat/cabinet",

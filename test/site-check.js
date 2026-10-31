@@ -80,6 +80,9 @@ const capLines = cap.lines.map((l) => decode(l.replace(/<[^>]*>/g, "")));
 if (heroLines.join("\n") !== capLines.join("\n")) fail("the hero terminal's lines are not the cabinet init capture, line for line");
 if (!term.includes(`<span class="typed">${cap.cmd}</span>`)) fail("the hero terminal does not type the captured command");
 
+// The hero headline breaks after the comma, at every width; the space keeps the text right for screen readers and copying.
+if (!text("index.html").includes("<h1>One person, <br>a whole team.</h1>")) fail("the hero headline does not break after the comma");
+
 // 32. The hero terminal's == section lines are bold.
 for (const m of term.matchAll(/<span class="ln">([\s\S]*?)<\/span>(?=\n|$)/g))
   if (/^==/.test(decode(m[1].replace(/<[^>]*>/g, ""))) && !m[1].startsWith('<span class="b">')) fail("a == line in the hero terminal is not bold");
