@@ -84,7 +84,7 @@ Known exceptions, each on the roadmap: `update` has no `--dry-run` yet (`cabinet
 ## Checks
 
 ```sh
-npm test                                      # every section, about a minute; must end with PASS
+npm test                                      # every section, about 30 minutes on macOS; a "-- <seconds>s <section>" line after each; must end with PASS
 npm test -- init config                       # only the sections whose name has a word, and what they need
 npm run test:linux                            # the same suite on Linux, in a Debian container (starts and stops Colima if Docker is not running)
 CABINET_PRIVATE_WORDS="word1 word2" npm test  # also fails on any private word in the kit

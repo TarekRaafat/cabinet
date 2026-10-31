@@ -216,7 +216,7 @@ An update never overwrites a kit file you edited in the workspace: it stops and 
 ## Develop the kit
 
 ```sh
-npm test                                        # the whole kit in a scratch home folder, about a minute
+npm test                                        # the whole kit in a scratch home folder, about 30 minutes on macOS
 npm test -- init                                # only the sections about init, and what they need
 CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your private words is in the kit
 ```
