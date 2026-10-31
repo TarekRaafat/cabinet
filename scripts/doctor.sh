@@ -78,13 +78,9 @@ if latest="$(update_latest "$WS")" && [[ -n "$latest" ]]; then
   inw=""; [[ -z "$where" || "$where" == "$WS" ]] || inw=" (in $where)"
   [[ -z "$how" ]] || note kit.newer "cabinet $latest is out; this workspace runs $kv. Run$inw: $how"
 fi
-edited=()
-while read -r h p; do
-  [[ -z "${p:-}" ]] && continue
-  if [[ ! -f "$WS/$p" ]]; then edited+=("$p (missing)")
-  elif [[ "$(sha256 "$WS/$p")" != "$h" ]]; then edited+=("$p"); fi
-done < "$K/manifest"
-((${#edited[@]})) && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): ${edited[*]}" || ok kit.unedited "kit files unedited"
+# One node hashes the whole manifest: a shasum for each file was the doctor's slowest check.
+edited="$(node "$LIBJS" kit-edited "$WS" "$K/manifest" 2>/dev/null)" || edited="(could not read them)"
+[[ -n "$edited" ]] && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): $edited" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"
 # A role the owner added (cabinet role add) works only once an agent has drafted it. A whole role
@@ -376,7 +372,8 @@ vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
 [[ -z "$vbad" ]] && ok handoffs.verdicts "every verdict is in the verdict format, with its note" \
   || bad handoffs.verdicts "verdicts not in the format, or naming a note that does not exist: $vbad (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)"
 # A verdict written in prose (a status line saying "qa PASS") is never read as one: say where.
-unread="$("$WS/bin/handoff.sh" list --json 2>/dev/null | json -r '$.filter((h) => (h.unread_verdicts ?? []).length > 0).map((h) => h.id).join(" ")' 2>/dev/null || true)"
+open_handoffs="$("$WS/bin/handoff.sh" list --json 2>/dev/null)"   # read once: "Team" below needs it too
+unread="$(json -r '$.filter((h) => (h.unread_verdicts ?? []).length > 0).map((h) => h.id).join(" ")' <<<"$open_handoffs" 2>/dev/null || true)"
 [[ -z "$unread" ]] && ok handoffs.unread-verdicts "no verdict is written outside a Verdict line" \
   || note handoffs.unread-verdicts "PASS, BLOCK or CHANGES written outside a Verdict line, so not counted: $unread (the reviewer records it with bin/handoff.sh record)"
 # A small task that passed stays small: its commits in one repo, touching no path AGENTS.md guards.
@@ -484,7 +481,7 @@ dup="$(awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
   || bad team.single-owner "more than one owner in the team table of AGENTS.md: $dup (give each one owner)"
 # Open handoffs reach someone: a role, a repo, or the owner. A removed role or repo strands them.
 known=" owner founder $(team_roles) $(repos 2>/dev/null | cut -f1 | tr '\n' ' ') "
-stranded="$("$WS/bin/handoff.sh" list --json 2>/dev/null | json -r --each '$.map((h) => h.id + "\t" + h.to)' 2>/dev/null | while IFS=$'\t' read -r id to; do
+stranded="$(json -r --each '$.map((h) => h.id + "\t" + h.to)' <<<"$open_handoffs" 2>/dev/null | while IFS=$'\t' read -r id to; do
     printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n' | while IFS= read -r n; do
       n="$(printf '%s' "$n" | sed 's/^ *//; s/ *$//' | tr '[:upper:]' '[:lower:]')"
       [[ -z "$n" ]] || has "$known" "$n" || printf '%s (%s)\n' "$id" "$n"

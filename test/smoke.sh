@@ -906,6 +906,11 @@ section "doctor (kit checks only)" "0"
 s22() {
 out="$("$W/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    kit files unedited' || fail "doctor: kit files"
+# One node hashes the manifest: an edited file and a missing one are both named, in the manifest's order.
+cp "$W/bin/doctor.sh" "$T/d.keep"; cp "$W/bin/handoff.sh" "$T/h.keep"; echo '# edited' >> "$W/bin/doctor.sh"; rm "$W/bin/handoff.sh"
+o="$(L kit-edited "$W" "$W/.cabinet/manifest")"; [[ "$o" == "bin/doctor.sh bin/handoff.sh (missing)" || "$o" == "bin/handoff.sh (missing) bin/doctor.sh" ]] || fail "kit-edited: $o"
+cp "$T/d.keep" "$W/bin/doctor.sh"; cp "$T/h.keep" "$W/bin/handoff.sh"
+[[ -z "$(L kit-edited "$W" "$W/.cabinet/manifest")$(L kit-edited "$W" "$T/no-manifest")" ]] || fail "kit-edited on unedited files, or with no manifest"
 echo "$out" | grep -q 'ok    roles built' || fail "doctor: roles"
 echo "$out" | grep -q 'ok    manual names every script, job and role' || { echo "$out" | grep OPERATIONS; fail "doctor: manual"; }
 echo "$out" | grep -q 'ok    every handoff ID is unique' || fail "doctor: handoff IDs"
@@ -1183,6 +1188,11 @@ L replace-line "$W/AGENTS.md" '| `guides/brand.md` |' "| none yet | x | |"; L dr
 
 section "list every workspace on this machine" "0"
 s34() {
+# Its own HOME and global git config, so list runs the doctor of this section's workspaces, not of every one the suite made. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+export HOME="$T/list-home" GIT_CONFIG_GLOBAL="$T/list-home/.gitconfig"
+mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+mkdir -p "$HOME/$LOGS/demo-co"; cp "$oh/$LOGS/demo-co/workspace" "$HOME/$LOGS/demo-co/workspace"
 "$F" new "$T/listed-old" --yes >/dev/null; echo 0.0.1 > "$T/listed-old/.cabinet/version"
 "$F" new "$T/listed-gone" --yes >/dev/null; rm -rf "$T/listed-gone"
 mkdir -p "$T/away"; out="$(cd "$T/away" && "$F" list)"
@@ -1195,12 +1205,17 @@ j -e '((g, o) => g.exists === false && g.doctor_problems == null && !!o.update_a
 (cd "$T/away" && "$F" next) | grep -q 'cabinet list shows them' || fail "next outside a workspace does not point at list"
 rm -rf "$HOME/$LOGS/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
 "$F" list --json | j -e '!$.some((w) => w.slug == "listed-old" || w.slug == "listed-gone")' >/dev/null || fail "a removed workspace is still listed"
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
 
 section "digest gathers every sign-off queue" "0"
 s35() {
+# Its own HOME and global git config, so digest reads this section's workspaces, not every one the suite made. Restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+export HOME="$T/digest-home" GIT_CONFIG_GLOBAL="$T/digest-home/.gitconfig"
+mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 "$F" new "$T/dg-a" --name "Digest A" --yes >/dev/null; "$F" new "$T/dg-b" --yes >/dev/null; "$F" new "$T/dg-c" --yes >/dev/null
 printf '# Brief\n\n## Sign-off queue\n\n1. **Publish the page?** A. now. B. later. [page.png](specs/evidence/H-1/page.png)\n\n2. **Spend $20?**\n\n## Verification\n\nNone.\n\n## Actions for the owner\n\n- Push api main (abc1234).\n\n## Per agent queue\n\nqa: 1\n' > "$T/dg-a/BRIEF.md"
 printf '# Brief\n\nNo headings here.\n' > "$T/dg-b/BRIEF.md"; touch -t 202001010700 "$T/dg-b/BRIEF.md"
@@ -1243,6 +1258,7 @@ for bad in 25:00 "fun 08:00" "mon"; do "$F" digest --schedule "$bad" >/dev/null 
 "$F" digest --schedule off | grep -q 'Stopped the scheduled digest' && [[ ! -f "$PL" ]] || fail "digest --schedule off"
 "$F" digest | grep -q '^Not scheduled' || fail "digest after the schedule stopped"
 for x in dg-a dg-b dg-c; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -3657,6 +3673,8 @@ offout() { CABINET_UPDATE_CHECK=off out "$1"; }
 offx() { OX_next="$(offout next | tail -1)" OX_status="$(offout status | tail -1)" OX_doctor="$(offout doctor | tail -1)"; }
 same() { local v="OX_$1"; [[ "$(tail -1 <<<"$2")" == "${!v}" ]]; }
 notice() { grep -q 'is out\|^latest: cabinet' <<<"$1"; }
+# trio: next, status and the doctor side by side, on a workspace none of them changes; each one's out in $T/rn-<command>.
+trio() { local c; for c in next status doctor; do out $c > "$T/rn-$c" & done; wait; }
 # 13. The suite runs with the notice off.
 grep -qx 'export CABINET_UPDATE_CHECK=off' "$KIT/test/smoke.sh" || fail "the suite does not turn the release notice off"
 # 1. The first check: one request, from Cabinet's own folder, one line written, nothing left behind.
@@ -3666,7 +3684,7 @@ clean; "$F" -C "$RW" next >/dev/null; settle
 [[ "$(cd "$LR" && find . -maxdepth 1 -type f)" == ./latest-version && ! -e "$LR/latest-version.lock" ]] || fail "the check left files: $(ls -A "$LR")"
 # 2. The notice, and one command everywhere: pinned, no pin, only the workspace behind, a shared inside workspace.
 four() {   # four <workspace> <command> [<folder named>]
-  local w=$1 cmd=$2 at="${3:-}" o
+  local w=$1 cmd=$2 at="${3:-}" o oo ost
   "$F" -C "$w" outdated --json | j -e --arg c "$cmd" '$.command == $c' >/dev/null || fail "outdated --json in $w: $("$F" -C "$w" outdated --json)"
   "$F" -C "$w" next --json | j -e --arg c "$cmd" '$.steps.some((s) => s.id == "update" && s.command == $c)' >/dev/null || fail "next --json in $w: $("$F" -C "$w" next --json)"
   o="$("$F" -C "$w" status)"; grep -qx "latest: cabinet $(cat "$LR/latest-version")" <<<"$o" && grep -qF "$cmd" <<<"$o" || fail "status in $w: $o"
@@ -3674,7 +3692,8 @@ four() {   # four <workspace> <command> [<folder named>]
   st=0; o="$( (cd "$w" && bin/doctor.sh --json) )" || st=$?
   j -e --arg c "$cmd" --arg l "$(cat "$LR/latest-version")" --arg v "$(cat "$w/.cabinet/version")" \
     '$.results.some((r) => r.id == "kit.newer" && r.level == "note" && r.message.includes($l) && r.message.includes($v) && r.message.includes($c))' <<<"$o" >/dev/null || fail "doctor kit.newer in $w: $(j -r '$.results.filter((r) => r.id.startsWith("kit")).map((r) => r.message).join("; ")' <<<"$o")"
-  [[ "$(j -r '$.problems' <<<"$o") $st" == "$( (cd "$w" && CABINET_UPDATE_CHECK=off bin/doctor.sh --json) | j -r '$.problems') $( (cd "$w" && CABINET_UPDATE_CHECK=off bin/doctor.sh --json >/dev/null); echo $?)" ]] || fail "the note changed the doctor's problems or exit code in $w"
+  ost=0; oo="$( (cd "$w" && CABINET_UPDATE_CHECK=off bin/doctor.sh --json) )" || ost=$?
+  [[ "$(j -r '$.problems' <<<"$o") $st" == "$(j -r '$.problems' <<<"$oo") $ost" ]] || fail "the note changed the doctor's problems or exit code in $w"
   if [[ -n "$at" ]]; then
     "$F" -C "$w" next | grep -qF "Run it in $at." && (cd "$w" && bin/doctor.sh) | grep -qF "(in $at)" || fail "next or the doctor does not name $at"
   fi
@@ -3693,7 +3712,7 @@ four "$SP/cabinet" "npm install @tarekraafat/cabinet@latest && cabinet update" "
 # 3. Never waits: with npm hanging, each command returns in its off time (plus 5 seconds), with its off output.
 echo 60 > "$NP/sleep"
 for c in next status doctor; do
-  clean; t0=$SECONDS; off="$(offout $c)"; t0=$((SECONDS - t0))
+  clean; t0=$SECONDS; off="$(offout $c)"; t0=$((SECONDS - t0)); printf '%s\n' "$off" > "$T/rn-off-$c"
   i=$SECONDS; on="$(out $c)"; i=$((SECONDS - i))
   [[ "$on" == "$off" ]] || fail "$c with a hanging check printed something else: $(diff <(echo "$off") <(echo "$on"))"
   ((i <= t0 + 5)) || fail "$c waited for the check: $i s against $t0 s"
@@ -3710,7 +3729,7 @@ kill -0 "$pid" 2>/dev/null || kill -0 "$ppid" 2>/dev/null || [[ -n "$(pgrep -P "
 : > "$NP/sleep"
 # 5. Offline: the off output; a seen version kept; and no npm at all.
 touch "$NP/fail"
-for c in next status doctor; do clean; [[ "$(out $c)" == "$(offout $c)" ]] || fail "$c offline differs from off"; done
+for c in next status doctor; do clean; [[ "$(out $c)" == "$(cat "$T/rn-off-$c")" ]] || fail "$c offline differs from off"; done
 put 9.9.9; stale; "$F" -C "$RW" next >/dev/null; settle; [[ "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "a failed check lost the version seen"
 mkdir -p "$T/rn-nonpm"; for p in $(printf '%s' "$PATH" | tr ':' ' '); do [[ "$p" == "$NP" || ! -d "$p" ]] || ln -s "$p"/* "$T/rn-nonpm/" 2>/dev/null || true; done
 rm -f "$T/rn-nonpm/npm" "$T/rn-nonpm/npx"
@@ -3730,28 +3749,28 @@ age 120 "$LR/latest-version.lock"
 [[ "$(calls)" == 1 && ! -e "$LR/latest-version.lock" ]] || fail "a stale lock: $(calls) calls, $(ls -A "$LR")"
 # 7. Not newer: nothing (the doctor's text holds kit.newer's message when it has one).
 for v in "$V" 0.0.1; do
-  put "$v"; for c in next status doctor; do notice "$(out $c)" && fail "$c named $v, which is not newer"; done
+  put "$v"; trio; for c in next status doctor; do notice "$(cat "$T/rn-$c")" && fail "$c named $v, which is not newer"; done
 done
 offx
 # 8. Only a version is believed: in the file, from npm, in .cabinet/version; and a folder or a link in its place.
 for v in '1.2.3; touch pwned' '$(touch pwned)' '' $'9.9.9\nx' 1.0.0-beta.1 08.0.0 12345678901234567890.0.0; do
-  put "$v"
-  for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c believed '$v'"; same $c "$o" || fail "$c exit with '$v'"; done
+  put "$v"; trio
+  for c in next status doctor; do o="$(cat "$T/rn-$c")"; notice "$o" && fail "$c believed '$v'"; same $c "$o" || fail "$c exit with '$v'"; done
   put 1.0.0; stale; printf '%s\n' "$v" > "$NP/answer"; "$F" -C "$RW" status >/dev/null; settle
   [[ "$(cat "$LR/latest-version")" == 1.0.0 ]] || fail "npm's '$v' was written: $(cat "$LR/latest-version")"
 done
 printf '9.9.9\n' > "$NP/answer"
 for v in '0.1.0$(touch pwned)' $'0.1.0\033[31m'; do
-  put 9.9.9; printf '%s\n' "$v" > "$RW/.cabinet/version"
-  for c in next status doctor; do notice "$(out $c)" && fail "$c with the workspace version '$v'"; done
+  put 9.9.9; printf '%s\n' "$v" > "$RW/.cabinet/version"; trio
+  for c in next status doctor; do notice "$(cat "$T/rn-$c")" && fail "$c with the workspace version '$v'"; done
 done
 printf '%s\n' "$V" > "$RW/.cabinet/version"
 mkdir -p "$T/rn-elsewhere"; printf '9.9.9\n' > "$T/rn-elsewhere/target"
 touch "$NP/fail"
-clean; mkdir "$LR/latest-version"
-for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c with a folder"; same $c "$o" || fail "$c exit with a folder"; done
-rmdir "$LR/latest-version"; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"
-for c in next status doctor; do o="$(out $c)"; notice "$o" && fail "$c through a link"; same $c "$o" || fail "$c exit through a link"; done
+clean; mkdir "$LR/latest-version"; trio
+for c in next status doctor; do o="$(cat "$T/rn-$c")"; notice "$o" && fail "$c with a folder"; same $c "$o" || fail "$c exit with a folder"; done
+rmdir "$LR/latest-version"; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"; trio
+for c in next status doctor; do o="$(cat "$T/rn-$c")"; notice "$o" && fail "$c through a link"; same $c "$o" || fail "$c exit through a link"; done
 settle; rm -f "$NP/fail"
 clean; mkdir "$LR/latest-version"; age $((25 * 3600)) "$LR/latest-version"; "$F" -C "$RW" next >/dev/null; settle
 [[ "$(calls)" == 0 && -z "$(ls -A "$LR/latest-version")" ]] || fail "a folder in its place was checked or written into"
@@ -3763,7 +3782,7 @@ clean; ln -s "$T/rn-elsewhere/target" "$LR/latest-version"; "$F" -C "$RW" next >
 [[ -z "$(find "$T" -name pwned 2>/dev/null)" ]] || fail "a version ran as code"
 # 9. Turned off, five ways; this machine's on wins over the workspace's off.
 cp "$RW/cabinet.env" "$T/rn-env"
-offnow() { put 9.9.9; stale; local c; for c in next status doctor; do notice "$(out $c)" && fail "$1: $c showed the notice"; done
+offnow() { put 9.9.9; stale; trio; local c; for c in next status doctor; do notice "$(cat "$T/rn-$c")" && fail "$1: $c showed the notice"; done
   "$F" -C "$RW" status --json | j -e '$.latest === null' >/dev/null || fail "$1: status --json latest"; settle; [[ "$(calls)" == 0 ]] || fail "$1: a request was made"; }
 CABINET_UPDATE_CHECK=off offnow "CABINET_UPDATE_CHECK=off"; NO_UPDATE_NOTIFIER=1 offnow "NO_UPDATE_NOTIFIER"; CI=true offnow "CI"
 printf 'CABINET_UPDATE_CHECK="off"\n' >> "$RW/cabinet.env"; offnow "off in cabinet.env"
@@ -4142,26 +4161,35 @@ seven() {
   lm "$LW/bin/spec.sh" run specs/s1.md >/dev/null 2>&1 || true
   runs
 }
-cp "$LW/bin/lib.sh" "$T/l-lib.sh"; cp "$FX/lib.sh" "$LW/bin/lib.sh"
-for r in claude codex antigravity qwen grok opencode cursor; do
+# side_by_side <function>: the function once per built-in runner, at the same time, each with a T and HOME of its
+# own, so a matrix of slow runs takes the time of its slowest runner. A fail in any of them fails here.
+side_by_side() {
+  local r p pids=""
+  for r in claude codex antigravity qwen grok opencode cursor; do
+    ( T="$T/l-$r"; export HOME="$T/home"; mkdir -p "$HOME"; "$1" "$r" ) & pids+=" $!"
+  done
+  for p in $pids; do wait "$p" || fail "the light model matrix: see the line above"; done
+}
+seven_matrix() {
+  local r=$1 mm
+  cp -R "$LW" "$T/light"; LW="$T/light" LL="$T/light-calls.log"
   le "$LW" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  cp "$LW/bin/lib.sh" "$T/l-lib.sh"; cp "$FX/lib.sh" "$LW/bin/lib.sh"
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
-    seven > "$T/l7-$r-$mm"; [[ "$(wc -l < "$T/l7-$r-$mm" | tr -d ' ')" == 5 ]] || fail "the baseline with $r: $(cat "$T/l7-$r-$mm")"
+    seven > "$T/l7-$mm"; [[ "$(wc -l < "$T/l7-$mm" | tr -d ' ')" == 5 ]] || fail "the baseline with $r: $(cat "$T/l7-$mm")"
   done
-done
-cp "$T/l-lib.sh" "$LW/bin/lib.sh"
-for r in claude codex antigravity qwen grok opencode cursor; do
-  le "$LW" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
+  cp "$T/l-lib.sh" "$LW/bin/lib.sh"
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
     for ml in absent ""; do for lr in absent chief-of-staff; do
       if [[ "$ml" == absent ]]; then le "$LW" CABINET_MODEL_LIGHT; else le "$LW" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
       if [[ "$lr" == absent ]]; then le "$LW" CABINET_LIGHT_ROLES; else le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
-      seven > "$T/l7-now"; cmp -s "$T/l7-$r-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$r-$mm" "$T/l7-now")"
+      seven > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
     done; done
   done
-done
+}
+side_by_side seven_matrix
 le "$LW" CABINET_RUNNER 'CABINET_RUNNER="claude"'; le "$LW" CABINET_MODEL 'CABINET_MODEL=""'; le "$LW" CABINET_MODEL_LIGHT; le "$LW" CABINET_LIGHT_ROLES; lc "settings"
 # 4 (the baseline). With no light model, role add prints what it printed at 4574648.
 out="$(cd "$LW" && lm "$F" role add helper --does "test" 2>&1)" || fail "role add helper: $out"
@@ -4286,7 +4314,9 @@ cp "$LI/bin/lib.sh" "$T/l-lib.sh"; cp "$LI/bin/role.sh" "$T/l-role.sh"; cp "$FX/
 "$LI/bin/role.sh" build >/dev/null || fail "4574648's role build"; snap "$T/lb-base"
 cp "$T/l-lib.sh" "$LI/bin/lib.sh"; cp "$T/l-role.sh" "$LI/bin/role.sh"
 [[ -f "$T/lb-base/project/x.md" && -f "$T/lb-base/claude/helper.md" && -f "$T/lb-base/agents/y.md" ]] || fail "test setup: the baseline: $(ls "$T/lb-base"/*)"
-for r in claude codex antigravity qwen grok opencode cursor; do
+build_matrix() {
+  local r=$1 mm base="${T%/*}/lb-base"
+  cp -R "$LP" "$T/lightp"; LP="$T/lightp" LI="$T/lightp/cabinet"
   le "$LI" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LI" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LI" CABINET_MODEL; fi
@@ -4294,10 +4324,11 @@ for r in claude codex antigravity qwen grok opencode cursor; do
       if [[ "$ml" == absent ]]; then le "$LI" CABINET_MODEL_LIGHT; else le "$LI" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
       if [[ "$lr" == absent ]]; then le "$LI" CABINET_LIGHT_ROLES; else le "$LI" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
       "$LI/bin/role.sh" build >/dev/null || fail "role build with $r"; snap "$T/lb-now"
-      diff -r "$T/lb-base" "$T/lb-now" >/dev/null || fail "role files with $r, model '$mm', light model $ml, roles $lr: $(diff -r "$T/lb-base" "$T/lb-now" | head -20)"
+      diff -r "$base" "$T/lb-now" >/dev/null || fail "role files with $r, model '$mm', light model $ml, roles $lr: $(diff -r "$base" "$T/lb-now" | head -20)"
     done; done
   done
-done
+}
+side_by_side build_matrix
 # 5. Claude Code and a light model: one model: line in .claude/agents/, none in agents/; x keeps its own.
 le "$LI" CABINET_RUNNER 'CABINET_RUNNER="claude"'; le "$LI" CABINET_MODEL 'CABINET_MODEL="m-main"'
 le "$LI" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT="m-light"'; le "$LI" CABINET_LIGHT_ROLES 'CABINET_LIGHT_ROLES="chief-of-staff"'
@@ -4682,6 +4713,15 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "the suite says what each section took" ""
+s71() {
+# H-20261031-23: "-- <seconds>s <section name>" after each section, the "== " lines as they were, PASS still last.
+o="$("$KIT/test/smoke.sh" "docs name the current")" || fail "the suite run on its own: $o"
+[[ "$(wc -l <<<"$o" | tr -d ' ')" == 3 ]] && [[ "$(sed -n 1p <<<"$o")" == "== docs name the current version" && "$(sed -n 3p <<<"$o")" == PASS ]] \
+  && sed -n 2p <<<"$o" | grep -Eqx -- '-- [0-9]+s docs name the current version' || fail "the time line: $o"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
@@ -4700,6 +4740,8 @@ fi
 for ((_i = 0; _i < ${#_names[@]}; _i++)); do
   [[ -n "${_want[$_i]:-}" ]] || continue
   echo "== ${_names[$_i]}"
+  _began=$SECONDS
   "s$_i"
+  echo "-- $((SECONDS - _began))s ${_names[$_i]}"
 done
 echo "PASS"

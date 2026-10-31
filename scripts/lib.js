@@ -1149,7 +1149,28 @@ function weekStart(first, now) {
   process.stdout.write(new Date(n.getFullYear(), n.getMonth(), n.getDate() - (n.getDay() - first + 7) % 7).getTime() / 1000 + "\n");
 }
 
+// kit-edited <workspace> <manifest>: the manifest's files (lines "<sha256> <path>") that differ from it, or
+// "<path> (missing)", on one line with spaces between; nothing when all match or there is no manifest.
+function kitEdited(ws, manifest) {
+  let lines = [];
+  try { lines = fs.readFileSync(manifest, "utf8").split("\n"); } catch (e) { return; }
+  const edited = [];
+  for (const l of lines) {
+    const m = l.match(/^\s*(\S+)\s+(.*\S)\s*$/);
+    if (!m) continue;
+    const f = path.join(ws, m[2]);
+    let isFile = false;
+    try { isFile = fs.statSync(f).isFile(); } catch (e) { /* gone */ }
+    if (!isFile) { edited.push(m[2] + " (missing)"); continue; }
+    let sum = "";
+    try { sum = crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex"); } catch (e) { /* unreadable: counts as edited */ }
+    if (sum !== m[1]) edited.push(m[2]);
+  }
+  if (edited.length) process.stdout.write(edited.join(" ") + "\n");
+}
+
 const COMMANDS = {
+  "kit-edited": kitEdited,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
