@@ -111,6 +111,13 @@ for (const s of [".nav a", ".uses a", ".uses > summary", ".foot-links a", ".side
   if (!plain.includes(s)) fail(`site.css: ${s} is not set to no underline (criterion 58)`);
 if (!/(^|\n)a \{[^}]*text-decoration: underline; text-decoration-thickness: 1px;[^}]*text-decoration-color: var\(--link-line\)/.test(css)) fail("site.css: links in running text lose their 1 px underline (criterion 60)");
 if (!/a\[aria-current\] \{ font-weight: 700; \}/.test(css)) fail("site.css: the current page is not weight 700 (criterion 61)");
+// The two-column hero's headline stays on two lines: "a whole team." is 6.55 times the font size wide (Schibsted Grotesk 700),
+// and fits its column at every width that has two columns, from 900 up. The wrap is 1200 wide with 24 of padding; the gap is 48.
+const heroSize = (css.match(/\.hero h1 \{ font-size: ([^;]+);/) || [])[1] || "";
+for (let w = 900; w <= 1300; w++) {
+  const size = Math.min(...[...heroSize.matchAll(/([\d.]+)(px|vw)/g)].map((m) => (m[2] === "vw" ? (m[1] * w) / 100 : +m[1])));
+  if (!(size * 6.55 <= (Math.min(w, 1200) - 96) / 2)) { fail(`site.css: the hero headline runs past two lines at ${w} wide`); break; }
+}
 const navOf = (f) => (text(f).match(/<nav class="nav"[\s\S]*?<\/nav>/) || [""])[0];
 const currents = (f) => [...navOf(f).matchAll(/<a href="([^"]+)" aria-current="page">/g)].map((m) => m[1]);
 for (const f of html) {

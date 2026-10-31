@@ -164,7 +164,7 @@ blockquote { margin-left: 0; padding-left: 16px; border-left: 2px solid var(--di
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; padding-top: 48px; }
 .hero-mark { color: var(--text); margin-bottom: 20px; }
 .intro .owner, .mark-owner .owner { stroke: var(--brass); }
-.hero h1 { font-size: 64px; line-height: 1.05; margin-bottom: 12px; }
+.hero h1 { font-size: min(64px, 6.6vw); line-height: 1.05; margin-bottom: 12px; }
 .subline { font-size: 22px; margin-bottom: 16px; }
 .lead { font-size: 18px; max-width: 560px; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 24px; }
