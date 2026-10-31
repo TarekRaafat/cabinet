@@ -80,6 +80,7 @@ if latest="$(update_latest "$WS")" && [[ -n "$latest" ]]; then
 fi
 # One node hashes the whole manifest: a shasum for each file was the doctor's slowest check.
 edited="$(node "$LIBJS" kit-edited "$WS" "$K/manifest" 2>/dev/null)" || edited="(could not read them)"
+[[ -f "$LIBJS" ]] || edited="bin/lib.js (missing)"   # the hashing lives in lib.js, so its own absence is named here
 [[ -n "$edited" ]] && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): $edited" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
 [[ -f "$WS/HANDOFFS.md" ]] && ok kit.handoffs-file "HANDOFFS.md present" || bad kit.handoffs-file "HANDOFFS.md missing"

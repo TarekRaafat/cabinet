@@ -907,10 +907,25 @@ s22() {
 out="$("$W/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    kit files unedited' || fail "doctor: kit files"
 # One node hashes the manifest: an edited file and a missing one are both named, in the manifest's order.
+# Each is also asserted through the doctor: kit-edited prints nothing it cannot read, so a wrong call looks clean.
+KE='FIX   kit files edited here (an update will refuse them; move the change to a project file or into the kit):'
 cp "$W/bin/doctor.sh" "$T/d.keep"; cp "$W/bin/handoff.sh" "$T/h.keep"; echo '# edited' >> "$W/bin/doctor.sh"; rm "$W/bin/handoff.sh"
-o="$(L kit-edited "$W" "$W/.cabinet/manifest")"; [[ "$o" == "bin/doctor.sh bin/handoff.sh (missing)" || "$o" == "bin/handoff.sh (missing) bin/doctor.sh" ]] || fail "kit-edited: $o"
+o="$(L kit-edited "$W" "$W/.cabinet/manifest")"; [[ "$o" == "bin/doctor.sh bin/handoff.sh (missing)" ]] || fail "kit-edited: $o"
+o="$("$W/bin/doctor.sh" 2>&1 || true)"; echo "$o" | grep -qF "$KE bin/doctor.sh bin/handoff.sh (missing)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name the edited and the missing file"; }
 cp "$T/d.keep" "$W/bin/doctor.sh"; cp "$T/h.keep" "$W/bin/handoff.sh"
 [[ -z "$(L kit-edited "$W" "$W/.cabinet/manifest")$(L kit-edited "$W" "$T/no-manifest")" ]] || fail "kit-edited on unedited files, or with no manifest"
+# An unreadable file counts as edited; root reads it anyway.
+if [[ "$(id -u)" != 0 ]]; then
+  chmod 000 "$W/CABINET.md"; o="$("$W/bin/doctor.sh" 2>&1 || true)"; chmod 644 "$W/CABINET.md"
+  echo "$o" | grep -qF "$KE CABINET.md" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name an unreadable kit file"; }
+fi
+# The hashing lives in lib.js: with it gone the doctor names it, and if it fails the doctor says so. Neither reads as ok.
+cp "$W/bin/lib.js" "$T/lib.keep"; rm "$W/bin/lib.js"
+o="$("$W/bin/doctor.sh" 2>&1 || true)"
+echo "$o" | grep -qF "$KE bin/lib.js (missing)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name a missing bin/lib.js"; }
+echo 'process.exit(1)' > "$W/bin/lib.js"; o="$("$W/bin/doctor.sh" 2>&1 || true)"
+cp "$T/lib.keep" "$W/bin/lib.js"
+echo "$o" | grep -qF "$KE (could not read them)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not report a failed check of the kit files"; }
 echo "$out" | grep -q 'ok    roles built' || fail "doctor: roles"
 echo "$out" | grep -q 'ok    manual names every script, job and role' || { echo "$out" | grep OPERATIONS; fail "doctor: manual"; }
 echo "$out" | grep -q 'ok    every handoff ID is unique' || fail "doctor: handoff IDs"
