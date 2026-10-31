@@ -9,7 +9,8 @@
 #       --spec names the spec it builds, on a "- Spec:" line, and refuses unless bin/spec.sh check
 #       finds the spec ready or building with nothing missing (.cabinet/rules/ready-to-build.md). --small
 #       marks it a small task ("- Size: small"). Work for a repo, or for a role that builds one, needs
-#       one of the two. --way-back says how to undo the change once pushed, released or published
+#       one of the two. --small with a --depends-on holding a handoff ID, for a reviewer, is refused:
+#       run does not count a --small entry as a review. --way-back says how to undo the change once pushed, released or published
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
 #       written but not committed, so their lines never go into its commit.
@@ -65,6 +66,13 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 lc() { printf %s "$1" | tr '[:upper:]' '[:lower:]'; }
+# names_of <To value>: each name in it on its own line, lower case, with no notes in brackets.
+names_of() {
+  printf '%s\n' "$1" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n' | while IFS= read -r n; do
+    n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
+    [[ -z "$n" ]] || echo "$n"
+  done
+}
 # way_back <text>: the text of a "- Way back:" line, or exit 2: never empty, never more than one line.
 way_back() {
   [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]] || { echo "--way-back is one line: no line breaks. $usage" >&2; return 2; }
@@ -171,9 +179,18 @@ for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing 
 [[ -z "$spec" || -z "$small" ]] || { echo "--spec or --small, not both: a task with a spec is not small. $usage" >&2; exit 2; }
 if [[ -z "$spec$small" ]]; then
   while IFS= read -r n; do
-    n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
-    [[ -n "$n" ]] && builds_repos "$n" && { echo "$n builds: say what this is, --spec specs/<feature>.md for work from a ready spec, or --small for a small task (one repo, no contract change, no decision for the owner, easy to undo). $usage" >&2; exit 2; }
-  done < <(printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n')
+    builds_repos "$n" && { echo "$n builds: say what this is, --spec specs/<feature>.md for work from a ready spec, or --small for a small task (one repo, no contract change, no decision for the owner, easy to undo). $usage" >&2; exit 2; }
+  done < <(names_of "$to")
+fi
+# run takes only an entry with no Size line as a review, so a small task may follow another small task;
+# a review filed --small would never count (the lookup in h_run).
+idre='(^|[^0-9A-Za-z-])H-[0-9]{8}-[0-9]+($|[^0-9])'
+if [[ -n "$small" && "$depends" =~ $idre ]]; then
+  while IFS= read -r n; do
+    case "$n" in
+      qa|security|design-lead|code-reviewer|dba) echo "$n reviews: a review entry is not a small task, so file it again without --small. $usage" >&2; exit 2 ;;
+    esac
+  done < <(names_of "$to")
 fi
 if [[ -n "$spec" ]]; then
   sc="$("$(dirname "$0")/spec.sh" check "$spec" --json 2>/dev/null || true)"
@@ -302,9 +319,8 @@ sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" rest="${
 # Work for a repo or a builder has commits: none is only for work that changes no repo.
 if [[ "$commits" == none ]]; then
   while IFS= read -r n; do
-    n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
-    [[ -n "$n" ]] && builds_repos "$n" && { echo "$id is work for $n, which builds: name its commits (--commits <hash,...>)" >&2; exit 1; }
-  done < <(printf '%s\n' "$to" | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '`' | tr ',' '\n')
+    builds_repos "$n" && { echo "$id is work for $n, which builds: name its commits (--commits <hash,...>)" >&2; exit 1; }
+  done < <(names_of "$to")
 fi
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }
 if [[ "$role" == qa && "$verdict" == PASS && -z "$hasev" ]]; then
@@ -588,7 +604,11 @@ while :; do
   if [[ -z "$v" ]]; then
     case "$(json -r '$.status_now' <<<"$w")" in
       rejected*) stop "$builder sent $id back (its status line says why)" ;;
-      done*) stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
+      done*)
+        x="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && $[k].small && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
+          && !/^(done|rejected)/.test($[k].status_now))' <<<"$rd")"
+        [[ -z "$x" ]] || stop "$id is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $id, without --small"
+        stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
     esac
     ((built == 0)) || stop "$builder ran but filed no review handoff for $id"
     agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done. If it is not ready to build, set $id to rejected with what is missing instead."

@@ -1878,6 +1878,17 @@ done
 rc=0; "$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed y --small --spec specs/x.md "Both" >/dev/null 2>&1 || rc=$?; [[ $rc != 0 ]] || fail "--small with --spec was accepted"
 id="$("$W/bin/handoff.sh" add --from chief-of-staff --to api --changed x --needed "Fix the label" --small --evidence https://example.com/s "Label")"; id="${id%% *}"
 grep -qx -- "- Size: small" "$W/HANDOFFS.md" || fail "the small handoff has no Size line"
+# A review entry is no small task: handoff run would not count it, so add refuses it and writes nothing.
+r="$(git -C "$W" rev-parse HEAD)"; cp "$W/HANDOFFS.md" "$T/handoffs.keep"
+for to in qa security design-lead code-reviewer dba QA "web, qa"; do
+  rc=0; out="$("$W/bin/handoff.sh" add --from api --to "$to" --changed x --needed y --small --depends-on "$id" "Review" 2>&1)" || rc=$?
+  [[ $rc == 2 ]] && [[ "$out" == *"a review entry is not a small task"* && "$out" == *"file it again without --small"* ]] || fail "add --small --depends-on to $to: exit $rc: $out"
+done
+[[ "$(git -C "$W" rev-parse HEAD)" == "$r" ]] && cmp -s "$W/HANDOFFS.md" "$T/handoffs.keep" || fail "a refused review entry wrote or committed something"
+"$W/bin/handoff.sh" add --from api --to backend --changed x --needed y --small --depends-on "$id" "Follow-up" >/dev/null || fail "a small follow-up for a builder was refused"
+"$W/bin/handoff.sh" add --from api --to qa --changed x --needed y --small --depends-on none "Small check" >/dev/null || fail "a small entry for a reviewer, depending on none, was refused"
+"$W/bin/handoff.sh" add --from api --to qa --changed x --needed y --small "Small check too" >/dev/null || fail "a small entry for a reviewer, with no --depends-on, was refused"
+"$W/bin/handoff.sh" add --from api --to qa --changed x --needed y --depends-on "$id" "Review" >/dev/null || fail "a review entry without --small was refused"
 mkdir -p "$W/specs/qa" && echo ran > "$W/specs/qa/s.md" && git -C "$W" add specs/qa && git -C "$W" commit -qm note
 c() { mkdir -p "$(dirname "$W/$1/$3")"; echo "$2" > "$W/$1/$3"; git -C "$W/$1" add -A; git -C "$W/$1" commit -qm "$2"; git -C "$W/$1" rev-parse --short HEAD; }
 c1="$(c api one src/label.js)" c2="$(c app two src/label.js)" c3="$(c api three migrations/001.sql)" c4="$(c api four openapi.yaml)"
@@ -2092,6 +2103,16 @@ rm -f "$FS/lazy"
 g="$(work "Add a chart")"; touch "$FS/reject"
 out="$(run "$g")" && fail "run went on past work sent back"; echo "$out" | grep -q "^Stopped: web sent $g back" || fail "work sent back: $out"
 rm -f "$FS/reject"
+# Work closed with no review: the stop says so, and names an open --small entry that depends on it,
+# since that does not count as a review (an entry from before add refused it, here edited to depend on it).
+st() { sed -i.bak "/^### $1:/,/^### /s/^- Status: open/- Status: $2/" "$PW/HANDOFFS.md" && rm "$PW/HANDOFFS.md.bak"; git -C "$PW" commit -qm "$2" -- HANDOFFS.md; }
+i="$(work "Add a badge")"; st "$i" done
+out="$(run "$i" --dry-run)" || true; [[ "$out" == "Stopped: $i is done, but no review handoff depends on it: the builder hands on with --depends-on $i" ]] || fail "done with no review: $out"
+s="$(hs add --from web --to qa --changed built --needed verify --small "Review the badge")"; s="${s%% *}"
+sed -i.bak "/^### $s:/,/^### /s/^- Depends on: none/- Depends on: $i/" "$PW/HANDOFFS.md" && rm "$PW/HANDOFFS.md.bak"; git -C "$PW" commit -qm dep -- HANDOFFS.md
+out="$(run "$i" --dry-run)" || true; [[ "$out" == "Stopped: $i is done, but $s, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $i, without --small" ]] || fail "a --small entry on done work: $out"
+st "$s" rejected
+out="$(run "$i" --dry-run)" || true; [[ "$out" == "Stopped: $i is done, but no review handoff depends on it: the builder hands on with --depends-on $i" ]] || fail "a closed --small entry was named: $out"
 # One run at a time for a piece of work.
 mkdir "$PW/.cabinet/run-$g.lock"; out="$(run "$g")" && fail "two runs of one piece of work"; echo "$out" | grep -q 'is already being run' || fail "the run lock: $out"
 rmdir "$PW/.cabinet/run-$g.lock"

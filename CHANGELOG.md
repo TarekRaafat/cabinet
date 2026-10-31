@@ -12,6 +12,7 @@ Run `cabinet bootstrap` after updating, for the new credit hook.
 - Bootstrap and `cabinet doctor` no longer print a shell error for a hook whose version line has a leading zero (such as `v08`); such a hook counts as yours and is left as it is.
 - Credit roles now credit the `cabinet-team` GitHub user account, with a profile page, in place of the `cabinet-team[bot]` app: the default email is `350503452+cabinet-team@users.noreply.github.com`. Until you run `cabinet bootstrap`, the earlier credit hook credits nothing, and `cabinet doctor` says it is out of date. Commits already made keep their line, and an agent can still amend its own commit credited with the old email.
 - `--credit-email` also takes a user account's noreply email, `<user ID>+<login>@users.noreply.github.com`, with any capitals GitHub shows in the login; an app's bot email keeps working, in lower case. The `credit.email` doctor messages and the option's error say so; the check ID is unchanged.
+- `cabinet handoff add` refuses `--small` on a review entry (a `--depends-on` holding a handoff ID, addressed to qa, security, design-lead, code-reviewer or dba), since `cabinet handoff run` does not count such an entry as the review. When a run stops at work that is done with no review, it names an open `--small` entry that depends on the work and says why it does not count.
 
 ## 0.3.0 - 30 Oct 2026
 
