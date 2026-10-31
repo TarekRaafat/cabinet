@@ -441,7 +441,7 @@ check_answers() {
 # Credit roles, for setup and config: the mode is exactly off or on, and a project's own account or app
 # is named by its noreply email, exactly (scripts/lib.sh and the credit hook check the same).
 credit_email_ok() {
-  local LC_ALL=C re='^[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*(\[bot\])?@users\.noreply\.github\.com$'   # C: a-z is ASCII only
+  local LC_ALL=C re='^[0-9]+\+([a-z0-9]+(-[a-z0-9]+)*\[bot\]|[A-Za-z0-9]+(-[A-Za-z0-9]+)*)@users\.noreply\.github\.com$'   # C: a-z is ASCII only
   [[ "$1" =~ $re ]]
 }
 check_credit() {   # check_credit <the mode the result has>: credit and cemail (cemail_given) can be written

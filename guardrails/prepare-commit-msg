@@ -1,5 +1,5 @@
 #!/bin/sh
-# cabinet credit hook v6
+# cabinet credit hook v7
 # Credit roles (cabinet config --credit-roles on): a commit made in a Cabinet run ends with one line,
 #   Co-authored-by: Cabinet <role> <email>
 # naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
@@ -84,7 +84,7 @@ email_for() {
 role="${CABINET_AGENT:-}"
 one "$role" '[a-z][a-z0-9-]*' || exit 0
 email_for "$role"
-one "$email" '[0-9]+\+[a-z0-9]+(-[a-z0-9]+)*(\[bot\])?@users\.noreply\.github\.com' || exit 0
+one "$email" '[0-9]+\+([a-z0-9]+(-[a-z0-9]+)*\[bot\]|[A-Za-z0-9]+(-[A-Za-z0-9]+)*)@users\.noreply\.github\.com' || exit 0
 dir="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
 for s in rebase-merge rebase-apply CHERRY_PICK_HEAD; do [ -e "$dir/$s" ] && exit 0; done
 # An empty message (comments aside) stays empty, so git still refuses it.

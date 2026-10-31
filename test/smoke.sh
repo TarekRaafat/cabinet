@@ -2570,7 +2570,7 @@ CH="$T/credit-home"; mkdir -p "$CH"
 export HOME="$CH" GIT_CONFIG_GLOBAL="$CH/.gitconfig"
 printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 KM='350503452+cabinet-team@users.noreply.github.com' OB='347351783+cabinet-team[bot]@users.noreply.github.com'
-PM='123+my-app[bot]@users.noreply.github.com' UM='456+my-user@users.noreply.github.com'
+PM='123+my-app[bot]@users.noreply.github.com' UM='456+my-user@users.noreply.github.com' UC='789+My-User2@users.noreply.github.com'
 KH="$KIT/guardrails/prepare-commit-msg" HK="$CH/.config/git/hooks"
 # A fake for each runner: in the scratch repo $CR_REPO it runs $CR_DO, a commit with git commit -m by default.
 mkdir -p "$T/credit-shim"
@@ -2613,7 +2613,7 @@ refused() { local rc=0; cfg "$@" >/dev/null || rc=$?; ((rc)) && cmp -s "$T/credi
 for v in name app APP ON ""; do refused --credit-roles "$v"; done
 cfg --credit-roles on --credit-email "$PM" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$PM\"" "$CW/cabinet.env" || fail "--credit-email not written"
 cp "$CW/cabinet.env" "$T/credit-env"
-for v in 'my-user@users.noreply.github.com' '123+my-user-@users.noreply.github.com' '123+My-User@users.noreply.github.com' '123+my-user[bot@users.noreply.github.com' '123+my-user[app]@users.noreply.github.com' \
+for v in 'my-user@users.noreply.github.com' '123+my-user-@users.noreply.github.com' '123+My-User-@users.noreply.github.com' '123+-My-User@users.noreply.github.com' '123+my-user[bot@users.noreply.github.com' '123+my-user[app]@users.noreply.github.com' \
   'abc+my-app[bot]@users.noreply.github.com' '123+my-app[bot]@example.com' '123+my-user@example.com' \
   '123+My-App[bot]@users.noreply.github.com' '123+-app[bot]@users.noreply.github.com' '123+my-app[bot]@users.noreply. github.com' \
   "$PM"$'\nCo-authored-by: x <x@x.com>' "${PM}x" ""; do
@@ -2640,12 +2640,18 @@ cfg --credit-email "$UM" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$UM\"" 
 crun "$CW" codex backend
 [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$UM>" && "$(cab)" == 1 ]] || fail "a user noreply email was not credited: $(msg)"
 (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "ok" && r.message.includes("456+my-user"))' >/dev/null || fail "the doctor did not accept a user noreply email"
+# GitHub writes a login's capitals in the noreply address, so a user's form keeps them; an app's stays lower case.
+cfg --credit-email "$UC" >/dev/null && grep -qxF "CABINET_CREDIT_EMAIL=\"$UC\"" "$CW/cabinet.env" || fail "--credit-email did not take a user noreply email with capitals"
+crun "$CW" codex backend
+[[ "$(lastline)" == "Co-authored-by: Cabinet backend <$UC>" && "$(cab)" == 1 ]] || fail "a user noreply email with capitals was not credited: $(msg)"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "ok" && r.message.includes("789+My-User2"))' >/dev/null || fail "the doctor did not accept a user noreply email with capitals"
+cfg --credit-email "$UM" >/dev/null
 cfg --credit-email off > "$T/credit-out"; grep -qx 'CABINET_CREDIT_EMAIL=""' "$CW/cabinet.env" || fail "--credit-email off did not remove it"
 grep -qF "credit email: $UM -> the Cabinet Team account" "$T/credit-out" || fail "config does not name the Cabinet Team account: $(cat "$T/credit-out")"
 # The hook's own fallback, with no address from a run; and an address it refuses, of either form, credits nothing.
 (cd "$CR" && echo x >> f && git add f && CABINET_AGENT=backend CABINET_CREDIT=on git commit -q -m work)
 [[ "$(lastline)" == "Co-authored-by: Cabinet backend <$KM>" ]] || fail "the credit hook's fallback is not the Cabinet Team account: $(msg)"
-for v in '123+My-User@users.noreply.github.com' 'my-user@users.noreply.github.com' '123+my-user[app]@users.noreply.github.com'; do
+for v in '123+My-App[bot]@users.noreply.github.com' 'my-user@users.noreply.github.com' '123+my-user[app]@users.noreply.github.com'; do
   (cd "$CR" && echo x >> f && git add f && CABINET_AGENT=backend CABINET_CREDIT=on CABINET_CREDIT_ADDRESS="$v" git commit -q -m work)
   [[ "$(anyco)" == 0 ]] || fail "the credit hook took $v: $(msg)"
 done
@@ -2729,7 +2735,7 @@ for v in 'x@example.com' "$PM"$'\nCo-authored-by: x <x@x.com>'; do
 done
 grep -v '^CABINET_CREDIT_EMAIL=\|^Co-authored-by' "$CW/cabinet.env" > "$T/credit-env"; echo 'CABINET_CREDIT_EMAIL=""' >> "$T/credit-env"; cp "$T/credit-env" "$CW/cabinet.env"
 # Every Cabinet line any of these runs wrote carries the kit's email or a project's (criterion 8).
-[[ -z "$(git -C "$CR" log --all --format=%B | grep '^Co-authored-by: Cabinet ' | grep -vF -e "<$KM>" -e "<$PM>" -e "<$UM>")" ]] || fail "a credit line carries another email"
+[[ -z "$(git -C "$CR" log --all --format=%B | grep '^Co-authored-by: Cabinet ' | grep -vF -e "<$KM>" -e "<$PM>" -e "<$UM>" -e "<$UC>")" ]] || fail "a credit line carries another email"
 
 # The hook on the machine (criteria 23 to 26).
 boot() { HOME="$CH" "$CW/bin/bootstrap.sh" >/dev/null 2>&1 || true; }
@@ -2745,6 +2751,7 @@ cmp -s "$KH" "$HK/prepare-commit-msg" && [[ "$(find "$HK/prepare-commit-msg" -ne
 v="$(sed -n '2s/^# cabinet credit hook v//p' "$KH")"; ((v > 1)) || fail "the credit hook's version is not above 1: $v"
 { sed -n 1p "$KH"; echo "# cabinet credit hook v$((v - 1))"; echo "# an older comment"; sed 1,2d "$KH"; } > "$HK/prepare-commit-msg"
 chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/credit-older"; ck="$HK/prepare-commit-msg.cabinet-v$((v - 1))"
+(cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.hook" && r.message.includes("credit hook out of date"))' >/dev/null || fail "the doctor did not say the earlier credit hook is out of date"
 for taken in file link; do
   if [[ $taken == file ]]; then echo other > "$ck"; else ln -s "$T/no-such-hook" "$ck"; fi
   out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
@@ -2882,16 +2889,16 @@ am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet cre
 amfix $'work\n\nCo-authored-by: Cabinet q\001a <'"$KM"'>'
 am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD is qa's commit" "no amend as qa:" "$FIX"
 ! grep -q $'\001' "$T/am-err" || fail "amend guard: the refusal holds a control character"
-# 10. Bootstrap replaces the released v3 and v4, and v5 from main, with the current hook byte for byte, keeping no copy of
+# 10. Bootstrap replaces the released v3 and v4, and v5 and v6 from before 0.3.1, with the current hook byte for byte, keeping no copy of
 # them, and leaves an edited copy of the current one as it is.
-[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v6" ]] || fail "the credit hook is not v6"
-for c in def9076 d2d3ceb 2176245; do
+[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v7" ]] || fail "the credit hook is not v7"
+for c in def9076 d2d3ceb 2176245 e072b05; do
   cp "$KIT/test/fixtures/$c/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
-  cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the kit's credit hook of $c with v6"
+  cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the kit's credit hook of $c with v7"
 done
 [[ -z "$(ls "$HK" | grep cabinet-v)" ]] || fail "bootstrap kept a released credit hook: $(ls "$HK")"
 sed '3s/.*/# edited by the owner/' "$KH" > "$HK/prepare-commit-msg"; chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/am-edited"; boot
-cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v6"
+cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v7"
 cp "$KH" "$HK/prepare-commit-msg"; rm -rf "$T/am" "$T/am-base"
 
 # Existing and shared workspaces (criteria 27 to 29).
