@@ -2737,6 +2737,29 @@ h="$(git -C "$CR" rev-parse HEAD)"
 CR_DO='echo x >> f && git add f && git commit -q -m ""' crun "$CW" codex backend
 [[ "$(git -C "$CR" rev-parse HEAD)" == "$h" ]] || fail "an empty message made a commit"
 git -C "$CR" checkout -q HEAD -- f
+# The commits the kit's own commands make in a run: a verdict, a verdict whose critical area runs its check, an archive.
+RW="$T/credit-record"; "$F" new "$RW" --yes >/dev/null || fail "new for credit on record"
+L sub "$RW/AGENTS.md" -- '/^\| none yet \| \| \| \| \|$/' '| pricing | `workspace/guides/price.md` | security | old and new prices | `tools/check-price.sh` |'
+mkdir -p "$RW/guides" "$RW/specs/qa"; echo 12 > "$RW/guides/price.md"; echo ok > "$RW/specs/qa/n.md"
+printf '#!/bin/sh\necho "role=$CABINET_AGENT credit=$CABINET_CREDIT"\n' > "$RW/tools/check-price.sh"; chmod +x "$RW/tools/check-price.sh"
+git -C "$RW" add -A && git -C "$RW" commit -qm "an area with a check"; rc="$(git -C "$RW" rev-parse --short HEAD)"
+rid="$("$RW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/p "Price")"; rid="${rid%% *}"
+# run_as <role> <handoff.sh arguments>: one command as a run starts it. credited <role>: the last commit ends with that role's one line.
+run_as() { local r=$1; shift; CABINET_AGENT="$r" CABINET_CREDIT=on "$RW/bin/handoff.sh" "$@" >/dev/null 2>"$T/credit-err" || fail "$1 as $r: $(cat "$T/credit-err")"; }
+credited() {
+  local b; b="$(git -C "$RW" log -1 --format=%B)"
+  [[ "$(sed '/^$/d' <<<"$b" | tail -n 1)" == "Co-authored-by: Cabinet $1 <$KM>" && "$(grep -c '^Co-authored-by: ' <<<"$b")" == 1 ]] || fail "$2 is not credited to $1 once: $b"
+}
+run_as qa record "$rid" --role qa PASS --commits "$rc" --note specs/qa/n.md; credited qa "a record commit"
+run_as security record "$rid" --role security PASS --commits "$rc" --note specs/qa/n.md; credited security "a record commit with a check"
+grep -q "^- Verdict: security PASS .* $rc " "$RW/HANDOFFS.md" && grep -qx 'role=security credit=on' "$RW/specs/evidence/$rid/check-pricing.txt" \
+  && git -C "$RW" show --name-only --format= HEAD | grep -qx "specs/evidence/$rid/check-pricing.txt" || fail "the record in a run did not run the area's check and commit its output"
+L sub-all "$RW/HANDOFFS.md" "/(### $rid:[^\n]*\n[^\n]*\n)- Status: [^\n]*/" '$1- Status: done (2026-01-01)'
+git -C "$RW" commit -qam "done"
+run_as chief-of-staff archive; credited chief-of-staff "an archive commit"
+# So the suite a critical area's check starts in a run is not a run's: its header drops all four before its first section.
+[[ "$(CABINET_AGENT=x CABINET_CREDIT=on CABINET_CREDIT_ADDRESS=x CABINET_AMEND_AS=x bash -c "$(grep -x 'unset CABINET_.*' "$KIT/test/smoke.sh"); env" | grep -c '^CABINET_\(AGENT\|CREDIT\|CREDIT_ADDRESS\|AMEND_AS\)=')" == 0 ]] \
+  && (( $(grep -nx 'unset CABINET_.*' "$KIT/test/smoke.sh" | cut -d: -f1) < $(grep -n '^section "' "$KIT/test/smoke.sh" | head -1 | cut -d: -f1) )) || fail "the suite inherits a run's credit variables"
 
 # The owner's own commits (criteria 16 to 19).
 echo z >> "$CR/f"; git -C "$CR" commit -qam "the owner's"
