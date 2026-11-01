@@ -119,7 +119,7 @@ C	Setup	bootstrap		Set up this machine for the workspace: repos, builders, guard
 C	Setup	config	[options]	Change settings: the setup questions again, with the current answers as defaults.
 C	Setup	move	<new-path>	Move the workspace folder and update what remembers its path.
 C	Setup	remove		Remove this workspace from this machine after showing the plan: schedules, logs, folder, and what setup added to a project.
-C	Kit	update		Apply the installed kit to this workspace and print the changelog since its version.
+C	Kit	update	[--yes]	Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and offers to take it.
 C	Kit	status		This workspace's kit version, the installed kit's, and every kit file edited here.
 C	Kit	outdated		Is a newer kit published? Compares this workspace, the installed kit and the npm registry.
 C	Kit	changelog	[from-version]	What changed since a version (all versions when left out).
@@ -145,7 +145,7 @@ O	new,init,config	--backup-dir	<folder>|off	Folder for the daily encrypted backu
 O	config	--pipeline	off|small|all	The scheduled runner: off (default), small (only small tasks) or all (small tasks and ready specs). It runs agents unattended.
 O	config	--pipeline-limit	<dollars>	What one scheduled run may spend; needed to turn the runner on.
 O	config	--pipeline-time	<when>|off	When the scheduled runner runs (default: 10:00 PM); off runs it only by hand.
-O	config	--update-check	off|on	The release notice: whether cabinet next, status and the doctor say when a newer Cabinet is out, asking the registry at most once a day (default: on).
+O	config	--update-check	off|on	The release notice: whether cabinet next, status and the doctor say when a newer Cabinet is out, asking the registry at most once a day, and whether cabinet update asks it (default: on).
 O	config	--hard-to-undo	"<repo>/<path> ..."|off	Paths where a change is hard to undo (migrations, public API files): a small task never touches them. Written into AGENTS.md.
 O	config	--backup-time	<time>	Time of the daily backup, like "1 PM" (default: 1:00 PM).
 O	new,init,config	--budget	<dollars>|off	A weekly budget in US dollars for the agent runs cabinet starts; the doctor warns from 80% (default: off).
@@ -203,7 +203,7 @@ O	digest	--file	<file>	With --schedule: where it is written (default: digest.md 
 O	remove	--force		Remove even with uncommitted changes or commits on no remote.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
-O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
+O	new,init,config,remove,role add,doctor,update	--yes		No questions (or -y). For doctor, with --fix. For update, it takes a newer Cabinet.
 O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,session list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE
 }
@@ -2218,19 +2218,27 @@ cmd_remove() {
   echo "Removed. The guardrails stay; see the kit's docs/guardrails.md to undo them."
 }
 
+# registry_latest <seconds>: the newest version on the registry, or nothing: the request the release notice
+# makes, from Cabinet's own folder so npm reads no project's files, stopped at the limit. Only a version is
+# believed, and it becomes the notice's latest-version too.
+registry_latest() {
+  local v="" LC_ALL=C re='^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$'
+  mkdir -p -m 700 "$LOGROOT" 2>/dev/null || true
+  v="$(cd "$LOGROOT" 2>/dev/null && node "$LIBJS" run-limited "$1" npm view @tarekraafat/cabinet version --no-update-notifier 2>/dev/null)" || v=""
+  [[ "$v" =~ $re ]] || return 0
+  node "$LIBJS" latest-write "$LOGROOT" "$v" 2>/dev/null || true
+  printf '%s' "$v"
+}
+
 # Is a newer kit published? Compares this workspace, the installed kit and the registry.
 cmd_outdated() {
   local ws latest have="" json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown argument $x (see: cabinet outdated --help)" ;; esac; done
   ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(head -c 64 "$ws/.cabinet/version" | head -1)"
-  # The request the release notice makes (by hand, even with it off), from Cabinet's own folder so npm
-  # reads no project's files; only a version is believed, and it becomes the notice's latest-version too.
-  mkdir -p -m 700 "$LOGROOT" 2>/dev/null || true
-  latest="$(cd "$LOGROOT" 2>/dev/null && npm view @tarekraafat/cabinet version --no-update-notifier 2>/dev/null)" || latest=""
-  local LC_ALL=C re='^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$' r="" where="" cmd=""
-  [[ "$latest" =~ $re ]] || latest=""
+  # By hand, even with the release notice off.
+  local r="" where="" cmd=""
+  latest="$(registry_latest 30)"
   if [[ -n "$latest" ]]; then
-    node "$LIBJS" latest-write "$LOGROOT" "$latest" 2>/dev/null || true
     r="$(update_cmd "$ws" "$latest" "$VERSION")"; [[ -z "$r" ]] || { where="${r%%$'\t'*}"; cmd="${r#*$'\t'}"; }
   fi
   if ((json)); then
@@ -2330,10 +2338,38 @@ cmd_changelog() {
   fi
   changelog "$from" | changelog_show
 }
+# update_offer <workspace> <yes>: a newer Cabinet on the registry than the installed kit: say so and offer
+# update_cmd's command. Taken, it never returns: the run that follows applies the new kit. Everything else
+# returns, so no failure here stops an update of the installed kit. The check off asks nothing, and neither
+# does the run after taking it (CABINET_UPDATE_TOOK), so a kit still old on PATH cannot go round.
+update_offer() {
+  local ws=$1 yes=$2 latest r cmd dir inst c=cabinet
+  [[ -z "${CABINET_UPDATE_TOOK:-}" ]] && update_on "$ws" || return 0
+  latest="$(registry_latest 10)"
+  [[ -n "$latest" ]] && node "$LIBJS" version-newer "$latest" "$VERSION" || return 0
+  r="$(update_cmd "$ws" "$latest" "$VERSION")"; dir="${r%%$'\t'*}"; cmd="${r#*$'\t'}"
+  echo "${S_B}Cabinet $latest is out${S_Z}; the installed kit is $VERSION."
+  echo "To take it: ${S_B}$cmd${S_Z}${dir:+ (in $dir)}"
+  if ((yes == 0)); then
+    { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null || { echo "No terminal to ask in: going on with the installed kit."; echo; return 0; }
+    confirm "Run it now" y || { echo; return 0; }
+  fi
+  # A global install runs from Cabinet's own folder, so npm reads no project's settings.
+  inst="${cmd% && cabinet update}"
+  # shellcheck disable=SC2086  # inst is one of update_cmd's fixed commands
+  if ! (cd "${dir:-$LOGROOT}" && node "$LIBJS" run-limited 300 $inst); then
+    echo "${S_R}That did not finish${S_Z}: going on with the installed kit. Run it again later: $cmd"; echo; return 0
+  fi
+  command -v cabinet >/dev/null 2>&1 || c="$KIT/bin/cabinet"
+  CABINET_UPDATE_TOOK=1 CABINET_PINNED="" exec "$c" -C "$ws" update
+}
+
 cmd_update() {
-  [[ $# -eq 0 ]] || bad_usage "cabinet update takes no arguments (to name a workspace: cabinet -C <dir> update)"
+  local x yes=0
+  for x in "$@"; do case "$x" in --yes|-y) yes=1 ;; *) bad_usage "unknown argument $x (see: cabinet update --help; to name a workspace: cabinet -C <dir> update)" ;; esac; done
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
+  update_offer "$ws" "$yes"
   local old; old="$(cat "$ws/.cabinet/version")"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
   # of the owner's before (the pin in package.json and its lockfile, from npm update, go with it).

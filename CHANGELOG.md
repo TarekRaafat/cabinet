@@ -2,6 +2,11 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.3.2 - Unreleased
+
+- `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, says when a newer Cabinet is out, and offers to run the command that takes it for this install (global or pinned), asking first; `--yes` takes it without asking. When the registry cannot be reached, the command fails or you decline, it goes on with the installed kit. `cabinet config --update-check off` also stops this request.
+- `cabinet outdated` stops its registry request after 30 seconds, and says the newest is unknown.
+
 ## 0.3.1 - 1 Nov 2026
 
 Run `cabinet bootstrap` after updating, for the new credit hook.

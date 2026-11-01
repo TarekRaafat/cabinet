@@ -4774,6 +4774,77 @@ o="$("$KIT/test/smoke.sh" "docs name the current")" || fail "the suite run on it
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "update says a newer Cabinet is out and offers to take it" ""
+s72() {
+# H-20261101-03. Its own HOME, the notice on, and fakes of npm and cabinet first on PATH: nothing is installed.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" op="$PATH" NP="$T/uo-npm" UW="$T/uo-ws" PW="$T/uo-pin" LR UA st o t0 K2
+export HOME="$T/uo-home" GIT_CONFIG_GLOBAL="$T/uo-home/.gitconfig"; unset CABINET_UPDATE_CHECK NO_UPDATE_NOTIFIER CI
+mkdir -p "$HOME" "$NP"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+cat > "$NP/npm" <<'FAKE'
+#!/bin/bash
+d="$(dirname "$0")"
+printf '%s|%s\n' "$*" "$(pwd -P)" >> "$d/log"
+if [[ "$1" == view ]]; then
+  [[ -e "$d/hang" ]] && exec sleep 40
+  [[ -e "$d/viewfail" ]] && exit 1
+  cat "$d/answer"
+else
+  [[ ! -e "$d/installfail" ]]
+fi
+FAKE
+cat > "$NP/cabinet" <<'FAKE'
+#!/bin/bash
+printf '%s|%s|%s\n' "$*" "${CABINET_UPDATE_TOOK:-}" "${CABINET_PINNED:-}" >> "$(dirname "$0")/took"
+FAKE
+chmod +x "$NP/npm" "$NP/cabinet"; printf '9.9.9\n' > "$NP/answer"
+export PATH="$NP:$PATH"
+"$F" new "$UW" --yes >/dev/null || fail "new for the update offer"
+UW="$(cd "$UW" && pwd -P)"; LR="$(cd "$HOME/$LOGS" && pwd -P)"
+rm -f "$UW/package.json" "$UW/package-lock.json"; git -C "$UW" add -A; git -C "$UW" commit -qm "no pin"   # new pins the kit
+# up <folder> [<option>...]: update there, answers from $UA (none: no terminal); $o and $st hold what it did.
+up() { local w=$1; shift; rm -f "$NP/log" "$NP/took"; st=0; o="$(CABINET_TTY="${UA:-$T/uo-no-terminal}" "$F" -C "$w" update "$@" 2>&1)" || st=$?; }
+installs() { grep -cv '^view ' "$NP/log" || true; }
+UA="$T/uo-answers"
+# 1. Reproduced: the workspace is on the installed kit and a newer version is out. Declined: said, not run, kit applied.
+printf 'n\n' > "$UA"; up "$UW"
+((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -qF 'npm i -g @tarekraafat/cabinet@latest && cabinet update' <<<"$o" || fail "update did not say a newer version is out: $o"
+grep -q 'Nothing changed' <<<"$o" && [[ "$(installs)" == 0 && ! -e "$NP/took" ]] || fail "declined, it installed: $o"
+[[ "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "the answer is not the notice's latest-version"
+[[ "$(cat "$NP/log")" == "view @tarekraafat/cabinet version --no-update-notifier|$LR" ]] || fail "the request: $(cat "$NP/log")"
+# 2. Accepted, and with --yes or -y: npm from Cabinet's own folder (no project's npm settings), then the new kit applies, once.
+for a in "" --yes -y; do
+  printf 'y\n' > "$UA"; if [[ -n "$a" ]]; then rm -f "$UA"; up "$UW" "$a"; else up "$UW"; fi
+  ((st == 0)) && grep -qxF "i -g @tarekraafat/cabinet@latest|$LR" "$NP/log" && [[ "$(cat "$NP/took")" == "-C $UW update|1|" ]] || fail "taking it ($a): $o; $(cat "$NP/log"); $(cat "$NP/took" 2>&1)"
+done
+# 3. No terminal and no --yes: the command is said, nothing is installed, the kit is applied.
+UA=""; up "$UW"
+((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -q 'Nothing changed' <<<"$o" && [[ "$(installs)" == 0 ]] || fail "no terminal: $o"
+# 4. The run after taking it asks nothing and sends no request, so a kit still old on PATH cannot go round.
+rm -f "$NP/log"; CABINET_UPDATE_TOOK=1 "$F" -C "$UW" update --yes >/dev/null; [[ ! -e "$NP/log" ]] || fail "the run after taking it asked again"
+# 5. A pin: npm in the pin's folder, and the run after it hands off to the pin again (CABINET_PINNED not carried).
+"$F" new "$PW" --yes >/dev/null; PW="$(cd "$PW" && pwd -P)"
+K2="$PW/node_modules/@tarekraafat/cabinet"; mkdir -p "$K2"; cp -R "$KIT/bin" "$KIT/scripts" "$KIT/core" "$KIT/roles" "$KIT/guardrails" "$KIT/templates" "$KIT/package.json" "$KIT/CHANGELOG.md" "$K2/"
+up "$PW" --yes
+((st == 0)) && grep -qxF "install @tarekraafat/cabinet@latest|$PW" "$NP/log" && [[ "$(cat "$NP/took")" == "-C $PW update|1|" ]] || fail "the pin: $o; $(cat "$NP/log"); $(cat "$NP/took" 2>&1)"
+# 6. No network failure stops it: npm failing, npm missing, junk, a hang (stopped at the limit), an install that fails.
+touch "$NP/viewfail"; up "$UW" --yes; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" && ! grep -q 'is out' <<<"$o" || fail "a registry that fails: $o"; rm "$NP/viewfail"
+mkdir -p "$T/uo-nonpm"; ln -s "$(command -v node)" "$T/uo-nonpm/node"; PATH="$T/uo-nonpm:/usr/bin:/bin" up "$UW" --yes; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" || fail "npm missing: $o"
+printf '<html>\n' > "$NP/answer"; up "$UW" --yes; ((st == 0)) && ! grep -q 'is out' <<<"$o" || fail "junk from the registry: $o"; printf '9.9.9\n' > "$NP/answer"
+touch "$NP/hang"; t0=$SECONDS; up "$UW" --yes; ((st == 0 && SECONDS - t0 < 30)) && grep -q 'Nothing changed' <<<"$o" || fail "a registry that hangs: $((SECONDS - t0))s: $o"; rm "$NP/hang"
+touch "$NP/installfail"; up "$UW" --yes; ((st == 0)) && grep -q 'did not finish' <<<"$o" && grep -q 'Nothing changed' <<<"$o" && [[ ! -e "$NP/took" ]] || fail "an install that fails: $o"; rm "$NP/installfail"
+# 7. Nothing to offer: the registry not newer; the check off asks nothing; a wrong argument is wrong usage.
+printf '0.0.1\n' > "$NP/answer"; up "$UW" --yes; ((st == 0)) && ! grep -q 'is out' <<<"$o" && [[ "$(installs)" == 0 ]] || fail "a registry that is not newer: $o"; printf '9.9.9\n' > "$NP/answer"
+rm -f "$NP/log"; CABINET_UPDATE_CHECK=off "$F" -C "$UW" update --yes >/dev/null; [[ ! -e "$NP/log" ]] || fail "the check off still asked the registry"
+"$F" -C "$UW" config --this-machine --update-check off >/dev/null; up "$UW" --yes; [[ ! -e "$NP/log" ]] || fail "the machine's setting off still asked the registry"
+"$F" -C "$UW" config --this-machine --clear >/dev/null
+st=0; "$F" -C "$UW" update --bad >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "update --bad exit $st"
+# 8. The docs.
+grep -q '^cabinet update \[--yes\]$' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" || fail "the docs do not say what update offers"
+"$F" -C "$UW" remove --yes --force >/dev/null 2>&1 || true; "$F" -C "$PW" remove --yes --force >/dev/null 2>&1 || true
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="$op"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
