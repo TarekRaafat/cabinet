@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.3.1 - Unreleased
+## 0.3.1 - 1 Nov 2026
 
 Run `cabinet bootstrap` after updating, for the new credit hook.
 
