@@ -4,7 +4,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.3.2 - Unreleased
 
-- `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, says when a newer Cabinet is out, and offers to run the command that takes it for this install (global or pinned), asking first; `--yes` takes it without asking. When the registry cannot be reached, the command fails or you decline, it goes on with the installed kit. `cabinet config --update-check off` also stops this request.
+- `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, says when a newer Cabinet is out, and offers to install exactly that version for this install (global or pinned), asking first; `--yes` takes it without asking. A pinned install runs no dependency's install scripts, and is left for you to run when the pin's folder holds a `.npmrc`. When the registry cannot be reached, the command fails or you decline, it goes on with the installed kit. `cabinet config --update-check off` also stops this request. A pinned kit at 0.3.1 or older takes no `--yes` and exits 2: run `cabinet update` once without it.
 - `cabinet outdated` stops its registry request after 30 seconds, and says the newest is unknown.
 
 ## 0.3.1 - 1 Nov 2026

@@ -2339,25 +2339,33 @@ cmd_changelog() {
   changelog "$from" | changelog_show
 }
 # update_offer <workspace> <yes>: a newer Cabinet on the registry than the installed kit: say so and offer
-# update_cmd's command. Taken, it never returns: the run that follows applies the new kit. Everything else
-# returns, so no failure here stops an update of the installed kit. The check off asks nothing, and neither
-# does the run after taking it (CABINET_UPDATE_TOOK), so a kit still old on PATH cannot go round.
+# to install exactly that version. Taken, it never returns: the run that follows applies the new kit.
+# Everything else returns, so no failure here stops an update of the installed kit. The check off asks
+# nothing, and neither does the run after taking it (CABINET_UPDATE_TOOK), so a kit still old on PATH cannot
+# go round. A pin's folder comes from the workspace, so its install runs no dependency's scripts, does not
+# climb to a parent npm workspace's settings, and is left to the owner when the folder has its own .npmrc.
 update_offer() {
-  local ws=$1 yes=$2 latest r cmd dir inst c=cabinet
+  local ws=$1 yes=$2 latest r cmd dir c=cabinet
+  local inst=()
   [[ -z "${CABINET_UPDATE_TOOK:-}" ]] && update_on "$ws" || return 0
   latest="$(registry_latest 10)"
   [[ -n "$latest" ]] && node "$LIBJS" version-newer "$latest" "$VERSION" || return 0
-  r="$(update_cmd "$ws" "$latest" "$VERSION")"; dir="${r%%$'\t'*}"; cmd="${r#*$'\t'}"
+  r="$(update_cmd "$ws" "$latest" "$VERSION")"; dir="${r%$'\t'*}"   # the last tab: a folder can hold one
+  if [[ -n "$dir" ]]; then inst=(npm install --ignore-scripts --workspaces=false "@tarekraafat/cabinet@$latest")
+  else inst=(npm i -g "@tarekraafat/cabinet@$latest"); fi
+  cmd="${inst[*]} && cabinet update"
   echo "${S_B}Cabinet $latest is out${S_Z}; the installed kit is $VERSION."
   echo "To take it: ${S_B}$cmd${S_Z}${dir:+ (in $dir)}"
+  if [[ -n "$dir" && -e "$dir/.npmrc" ]]; then
+    echo "Not run: that folder has its own .npmrc, which can choose where npm installs from. Check it, then run the command yourself."
+    echo "Going on with the installed kit."; echo; return 0
+  fi
   if ((yes == 0)); then
     { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null || { echo "No terminal to ask in: going on with the installed kit."; echo; return 0; }
     confirm "Run it now" y || { echo; return 0; }
   fi
   # A global install runs from Cabinet's own folder, so npm reads no project's settings.
-  inst="${cmd% && cabinet update}"
-  # shellcheck disable=SC2086  # inst is one of update_cmd's fixed commands
-  if ! (cd "${dir:-$LOGROOT}" && node "$LIBJS" run-limited 300 $inst); then
+  if ! (cd "${dir:-$LOGROOT}" && node "$LIBJS" run-limited 300 "${inst[@]}"); then
     echo "${S_R}That did not finish${S_Z}: going on with the installed kit. Run it again later: $cmd"; echo; return 0
   fi
   command -v cabinet >/dev/null 2>&1 || c="$KIT/bin/cabinet"
