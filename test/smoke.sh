@@ -2751,12 +2751,26 @@ credited() {
   [[ "$(sed '/^$/d' <<<"$b" | tail -n 1)" == "Co-authored-by: Cabinet $1 <$KM>" && "$(grep -c '^Co-authored-by: ' <<<"$b")" == 1 ]] || fail "$2 is not credited to $1 once: $b"
 }
 run_as qa record "$rid" --role qa PASS --commits "$rc" --note specs/qa/n.md; credited qa "a record commit"
+# A check that fails in a run refuses the verdict: no commit, no verdict line, no output kept.
+cp "$RW/tools/check-price.sh" "$T/check-price.ok"; printf '#!/bin/sh\nexit 3\n' > "$RW/tools/check-price.sh"; rh="$(git -C "$RW" rev-parse HEAD)"
+CABINET_AGENT=security CABINET_CREDIT=on "$RW/bin/handoff.sh" record "$rid" --role security PASS --commits "$rc" --note specs/qa/n.md >/dev/null 2>&1 && fail "a record in a run passed with its area's check failing"
+[[ "$(git -C "$RW" rev-parse HEAD)" == "$rh" ]] && ! grep -q '^- Verdict: security' "$RW/HANDOFFS.md" && [[ ! -e "$RW/specs/evidence/$rid/check-pricing.txt" ]] || fail "a failing check in a run left a commit, a verdict or its output"
+cp "$T/check-price.ok" "$RW/tools/check-price.sh"
 run_as security record "$rid" --role security PASS --commits "$rc" --note specs/qa/n.md; credited security "a record commit with a check"
 grep -q "^- Verdict: security PASS .* $rc " "$RW/HANDOFFS.md" && grep -qx 'role=security credit=on' "$RW/specs/evidence/$rid/check-pricing.txt" \
   && git -C "$RW" show --name-only --format= HEAD | grep -qx "specs/evidence/$rid/check-pricing.txt" || fail "the record in a run did not run the area's check and commit its output"
 L sub-all "$RW/HANDOFFS.md" "/(### $rid:[^\n]*\n[^\n]*\n)- Status: [^\n]*/" '$1- Status: done (2026-01-01)'
 git -C "$RW" commit -qam "done"
 run_as chief-of-staff archive; credited chief-of-staff "an archive commit"
+# The other two commits a run can make through the kit: a spec's review, and an update to a newer kit.
+cp "$RW/specs/_template.md" "$RW/specs/login.md"; git -C "$RW" add specs/login.md; git -C "$RW" commit -qm "a spec"
+CABINET_AGENT=qa CABINET_CREDIT=on "$RW/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/n.md >/dev/null || fail "spec record in a run failed"
+[[ "$(git -C "$RW" log -1 --format=%s)" == "specs: login.md qa PASS" ]] || fail "spec record in a run made no commit"; credited qa "a spec record commit"
+KV="$(j -r '$.version' "$KIT/package.json")"
+KN="$(node -e 'const v = process.argv[1].split(".").map(Number); v[2]++; console.log(v.join("."))' "$KV")"
+KU="$T/credit-kit"; cp -R "$KIT" "$KU"; rm -rf "$KU/.git"; KN="$KN" j '({...$, version: process.env.KN})' "$KIT/package.json" > "$KU/package.json"
+CABINET_AGENT=chief-of-staff CABINET_CREDIT=on "$KU/bin/cabinet" -C "$RW" update >/dev/null || fail "update in a run failed"
+[[ "$(git -C "$RW" log -1 --format=%s)" == "cabinet: update to $KN" ]] || fail "update in a run made no commit"; credited chief-of-staff "an update commit"
 # So the suite a critical area's check starts in a run is not a run's: its header drops all four before its first section.
 [[ "$(CABINET_AGENT=x CABINET_CREDIT=on CABINET_CREDIT_ADDRESS=x CABINET_AMEND_AS=x bash -c "$(grep -x 'unset CABINET_.*' "$KIT/test/smoke.sh"); env" | grep -c '^CABINET_\(AGENT\|CREDIT\|CREDIT_ADDRESS\|AMEND_AS\)=')" == 0 ]] \
   && (( $(grep -nx 'unset CABINET_.*' "$KIT/test/smoke.sh" | cut -d: -f1) < $(grep -n '^section "' "$KIT/test/smoke.sh" | head -1 | cut -d: -f1) )) || fail "the suite inherits a run's credit variables"
