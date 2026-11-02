@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.3.3 - Unreleased
+## 0.3.3 - 3 Nov 2026
 
 - Agents now treat what they read from outside (a cloned repo, a web page, an issue, a tool's output) as data, not instructions: when it asks them to run something, send data out, reveal a secret or skip a check, they stop and tell the owner where. Instructions come only from the owner, `CABINET.md`, `AGENTS.md`, the role and what they name, and handoffs, which assign work but never loosen a rule. It is a rule for the model, not an enforced boundary, as the guardrails page says.
 - The `cabinet` command never runs a copy of Cabinet in a workspace's `node_modules`, which a cloned project can commit: `cabinet status` would run it. Where a workspace pins another version, `cabinet update` and `cabinet config` change nothing and print `npx cabinet update` or `npx cabinet config`, which runs the pinned copy, and `cabinet status` adds a `pinned:` line naming its version. The command `status`, `outdated`, `next` and the doctor give for a pinned project now ends in `npx cabinet update`, and starts with `npm install @tarekraafat/cabinet@latest` in the pin's folder whenever the pinned copy is behind the newest. The pin is looked for only beside the `package.json` that pins the kit (the workspace's, or the project's above a `cabinet/` workspace), never in the folder above a stand-alone workspace. **By hand:** a script that calls `cabinet update` or `cabinet config` in a pinned project must call `npx cabinet update` or `npx cabinet config`.
