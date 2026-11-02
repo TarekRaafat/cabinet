@@ -4857,7 +4857,8 @@ plant() {
   printf '#!/bin/bash\ntouch "%s"\n' "$MK" > "$m/bin/cabinet"; chmod +x "$m/bin/cabinet"
   git -C "$1" add -f node_modules && git -C "$1" commit -qm "a committed kit copy"
 }
-"$F" new "$PW" --yes >/dev/null || fail "new for the pinned copy"; PW="$(cd "$PW" && pwd -P)"; plant "$PW" 0.0.9
+o="$("$F" new "$PW" --yes)" || fail "new for the pinned copy"; PW="$(cd "$PW" && pwd -P)"; plant "$PW" 0.0.9
+grep -qxF "Updates: npm update, then npx cabinet update (in $PW)." <<<"$o" || fail "setup's closing line for a pin: $o"
 mkdir -p "$PP"; git -C "$PP" init -q; printf '{"name": "p", "devDependencies": {"@tarekraafat/cabinet": "^0.0.9"}}\n' > "$PP/package.json"
 (cd "$PP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the pinned copy"
 PP="$(cd "$PP" && pwd -P)"; git -C "$PP" add -A && git -C "$PP" commit -qm "workspace"; plant "$PP" 0.0.9
@@ -4875,8 +4876,19 @@ for w in "$PW" "$PP/cabinet"; do
   [[ ! -e "$MK" ]] || fail "a command ran the pinned copy in $w"
   [[ -z "$(git -C "$at" status --porcelain)" ]] || fail "update or config changed $w: $(git -C "$at" status --porcelain)"
 done
+V="$(j -r '$.version' "$KIT/package.json")"
+# A pin behind this kit, with the registry on this kit's version: npx cabinet update would run the pin and change
+# nothing, so outdated and next name the npm install in the pin's folder, from the pin's version (H-20261102-14).
+mkdir -p "$T/pc-npm"; printf '#!/bin/sh\necho %s\n' "$V" > "$T/pc-npm/npm"; chmod +x "$T/pc-npm/npm"
+for w in "$PW" "$PP/cabinet"; do
+  at=""; [[ "$w" == "$PW" ]] || at=" (in $PP)"
+  o="$(PATH="$T/pc-npm:$PATH" "$F" -C "$w" outdated)"
+  grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && npx cabinet update$at." <<<"$o" || fail "outdated for a pin behind the kit in $w: $o"
+  o="$(PATH="$T/pc-npm:$PATH" "$F" -C "$w" outdated --json)"
+  j -e '$.command === "npm install @tarekraafat/cabinet@latest && npx cabinet update"' <<<"$o" >/dev/null || fail "outdated --json for a pin behind the kit in $w: $o"
+done
 # A pin of this kit's version: nothing stops, and status says nothing of it.
-V="$(j -r '$.version' "$KIT/package.json")"; sedi "s/\"0.0.9\"/\"$V\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
+sedi "s/\"0.0.9\"/\"$V\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
 "$F" -C "$PW" status | grep -q '^pinned:' && fail "status named a pin of this kit's version"
 "$F" -C "$PW" config --writing short >/dev/null || fail "config stopped on a pin of this kit's version"
 "$F" -C "$PW" update >/dev/null || fail "update stopped on a pin of this kit's version"
@@ -4892,10 +4904,24 @@ grep -qF "pins Cabinet 0.0.9?[2J" <<<"$o" && ! grep -qF "${ESC}[2J" <<<"$o" || f
 o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" 9.9.9 "$V")"
 [[ "$o" == "$PW"$'\t'"npm install @tarekraafat/cabinet@latest && npx cabinet update" ]] || fail "update_cmd for a pin: $o"
 printf '0.0.1\n' > "$PW/.cabinet/version"
-o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" "" "$V")"; [[ "$o" == $'\t'"npx cabinet update" ]] || fail "update_cmd for a pin behind the kit: $o"
+o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" "" "$V")"; [[ "$o" == $'\t'"npx cabinet update" ]] || fail "update_cmd for a workspace behind a pin: $o"
 rm "$PW/package.json"
 o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" "" "$V")"; [[ "$o" == $'\t'"cabinet update" ]] || fail "update_cmd with no pin: $o"
-for w in "$PW" "$PP"; do "$F" -C "$w" remove --yes --force >/dev/null 2>&1 || true; done
+# A stand-alone workspace never takes a copy in the folder above it for its pin: with its own package.json
+# pinning the kit or not, and with none, update and config go on and status names no pin (H-20261102-14).
+w="$T/pc-alone/ws"; "$F" new "$w" --yes >/dev/null || fail "new for the stand-alone workspace"; w="$(cd "$w" && pwd -P)"
+mkdir -p "$T/pc-alone/node_modules/@tarekraafat/cabinet/bin"
+printf '{\n  "name": "@tarekraafat/cabinet",\n  "version": "0.1.0",\n  "bin": {"cabinet": "bin/cabinet"}\n}\n' > "$T/pc-alone/node_modules/@tarekraafat/cabinet/package.json"
+printf '#!/bin/bash\ntouch "%s"\n' "$MK" > "$T/pc-alone/node_modules/@tarekraafat/cabinet/bin/cabinet"; chmod +x "$T/pc-alone/node_modules/@tarekraafat/cabinet/bin/cabinet"
+for d in pin nopin none; do
+  [[ "$d" != nopin ]] || printf '{"name": "x", "private": true}\n' > "$w/package.json"
+  [[ "$d" != none ]] || rm "$w/package.json"
+  o="$("$F" -C "$w" status 2>&1)" && ! grep -q '^pinned:' <<<"$o" || fail "status in a stand-alone workspace ($d) named the copy above: $o"
+  o="$("$F" -C "$w" update 2>&1)" || fail "update stopped on the copy above a stand-alone workspace ($d): $o"
+  o="$("$F" -C "$w" config --writing short 2>&1)" || fail "config stopped on the copy above a stand-alone workspace ($d): $o"
+done
+[[ ! -e "$MK" ]] || fail "a command ran the copy above a stand-alone workspace"
+for w in "$PW" "$PP" "$T/pc-alone/ws"; do "$F" -C "$w" remove --yes --force >/dev/null 2>&1 || true; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }

@@ -367,12 +367,18 @@ update_latest() {
   mkdir -p -m 700 "$LOGROOT" 2>/dev/null || return 0
   node "$LIBJS" release-latest "$LOGROOT" "$1/.cabinet/version" 2>/dev/null || true
 }
+# pin_dir <workspace>: the folder whose package.json pins the kit (the workspace's own package.json, else the
+# project's above a cabinet/ workspace), or nothing. The one rule for where a pin lives.
+pin_dir() {
+  local d="$1"; [[ -f "$1/package.json" ]] || d="$(dirname "$1")"
+  ! grep -q '"@tarekraafat/cabinet"' "$d/package.json" 2>/dev/null || printf '%s\n' "$d"
+}
 # update_cmd <workspace> <latest> <installed kit version>: "<folder>\t<command>" that takes the newer kit
-# (the folder: the pin's package.json, the workspace's or the project's above), or nothing.
+# (the folder: pin_dir), or nothing. In a pinned project the installed kit is the pin's (pin_kit in bin/cabinet).
 update_cmd() {
-  local pin="$1" run="cabinet update"; [[ -f "$1/package.json" ]] || pin="$(dirname "$1")"
+  local pin run="cabinet update"; pin="$(pin_dir "$1")"
   # A pinned project runs its own copy with npx: the cabinet command never runs a workspace's node_modules.
-  if grep -q '"@tarekraafat/cabinet"' "$pin/package.json" 2>/dev/null; then run="npx cabinet update"; else pin=""; fi
+  [[ -z "$pin" ]] || run="npx cabinet update"
   if [[ -n "$2" ]] && node "$LIBJS" version-newer "$2" "$3"; then
     if [[ -n "$pin" ]]; then printf '%s\t%s\n' "$pin" "npm install @tarekraafat/cabinet@latest && $run"
     else printf '\t%s\n' "npm i -g @tarekraafat/cabinet@latest && $run"; fi

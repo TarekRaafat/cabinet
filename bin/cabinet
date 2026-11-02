@@ -1725,15 +1725,15 @@ cmd_next() {
     step commit "Set the owner, then commit the workspace." 'cabinet config --owner "Your Name" --email you@example.com'
   fi
   # The pinned kit.
-  local pin="$ws"; [[ -f "$ws/package.json" ]] || pin="$(dirname "$ws")"
-  if grep -q '@tarekraafat/cabinet' "$pin/package.json" 2>/dev/null && [[ ! -d "$pin/node_modules/@tarekraafat/cabinet" ]]; then
+  local pin; pin="$(pin_dir "$ws")"
+  if [[ -n "$pin" && ! -d "$pin/node_modules/@tarekraafat/cabinet" ]]; then
     step install "Download the pinned kit (in $pin)." "npm install"
   fi
   # A newer Cabinet on the registry (the release notice, platform.sh): what to run, and where when not here.
   local latest r
   latest="$(update_latest "$ws")"
   if [[ -n "$latest" ]]; then
-    r="$(update_cmd "$ws" "$latest" "$VERSION")"
+    r="$(update_cmd "$ws" "$latest" "$(pin_kit "$ws")")"
     [[ -z "$r" ]] || step update "Cabinet $latest is out (this workspace runs $(head -1 "$ws/.cabinet/version")).$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' Run it in %s.' "${r%%$'\t'*}")" "${r#*$'\t'}"
   fi
   # This machine: guardrails and schedules.
@@ -2220,7 +2220,7 @@ cmd_outdated() {
   local r="" where="" cmd=""
   latest="$(registry_latest 30)"
   if [[ -n "$latest" ]]; then
-    r="$(update_cmd "$ws" "$latest" "$VERSION")"; [[ -z "$r" ]] || { where="${r%%$'\t'*}"; cmd="${r#*$'\t'}"; }
+    r="$(update_cmd "$ws" "$latest" "$(pin_kit "$ws")")"; [[ -z "$r" ]] || { where="${r%%$'\t'*}"; cmd="${r#*$'\t'}"; }
   fi
   if ((json)); then
     json -n --arg w "$have" --arg k "$VERSION" --arg l "$latest" --arg c "$cmd" '({workspace_version: str($w), kit_version: $k, latest: str($l),
@@ -2319,25 +2319,28 @@ cmd_changelog() {
   fi
   changelog "$from" | changelog_show
 }
-# pin_other <workspace>: "<folder>\t<version>" when the workspace, or the project above a cabinet/ workspace,
-# holds a pinned copy (node_modules/@tarekraafat/cabinet) of another version than this kit; else nothing.
+# pin_other <workspace>: "<version>\t<folder>" when the pin's folder (pin_dir, platform.sh) holds a copy
+# (node_modules/@tarekraafat/cabinet) of another version than this kit; else nothing.
 # The copy is only read, never run: a clone can commit any node_modules. Its version is the clone's text,
-# so it is only printed (through term_text or term_say), never run or written into a file.
+# so it is only printed (through term_text or term_say) or compared, never run or written into a file;
+# a tab in it becomes "?", so the version ends at the first tab and the folder (which can hold one) follows.
 pin_other() {
-  local p v
-  for p in "$1/node_modules/@tarekraafat/cabinet" "$1/../node_modules/@tarekraafat/cabinet"; do
-    [[ -f "$p/package.json" ]] || continue
-    [[ "$(cd "$p" && pwd -P)" != "$(cd "$KIT" && pwd -P)" ]] || return 0
-    v="$(head -c 65536 "$p/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -1)"
-    [[ -z "$v" || "$v" == "$VERSION" ]] || printf '%s\t%s\n' "$(cd "$p/../../.." && pwd -P)" "$v"
-    return 0
-  done
+  local d p v
+  d="$(pin_dir "$1")"; p="$d/node_modules/@tarekraafat/cabinet"
+  [[ -n "$d" && -f "$p/package.json" ]] || return 0
+  [[ "$(cd "$p" && pwd -P)" != "$(cd "$KIT" && pwd -P)" ]] || return 0
+  v="$(head -c 65536 "$p/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -1)"; v="${v//$'\t'/?}"
+  [[ -z "$v" || "$v" == "$VERSION" ]] || printf '%s\t%s\n' "$v" "$(cd "$d" && pwd -P)"
+  return 0
 }
+# pin_kit <workspace>: the installed kit's version for update_cmd: the pin's when it differs, else this kit's.
+# npx cabinet update runs the pin, so a pin behind this kit needs the npm install, not only npx.
+pin_kit() { local r; r="$(pin_other "$1")"; [[ -n "$r" ]] && printf '%s\n' "${r%%$'\t'*}" || printf '%s\n' "$VERSION"; }
 # pin_stop <workspace> <command>: update and config stop before changing anything when the workspace pins
 # another version, and print the command that runs the pinned copy. This kit never runs it.
 pin_stop() {
   local r; r="$(pin_other "$1")"; [[ -n "$r" ]] || return 0
-  echo "$ERR_TAG this workspace pins Cabinet $(term_say "${r#*$'\t'}"), and this is $VERSION, so nothing changed. Run the pinned copy: npx cabinet $2 (in $(term_say "${r%$'\t'*}"))" >&2
+  echo "$ERR_TAG this workspace pins Cabinet $(term_say "${r%%$'\t'*}"), and this is $VERSION, so nothing changed. Run the pinned copy: npx cabinet $2 (in $(term_say "${r#*$'\t'}"))" >&2
   exit 1
 }
 # update_notice <workspace>: a newer Cabinet on the registry than the installed kit: say so, with the command
@@ -2432,7 +2435,7 @@ cmd_status() {
   done < "$ws/.cabinet/manifest"
   # A newer Cabinet on the registry (the release notice, platform.sh), and what to run.
   local latest r=""; latest="$(update_latest "$ws")"
-  [[ -z "$latest" ]] || r="$(update_cmd "$ws" "$latest" "$VERSION")"
+  [[ -z "$latest" ]] || r="$(update_cmd "$ws" "$latest" "$(pin_kit "$ws")")"
   if ((json)); then
     printf '%s\n' ${edited[@]+"${edited[@]}"} | json -R --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" --arg latest "$latest" \
       '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean), latest: $latest || null})'
@@ -2443,7 +2446,7 @@ cmd_status() {
   local e; for e in ${edited[@]+"${edited[@]}"}; do printf "  ${S_U}edited here${S_Z}: %s\n" "$(printf '%s' "$e" | term_text)"; done
   ((${#edited[@]})) || echo "  ${S_G}no kit file edited${S_Z}"
   local pin; pin="$(pin_other "$ws")"
-  [[ -z "$pin" ]] || echo "pinned: cabinet $(printf '%s' "${pin#*$'\t'}" | term_text) in $(printf '%s' "${pin%$'\t'*}" | term_text); npx cabinet runs it"
+  [[ -z "$pin" ]] || echo "pinned: cabinet $(printf '%s' "${pin%%$'\t'*}" | term_text) in $(printf '%s' "${pin#*$'\t'}" | term_text); npx cabinet runs it"
   if [[ -n "$latest" && -n "$r" ]]; then
     echo "latest: cabinet $latest"
     echo "Run: ${S_B}${r#*$'\t'}${S_Z}$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' (in %s)' "${r%%$'\t'*}")"

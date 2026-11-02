@@ -71,8 +71,8 @@ ok kit.version "cabinet $kv"
 # A newer Cabinet on the registry (the release notice; platform.sh, update_latest): a note, never a problem.
 if latest="$(update_latest "$WS")" && [[ -n "$latest" ]]; then
   # The installed kit: the pinned one, else the cabinet command on PATH, else this workspace's own.
-  pin="$WS"; [[ -f "$WS/package.json" ]] || pin="$(dirname "$WS")"
-  kit="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$pin/node_modules/@tarekraafat/cabinet/package.json" 2>/dev/null)"
+  pin="$(pin_dir "$WS")"; kit=""
+  [[ -z "$pin" ]] || kit="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$pin/node_modules/@tarekraafat/cabinet/package.json" 2>/dev/null)"
   [[ -n "$kit" ]] || { c="$(command -v cabinet 2>/dev/null)" && kit="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$(dirname "$(readlink -f "$c" 2>/dev/null || echo "$c")")/../package.json" 2>/dev/null)"; } || true
   r="$(update_cmd "$WS" "$latest" "${kit:-$kv}")"; where="${r%%$'\t'*}" how="${r#*$'\t'}"; [[ -n "$r" ]] || how=""
   inw=""; [[ -z "$where" || "$where" == "$WS" ]] || inw=" (in $where)"
