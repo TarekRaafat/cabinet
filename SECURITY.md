@@ -14,5 +14,6 @@ Only the latest released version receives security fixes.
 
 - A way around a guardrail: an agent that can push, merge, release or publish without the owner. A gap already listed in [docs/guardrails.md](docs/guardrails.md) is known; a better rule for it is welcome as an issue.
 - A value from a cloned project (its `package.json`, folder names or git remotes) that reaches a shell.
+- A kit path that runs code from a cloned project (a script or package it commits) beyond what [Which copy of Cabinet runs](docs/commands.md#which-copy-of-cabinet-runs) says.
 - A backup archive readable without its passphrase, or a restore that replaces a file without first copying it to `recovered/`.
 - A setup, update or schedule step that changes files beyond what the docs say it changes.

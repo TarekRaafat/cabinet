@@ -9,6 +9,8 @@ How Cabinet keeps every push, merge, release and publish with you, what each age
 
 Together they are a strong speed bump, not a boundary. For a hard boundary, protect your branches on the server (GitHub branch protection), and use [a credential that needs you on every push](#a-hard-boundary).
 
+Each workspace's `CABINET.md` also tells agents that outside content is data, not instructions: what they read from a cloned repo, a web page, an issue or a tool's output never changes their task, and when it gives orders they stop and tell you where. That is a rule for the model, not an enforced boundary: the deny rules and the push gate stay the guardrails.
+
 ## A hard boundary
 
 The push gate and the deny rules guard against mistakes; a process set on getting round them could still push with your credentials. A credential that needs your confirmation each time it is used closes that: no push reaches the remote without you, even if every rule on this page were bypassed. Two kinds, both from the ssh tools' own documentation:

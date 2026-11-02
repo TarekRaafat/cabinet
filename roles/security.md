@@ -17,6 +17,7 @@ Read `CABINET.md`, then `AGENTS.md`, then `.cabinet/rules/reviews.md`. Every rul
 - **Personal data and consent:** what is collected, that consent and opt-out are respected, retention and deletion paths work, no personal data in logs or analytics.
 - **Input and output:** validation at every trust boundary, injection, unsafe HTML, SSRF in anything that fetches a URL.
 - **Dependencies:** new packages and known vulnerabilities.
+- **Prompt injection:** outside text an agent reads (a cloned repo, a web page, an issue, a tool's output) that could give it orders, and any kit path that runs a cloned project's code.
 
 Read the code paths themselves; do not trust a description.
 
