@@ -4774,109 +4774,70 @@ o="$("$KIT/test/smoke.sh" "docs name the current")" || fail "the suite run on it
   return 0   # a last "check && fail" line must not end the run
 }
 
-section "update says a newer Cabinet is out and offers to take it" ""
+section "update says a newer Cabinet is out and installs nothing" ""
 s72() {
-# H-20261101-03. Its own HOME, the notice on, and fakes of npm and cabinet first on PATH: nothing is fetched.
-local oh="$HOME" og="$GIT_CONFIG_GLOBAL" op="$PATH" NP="$T/uo-npm" UW="$T/uo-ws" PW="$T/uo-pin" LR UA st o t0 K2 PI P2 x
-local TW="$T/uo-tab"$'\t'standin NL="--fetch-timeout=120000 --fetch-retries=0"   # npm ends itself: it ignores the limit's signal
+# H-20261101-03, H-20261102-01. Its own HOME, the notice on, and fakes of npm and cabinet first on PATH: nothing is fetched.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" op="$PATH" NP="$T/uo-npm" UW="$T/uo-ws" PW="$T/uo-pin" LR UA st o t0 a x
+local TW="$T/uo-tab"$'\t'standin
 export HOME="$T/uo-home" GIT_CONFIG_GLOBAL="$T/uo-home/.gitconfig"; unset CABINET_UPDATE_CHECK NO_UPDATE_NOTIFIER CI
 mkdir -p "$HOME" "$NP"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+# The fake npm logs every call and answers only view; anything else is an install, which update must never run.
 cat > "$NP/npm" <<'FAKE'
 #!/bin/bash
 d="$(dirname "$0")"
 printf '%s|%s\n' "$*" "$(pwd -P)" >> "$d/log"
-if [[ "$1" == view ]]; then
-  [[ -e "$d/hang" ]] && exec sleep 40
-  [[ -e "$d/viewfail" ]] && exit 1
-  cat "$d/answer"
-elif [[ -e "$d/installfail" ]]; then
-  exit 1
-elif [[ -e "$d/newkit" && "$1" == install ]]; then   # as a real install: the new kit in the pin's folder, the pin moved
-  rm -rf node_modules/@tarekraafat/cabinet; mkdir -p node_modules/@tarekraafat; cp -R "$d/newkit" node_modules/@tarekraafat/cabinet
-  sed -i.bak 's/"@tarekraafat\/cabinet": "[^"]*"/"@tarekraafat\/cabinet": "9.9.9"/' package.json; rm -f package.json.bak
-  printf '{"name":"pin","lockfileVersion":3,"packages":{"node_modules/@tarekraafat/cabinet":{"version":"9.9.9"}}}\n' > package-lock.json
-fi
+[[ "$1" == view ]] || { printf '%s\n' "$*" >> "$d/ran"; exit 0; }
+[[ -e "$d/hang" ]] && exec sleep 40
+[[ -e "$d/viewfail" ]] && exit 1
+cat "$d/answer"
 FAKE
 cat > "$NP/cabinet" <<'FAKE'
 #!/bin/bash
-printf '%s|%s|%s\n' "$*" "${CABINET_UPDATE_TOOK:-}" "${CABINET_PINNED:-}" >> "$(dirname "$0")/took"
+printf '%s\n' "$*" >> "$(dirname "$0")/took"
 FAKE
 chmod +x "$NP/npm" "$NP/cabinet"; printf '9.9.9\n' > "$NP/answer"
 export PATH="$NP:$PATH"
-"$F" new "$UW" --yes >/dev/null || fail "new for the update offer"
+"$F" new "$UW" --yes >/dev/null || fail "new for the update notice"
 UW="$(cd "$UW" && pwd -P)"; LR="$(cd "$HOME/$LOGS" && pwd -P)"
 rm -f "$UW/package.json" "$UW/package-lock.json"; git -C "$UW" add -A; git -C "$UW" commit -qm "no pin"   # new pins the kit
 # up <folder> [<option>...]: update there, answers from $UA (none: no terminal); $o and $st hold what it did.
-up() { local w=$1; shift; rm -f "$NP/log" "$NP/took"; st=0; o="$(CABINET_TTY="${UA:-$T/uo-no-terminal}" "$F" -C "$w" update "$@" 2>&1)" || st=$?; }
-installs() { grep -cv '^view ' "$NP/log" || true; }
+up() { local w=$1; shift; rm -f "$NP/log"; st=0; o="$(CABINET_TTY="${UA:-$T/uo-no-terminal}" "$F" -C "$w" update "$@" 2>&1)" || st=$?; }
 UA="$T/uo-answers"
-# 1. Reproduced: the workspace is on the installed kit and a newer version is out. Declined: said, not run, kit applied.
-printf 'n\n' > "$UA"; up "$UW"
-((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -qF "npm i -g $NL @tarekraafat/cabinet@9.9.9 && cabinet update" <<<"$o" || fail "update did not say a newer version is out: $o"
-grep -q 'Nothing changed' <<<"$o" && [[ "$(installs)" == 0 && ! -e "$NP/took" ]] || fail "declined, it installed: $o"
+# 1. Reproduced: the workspace is on the installed kit and a newer version is out. Said, with the global command, and
+# the installed kit applied. A terminal answering yes changes nothing: there is no question.
+printf 'y\ny\n' > "$UA"; up "$UW"
+((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -qxF "To take it: npm i -g @tarekraafat/cabinet@latest && cabinet update" <<<"$o" \
+  && grep -q 'Going on with the installed kit' <<<"$o" && grep -q 'Nothing changed' <<<"$o" && ! grep -q 'Run it now' <<<"$o" || fail "update did not say a newer version is out: $o"
 [[ "$(cat "$LR/latest-version")" == 9.9.9 ]] || fail "the answer is not the notice's latest-version"
 [[ "$(cat "$NP/log")" == "view @tarekraafat/cabinet version --no-update-notifier|$LR" ]] || fail "the request: $(cat "$NP/log")"
-# 2. Accepted, and with --yes or -y: npm from Cabinet's own folder (no project's npm settings), then the new kit applies, once.
-for a in "" --yes -y; do
-  printf 'y\n' > "$UA"; if [[ -n "$a" ]]; then rm -f "$UA"; up "$UW" "$a"; else up "$UW"; fi
-  ((st == 0)) && grep -qxF "i -g $NL @tarekraafat/cabinet@9.9.9|$LR" "$NP/log" && [[ "$(cat "$NP/took")" == "-C $UW update|1|" ]] || fail "taking it ($a): $o; $(cat "$NP/log"); $(cat "$NP/took" 2>&1)"
-done
-# 3. No terminal and no --yes: the command is said, nothing is installed, the kit is applied.
-UA=""; up "$UW"
-((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -q 'Nothing changed' <<<"$o" && [[ "$(installs)" == 0 ]] || fail "no terminal: $o"
-# 4. The run after taking it asks nothing and sends no request, so a kit still old on PATH cannot go round.
-rm -f "$NP/log"; CABINET_UPDATE_TOOK=1 "$F" -C "$UW" update --yes >/dev/null; [[ ! -e "$NP/log" ]] || fail "the run after taking it asked again"
-# 5. A pin: npm in the pin's folder for the version said, with no dependency's scripts and no parent workspace's
-# settings, and the run after it hands off to the pin again (CABINET_PINNED not carried).
+# 2. No terminal: the same.
+UA=""; up "$UW"; ((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep -q 'Nothing changed' <<<"$o" || fail "no terminal: $o"
+# 3. A pin: the pinned command, and the folder to run it in. A folder holding a tab (new refuses one; a clone can have
+# it) is named whole, and the rest of its name is no command.
 "$F" new "$PW" --yes >/dev/null; PW="$(cd "$PW" && pwd -P)"
-K2="$PW/node_modules/@tarekraafat/cabinet"; mkdir -p "$K2"; cp -R "$KIT/bin" "$KIT/scripts" "$KIT/core" "$KIT/roles" "$KIT/guardrails" "$KIT/templates" "$KIT/package.json" "$KIT/CHANGELOG.md" "$K2/"
-up "$PW" --yes
-PI="install --ignore-scripts --workspaces=false $NL @tarekraafat/cabinet@9.9.9"
-((st == 0)) && grep -qF "npm $PI && cabinet update" <<<"$o" && grep -qxF "$PI|$PW" "$NP/log" && [[ "$(cat "$NP/took")" == "-C $PW update|1|" ]] || fail "the pin: $o; $(cat "$NP/log"); $(cat "$NP/took" 2>&1)"
-# The pin's folder with its own npm settings: told why, nothing installed even with --yes, the installed kit applied.
-printf 'registry=http://127.0.0.1:9/\n' > "$PW/.npmrc"; up "$PW" --yes
-((st == 0)) && grep -qF 'has its own .npmrc' <<<"$o" && grep -qF "npm $PI" <<<"$o" && [[ "$(installs)" == 0 && ! -e "$NP/took" ]] || fail "a pin's folder with a .npmrc: $o"
-rm "$PW/.npmrc"
-# npm links a workspace member named as the kit in place of the pin, and the kit then runs it. Each shape, and a
-# package.json npm or this check could read differently: told why, nothing installed even with --yes.
-cp "$PW/package.json" "$T/uo-pkg"
-for x in '{"@tarekraafat/cabinet":"0","workspaces":["m"]}' '{"@tarekraafat/cabinet":"0","workspaces":{"packages":["m"]}}' '{"@tarekraafat/cabinet":"0","work\u0073paces":["m"]}' '{"@tarekraafat/cabinet":"0",' 'null "@tarekraafat/cabinet"'; do
-  printf '%s\n' "$x" > "$PW/package.json"; up "$PW" --yes
-  ((st == 0)) && grep -qF 'npm workspaces, or could not be read' <<<"$o" && grep -qF "npm $PI" <<<"$o" && grep -q 'Going on with the installed kit' <<<"$o" && [[ "$(installs)" == 0 && ! -e "$NP/took" ]] || fail "a pin's package.json like $x: $o"
-done
-cp "$T/uo-pkg" "$PW/package.json"
-# A folder holding a tab (new refuses one; a clone can have it): npm is what runs, there; the rest of the name is no command.
+up "$PW"; ((st == 0)) && grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && cabinet update (in $PW)" <<<"$o" || fail "the pin: $o"
 mkdir -p "$T/uo-tab"; "$F" new "$T/uo-tabbed" --yes >/dev/null; mv "$T/uo-tabbed" "$TW"; TW="$(cd "$TW" && pwd -P)"
 printf '#!/bin/bash\ntouch "$(dirname "$0")/ran-standin"\n' > "$NP/standin"; chmod +x "$NP/standin"
-up "$TW" --yes; grep -qxF "$PI|$TW" "$NP/log" && [[ ! -e "$NP/ran-standin" ]] || fail "a folder with a tab: $o; $(cat "$NP/log")"
-# No cabinet on PATH, the npx route: the install really replaces the pin, the workspace ends on it, and the pin and
-# its lockfile go into the update's commit.
-P2="$T/uo-pin2"; "$F" new "$P2" --yes >/dev/null; P2="$(cd "$P2" && pwd -P)"; K2="$P2/node_modules/@tarekraafat/cabinet"
-mkdir -p "$K2"; cp -R "$KIT/bin" "$KIT/scripts" "$KIT/core" "$KIT/roles" "$KIT/guardrails" "$KIT/templates" "$KIT/package.json" "$KIT/CHANGELOG.md" "$K2/"
-cp -R "$K2" "$NP/newkit"; sed -i.bak 's/"version": "[^"]*"/"version": "9.9.9"/' "$NP/newkit/package.json"; rm -f "$NP/newkit/package.json.bak"
-mv "$NP/cabinet" "$NP/cabinet.away"; rm -f "$NP/log"
-mkdir -p "$T/uo-nocab"; ln -s "$(command -v node)" "$T/uo-nocab/node"
-st=0; o="$(PATH="$NP:$T/uo-nocab:/usr/bin:/bin" CABINET_TTY="$T/uo-no-terminal" "$K2/bin/cabinet" -C "$P2" update --yes 2>&1)" || st=$?
-mv "$NP/cabinet.away" "$NP/cabinet"; rm -rf "$NP/newkit"
-((st == 0)) && grep -qxF "$PI|$P2" "$NP/log" && [[ "$(cat "$P2/.cabinet/version")" == 9.9.9 ]] || fail "no cabinet on PATH: $st: $o; $(cat "$NP/log")"
-git -C "$P2" log -1 --format=%s | grep -qx 'cabinet: update to 9.9.9' && [[ "$(git -C "$P2" show --name-only --format= HEAD | grep -cxE 'package(-lock)?\.json')" == 2 ]] || fail "the pin is not in the update's commit: $o; $(git -C "$P2" show --stat HEAD | tail -5)"
-# 6. No network failure stops it: npm failing, npm missing, junk, a hang (stopped at the limit), an install that fails.
-touch "$NP/viewfail"; up "$UW" --yes; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" && ! grep -q 'is out' <<<"$o" || fail "a registry that fails: $o"; rm "$NP/viewfail"
-mkdir -p "$T/uo-nonpm"; ln -s "$(command -v node)" "$T/uo-nonpm/node"; PATH="$T/uo-nonpm:/usr/bin:/bin" up "$UW" --yes; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" || fail "npm missing: $o"
-printf '<html>\n' > "$NP/answer"; up "$UW" --yes; ((st == 0)) && ! grep -q 'is out' <<<"$o" || fail "junk from the registry: $o"; printf '9.9.9\n' > "$NP/answer"
-touch "$NP/hang"; t0=$SECONDS; up "$UW" --yes; ((st == 0 && SECONDS - t0 < 30)) && grep -q 'Nothing changed' <<<"$o" || fail "a registry that hangs: $((SECONDS - t0))s: $o"; rm "$NP/hang"
-touch "$NP/installfail"; up "$UW" --yes; ((st == 0)) && grep -q 'did not finish' <<<"$o" && grep -q 'Nothing changed' <<<"$o" && [[ ! -e "$NP/took" ]] || fail "an install that fails: $o"; rm "$NP/installfail"
-# 7. Nothing to offer: the registry not newer; the check off asks nothing; a wrong argument is wrong usage.
-printf '0.0.1\n' > "$NP/answer"; up "$UW" --yes; ((st == 0)) && ! grep -q 'is out' <<<"$o" && [[ "$(installs)" == 0 ]] || fail "a registry that is not newer: $o"; printf '9.9.9\n' > "$NP/answer"
-rm -f "$NP/log"; CABINET_UPDATE_CHECK=off "$F" -C "$UW" update --yes >/dev/null; [[ ! -e "$NP/log" ]] || fail "the check off still asked the registry"
-"$F" -C "$UW" config --this-machine --update-check off >/dev/null; up "$UW" --yes; [[ ! -e "$NP/log" ]] || fail "the machine's setting off still asked the registry"
+up "$TW"; grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && cabinet update (in $TW)" <<<"$o" && [[ ! -e "$NP/ran-standin" ]] || fail "a folder with a tab: $o"
+# 4. No failure stops it: npm failing, npm missing, junk, a hang (stopped at the limit).
+touch "$NP/viewfail"; up "$UW"; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" && ! grep -q 'is out' <<<"$o" || fail "a registry that fails: $o"; rm "$NP/viewfail"
+mkdir -p "$T/uo-nonpm"; ln -s "$(command -v node)" "$T/uo-nonpm/node"; PATH="$T/uo-nonpm:/usr/bin:/bin" up "$UW"; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" || fail "npm missing: $o"
+printf '<html>\n' > "$NP/answer"; up "$UW"; ((st == 0)) && ! grep -q 'is out' <<<"$o" || fail "junk from the registry: $o"; printf '9.9.9\n' > "$NP/answer"
+touch "$NP/hang"; t0=$SECONDS; up "$UW"; ((st == 0 && SECONDS - t0 < 30)) && grep -q 'Nothing changed' <<<"$o" || fail "a registry that hangs: $((SECONDS - t0))s: $o"; rm "$NP/hang"
+# 5. Nothing to say: the registry not newer; the check off sends no request.
+printf '0.0.1\n' > "$NP/answer"; up "$UW"; ((st == 0)) && ! grep -q 'is out' <<<"$o" || fail "a registry that is not newer: $o"; printf '9.9.9\n' > "$NP/answer"
+rm -f "$NP/log"; CABINET_UPDATE_CHECK=off "$F" -C "$UW" update >/dev/null; [[ ! -e "$NP/log" ]] || fail "the check off still asked the registry"
+"$F" -C "$UW" config --this-machine --update-check off >/dev/null; up "$UW"; [[ ! -e "$NP/log" ]] || fail "the machine's setting off still asked the registry"
 "$F" -C "$UW" config --this-machine --clear >/dev/null
-st=0; "$F" -C "$UW" update --bad >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "update --bad exit $st"
+# 6. It takes no arguments: --yes, -y and anything else are wrong usage, before any request.
+for a in --yes -y --bad; do up "$UW" "$a"; ((st == 2)) && [[ ! -e "$NP/log" ]] || fail "update $a: exit $st: $o"; done
+# 7. In all of the above, update never ran npm for anything but the request, and never ran cabinet again.
+[[ ! -e "$NP/ran" && ! -e "$NP/took" ]] || fail "update ran npm or cabinet: $(cat "$NP/ran" "$NP/took" 2>&1)"
 # 8. The docs.
-grep -q '^cabinet update \[--yes\]$' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" \
+grep -q '^cabinet update$' "$KIT/docs/commands.md" && grep -qF 'It installs nothing and asks nothing.' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" \
   && grep -q '^| `NO_UPDATE_NOTIFIER` | next, status, doctor, update |' "$KIT/docs/commands.md" && grep -q '^| `CI` | next, status, doctor, update |' "$KIT/docs/commands.md" \
-  && grep -q '^| `CABINET_TTY` | setup, config, remove, update |' "$KIT/docs/commands.md" && grep -qF 'holds a `.npmrc`, it never runs the command' "$KIT/docs/commands.md" && grep -qF 'declares npm workspaces' "$KIT/docs/commands.md" && ! grep -qF 'takes over 5 minutes' "$KIT/docs/commands.md" || fail "the docs do not say what update offers"
-for x in "$UW" "$PW" "$TW" "$P2"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
+  && grep -q '^| `CABINET_TTY` | setup, config, remove |' "$KIT/docs/commands.md" && ! grep -qE 'update \[--yes\]|Run it now\?|ignore-scripts' "$KIT/docs/commands.md" || fail "the docs do not say what update does"
+for x in "$UW" "$PW" "$TW"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="$op"
   return 0   # a last "check && fail" line must not end the run
 }

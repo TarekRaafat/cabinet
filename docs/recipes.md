@@ -170,7 +170,7 @@ npm update            # take it
 cabinet update        # apply it, and read the changelog since your version
 ```
 
-`cabinet update` also says when a newer version is out and offers to take it, asking first. An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
+`cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
 
 ## Use Cabinet from a script or an agent
 

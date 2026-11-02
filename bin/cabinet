@@ -119,7 +119,7 @@ C	Setup	bootstrap		Set up this machine for the workspace: repos, builders, guard
 C	Setup	config	[options]	Change settings: the setup questions again, with the current answers as defaults.
 C	Setup	move	<new-path>	Move the workspace folder and update what remembers its path.
 C	Setup	remove		Remove this workspace from this machine after showing the plan: schedules, logs, folder, and what setup added to a project.
-C	Kit	update	[--yes]	Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and offers to take it.
+C	Kit	update		Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and the command that takes it.
 C	Kit	status		This workspace's kit version, the installed kit's, and every kit file edited here.
 C	Kit	outdated		Is a newer kit published? Compares this workspace, the installed kit and the npm registry.
 C	Kit	changelog	[from-version]	What changed since a version (all versions when left out).
@@ -203,7 +203,7 @@ O	digest	--file	<file>	With --schedule: where it is written (default: digest.md 
 O	remove	--force		Remove even with uncommitted changes or commits on no remote.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
-O	new,init,config,remove,role add,doctor,update	--yes		No questions (or -y). For doctor, with --fix. For update, it takes a newer Cabinet.
+O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
 O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,session list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE
 }
@@ -2338,54 +2338,25 @@ cmd_changelog() {
   fi
   changelog "$from" | changelog_show
 }
-# update_offer <workspace> <yes>: a newer Cabinet on the registry than the installed kit: say so and offer
-# to install exactly that version. Taken, it never returns: the run that follows applies the new kit.
-# Everything else returns, so no failure here stops an update of the installed kit. The check off asks
-# nothing, and neither does the run after taking it (CABINET_UPDATE_TOOK), so a kit still old on PATH cannot
-# go round. A pin's folder comes from the workspace, so its install runs no dependency's scripts, does not
-# climb to a parent npm workspace's settings, and is left to the owner when the folder has its own .npmrc or
-# its package.json declares workspaces (a member named as the kit would become the pin) or does not parse.
-# npm carries its own time limits: it ignores run-limited's signal, and a harder one breaks a global install.
-update_offer() {
-  local ws=$1 yes=$2 latest r cmd dir c=cabinet why=""
-  local inst=()
-  [[ -z "${CABINET_UPDATE_TOOK:-}" ]] && update_on "$ws" || return 0
+# update_notice <workspace>: a newer Cabinet on the registry than the installed kit: say so, with the command
+# that takes it for this install, as status and outdated print it. It installs nothing and asks nothing, and
+# no failure here stops an update of the installed kit. The check off sends no request.
+update_notice() {
+  local latest r dir
+  update_on "$1" || return 0
   latest="$(registry_latest 10)"
   [[ -n "$latest" ]] && node "$LIBJS" version-newer "$latest" "$VERSION" || return 0
-  r="$(update_cmd "$ws" "$latest" "$VERSION")"; dir="${r%$'\t'*}"   # the last tab: a folder can hold one
-  if [[ -n "$dir" ]]; then inst=(npm install --ignore-scripts --workspaces=false --fetch-timeout=120000 --fetch-retries=0 "@tarekraafat/cabinet@$latest")
-  else inst=(npm i -g --fetch-timeout=120000 --fetch-retries=0 "@tarekraafat/cabinet@$latest"); fi
-  cmd="${inst[*]} && cabinet update"
+  r="$(update_cmd "$1" "$latest" "$VERSION")"; dir="${r%$'\t'*}"   # the last tab: a folder can hold one
   echo "${S_B}Cabinet $latest is out${S_Z}; the installed kit is $VERSION."
-  echo "To take it: ${S_B}$cmd${S_Z}${dir:+ (in $dir)}"
-  if [[ -n "$dir" ]]; then
-    if [[ -e "$dir/.npmrc" ]]; then why="that folder has its own .npmrc, which can choose where npm installs from"
-    elif ! json -s -e '$.length === 1 && !("workspaces" in $[0])' "$dir/package.json" >/dev/null 2>&1; then
-      why="that folder's package.json declares npm workspaces, or could not be read, so one of its folders could take the kit's place"
-    fi
-  fi
-  if [[ -n "$why" ]]; then
-    echo "Not run: $why. Check it, then run the command yourself."
-    echo "Going on with the installed kit."; echo; return 0
-  fi
-  if ((yes == 0)); then
-    { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null || { echo "No terminal to ask in: going on with the installed kit."; echo; return 0; }
-    confirm "Run it now" y || { echo; return 0; }
-  fi
-  # A global install runs from Cabinet's own folder, so npm reads no project's settings.
-  if ! (cd "${dir:-$LOGROOT}" && "${inst[@]}"); then
-    echo "${S_R}That did not finish${S_Z}: going on with the installed kit. Run it again later: $cmd"; echo; return 0
-  fi
-  command -v cabinet >/dev/null 2>&1 || c="$KIT/bin/cabinet"
-  CABINET_UPDATE_TOOK=1 CABINET_PINNED="" exec "$c" -C "$ws" update
+  echo "To take it: ${S_B}${r##*$'\t'}${S_Z}${dir:+ (in $(printf '%s' "$dir" | term_text))}"
+  echo "Going on with the installed kit."; echo
 }
 
 cmd_update() {
-  local x yes=0
-  for x in "$@"; do case "$x" in --yes|-y) yes=1 ;; *) bad_usage "unknown argument $x (see: cabinet update --help; to name a workspace: cabinet -C <dir> update)" ;; esac; done
+  [[ $# -eq 0 ]] || bad_usage "cabinet update takes no arguments (to name a workspace: cabinet -C <dir> update)"
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
-  update_offer "$ws" "$yes"
+  update_notice "$ws"
   local old; old="$(cat "$ws/.cabinet/version")"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
   # of the owner's before (the pin in package.json and its lockfile, from npm update, go with it).

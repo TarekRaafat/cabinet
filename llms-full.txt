@@ -400,7 +400,7 @@ npm update            # take a newer version
 cabinet update        # apply it: replace kit files, rebuild roles, print the changelog since your version
 ```
 
-`cabinet update` also says when a newer version is out and offers to take it, asking first (`--yes` takes it without asking). An update never overwrites a kit file you edited in the workspace: it stops and names it. In a workspace with its own git it commits itself (`cabinet: update to <version>`); when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run. Without a global install, use `npx cabinet` in place of `cabinet`.
+`cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited in the workspace: it stops and names it. In a workspace with its own git it commits itself (`cabinet: update to <version>`); when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run. Without a global install, use `npx cabinet` in place of `cabinet`.
 
 ## Remove Cabinet
 
@@ -745,7 +745,7 @@ npm update            # take it
 cabinet update        # apply it, and read the changelog since your version
 ```
 
-`cabinet update` also says when a newer version is out and offers to take it, asking first. An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
+`cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
 
 ## Use Cabinet from a script or an agent
 
@@ -1196,10 +1196,10 @@ The guardrails in your agent tools stay, since other workspaces use them. Exit c
 ## cabinet update
 
 ```sh
-cabinet update [--yes]
+cabinet update
 ```
 
-First asks the registry whether a version newer than the installed kit is out. When one is, it says so, shows the command that installs exactly that version, and asks `Run it now?`. For a pinned kit that is `npm install --ignore-scripts --workspaces=false --fetch-timeout=120000 --fetch-retries=0 @tarekraafat/cabinet@<version>` in the folder of the pin: no dependency's install scripts run, and npm stays in that folder instead of taking a parent npm workspace's settings. Otherwise it is `npm i -g --fetch-timeout=120000 --fetch-retries=0 @tarekraafat/cabinet@<version>`, run from Cabinet's log folder, so npm reads no project file. Yes runs it, then applies the new kit. `--yes` (`-y`) runs it without asking. With no terminal and no `--yes`, it only shows the command. When the pin's folder holds a `.npmrc`, it never runs the command, even with `--yes`: that file can choose where npm installs from, so it says so, shows the command for you to check and run, and goes on with the installed kit. The same goes when the `package.json` there declares npm workspaces, or cannot be read: a folder of the project could then take the place of the kit. Declined, or when the command fails, it goes on with the installed kit. The two `--fetch` options make npm give up on a request that stalls for 2 minutes, with no retry; a stopped install leaves the kit you had. The request stops after 10 seconds, and when the registry cannot be reached, or the [release notice](#the-release-notice) is off, nothing is said and the update goes on.
+First asks the registry whether a version newer than the installed kit is out. When one is, it says so and prints the command that takes it for this install, the one [`cabinet outdated`](#cabinet-outdated) gives (and the folder to run it in, for a pinned kit), then goes on with the installed kit. It installs nothing and asks nothing. The request stops after 10 seconds, and when the registry cannot be reached, or the [release notice](#the-release-notice) is off, nothing is said and the update goes on.
 
 Then it copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). In a workspace with its own git it then commits the update (`cabinet: update to <version>`, with the pin in `package.json` and its lockfile; when `package.json` holds other edits of yours, it leaves `package.json` and its lockfile out and prints the commit for them, naming `package-lock.json` only when git tracks it), unless the files it rewrites (`.cabinet/`, `CABINET.md`, `bin/`, `agents/`, `.claude/agents/`, `ORG.md`) held uncommitted edits of yours: then, and in a shared `cabinet/`, it ends with the exact `git add` and `git commit` to run. When the workspace was already on that version and nothing changed, it ends with `Nothing changed: the workspace was already on <version>.`, git or not. Otherwise, with nothing to commit (no git of its own, or a private `cabinet/` the project ignores), it ends with `Updated to <version>.`
 
@@ -1221,7 +1221,7 @@ Compares the workspace's kit version, the installed kit and the newest version o
 
 ### The release notice
 
-`cabinet next` (step `update`), `cabinet status` (`latest:`) and the doctor (a note, `kit.newer`) say when a version of Cabinet newer than the workspace's is out, with the command above, and the brief carries it under "Actions for the owner". It only tells: nothing installs, updates or commits. [`cabinet update`](#cabinet-update) goes further: it asks the registry itself and offers to take the newer version. The newest version seen is `latest-version` in Cabinet's log folder (`~/Library/Logs/cabinet/` on macOS, `~/.local/state/cabinet/` on Linux), one per machine, refreshed at most once a day by a check in the background that no command waits for, so the notice shows on a later run. Offline, or with no npm, the notice shows nothing and slows down no command; only `cabinet update`, which asks the registry itself, can wait, for up to 10 seconds.
+`cabinet next` (step `update`), `cabinet status` (`latest:`) and the doctor (a note, `kit.newer`) say when a version of Cabinet newer than the workspace's is out, with the command above, and the brief carries it under "Actions for the owner". It only tells: nothing installs, updates or commits. [`cabinet update`](#cabinet-update) also asks the registry itself, and says the same. The newest version seen is `latest-version` in Cabinet's log folder (`~/Library/Logs/cabinet/` on macOS, `~/.local/state/cabinet/` on Linux), one per machine, refreshed at most once a day by a check in the background that no command waits for, so the notice shows on a later run. Offline, or with no npm, the notice shows nothing and slows down no command; only `cabinet update`, which asks the registry itself, can wait, for up to 10 seconds.
 
 **What it sends:** one request a day, and one each time you run `cabinet update`, `npm view @tarekraafat/cabinet version --no-update-notifier`, from the machine's address, through your own npm and its settings (registry, proxy, mirror), run from Cabinet's log folder so npm reads no project file. It carries npm's usual details (npm and Node versions, operating system and processor type, a random session ID, the command name, and the name of the CI service when there is one) and, when you are logged in to npm for that registry, your npm login, as every npm command does. Nothing about the project, its files or its people. npm writes its own cache and logs (`~/.npm`), as with any npm command.
 
@@ -1380,7 +1380,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CABINET_UPDATE_CHECK` | next, status, doctor, update | `off`: no release notice and no request ([the release notice](#the-release-notice)). Not read by scheduled jobs from a shell profile. |
 | `NO_UPDATE_NOTIFIER` | next, status, doctor, update | Set to anything but empty: the same as `CABINET_UPDATE_CHECK=off`. |
 | `CI` | next, status, doctor, update | Set to anything but empty: the same. |
-| `CABINET_TTY` | setup, config, remove, update | Read answers from this file instead of the terminal (the tests use it). |
+| `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
 | `NO_COLOR` | every command | Set to anything but empty: plain text with no color, bold or dim, even in a terminal ([output](#output-for-agents-and-scripts)). |
 | `TERM` | every command | `dumb`: the same as `NO_COLOR`. |
@@ -2375,7 +2375,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.3.2 - Unreleased
 
-- `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, says when a newer Cabinet is out, and offers to install exactly that version for this install (global or pinned), asking first; `--yes` takes it without asking. A pinned install runs no dependency's install scripts, and is left for you to run when the pin's folder holds a `.npmrc`, or its `package.json` declares npm workspaces or cannot be read. npm gives up on a request that stalls for 2 minutes, with no retry. When the registry cannot be reached, the command fails or you decline, it goes on with the installed kit. `cabinet config --update-check off` also stops this request. A pinned kit at 0.3.1 or older has no offer and takes no `--yes` (it exits 2): in the pin's folder, run `npm install @tarekraafat/cabinet@latest`, then `cabinet update`.
+- `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, and when a newer Cabinet is out it says so and prints the command that takes it for this install (global or pinned), as `cabinet outdated` does, then goes on with the installed kit. It installs nothing and asks nothing. The request stops after 10 seconds; when the registry cannot be reached, it goes on as before. `cabinet config --update-check off` also stops this request.
 - `cabinet outdated` stops its registry request after 30 seconds, and says the newest is unknown.
 
 ## 0.3.1 - 1 Nov 2026
