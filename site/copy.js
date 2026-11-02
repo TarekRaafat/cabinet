@@ -33,7 +33,7 @@ module.exports = {
   hero: {
     headline: "One person, <br>a whole team.",
     subline: "Build anything with AI agents, and stay in charge.",
-    lead: "Cabinet is an open source kit that gives your project a small company of AI agent roles. They bring the skills and the hours. You bring the vision, the judgment and the final say.",
+    lead: "Cabinet is an open source kit that gives whatever you are making, from an app to a book or an album, a small company of AI agent roles. They bring the skills and the hours. You bring the vision, the judgment and the final say.",
     install: "npm i -g @tarekraafat/cabinet",
     tour: "Take the tour",
     docs: "Read the docs",
@@ -48,7 +48,7 @@ module.exports = {
 
   whatItIs: {
     h2: "What is Cabinet?",
-    answer: "A kit you install with npm. It creates a workspace of plain Markdown files and shell scripts, kept in git on your own machine, that the agent tool you already use can run.",
+    answer: "A kit you install with npm. It creates a workspace of plain Markdown files and shell scripts, kept in git on your own machine, that the agent tool you already use can run, for code or any other work: design, writing, marketing, music, finance.",
     doesH3: "What does it do, exactly?",
     does: [
       ["Roles with clear authority.", "A chief of staff, a product manager, an architect, qa, security, a design lead, builders that work in each repo the way it is already built, and any role your project needs, drafted for it from a one-line brief. Every piece of work has exactly one owner."],

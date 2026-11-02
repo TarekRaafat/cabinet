@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.3.3 - Unreleased
+
+- The README and `llms.txt` now say near the top that Cabinet is for any kind of work agents can do (code, apps and websites, design, writing, marketing, music, finance), with examples of roles drafted for it, and still say that its defaults are made for code today. `llms.txt` links to "Work that is not code" in the agent setup guide.
+
 ## 0.3.2 - 2 Nov 2026
 
 - `cabinet update` no longer says `Nothing changed` without a word about a newer published version: it asks the registry, and when a newer Cabinet is out it says so and prints the command that takes it for this install (global or pinned), as `cabinet outdated` does, then goes on with the installed kit. It installs nothing and asks nothing. The request stops after 10 seconds; when the registry cannot be reached, it goes on as before. `cabinet config --update-check off` also stops this request.
