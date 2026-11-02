@@ -349,7 +349,7 @@ Sets up this machine for the workspace: clones missing repos, restores local-onl
 cabinet config [options]
 ```
 
-Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing.
+Changes a workspace's settings after setup: the whole setup at once. To change one thing, the noun commands are shorter (`cabinet role add`, `cabinet repo add`). Run it in the workspace, or in the project's top folder when the workspace is `cabinet/` inside it (or name it: `cabinet -C <dir> config`). In a terminal it asks the setup questions again with the current answers as defaults, lists the changes, and asks before writing. In a workspace that pins another version than this copy, it changes nothing, exits 1 and prints `npx cabinet config`, to run with the same options ([which copy runs](#which-copy-of-cabinet-runs)).
 
 Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--runner-cmd`, `--model <name>|off` (the model every run asks for, see `new`; `config` says whether the tool lists it after a new model or a new runner), `--model-light <name>|off` and `--light-roles "<roles>"` ([a light model for some roles](#a-light-model-for-some-roles)), `--brief-time`, `--week-start`, `--writing`, `--credit-roles off|on` and `--credit-email <email>|off` ([credit roles](concepts.md#credit-roles); with `--yes`, a workspace from before the setting keeps it unset until you give one), `--update-check off|on` ([the release notice](#the-release-notice); written to `cabinet.env` only when given, and never carried over; with `--this-machine`, to `cabinet.local.env`, which `--this-machine --clear` removes), `--hard-to-undo "<repo>/<path> ..."|off` (paths a small task never touches, see below), `--pipeline off|small|all`, `--pipeline-limit <dollars>` and `--pipeline-time <when>|off` (the scheduled runner, see below), `--backup-dir`, `--backup-time <time>` (like `"1 PM"`), `--budget <dollars>|off` (a weekly budget for the agent runs Cabinet starts, like `20` or `12.50`), `--price "<input> <output> [<cached>]"|off` (dollars per million tokens, for a runner that reports only tokens), `--repo` (adds a repo, as `cabinet repo add` does), `--apply` (run `bin/bootstrap.sh` without asking), `--dry-run` (list the changes and write nothing), `--yes`.
 
@@ -430,7 +430,9 @@ The guardrails in your agent tools stay, since other workspaces use them. Exit c
 cabinet update
 ```
 
-First asks the registry whether a version newer than the installed kit is out. When one is, it says so and prints the command that takes it for this install, the one [`cabinet outdated`](#cabinet-outdated) gives (and the folder to run it in, for a pinned kit), then goes on with the installed kit. It installs nothing and asks nothing. The request stops after 10 seconds, and when the registry cannot be reached, or the [release notice](#the-release-notice) is off, nothing is said and the update goes on.
+In a workspace that pins another version than this copy, it changes nothing, exits 1 and prints `npx cabinet update`, which runs the pinned copy ([which copy runs](#which-copy-of-cabinet-runs)).
+
+Otherwise it first asks the registry whether a version newer than the installed kit is out. When one is, it says so and prints the command that takes it for this install, the one [`cabinet outdated`](#cabinet-outdated) gives (and the folder to run it in, for a pinned kit), then goes on with the installed kit. It installs nothing and asks nothing. The request stops after 10 seconds, and when the registry cannot be reached, or the [release notice](#the-release-notice) is off, nothing is said and the update goes on.
 
 Then it copies the installed kit's files into the workspace, rebuilds the roles, and prints every changelog section between the workspace's old version and the new one. It never replaces a kit file that was edited in the workspace: it stops, names the file, and keeps the old version (exit 1). In a workspace with its own git it then commits the update (`cabinet: update to <version>`, with the pin in `package.json` and its lockfile; when `package.json` holds other edits of yours, it leaves `package.json` and its lockfile out and prints the commit for them, naming `package-lock.json` only when git tracks it), unless the files it rewrites (`.cabinet/`, `CABINET.md`, `bin/`, `agents/`, `.claude/agents/`, `ORG.md`) held uncommitted edits of yours: then, and in a shared `cabinet/`, it ends with the exact `git add` and `git commit` to run. When the workspace was already on that version and nothing changed, it ends with `Nothing changed: the workspace was already on <version>.`, git or not. Otherwise, with nothing to commit (no git of its own, or a private `cabinet/` the project ignores), it ends with `Updated to <version>.`
 
@@ -440,7 +442,7 @@ Then it copies the installed kit's files into the workspace, rebuilds the roles,
 cabinet status [--json]
 ```
 
-Prints the workspace's kit version, the installed kit's version, and every kit file edited in the workspace; when a newer Cabinet is out ([the release notice](#the-release-notice)), `latest: cabinet <version>` and `Run: <command>`. `--json` prints `{workspace, version, kit_version, kit, edited, latest}`; `latest` is `null` when the newest is unknown, not newer than the workspace, or the check is off.
+Prints the workspace's kit version, the installed kit's version, and every kit file edited in the workspace; when a newer Cabinet is out ([the release notice](#the-release-notice)), `latest: cabinet <version>` and `Run: <command>`; and when the workspace pins another version, `pinned: cabinet <version> in <folder>; npx cabinet runs it` ([which copy runs](#which-copy-of-cabinet-runs)). `--json` prints `{workspace, version, kit_version, kit, edited, latest}`; `latest` is `null` when the newest is unknown, not newer than the workspace, or the check is off.
 
 ## cabinet outdated
 
@@ -448,7 +450,7 @@ Prints the workspace's kit version, the installed kit's version, and every kit f
 cabinet outdated [--json]
 ```
 
-Compares the workspace's kit version, the installed kit and the newest version on the npm registry, by version order (major, then minor, then patch: a kit newer than the registry, such as a local build, is not outdated), and says what to run: `npm install @tarekraafat/cabinet@latest && cabinet update` in the folder whose `package.json` pins the kit, `npm i -g @tarekraafat/cabinet@latest && cabinet update` with no pin, or `cabinet update` when only the workspace is behind the installed kit. It asks the registry every time, even with the release notice off, with the request the notice makes, and writes the answer to the notice's file. Only a version (`x.y.z`) is believed; anything else is unknown. The request stops after 30 seconds. Without the registry it says the newest is unknown. Exit 0.
+Compares the workspace's kit version, the installed kit and the newest version on the npm registry, by version order (major, then minor, then patch: a kit newer than the registry, such as a local build, is not outdated), and says what to run: `npm install @tarekraafat/cabinet@latest && npx cabinet update` in the folder whose `package.json` pins the kit, `npm i -g @tarekraafat/cabinet@latest && cabinet update` with no pin, or, when only the workspace is behind the installed kit, `npx cabinet update` with a pin and `cabinet update` without one. It asks the registry every time, even with the release notice off, with the request the notice makes, and writes the answer to the notice's file. Only a version (`x.y.z`) is believed; anything else is unknown. The request stops after 30 seconds. Without the registry it says the newest is unknown. Exit 0.
 
 ### The release notice
 
@@ -485,7 +487,9 @@ Prints the installed kit's version. In a terminal it prints the Cabinet mark wit
 
 ## Which copy of Cabinet runs
 
-`cabinet update`, `status` and `config` hand off to the workspace's own pinned copy when it exists (`<workspace>/node_modules/@tarekraafat/cabinet`, or the project's `node_modules` above a shared `cabinet/`), so they always act with the project's version. They do this only in a Cabinet workspace: the nearest from the current folder upward (after `-C`). `new`, `init`, `changelog` and `version` always run the copy you called.
+Every `cabinet` command runs the copy you called, and never runs a copy in a workspace's `node_modules`: a cloned project can commit one. When the workspace pins another version than the copy you called (`<workspace>/node_modules/@tarekraafat/cabinet`, or the project's `node_modules` above a `cabinet/` workspace), `cabinet update` and `config` change nothing, exit 1 and print the command that runs the pinned copy: `npx cabinet update` or `npx cabinet config`, and the folder to run it in. `cabinet status` runs as usual and adds `pinned: cabinet <version> in <folder>; npx cabinet runs it`. A script that calls `cabinet update` in a pinned project calls `npx cabinet update`.
+
+A cloned workspace still runs its own `bin/` scripts on `cabinet doctor`, `next`, `handoff`, `role` and `brief`, as `npm test` runs a project's tests: read a workspace you did not make before you run them, as you would its tests.
 
 ## Workspace scripts
 

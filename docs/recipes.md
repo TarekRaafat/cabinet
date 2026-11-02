@@ -167,8 +167,10 @@ One workspace per project: `cabinet new` (or `cabinet init`) for each. Each has 
 ```sh
 cabinet outdated      # is a newer version published?
 npm update            # take it
-cabinet update        # apply it, and read the changelog since your version
+npx cabinet update    # apply it, and read the changelog since your version
 ```
+
+In a workspace without a pin (no `@tarekraafat/cabinet` in its `package.json`), take it with `npm i -g @tarekraafat/cabinet@latest` and apply it with `cabinet update`. In a pinned workspace, `cabinet update` and `config` run only as `npx cabinet ...`: the `cabinet` command never runs a workspace's own copy.
 
 `cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited: it stops and names it. In a workspace with its own git it commits itself; when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run.
 

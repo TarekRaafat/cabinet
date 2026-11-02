@@ -478,9 +478,9 @@ grep -q 'id="status"' "$KIT/brand/index.html" && grep -q 'id="chairs"' "$KIT/bra
 (cd "$W" && npm install -D "$tgz" --no-audit --no-fund --silent) || fail "install from the package failed"
 (cd "$W" && npx --no cabinet status) | grep -q 'no kit file edited' || fail "installed command does not work"
 git -C "$W" status --porcelain | grep -q node_modules && fail "node_modules not ignored"
-# A "global" newer kit run inside the workspace must defer to the pinned copy.
+# A "global" newer kit run inside the workspace runs itself, and names the pinned copy.
 out="$(cd "$W" && "$K2/bin/cabinet" status)"
-echo "$out" | grep -q "node_modules/@tarekraafat/cabinet: $(j -r '$.version' "$KIT/package.json")" || fail "global command did not defer to the pinned copy"
+echo "$out" | grep -qF "pinned: cabinet $(j -r '$.version' "$KIT/package.json") in " || fail "global command did not name the pinned copy: $out"
 "$K2/bin/cabinet" version | grep -qF "$N" || fail "outside a workspace the global command should run itself"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -3750,17 +3750,17 @@ four() {   # four <workspace> <command> [<folder named>]
     "$F" -C "$w" next | grep -qF "Run it in $at." && (cd "$w" && bin/doctor.sh) | grep -qF "(in $at)" || fail "next or the doctor does not name $at"
   fi
 }
-put 9.9.9; four "$RW" "npm install @tarekraafat/cabinet@latest && cabinet update"
+put 9.9.9; four "$RW" "npm install @tarekraafat/cabinet@latest && npx cabinet update"
 cp "$RW/package.json" "$T/rn-pkg"; j '({...$, devDependencies: {}})' "$T/rn-pkg" > "$RW/package.json"
 four "$RW" "npm i -g @tarekraafat/cabinet@latest && cabinet update"
 cp "$T/rn-pkg" "$RW/package.json"
 put "$V"; printf '0.0.1\n' > "$RW/.cabinet/version"; printf '%s\n' "$V" > "$NP/answer"
-four "$RW" "cabinet update"
+four "$RW" "npx cabinet update"
 printf '%s\n' "$V" > "$RW/.cabinet/version"; printf '9.9.9\n' > "$NP/answer"
 SP="$T/rn-proj"; mkdir -p "$SP"; git -C "$SP" init -q; printf '{"name": "p", "devDependencies": {"@tarekraafat/cabinet": "^%s"}}\n' "$V" > "$SP/package.json"
 (cd "$SP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the notice"
 SPH="$(cd "$SP" && pwd -P)"; put 9.9.9
-four "$SP/cabinet" "npm install @tarekraafat/cabinet@latest && cabinet update" "$SPH"
+four "$SP/cabinet" "npm install @tarekraafat/cabinet@latest && npx cabinet update" "$SPH"
 # 3. Never waits: with npm hanging, each command returns in its off time (plus 5 seconds), with its off output.
 echo 60 > "$NP/sleep"
 for c in next status doctor; do
@@ -4815,10 +4815,10 @@ UA=""; up "$UW"; ((st == 0)) && grep -qF "Cabinet 9.9.9 is out" <<<"$o" && grep 
 # 3. A pin: the pinned command, and the folder to run it in. A folder holding a tab (new refuses one; a clone can have
 # it) is named whole, and the rest of its name is no command.
 "$F" new "$PW" --yes >/dev/null; PW="$(cd "$PW" && pwd -P)"
-up "$PW"; ((st == 0)) && grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && cabinet update (in $PW)" <<<"$o" || fail "the pin: $o"
+up "$PW"; ((st == 0)) && grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && npx cabinet update (in $PW)" <<<"$o" || fail "the pin: $o"
 mkdir -p "$T/uo-tab"; "$F" new "$T/uo-tabbed" --yes >/dev/null; mv "$T/uo-tabbed" "$TW"; TW="$(cd "$TW" && pwd -P)"
 printf '#!/bin/bash\ntouch "$(dirname "$0")/ran-standin"\n' > "$NP/standin"; chmod +x "$NP/standin"
-up "$TW"; grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && cabinet update (in $TW)" <<<"$o" && [[ ! -e "$NP/ran-standin" ]] || fail "a folder with a tab: $o"
+up "$TW"; grep -qxF "To take it: npm install @tarekraafat/cabinet@latest && npx cabinet update (in $TW)" <<<"$o" && [[ ! -e "$NP/ran-standin" ]] || fail "a folder with a tab: $o"
 # 4. No failure stops it: npm failing, npm missing, junk, a hang (stopped at the limit).
 touch "$NP/viewfail"; up "$UW"; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" && ! grep -q 'is out' <<<"$o" || fail "a registry that fails: $o"; rm "$NP/viewfail"
 mkdir -p "$T/uo-nonpm"; ln -s "$(command -v node)" "$T/uo-nonpm/node"; PATH="$T/uo-nonpm:/usr/bin:/bin" up "$UW"; ((st == 0)) && grep -q 'Nothing changed' <<<"$o" || fail "npm missing: $o"
@@ -4839,6 +4839,64 @@ grep -q '^cabinet update$' "$KIT/docs/commands.md" && grep -qF 'It installs noth
   && grep -q '^| `CABINET_TTY` | setup, config, remove |' "$KIT/docs/commands.md" && ! grep -qE 'update \[--yes\]|Run it now\?|ignore-scripts' "$KIT/docs/commands.md" || fail "the docs do not say what update does"
 for x in "$UW" "$PW" "$TW"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="$op"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "a cloned project's kit copy never runs" ""
+s73() {
+# H-20261102-09. A clone can commit node_modules/@tarekraafat/cabinet with a bin/cabinet of its own. status, update
+# and config never run it, in the workspace or in the project above a cabinet/ workspace; update and config stop
+# with the npx command instead, and status names the pinned version, escaped in a terminal.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" PW="$T/pc-ws" PP="$T/pc-proj" MK="$T/pc-ran" ESC=$'\033' w at d o st V
+export HOME="$T/pc-home" GIT_CONFIG_GLOBAL="$T/pc-home/.gitconfig"
+mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+# plant <folder> <version>: a committed, executable pinned copy that leaves a marker if it ever runs.
+plant() {
+  local m="$1/node_modules/@tarekraafat/cabinet"; mkdir -p "$m/bin"
+  printf '{\n  "name": "@tarekraafat/cabinet",\n  "version": "%s",\n  "bin": {"cabinet": "bin/cabinet"}\n}\n' "$2" > "$m/package.json"
+  printf '#!/bin/bash\ntouch "%s"\n' "$MK" > "$m/bin/cabinet"; chmod +x "$m/bin/cabinet"
+  git -C "$1" add -f node_modules && git -C "$1" commit -qm "a committed kit copy"
+}
+"$F" new "$PW" --yes >/dev/null || fail "new for the pinned copy"; PW="$(cd "$PW" && pwd -P)"; plant "$PW" 0.0.9
+mkdir -p "$PP"; git -C "$PP" init -q; printf '{"name": "p", "devDependencies": {"@tarekraafat/cabinet": "^0.0.9"}}\n' > "$PP/package.json"
+(cd "$PP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the pinned copy"
+PP="$(cd "$PP" && pwd -P)"; git -C "$PP" add -A && git -C "$PP" commit -qm "workspace"; plant "$PP" 0.0.9
+for w in "$PW" "$PP/cabinet"; do
+  at="$PW"; [[ "$w" == "$PW" ]] || at="$PP"
+  # From inside the workspace (where the hand-off looked), and from outside with -C.
+  for d in "$w" "$T"; do
+    st=0; o="$(cd "$d" && "$F" -C "$w" status 2>&1)" || st=$?
+    ((st == 0)) && grep -qxF "pinned: cabinet 0.0.9 in $at; npx cabinet runs it" <<<"$o" || fail "status in $w: exit $st: $o"
+    st=0; o="$(cd "$d" && "$F" -C "$w" update 2>&1)" || st=$?
+    ((st == 1)) && grep -qF "pins Cabinet 0.0.9" <<<"$o" && grep -qF "npx cabinet update (in $at)" <<<"$o" || fail "update in $w: exit $st: $o"
+    st=0; o="$(cd "$d" && "$F" -C "$w" config --writing short 2>&1)" || st=$?
+    ((st == 1)) && grep -qF "npx cabinet config (in $at)" <<<"$o" || fail "config in $w: exit $st: $o"
+  done
+  [[ ! -e "$MK" ]] || fail "a command ran the pinned copy in $w"
+  [[ -z "$(git -C "$at" status --porcelain)" ]] || fail "update or config changed $w: $(git -C "$at" status --porcelain)"
+done
+# A pin of this kit's version: nothing stops, and status says nothing of it.
+V="$(j -r '$.version' "$KIT/package.json")"; sedi "s/\"0.0.9\"/\"$V\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
+"$F" -C "$PW" status | grep -q '^pinned:' && fail "status named a pin of this kit's version"
+"$F" -C "$PW" config --writing short >/dev/null || fail "config stopped on a pin of this kit's version"
+"$F" -C "$PW" update >/dev/null || fail "update stopped on a pin of this kit's version"
+[[ ! -e "$MK" ]] || fail "a command ran the pinned copy of this kit's version"
+# A version holding a control character prints escaped in a terminal, and never runs.
+sedi "s/\"$V\"/\"0.0.9${ESC}[2J\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
+o="$(TERM=xterm in_tty "$F" -C "$PW" status | tr -d '\r')"
+grep -qF "pinned: cabinet 0.0.9?[2J" <<<"$o" && ! grep -qF "${ESC}[2J" <<<"$o" || fail "status printed the pinned version's control character: $(printf '%s' "$o" | od -c | head -5)"
+o="$(TERM=xterm in_tty bash -c '"$0" -C "$1" update' "$F" "$PW" | tr -d '\r')"
+grep -qF "pins Cabinet 0.0.9?[2J" <<<"$o" && ! grep -qF "${ESC}[2J" <<<"$o" || fail "update printed the pinned version's control character: $(printf '%s' "$o" | od -c | head -5)"
+[[ ! -e "$MK" ]] || fail "a command ran the pinned copy"
+# update_cmd: a pinned project takes the newer kit and applies it with npx; with no pin, the cabinet command.
+o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" 9.9.9 "$V")"
+[[ "$o" == "$PW"$'\t'"npm install @tarekraafat/cabinet@latest && npx cabinet update" ]] || fail "update_cmd for a pin: $o"
+printf '0.0.1\n' > "$PW/.cabinet/version"
+o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" "" "$V")"; [[ "$o" == $'\t'"npx cabinet update" ]] || fail "update_cmd for a pin behind the kit: $o"
+rm "$PW/package.json"
+o="$(LIBJS="$KIT/scripts/lib.js" pf update_cmd "$PW" "" "$V")"; [[ "$o" == $'\t'"cabinet update" ]] || fail "update_cmd with no pin: $o"
+for w in "$PW" "$PP"; do "$F" -C "$w" remove --yes --force >/dev/null 2>&1 || true; done
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 

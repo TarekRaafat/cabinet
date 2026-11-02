@@ -25,27 +25,6 @@ if [[ "${1:-}" == -C ]]; then
   shift 2
 fi
 
-# A global install hands off to the workspace's own pinned copy, so "cabinet update"
-# applies the version the project pinned, not whatever is installed globally.
-# Only for update, status and config, and only into a cabinet workspace (the nearest from
-# here upward): a stray node_modules elsewhere is never run.
-case "${1:-}" in update|status|config)
-  wsd=""
-  d="$(pwd -P)"
-  while :; do
-    [[ -f "$d/.cabinet/version" ]] && { wsd="$d"; break; }
-    [[ -f "$d/cabinet/.cabinet/version" ]] && { wsd="$d/cabinet"; break; }
-    [[ "$d" == / ]] && break; d="$(dirname "$d")"
-  done
-  # The pin sits in the workspace, or in the project above a cabinet/ workspace.
-  for pinned in "$wsd/node_modules/@tarekraafat/cabinet" "$wsd/../node_modules/@tarekraafat/cabinet"; do
-    [[ -n "$wsd" ]] || break
-    if [[ -z "${CABINET_PINNED:-}" && -x "$pinned/bin/cabinet" && "$(cd "$pinned" && pwd -P)" != "$(cd "$KIT" && pwd -P)" ]]; then
-      CABINET_PINNED=1 exec "$pinned/bin/cabinet" "$@"
-    fi
-  done ;;
-esac
-
 die() { echo "$ERR_TAG $*" >&2; exit 1; }
 # need_deps <yes>: stop unless the tools cabinet needs are here. In a terminal, offers to install
 # the missing ones and shows the command first; with --yes (scripts, agents) it never installs.
@@ -941,7 +920,8 @@ setup() {
   ((installed)) || ((pinned == 0)) || echo "  - In $pinat: npm install (downloads the pinned kit and locks its version)."
   ((setup)) || echo "  - Set up this machine: cabinet bootstrap --dry-run, then cabinet bootstrap."
   echo "  - cabinet next shows what is left, at any time, from anywhere in $ws."
-  echo "Updates: npm update, then cabinet update (npx cabinet update without a global install)."
+  if ((pinned)); then echo "Updates: npm update, then npx cabinet update (in $pinat)."
+  else echo "Updates: npm i -g @tarekraafat/cabinet@latest, then cabinet update."; fi
 }
 
 # Change a workspace's settings after setup: the same questions, with its current
@@ -1226,6 +1206,7 @@ cmd_config() {
   fi
   local ws; ws="$(find_ws "$dirarg")"
   [[ -f "$ws/.cabinet/version" && -f "$ws/cabinet.env" ]] || die "$ws is not a cabinet workspace"
+  pin_stop "$ws" config
 
   # Current answers, read from the files setup wrote.
   envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
@@ -2251,8 +2232,8 @@ cmd_outdated() {
   if [[ -z "$latest" ]]; then echo "latest: unknown (the registry could not be reached, or the package is not published there)"; return 0; fi
   echo "latest: cabinet $latest"
   [[ -z "$where" || "$where" == "$ws" ]] || where=" (in $where)"; [[ "$where" == " (in"* ]] || where=""
-  if [[ -n "$cmd" && "$cmd" != "cabinet update" ]]; then echo "To take it: $cmd$where."
-  elif [[ -n "$cmd" ]]; then echo "The installed kit is newer than this workspace: cabinet update applies it."
+  if [[ -n "$cmd" && "$cmd" != "cabinet update" && "$cmd" != "npx cabinet update" ]]; then echo "To take it: $cmd$where."
+  elif [[ -n "$cmd" ]]; then echo "The installed kit is newer than this workspace: $cmd applies it."
   else echo "Up to date."; fi
 }
 
@@ -2338,6 +2319,27 @@ cmd_changelog() {
   fi
   changelog "$from" | changelog_show
 }
+# pin_other <workspace>: "<folder>\t<version>" when the workspace, or the project above a cabinet/ workspace,
+# holds a pinned copy (node_modules/@tarekraafat/cabinet) of another version than this kit; else nothing.
+# The copy is only read, never run: a clone can commit any node_modules. Its version is the clone's text,
+# so it is only printed (through term_text or term_say), never run or written into a file.
+pin_other() {
+  local p v
+  for p in "$1/node_modules/@tarekraafat/cabinet" "$1/../node_modules/@tarekraafat/cabinet"; do
+    [[ -f "$p/package.json" ]] || continue
+    [[ "$(cd "$p" && pwd -P)" != "$(cd "$KIT" && pwd -P)" ]] || return 0
+    v="$(head -c 65536 "$p/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -1)"
+    [[ -z "$v" || "$v" == "$VERSION" ]] || printf '%s\t%s\n' "$(cd "$p/../../.." && pwd -P)" "$v"
+    return 0
+  done
+}
+# pin_stop <workspace> <command>: update and config stop before changing anything when the workspace pins
+# another version, and print the command that runs the pinned copy. This kit never runs it.
+pin_stop() {
+  local r; r="$(pin_other "$1")"; [[ -n "$r" ]] || return 0
+  echo "$ERR_TAG this workspace pins Cabinet $(term_say "${r#*$'\t'}"), and this is $VERSION, so nothing changed. Run the pinned copy: npx cabinet $2 (in $(term_say "${r%$'\t'*}"))" >&2
+  exit 1
+}
 # update_notice <workspace>: a newer Cabinet on the registry than the installed kit: say so, with the command
 # that takes it for this install, as status and outdated print it. It installs nothing and asks nothing, and
 # no failure here stops an update of the installed kit. The check off sends no request.
@@ -2356,6 +2358,7 @@ cmd_update() {
   [[ $# -eq 0 ]] || bad_usage "cabinet update takes no arguments (to name a workspace: cabinet -C <dir> update)"
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
+  pin_stop "$ws" update
   update_notice "$ws"
   local old; old="$(cat "$ws/.cabinet/version")"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
@@ -2439,6 +2442,8 @@ cmd_status() {
   echo "workspace $(printf '%s' "$ws" | term_text): cabinet $(term_text < "$ws/.cabinet/version"); kit at $(printf '%s' "$KIT" | term_text): $VERSION"
   local e; for e in ${edited[@]+"${edited[@]}"}; do printf "  ${S_U}edited here${S_Z}: %s\n" "$(printf '%s' "$e" | term_text)"; done
   ((${#edited[@]})) || echo "  ${S_G}no kit file edited${S_Z}"
+  local pin; pin="$(pin_other "$ws")"
+  [[ -z "$pin" ]] || echo "pinned: cabinet $(printf '%s' "${pin#*$'\t'}" | term_text) in $(printf '%s' "${pin%$'\t'*}" | term_text); npx cabinet runs it"
   if [[ -n "$latest" && -n "$r" ]]; then
     echo "latest: cabinet $latest"
     echo "Run: ${S_B}${r#*$'\t'}${S_Z}$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' (in %s)' "${r%%$'\t'*}")"

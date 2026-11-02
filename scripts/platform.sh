@@ -370,10 +370,12 @@ update_latest() {
 # update_cmd <workspace> <latest> <installed kit version>: "<folder>\t<command>" that takes the newer kit
 # (the folder: the pin's package.json, the workspace's or the project's above), or nothing.
 update_cmd() {
-  local pin="$1"; [[ -f "$1/package.json" ]] || pin="$(dirname "$1")"
+  local pin="$1" run="cabinet update"; [[ -f "$1/package.json" ]] || pin="$(dirname "$1")"
+  # A pinned project runs its own copy with npx: the cabinet command never runs a workspace's node_modules.
+  if grep -q '"@tarekraafat/cabinet"' "$pin/package.json" 2>/dev/null; then run="npx cabinet update"; else pin=""; fi
   if [[ -n "$2" ]] && node "$LIBJS" version-newer "$2" "$3"; then
-    if grep -q '"@tarekraafat/cabinet"' "$pin/package.json" 2>/dev/null; then printf '%s\t%s\n' "$pin" "npm install @tarekraafat/cabinet@latest && cabinet update"
-    else printf '\t%s\n' "npm i -g @tarekraafat/cabinet@latest && cabinet update"; fi
-  elif node "$LIBJS" version-newer "$3" "$(head -c 64 "$1/.cabinet/version" 2>/dev/null | head -1)"; then printf '\t%s\n' "cabinet update"; fi
+    if [[ -n "$pin" ]]; then printf '%s\t%s\n' "$pin" "npm install @tarekraafat/cabinet@latest && $run"
+    else printf '\t%s\n' "npm i -g @tarekraafat/cabinet@latest && $run"; fi
+  elif node "$LIBJS" version-newer "$3" "$(head -c 64 "$1/.cabinet/version" 2>/dev/null | head -1)"; then printf '\t%s\n' "$run"; fi
   return 0
 }

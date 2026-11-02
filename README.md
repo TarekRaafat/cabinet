@@ -125,7 +125,7 @@ With a Node.js version manager (nvm, fnm, asdf, volta), a global install belongs
 
 Tab completion: add `eval "$(cabinet completion zsh)"` to `~/.zshrc` (or `bash` to `~/.bashrc`).
 
-Every workspace also pins its own copy as a dev dependency. Inside a workspace, the global `cabinet` hands off to that pinned copy, so it always acts with the project's version.
+Every workspace also pins its own copy as a dev dependency. The global `cabinet` never runs that copy: where it pins another version, `npx cabinet update` and `npx cabinet config` use it, and `cabinet update` and `config` stop and say so. A cloned workspace runs its own `bin/` scripts on `cabinet doctor`, `next`, `handoff`, `role` and `brief`: read one you did not make first, as you would its tests.
 
 ### What setup changes on your machine
 

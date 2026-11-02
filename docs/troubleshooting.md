@@ -213,4 +213,5 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 - **`cabinet: <...> is inside the repo <...>: run cabinet init at its top folder`:** run it there.
 - **`cabinet: these files already exist at paths the kit uses: <...>`:** rename or move those files, then run `cabinet init` again.
 - **`<...>: the merge did not produce a valid file (its shape is not what the kit expects), left as is`:** from bootstrap. The file is unchanged; add the kit's rules by hand, or fix the file's shape.
+- **`cabinet: this workspace pins Cabinet <version>, and this is <version>, so nothing changed`:** `cabinet update` and `config` never run the copy a workspace pins. Run the command it prints, `npx cabinet update` or `npx cabinet config`, in the folder it names ([which copy runs](commands.md#which-copy-of-cabinet-runs)).
 - **An update stops with "edited here, left as is"** or **"already here and not the kit's":** move your change to a project file, restore the kit's file, then `cabinet update` again.
