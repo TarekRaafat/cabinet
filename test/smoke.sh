@@ -4948,7 +4948,7 @@ case "$1" in --version) echo "fake $(basename "$0") 1.0"; exit 0 ;; inspect) ech
 printf '%s\n' "$*" >> "$FAKE_PROBE_LOG"
 [[ -z "${CABINET_PROBE_KEY:-}" ]] || echo "probe variable reached the tool" >> "$FAKE_PROBE_LOG"
 [[ -n "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" ]] && echo "key variable set" >> "$FAKE_PROBE_LOG"
-[[ "$FAKE_PROBE_MODE" == leak ]] && printf '{"k": "%s"}\n' "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" > "$HOME/.claude.json"
+[[ "$FAKE_PROBE_MODE" == leak ]] && printf '{"k": "%s"}\n' "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" | tee "$HOME/.claude.json"
 [[ "$FAKE_PROBE_MODE" == hang ]] && exec sleep 600
 c="$(sed -n 's/^Run this shell command once and print its output: //p' <<<"$p")"
 r="$(sed -n 's/.*read the file \(.*\), then print.*/\1/p' <<<"$p")"
