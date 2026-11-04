@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: guardrail-rules, guardrail-exceptions, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -1141,6 +1141,127 @@ function rulesAdd(kind, live, kit) {
   process.stdout.write(Buffer.concat([Buffer.from(text, "latin1"), Buffer.from((text === "" || text.endsWith("\n") ? "" : "\n") + add.join("\n") + "\n")]));
 }
 
+// ---- Guardrail rule groups (docs/guardrails.md, "Rule groups") ------------------------------------
+// Every deny rule added after 0.3.3 comes from GROUPS, never from the files in guardrails/, which stay as
+// they are: so a group's strings can be removed exactly (the exceptions file), today's rules never can, and
+// the ask rules never move. Each group lists the tools it is on for. A tool's rules are its file in
+// guardrails/ plus the groups on for it; bootstrap merges that, and the doctor counts against the same.
+// Every rule here is a deny. CABINET_GUARDRAIL_PROBE (a list of tools; grok means Claude Code's file) turns
+// every group on for those tools in that run only: the guardrail probe and the tests use it before any group
+// is on; it can only add deny rules.
+const RULE_TOOLS = ["claude", "qwen", "opencode", "gemini", "cursor", "codex", "agy"];
+const PRINTERS = ["cat", "head", "tail", "less", "more", "bat", "nl", "strings", "xxd", "od", "hexdump", "base64", "grep", "rg", "awk", "sed"];
+const SECRET_PATHS = [".ssh/", ".npmrc", ".config/gh/", ".aws/", ".git-credentials", ".netrc", ".config/git/credentials"];
+const ENV_SUFFIXES = ["local", "development", "dev", "production", "prod", "staging", "test"];
+const CREDENTIAL_SUBS = ["fill", "approve", "reject", "capture"];
+const GIT_HELPERS = ["credential-osxkeychain", "credential-store", "credential-cache"];
+const homeDir = () => env("HOME");
+// The home folder written out, for the rules that name a path in full; none when it holds a character a
+// rule format would read as a pattern, or a quote or a control character.
+const homeAbs = () => (/^\/[^*?[\]()"'\\\x00-\x1f\x7f]*$/.test(homeDir()) && homeDir() !== "/" ? homeDir().replace(/\/+$/, "") : "");
+const codexRule = (pattern, why) => "prefix_rule(pattern = " + JSON.stringify(pattern).replace(/","/g, '", "') + ', decision = "forbidden", justification = "' + why + '")';
+const geminiRule = (re, msg) => '[[rule]]\ntoolName = "run_shell_command"\ncommandRegex = ' + JSON.stringify(re) + '\ndecision = "deny"\npriority = 990\ndenyMessage = ' + JSON.stringify(msg);
+const altRe = (list) => "(" + list.map(escapeRe).join("|") + ")";
+const GROUPS = {
+  // Rule 1: git's stored credentials, GitHub's credential helper, internet passwords in the keychain.
+  "git-credentials": {
+    on: [],
+    glob: () => ["*git credential*", "*git --no-pager credential*", "git-credential-*", "*/git-credential-*",
+      ...["-C", "-c"].flatMap((o) => CREDENTIAL_SUBS.map((c) => "*git " + o + " *credential " + c + "*")),
+      "*gh auth git-credential*", "*security find-internet-password*"],
+    gemini: () => [geminiRule("\\bgit(\\s+(-C|-c)\\s+\\S+|\\s+--no-pager)*\\s+credential\\b|(^|/)git-credential-|\\bgh\\s+auth\\s+git-credential\\b|\\bsecurity\\s+find-internet-password\\b",
+      "Stored credentials stay with the owner.")],
+    cursor: () => ["Shell(git:credential*)", "Shell(gh:auth git-credential*)", "Shell(security:find-internet-password*)"],
+    codex: () => [["git", "credential"], ...GIT_HELPERS.map((h) => ["git", h]), ["gh", "auth", "git-credential"], ["security", "find-internet-password"]]
+      .map((p) => codexRule(p, "Stored credentials stay with the owner.")),
+    agy: () => ["git credential", ...GIT_HELPERS.map((h) => "git " + h), "gh auth git-credential", "security find-internet-password"].map((c) => "command(" + c + ")"),
+  },
+  // Rule 2: a printing command naming a stored secret in the home folder, written ~/, $HOME/, ${HOME}/ or in full.
+  "secret-files": {
+    on: [],
+    glob: () => {
+      const forms = ["~/", "$HOME/", "${HOME}/", ...(homeAbs() ? [homeAbs() + "/"] : [])];
+      return PRINTERS.flatMap((p) => forms.flatMap((h) => SECRET_PATHS.map((x) => "*" + p + " *" + h + x + "*")));
+    },
+    gemini: () => [geminiRule("\\b" + altRe(PRINTERS) + "\\b.*(~|\\$HOME|\\$\\{HOME\\}" + (homeAbs() ? "|" + escapeRe(homeAbs()) : "") + ")/" +
+      "(" + SECRET_PATHS.map((x) => escapeRe(x) + (x.endsWith("/") ? "" : "\\b")).join("|") + ")", "Stored secrets stay with the owner.")],
+  },
+  // Rule 3: a printing command naming a .env file (.env, or .env.<suffix> but .env.example and .env.sample) as a
+  // whole file name: after a space or a /. The glob tools can only list suffixes; Gemini CLI takes any.
+  "env-files": {
+    on: [],
+    glob: () => PRINTERS.flatMap((p) => ["*" + p + " .env", "*" + p + " .env *", "*" + p + " * .env", "*" + p + " * .env *", "*" + p + " */.env", "*" + p + " */.env *",
+      ...ENV_SUFFIXES.flatMap((x) => ["*" + p + " .env." + x + "*", "*" + p + " * .env." + x + "*", "*" + p + " */.env." + x + "*"])]),
+    gemini: () => [geminiRule("\\b" + altRe(PRINTERS) + "\\b.*[\\s/]\\.env(\\.(?!(example|sample)([\\s;|&'\"]|$))[^\\s/;|&'\"]+)?([\\s;|&'\"]|$)",
+      "A .env file's values stay out of agents' output: run the program that loads it.")],
+  },
+};
+// Names that can never be listed in the exceptions file: push, merge, release and publish stay with the owner.
+const NEVER_EXCEPTED = ["push", "merge", "release", "publish", "push-gate", "cabinet-config"];
+// One group's rules for one tool, as the strings that tool's file holds (Bash(...) for the glob tools).
+function groupRules(tool, g) {
+  const G = GROUPS[g];
+  if (["claude", "qwen", "opencode"].includes(tool)) return G.glob ? G.glob().map((r) => "Bash(" + r + ")") : [];
+  return G[tool] ? G[tool]() : [];
+}
+const probeTools = () => words(env("CABINET_GUARDRAIL_PROBE").replace(/,/g, " ")).map((t) => (t === "grok" ? "claude" : t));
+// The groups on for a tool: on in GROUPS or by the probe's switch, and not listed in the exceptions file.
+function groupsOn(tool) {
+  const off = exceptions().groups;
+  return Object.keys(GROUPS).filter((g) => (GROUPS[g].on.includes(tool) || probeTools().includes(tool)) && !off.has(g));
+}
+// The exceptions file: lines "<group>" or "<group> <absolute path>", read as data and never sourced.
+const exceptionsFile = () => path.join(env("XDG_CONFIG_HOME") || path.join(homeDir(), ".config"), "cabinet", "guardrail-exceptions");
+function exceptions() {
+  const groups = new Map(), bad = [];
+  let text = "";
+  try { text = read(exceptionsFile()); } catch (e) { return { groups, bad }; }
+  for (const raw of text.split("\n")) {
+    const l = raw.trim();
+    if (!l || l.startsWith("#")) continue;
+    const m = /^([a-z][a-z-]*)(?:[ \t]+(\/[^\s"'`$\;|&<>(){}*?[\]]*))?$/.exec(l);
+    let why = "";
+    if (!m) why = "not a group name, or a group and an absolute path without spaces, quotes or shell characters";
+    else if (NEVER_EXCEPTED.includes(m[1])) why = "can never be listed: push, merge, release and publish stay with you";
+    else if (!GROUPS[m[1]]) why = "no such rule group (" + Object.keys(GROUPS).join(", ") + ")";
+    if (why) { bad.push({ line: l.replace(/[\x00-\x1f\x7f]/g, "?"), why }); continue; }
+    if (!groups.has(m[1])) groups.set(m[1], []);
+    if (m[2]) groups.get(m[1]).push(m[2]);
+  }
+  return { groups, bad };
+}
+// guardrail-exceptions: for the doctor, one line per group in force ("group\t<name>\t<paths>\t<tools where a
+// path cannot narrow it>") and one per line ignored ("bad\t<line>\t<why>"). No rule format the kit writes
+// can limit a command rule to a folder, so a path applies machine-wide in every tool the group has rules for.
+function guardrailExceptions() {
+  const { groups, bad } = exceptions();
+  for (const [g, paths] of groups) {
+    const wide = paths.length ? RULE_TOOLS.filter((t) => groupRules(t, g).length) : [];
+    process.stdout.write(["group", g, paths.join(" "), wide.join(" ")].join("\t") + "\n");
+  }
+  for (const b of bad) process.stdout.write(["bad", b.line, b.why].join("\t") + "\n");
+}
+// The rules the groups on for a tool add, as strings in its file's form.
+const rendered = (tool) => groupsOn(tool).flatMap((g) => groupRules(tool, g));
+// guardrail-rules <tool> [<kit's file>]: the rules the groups on for the tool add, in its file's format; with
+// the kit's file, that file with them added (its bytes unchanged when no group is on, so bootstrap places what
+// it always placed). JSON tools: {permissions: {deny}}; codex: prefix_rule lines; gemini: [[rule]] tables.
+function guardrailRules(tool, kit) {
+  if (!RULE_TOOLS.includes(tool)) die("guardrail-rules: no such tool: " + tool + " (" + RULE_TOOLS.join(", ") + ")", 2);
+  const add = rendered(tool);
+  if (kit && !add.length) { process.stdout.write(fs.readFileSync(kit)); return; }
+  if (!add.length) return;
+  if (tool === "codex" || tool === "gemini") {
+    const base = kit ? fs.readFileSync(kit, "utf8") : "";
+    process.stdout.write(base + (base && !base.endsWith("\n") ? "\n" : "") + (base ? "\n" : "") + add.join(tool === "gemini" ? "\n\n" : "\n") + "\n");
+    return;
+  }
+  const j = kit ? JSON.parse(read(kit)) : { permissions: { deny: [] } };
+  j.permissions = j.permissions || {};
+  j.permissions.deny = [...(j.permissions.deny || []), ...add.filter((r) => !(j.permissions.deny || []).includes(r))];
+  process.stdout.write(JSON.stringify(j, null, 2) + "\n");
+}
+
 // week-start <first day, 0 Sunday to 6 Saturday> [now, in seconds]: the local midnight this week began,
 // in seconds. Date keeps a day with a clock change whole, and a midnight the clock skips becomes the
 // first time that day has. "now" is for the tests.
@@ -1171,7 +1292,7 @@ function kitEdited(ws, manifest) {
 
 const COMMANDS = {
   "kit-edited": kitEdited,
-  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd,
+  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "guardrail-rules": guardrailRules, "guardrail-exceptions": guardrailExceptions,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,

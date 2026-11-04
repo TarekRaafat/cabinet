@@ -16,6 +16,8 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 G="$K/guardrails"
 DRY=0 failures=0 set_schedules=""
+# Each tool's rules: the kit's file plus the rule groups on for it (kit_file), written here.
+RT="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-rules.XXXXXX")"; trap 'rm -rf "$RT"' EXIT
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
@@ -264,12 +266,13 @@ else
 fi
 
 echo "== Claude Code"
-merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
+merge_permissions "$(kit_file claude "$G/claude-permissions.json" "$RT/claude.json")" "$HOME/.claude/settings.json"
 
 echo "== Codex"
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
-  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules"
-  else place "$G/codex-default.rules" "$HOME/.codex/rules/default.rules"; fi
+  kr="$(kit_file codex "$G/codex-default.rules" "$RT/codex.rules")"
+  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$kr"
+  else place "$kr" "$HOME/.codex/rules/default.rules"; fi
   cfg="$HOME/.codex/config.toml"
   if [[ -f "$cfg" ]] && ! grep -q '^approval_policy' "$cfg"; then
     backup "$cfg"
@@ -284,13 +287,14 @@ fi
 
 echo "== Antigravity CLI (agy)"
 if [[ -d "$HOME/.gemini/antigravity-cli" ]] || command -v agy >/dev/null; then
-  merge_permissions "$G/agy-permissions.json" "$HOME/.gemini/antigravity-cli/settings.json"
+  merge_permissions "$(kit_file agy "$G/agy-permissions.json" "$RT/agy.json")" "$HOME/.gemini/antigravity-cli/settings.json"
 fi
 
 echo "== Gemini CLI"
 if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
-  if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml"
-  else place "$G/gemini-owner-control.toml" "$HOME/.gemini/policies/owner-control.toml"; fi
+  kr="$(kit_file gemini "$G/gemini-owner-control.toml" "$RT/gemini.toml")"
+  if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$kr"
+  else place "$kr" "$HOME/.gemini/policies/owner-control.toml"; fi
   g="$HOME/.gemini/settings.json"
   if ! json_ok "$g"; then
     echo "  $g is not plain JSON, or a rewrite would change one of its values, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1
@@ -306,9 +310,9 @@ if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
 fi
 
 echo "== Qwen Code"
-# Same rule format as Claude Code (permissions.deny / ask), so the same rules.
+# Same rule format as Claude Code (permissions.deny / ask), so the same rules, with the groups on for Qwen.
 if [[ -d "$HOME/.qwen" ]] || command -v qwen >/dev/null; then
-  merge_permissions "$G/claude-permissions.json" "$HOME/.qwen/settings.json"
+  merge_permissions "$(kit_file qwen "$G/claude-permissions.json" "$RT/qwen.json")" "$HOME/.qwen/settings.json"
 fi
 
 echo "== Cursor CLI"
@@ -318,7 +322,7 @@ echo "== Cursor CLI"
 # editor's agent keeps its command rules in the editor's own settings, which the kit
 # does not change: there only the git push gate applies.
 if [[ -d "$HOME/.cursor" ]] || cursor_bin >/dev/null; then
-  merge_permissions "$G/cursor-permissions.json" "$HOME/.cursor/cli-config.json"
+  merge_permissions "$(kit_file cursor "$G/cursor-permissions.json" "$RT/cursor.json")" "$HOME/.cursor/cli-config.json"
 fi
 
 echo "== Grok"
@@ -358,7 +362,7 @@ merge_opencode() {
   return 0
 }
 if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
-  merge_opencode "$G/claude-permissions.json" "$HOME/.config/opencode/opencode.json"
+  merge_opencode "$(kit_file opencode "$G/claude-permissions.json" "$RT/opencode.json")" "$HOME/.config/opencode/opencode.json"
 fi
 
 echo "== Schedules ($SCHEDULER)"

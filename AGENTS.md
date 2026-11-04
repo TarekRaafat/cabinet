@@ -21,7 +21,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `tools/build-brand.js` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
 | `tools/guardrail-probe.js` | Runs a real Claude Code or Grok in a throwaway HOME, with a probe-only key passed only as an environment variable, to record which guardrail rules the tool really applies (evidence for new rule shapes; not shipped) | |
 | `site/` | The website: `build.js` builds it from `docs/`, `README.md`, `CHANGELOG.md`, `roles/`, `brand/demo/captured.js` and `brand/` (`node site/build.js <folder>`), `copy.js` holds its own wording, `site.css` and `site.js` run in the browser, `fonts/` holds the fonts with their licenses, `github-mark/` GitHub's mark for the header link, with where it came from. `.github/workflows/pages.yml` publishes it to GitHub Pages. Not shipped | |
-| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site (not shipped) | |
+| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site, `test/rule-match.js` matches commands against each agent tool's rules as that tool does (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
 

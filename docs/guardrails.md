@@ -73,6 +73,16 @@ Side effects: some harmless commands are refused too, such as an npm script name
 
 **Not caught by any tool's rules:** git config keys in unusual letter case (except in Gemini), an agent editing `.git/config` with its file tools (the doctor reports a repo's own `core.hooksPath` afterwards), an agent removing a repo's row from `repos.tsv` or deleting a workspace's record in the log folder, which takes that repo out of the gate (the workspace's git history shows a `repos.tsv` change; the doctor's `guardrails.claim` shows a missing record), and other ways of faking a terminal.
 
+## Rule groups
+
+Rules added after Cabinet 0.3.3 come in named groups. Bootstrap writes each group into a tool's own rule file from the kit's table (each workspace's `bin/lib.js`), after the rules in `.cabinet/guardrails/`, which stay as they are; `cabinet doctor` counts the same rules. Every rule in a group is a deny, never an ask. No group is switched on yet, so bootstrap places nothing new on this machine.
+
+| Group | Denies | Tools |
+|---|---|---|
+| `git-credentials` | `git credential` (any subcommand), git's credential helpers run by hand, `gh auth git-credential`, `security find-internet-password` | Claude Code, Grok, Qwen Code, opencode and Gemini CLI, also after `git -C <dir>`, `git -c <key>=<value>` and `git --no-pager` and with a helper's full path; Cursor CLI, Codex and Antigravity only where the command starts with `git credential`, `gh auth git-credential` or `security find-internet-password` |
+| `secret-files` | a printing command (`cat`, `head`, `tail`, `less`, `more`, `bat`, `nl`, `strings`, `xxd`, `od`, `hexdump`, `base64`, `grep`, `rg`, `awk`, `sed`) naming `~/.ssh/`, `~/.npmrc`, `~/.config/gh/`, `~/.aws/`, `~/.git-credentials`, `~/.netrc` or `~/.config/git/credentials`, written with `~/`, `$HOME/`, `${HOME}/` or the full path | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
+| `env-files` | a printing command naming a `.env` file as a whole file name (after a space or a `/`): in Gemini CLI `.env` and every `.env.<suffix>` but `.env.example` and `.env.sample`; in the others `.env` and `.env.local`, `.env.development`, `.env.dev`, `.env.production`, `.env.prod`, `.env.staging` and `.env.test`, each also with more after it. `cabinet.env` is never matched | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
+
 ## Runs never rewrite
 
 An agent may run a rebase, a local merge or another git action that can be undone only when you ask for it in its session, except an amend of its own newest commit before it is pushed or named in a handoff or verdict ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:

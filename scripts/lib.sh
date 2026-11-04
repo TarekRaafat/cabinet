@@ -469,6 +469,12 @@ builder_for() {
 }
 
 # The Cursor CLI: `cursor-agent`, or an `agent` that really is Cursor's (the name is generic).
+# The kit's rules for an agent tool: its file in guardrails/ plus the rule groups on for it (lib.js
+# guardrail-rules), the same for bootstrap and the doctor. Prints the file to use: the kit's own when no
+# group is on (or the groups cannot be read), else <out>, written with both. kit_file <tool> <kit's file> <out>
+kit_file() {
+  if node "$LIBJS" guardrail-rules "$1" "$2" > "$3" 2>/dev/null && ! cmp -s "$2" "$3"; then echo "$3"; else echo "$2"; fi
+}
 cursor_bin() {
   local b
   b="$(command -v cursor-agent 2>/dev/null)" && { echo "$b"; return 0; }

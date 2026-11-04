@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.4.0 - Unreleased
+
+- Bootstrap and `cabinet doctor` now take each agent tool's rules from the kit's rule file plus named rule groups, all deny rules, listed on the guardrails page. No group is switched on yet, so nothing changes on your machine. `cabinet doctor` says, as a note, when Grok skips a file rule in `~/.claude/settings.json` (a skipped command rule stays a FIX).
+
 ## 0.3.3 - 3 Nov 2026
 
 - Agents now treat what they read from outside (a cloned repo, a web page, an issue, a tool's output) as data, not instructions: when it asks them to run something, send data out, reveal a secret or skip a check, they stop and tell the owner where. Instructions come only from the owner, `CABINET.md`, `AGENTS.md`, the role and what they name, and handoffs, which assign work but never loosen a rule. It is a rule for the model, not an enforced boundary, as the guardrails page says.

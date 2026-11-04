@@ -1893,6 +1893,16 @@ Side effects: some harmless commands are refused too, such as an npm script name
 
 **Not caught by any tool's rules:** git config keys in unusual letter case (except in Gemini), an agent editing `.git/config` with its file tools (the doctor reports a repo's own `core.hooksPath` afterwards), an agent removing a repo's row from `repos.tsv` or deleting a workspace's record in the log folder, which takes that repo out of the gate (the workspace's git history shows a `repos.tsv` change; the doctor's `guardrails.claim` shows a missing record), and other ways of faking a terminal.
 
+## Rule groups
+
+Rules added after Cabinet 0.3.3 come in named groups. Bootstrap writes each group into a tool's own rule file from the kit's table (each workspace's `bin/lib.js`), after the rules in `.cabinet/guardrails/`, which stay as they are; `cabinet doctor` counts the same rules. Every rule in a group is a deny, never an ask. No group is switched on yet, so bootstrap places nothing new on this machine.
+
+| Group | Denies | Tools |
+|---|---|---|
+| `git-credentials` | `git credential` (any subcommand), git's credential helpers run by hand, `gh auth git-credential`, `security find-internet-password` | Claude Code, Grok, Qwen Code, opencode and Gemini CLI, also after `git -C <dir>`, `git -c <key>=<value>` and `git --no-pager` and with a helper's full path; Cursor CLI, Codex and Antigravity only where the command starts with `git credential`, `gh auth git-credential` or `security find-internet-password` |
+| `secret-files` | a printing command (`cat`, `head`, `tail`, `less`, `more`, `bat`, `nl`, `strings`, `xxd`, `od`, `hexdump`, `base64`, `grep`, `rg`, `awk`, `sed`) naming `~/.ssh/`, `~/.npmrc`, `~/.config/gh/`, `~/.aws/`, `~/.git-credentials`, `~/.netrc` or `~/.config/git/credentials`, written with `~/`, `$HOME/`, `${HOME}/` or the full path | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
+| `env-files` | a printing command naming a `.env` file as a whole file name (after a space or a `/`): in Gemini CLI `.env` and every `.env.<suffix>` but `.env.example` and `.env.sample`; in the others `.env` and `.env.local`, `.env.development`, `.env.dev`, `.env.production`, `.env.prod`, `.env.staging` and `.env.test`, each also with more after it. `cabinet.env` is never matched | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
+
 ## Runs never rewrite
 
 An agent may run a rebase, a local merge or another git action that can be undone only when you ask for it in its session, except an amend of its own newest commit before it is pushed or named in a handoff or verdict ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:
@@ -2061,6 +2071,7 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | `FIX Qwen Code is missing <...> deny rule(s) (run bin/bootstrap.sh)` | `guardrails.qwen` | `~/.qwen/settings.json` lacks some of the kit's rules. | `bin/bootstrap.sh`. |
 | `FIX Cursor CLI is missing <...> deny rule(s) in ~/.cursor/cli-config.json (run bin/bootstrap.sh)` | `guardrails.cursor` | The Cursor CLI's config lacks some of the kit's rules. | `bin/bootstrap.sh`. |
 | `note the Cursor editor keeps its agent's command rules in its own settings, which the kit does not set: only the git push gate applies there` | `guardrails.cursor-editor` | Information: the kit cannot set the editor's rules. | Set its command denylist in the Cursor editor's settings if you want more than the push gate. |
+| `note Grok loads the Claude Code command rules but skips these file rules, so its own file tools are not held by them: <...>` | `guardrails.grok` | Grok reads `~/.claude/settings.json` and applies its command rules, but not the file rules named (`Read`, `Edit` or `Write`). | Nothing to fix: Grok's own file tools are not covered by those rules, as [Guardrails](guardrails.md) says. |
 | `FIX Grok does not load the rules in ~/.claude/settings.json (check: grok inspect)` | `guardrails.grok` | Grok is not reading the Claude Code rules (its Claude compatibility may be off). | Turn it on in Grok, or add the rules to `~/.grok/config.toml` by hand. |
 | `FIX opencode does not deny: <...> (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)` | `guardrails.opencode` | On opencode 1.x, the resolved rules do not end with the kit's denies. | `bin/bootstrap.sh`; if it still fails, remove the overriding rule from `opencode.jsonc`. |
 | `note [<version> of ]opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)` | `guardrails.opencode` | opencode 2.x has no command to print its resolved rules. The version leads the note when `opencode --version` prints one. | Check in opencode that it refuses `git push`. |
@@ -2384,6 +2395,10 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.4.0 - Unreleased
+
+- Bootstrap and `cabinet doctor` now take each agent tool's rules from the kit's rule file plus named rule groups, all deny rules, listed on the guardrails page. No group is switched on yet, so nothing changes on your machine. `cabinet doctor` says, as a note, when Grok skips a file rule in `~/.claude/settings.json` (a skipped command rule stays a FIX).
 
 ## 0.3.3 - 3 Nov 2026
 
@@ -2709,7 +2724,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `tools/build-brand.js` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
 | `tools/guardrail-probe.js` | Runs a real Claude Code or Grok in a throwaway HOME, with a probe-only key passed only as an environment variable, to record which guardrail rules the tool really applies (evidence for new rule shapes; not shipped) | |
 | `site/` | The website: `build.js` builds it from `docs/`, `README.md`, `CHANGELOG.md`, `roles/`, `brand/demo/captured.js` and `brand/` (`node site/build.js <folder>`), `copy.js` holds its own wording, `site.css` and `site.js` run in the browser, `fonts/` holds the fonts with their licenses, `github-mark/` GitHub's mark for the header link, with where it came from. `.github/workflows/pages.yml` publishes it to GitHub Pages. Not shipped | |
-| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site (not shipped) | |
+| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site, `test/rule-match.js` matches commands against each agent tool's rules as that tool does (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
 
