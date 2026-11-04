@@ -162,7 +162,8 @@ done
   || note guardrails.run-refusal "the run refusal is not installed: $rr in ${hooks:-the global hooks folder} is missing or not the kit's, so a Cabinet run is not refused that (run bin/bootstrap.sh; it leaves a hook of your own as it is: move yours into each repo's own .git/hooks first)"
 
 # The rule groups you turned off in the guardrail exceptions file (read as data, never sourced), and each line ignored.
-exf="${XDG_CONFIG_HOME:-$HOME/.config}/cabinet/guardrail-exceptions"; exs="${exf/#$HOME/~}"
+exf="${XDG_CONFIG_HOME:-$HOME/.config}/cabinet/guardrail-exceptions"; exs="$exf"
+[[ "$exf" != "$HOME"/* ]] || exs="~${exf#"$HOME"}"   # quoted: bash 4 and newer would expand a ~ in ${x/#a/~}
 while IFS=$'\t' read -r kind a b c; do
   case "$kind" in
     group) note guardrails.exceptions "the rule group $a is off, as $exs lists it${b:+ for $b}: bootstrap leaves its rules out${c:+, and since no rule format can narrow a rule to a folder, it is off machine-wide in $c}" ;;
