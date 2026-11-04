@@ -5336,6 +5336,86 @@ m="$(res "$o" guardrails.clone-settings)"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "guardrail self-protection: backups keep .env files, the team's runs finish as today" ""
+s76() {
+# specs/guardrail-self-protection.md, criteria 5 and 22 (Rules 4 and 0 c). Criterion 5: the scripts still read
+# what the rules keep from agents. Criterion 22: a handoff run and a brief with fake agents, from copies of one
+# snapshot, once in a HOME bootstrapped as shipped and once in one with every group on (CABINET_GUARDRAIL_PROBE).
+local BW="$T/tr-bk" TW="$T/tr-ws" TB="$T/tr-bin" ALL="claude qwen opencode gemini cursor codex agy" x id
+"$F" new "$BW" --yes >/dev/null || fail "new for criterion 5"
+git init -q -b main "$BW/app" && printf '.env\n' > "$BW/app/.gitignore" && git -C "$BW/app" add .gitignore && git -C "$BW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$BW/repos.tsv" && git -C "$BW" commit -qm repos -- repos.tsv
+echo K=v > "$BW/app/.env"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" create "$T/tr-bkd" >/dev/null || fail "criterion 5: backup create"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" verify "$T/tr-bkd" >/dev/null || fail "criterion 5: backup verify"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" restore "$(ls "$T"/tr-bkd/*.enc)" "$T/tr-bkr" >/dev/null || fail "criterion 5: backup restore"
+[[ "$(cat "$T/tr-bkr/app/.env" 2>/dev/null)" == K=v ]] || fail "criterion 5: the restored repo's .env: $(cat "$T/tr-bkr/app/.env" 2>&1)"
+# Criterion 22. A fake claude that acts as each role: the builder edits a spec, runs bin/spec.sh check, commits in
+# the repo and hands on for review with bin/handoff.sh add; each reviewer records PASS with bin/handoff.sh record;
+# the brief writes BRIEF.md and runs bin/doctor.sh, whose results it keeps in $FS.
+mkdir -p "$TB"
+cat > "$TB/claude" <<'FAKE'
+#!/bin/bash
+agent="" prompt=""
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
+if [[ "$prompt" == "Scheduled daily run"* ]]; then
+  printf '# Brief\n\nNothing waits today.\n' > BRIEF.md; bin/doctor.sh --json > "$FS/doctor.json" 2>/dev/null || true
+elif [[ "$agent" == web && "$prompt" == "Pick up handoff"* ]]; then
+  echo "- built $id" >> specs/a.md && git commit -qm "spec $id" -- specs/a.md; bin/spec.sh check specs/a.md > "$FS/spec-check.txt" 2>&1 || true
+  echo "$id" >> app/a.txt; git -C app add a.txt; git -C app commit -qm "build $id"; git -C app rev-parse --short HEAD > "$FS/commits"
+  bin/handoff.sh add --from web --to "qa, security" --changed built --needed verify --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
+  sed -i.bak "/^### $id:/,/^### /s/^- Status: open.*/- Status: done ($(date +%F)) built/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm "handoffs: $id done" -- HANDOFFS.md
+elif [[ -n "$id" ]]; then
+  mkdir -p "specs/$agent"; echo checked > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
+  bin/handoff.sh record "$id" --role "$agent" PASS --commits "$(cat "$FS/commits")" --note "specs/$agent/$id.md" >/dev/null
+fi
+echo '{"type":"result","result":"done","total_cost_usd":0.01}'
+FAKE
+chmod +x "$TB/claude"
+"$F" new "$TW" --yes >/dev/null || fail "new for criterion 22"
+git init -q -b main "$TW/app" && echo x > "$TW/app/a.txt" && git -C "$TW/app" add a.txt && git -C "$TW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$TW/repos.tsv"
+L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
+cp "$TW/specs/_template.md" "$TW/specs/a.md"
+git -C "$TW" add repos.tsv AGENTS.md specs/a.md && git -C "$TW" commit -qm "app, built by web" -- repos.tsv AGENTS.md specs/a.md
+id="$("$TW/bin/handoff.sh" add --from chief-of-staff --to app --small --changed "Nothing yet." --needed "Add a line to a.txt" "A line")"; id="${id%% *}"
+# The snapshot: two copies, each with its own HOME and state folder; one bootstrapped as shipped, one with every group on.
+for x in off on; do
+  cp -R "$TW" "$T/tr-$x"; mkdir -p "$T/tr-home-$x" "$T/tr-fs-$x"
+  printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$T/tr-home-$x/.gitconfig"
+done
+# tr <off|on> <command>...: in that copy's HOME, with the fake first and, for on, every group on.
+tr_() { local x=$1 sw=""; shift; [[ $x == on ]] && sw="$ALL"
+  (cd "$T/tr-$x" && env HOME="$T/tr-home-$x" GIT_CONFIG_GLOBAL="$T/tr-home-$x/.gitconfig" FS="$T/tr-fs-$x" PATH="$TB:$PATH" CABINET_GUARDRAIL_PROBE="$sw" "$@"); }
+local st_off st_on b_off b_on
+for x in off on; do
+  tr_ "$x" bin/bootstrap.sh --no-schedules > "$T/tr-boot-$x.txt" 2>&1 || true
+done
+j -e '$.permissions.deny.length > 500' "$T/tr-home-on/.claude/settings.json" >/dev/null && j -e '$.permissions.deny.length < 100' "$T/tr-home-off/.claude/settings.json" >/dev/null \
+  || fail "criterion 22: the two HOMEs do not differ by the groups"
+st_off=0; tr_ off "$F" handoff run "$id" > "$T/tr-run-off.txt" 2>&1 || st_off=$?
+st_on=0; tr_ on "$F" handoff run "$id" > "$T/tr-run-on.txt" 2>&1 || st_on=$?
+b_off=0; tr_ off bin/job.sh run brief > "$T/tr-brief-off.txt" 2>&1 || b_off=$?
+b_on=0; tr_ on bin/job.sh run brief > "$T/tr-brief-on.txt" 2>&1 || b_on=$?
+[[ "$st_off $b_off" == "0 0" ]] && tail -1 "$T/tr-run-off.txt" | grep -q "^$id is ready to push" || fail "criterion 22: the run with every group off did not finish: $(tail -3 "$T/tr-run-off.txt")"
+[[ "$st_on $b_on" == "$st_off $b_off" ]] || fail "criterion 22: exit codes with the groups on ($st_on $b_on), off ($st_off $b_off)"
+# Finishes as today: the same files with the same content, apart from dates and commit hashes, in the workspace and
+# the repo, and the same commit summaries.
+tree_() { (cd "$1" && find . -name .git -prune -o -type f -print | LC_ALL=C sort | while IFS= read -r f; do echo "== $f"; LC_ALL=C sed -E 's/[0-9a-f]{7,40}/<hash>/g; s/[0-9]{4}-[0-9]{2}-[0-9]{2}/<date>/g' "$f"; done
+  for r in . app; do git -C "$r" log --format=%s | LC_ALL=C sed -E 's/[0-9a-f]{7,40}/<hash>/g'; done); }
+tree_ "$T/tr-off" > "$T/tr-tree-off.txt"; tree_ "$T/tr-on" > "$T/tr-tree-on.txt"
+cmp -s "$T/tr-tree-off.txt" "$T/tr-tree-on.txt" || fail "criterion 22: the runs changed other files with the groups on: $(diff "$T/tr-tree-off.txt" "$T/tr-tree-on.txt" | head -20)"
+grep -q "^== ./BRIEF.md$" "$T/tr-tree-on.txt" && grep -q "^- Verdict: security PASS " "$T/tr-on/HANDOFFS.md" && grep -q "^- built $id$" "$T/tr-on/specs/a.md" || fail "criterion 22: the runs did not do their work"
+# The doctor's results, as the brief ran it: the same checks at the same level, the new checks among them, each ok.
+[[ "$(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-on/doctor.json")" == "$(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-off/doctor.json")" ]] \
+  || fail "criterion 22: the doctor's results differ: $(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-on/doctor.json")"
+for x in guardrails.claude handoffs.verdict-origin; do
+  j -e --arg i "$x" '$.results.some((r) => r.id == $i && r.level == "ok")' "$T/tr-fs-on/doctor.json" >/dev/null || fail "criterion 22: $x is not ok with the groups on"
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
