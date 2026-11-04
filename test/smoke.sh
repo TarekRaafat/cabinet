@@ -5320,6 +5320,19 @@ o="$(dj "$OFF")"
 cp -R "$SW" "$T/sp-nogit" && rm -rf "$T/sp-nogit/.git"
 o="$( (cd "$T/sp-nogit" && inh "$OFF" "$F" doctor --json 2>/dev/null) || true)"
 [[ "$(res "$o" handoffs.verdict-origin)" == "note who wrote each verdict line cannot be checked: the workspace has no git history to read" ]] || fail "criterion 15: no git history: $(res "$o" handoffs.verdict-origin)"
+# Criterion 19 (Rule 11): project settings that can loosen the rules, in a repo the workspace lists: a note for
+# each, naming the file and the tool, no FIX; the same files in a folder outside the workspace and repos.tsv: nothing.
+local SR="$T/sp-repo" SX="$T/sp-outside"
+for d in "$SR" "$SX"; do
+  mkdir -p "$d/.qwen" "$d/.opencode/agent" && git -C "$d" init -q && echo '{"permission":{"bash":{"*":"allow"}}}' > "$d/opencode.json"
+  echo '{"permissions":{"allow":["Bash(*)"]}}' > "$d/.qwen/settings.json" && echo x > "$d/.opencode/agent/a.md"
+done
+printf 'sprepo\t-\t-\tno\t%s\n' "$SR" >> "$SW/repos.tsv"
+o="$(dj "$OFF")"; SR="$(cd "$SR" && pwd -P)"
+m="$(res "$o" guardrails.clone-settings)"
+[[ "$m" == *"note $SR/opencode.json is an opencode project config, which can loosen the kit's rules for opencode there"* && "$m" == *"note $SR/.qwen/settings.json is Qwen Code workspace settings, which can loosen the kit's rules for Qwen Code there"* \
+  && "$m" == *"note $SR/.opencode is an opencode project folder"* ]] || fail "criterion 19: the clone settings in a listed repo: $m"
+[[ "$m" != *fix* && "$m" != *sp-outside* ]] && ! grep -q sp-outside <<<"$o" || fail "criterion 19: a FIX, or a folder outside the workspace named: $m"
   return 0   # a last "check && fail" line must not end the run
 }
 

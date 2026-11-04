@@ -105,7 +105,7 @@ These are on the [roadmap](../ROADMAP.md):
 - archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
-- opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result;
+- opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
 - on opencode 2.x the doctor cannot read the resolved rules.
 
 ## Undoing the guardrails

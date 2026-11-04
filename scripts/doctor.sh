@@ -230,6 +230,17 @@ if command -v opencode >/dev/null; then
     note guardrails.opencode "${ov:+$ov of }opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)"
   fi
 fi
+# Project settings a clone can bring that loosen a tool's global rules there (docs/guardrails.md, Known limits),
+# in the workspace and each repo it lists on this machine only: a note per file, never a FIX.
+while IFS= read -r d; do
+  [[ -d "$d" ]] || continue
+  for f in opencode.json opencode.jsonc .opencode .qwen/settings.json; do
+    [[ -e "$d/$f" ]] || continue
+    case "$f" in .qwen/*) t="Qwen Code workspace settings" tool="Qwen Code" ;; .opencode) t="an opencode project folder (agents and config)" tool=opencode ;; *) t="an opencode project config" tool=opencode ;; esac
+    shown="$(term_text <<<"$d/$f")"
+    note guardrails.clone-settings "$shown is $t, which can loosen the kit's rules for $tool there: the doctor checks only the global rules, so read it before you run $tool in that folder"
+  done
+done < <(data_dirs)
 # Agent tools cabinet installs no guardrails for: only the git push gate covers them.
 for t in aider goose amp crush; do
   command -v "$t" >/dev/null && note guardrails.unguarded-tool "$t is installed and cabinet has no guardrails for it: only the git push gate above applies"
