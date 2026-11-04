@@ -1166,6 +1166,14 @@ const homeAbs = () => (/^\/[^*?[\]()"'\\\x00-\x1f\x7f]*$/.test(homeDir()) && hom
 const codexRule = (pattern, why) => "prefix_rule(pattern = " + JSON.stringify(pattern).replace(/","/g, '", "') + ', decision = "forbidden", justification = "' + why + '")';
 const geminiRule = (re, msg) => '[[rule]]\ntoolName = "run_shell_command"\ncommandRegex = ' + JSON.stringify(re) + '\ndecision = "deny"\npriority = 990\ndenyMessage = ' + JSON.stringify(msg);
 const altRe = (list) => "(" + list.map(escapeRe).join("|") + ")";
+// Where a printing command counts, so that prose in a quoted message ("used .env", "more .env notes") does not:
+// the start of the command, right after ; & | ( or a backtick (with one space or none), or after a / (a full
+// path). Each start multiplies the glob rules (risk 1 of the spec); Gemini CLI's regex takes them in one.
+const CMD_STARTS = ["", ";", "; ", "&", "& ", "|", "| ", "(", "`", "/"];
+const cmdStarts = (p) => CMD_STARTS.map((s) => (s ? "*" + s : "") + p);
+const CMD_START_RE = "(^\\s*|[;&|(`]\\s*|/)";
+// What can follow .env in a glob: the end of the command, a space, ), a backtick, ; | & or a quote.
+const ENV_ENDS = ["", " *", ")*", "`*", ";*", "|*", "&*", '"*', "'*"];
 const GROUPS = {
   // Rule 1: git's stored credentials, GitHub's credential helper, internet passwords in the keychain.
   "git-credentials": {
@@ -1180,23 +1188,25 @@ const GROUPS = {
       .map((p) => codexRule(p, "Stored credentials stay with the owner.")),
     agy: () => ["git credential", ...GIT_HELPERS.map((h) => "git " + h), "gh auth git-credential", "security find-internet-password"].map((c) => "command(" + c + ")"),
   },
-  // Rule 2: a printing command naming a stored secret in the home folder, written ~/, $HOME/, ${HOME}/ or in full.
+    // Rule 2: a printing command naming a stored secret in the home folder, written ~/, $HOME/, ${HOME}/ or in full.
   "secret-files": {
     on: [],
     glob: () => {
       const forms = ["~/", "$HOME/", "${HOME}/", ...(homeAbs() ? [homeAbs() + "/"] : [])];
-      return PRINTERS.flatMap((p) => forms.flatMap((h) => SECRET_PATHS.map((x) => "*" + p + " *" + h + x + "*")));
+      return PRINTERS.flatMap((p) => cmdStarts(p).flatMap((c) => forms.flatMap((h) => SECRET_PATHS.map((x) => c + " *" + h + x + "*"))));
     },
-    gemini: () => [geminiRule("\\b" + altRe(PRINTERS) + "\\b.*(~|\\$HOME|\\$\\{HOME\\}" + (homeAbs() ? "|" + escapeRe(homeAbs()) : "") + ")/" +
+    gemini: () => [geminiRule(CMD_START_RE + altRe(PRINTERS) + "\\s.*(~|\\$HOME|\\$\\{HOME\\}" + (homeAbs() ? "|" + escapeRe(homeAbs()) : "") + ")/" +
       "(" + SECRET_PATHS.map((x) => escapeRe(x) + (x.endsWith("/") ? "" : "\\b")).join("|") + ")", "Stored secrets stay with the owner.")],
   },
   // Rule 3: a printing command naming a .env file (.env, or .env.<suffix> but .env.example and .env.sample) as a
-  // whole file name: after a space or a /. The glob tools can only list suffixes; Gemini CLI takes any.
+  // whole file name: after a space, a / or a quote, and .env itself followed by the end, a space, a quote, ), a
+  // backtick, ; | or &. The glob tools can only list suffixes, and miss cat<.env; Gemini CLI takes any suffix.
   "env-files": {
     on: [],
-    glob: () => PRINTERS.flatMap((p) => ["*" + p + " .env", "*" + p + " .env *", "*" + p + " * .env", "*" + p + " * .env *", "*" + p + " */.env", "*" + p + " */.env *",
-      ...ENV_SUFFIXES.flatMap((x) => ["*" + p + " .env." + x + "*", "*" + p + " * .env." + x + "*", "*" + p + " */.env." + x + "*"])]),
-    gemini: () => [geminiRule("\\b" + altRe(PRINTERS) + "\\b.*[\\s/]\\.env(\\.(?!(example|sample)([\\s;|&'\"]|$))[^\\s/;|&'\"]+)?([\\s;|&'\"]|$)",
+    glob: () => PRINTERS.flatMap((p) => cmdStarts(p).flatMap((c) => [
+      ...[" ", " * ", " */"].flatMap((s) => ENV_ENDS.map((e) => c + s + ".env" + e)), c + ' *".env"*', c + " *'.env'*",
+      ...[" ", " * ", " */", ' *"', " *'"].flatMap((s) => ENV_SUFFIXES.map((x) => c + s + ".env." + x + "*"))])),
+    gemini: () => [geminiRule(CMD_START_RE + altRe(PRINTERS) + "(\\s.*)?[\\s/\"'<]\\.env(\\.(?!(example|sample)([\\s;|&'\"`)]|$))[^\\s/;|&'\"`)]+)?([\\s;|&'\"`)]|$)",
       "A .env file's values stay out of agents' output: run the program that loads it.")],
   },
 };
@@ -1225,9 +1235,9 @@ function exceptions() {
     if (!l || l.startsWith("#")) continue;
     const m = /^([a-z][a-z-]*)(?:[ \t]+(\/[^\s"'`$\;|&<>(){}*?[\]]*))?$/.exec(l);
     let why = "";
-    if (!m) why = "is not a group name, or a group and an absolute path without spaces, quotes or shell characters";
+    if (!m) why = "is neither a group name nor a group name followed by an absolute folder (no spaces, quotes or shell characters)";
     else if (NEVER_EXCEPTED.includes(m[1])) why = "names what can never be listed: push, merge, release and publish stay with you";
-    else if (!GROUPS[m[1]]) why = "names no rule group (the groups: " + Object.keys(GROUPS).join(", ") + ")";
+    else if (!Object.hasOwn(GROUPS, m[1])) why = "names no rule group (the groups: " + Object.keys(GROUPS).join(", ") + ")";
     if (why) { bad.push({ line: l.replace(/[\x00-\x1f\x7f]/g, "?"), why }); continue; }
     if (!groups.has(m[1])) groups.set(m[1], []);
     if (m[2]) groups.get(m[1]).push(m[2]);
@@ -1273,7 +1283,9 @@ function rulesDrop(tool, live, kit, count) {
   if (!RULE_TOOLS.includes(tool)) die("rules-drop: no such tool: " + tool, 2);
   const listed = [...exceptions().groups.keys()];
   let gone = listed.flatMap((g) => groupRules(tool, g)), n = 0, out;
-  const text = read(live);
+  // Codex and Gemini CLI files are rewritten as their bytes (latin1, as rulesAdd), so the owner's own lines
+  // keep their line endings and any byte that is not UTF-8; the kit's strings are ASCII.
+  const text = tool === "codex" || tool === "gemini" ? fs.readFileSync(live, "latin1") : read(live);
   if (tool === "codex" || tool === "gemini") {
     const kept = new Set(kitRules(tool, kit).map((r) => r.key));
     if (tool === "codex") {
@@ -1284,7 +1296,7 @@ function rulesDrop(tool, live, kit, count) {
       const keyOf = (t) => kitRulesText(t).map((r) => r.key);
       gone = new Set(gone.flatMap(keyOf).filter((k) => !kept.has(k)));
       const ls = text.split("\n"), skip = new Set();
-      for (const t of geminiTables(ls)) if (gone.has(t.key)) { n++; for (let i = t.from; i < t.to; i++) skip.add(i); if (ls[t.to] === "") skip.add(t.to); }
+      for (const t of geminiTables(ls)) if (gone.has(t.key)) { n++; for (let i = t.from; i < t.to; i++) skip.add(i); if (/^\r?$/.test(ls[t.to] ?? "x")) skip.add(t.to); }
       out = ls.filter((l, i) => !skip.has(i)).join("\n");
     }
   } else {
@@ -1301,7 +1313,7 @@ function rulesDrop(tool, live, kit, count) {
     }
     out = JSON.stringify(j, null, 2) + "\n";
   }
-  process.stdout.write(count === "--count" ? n + "\n" : out);
+  process.stdout.write(count === "--count" ? n + "\n" : tool === "codex" || tool === "gemini" ? Buffer.from(out, "latin1") : out);
 }
 
 // verdict-origin <workspace>: each verdict line not added by a commit of bin/handoff.sh record or bin/spec.sh

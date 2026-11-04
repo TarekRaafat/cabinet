@@ -16,8 +16,14 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 G="$K/guardrails"
 DRY=0 failures=0 set_schedules=""
-# Each tool's rules: the kit's file plus the rule groups on for it (kit_file), written here.
+# Each tool's rules: the kit's file plus the rule groups on for it (kit_file), written here. kit_rules <tool>
+# <kit's file>: that file's path; when the groups cannot be built, the kit's file, and bootstrap says so and fails.
 RT="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-rules.XXXXXX")"; trap 'rm -rf "$RT"' EXIT
+kit_rules() {
+  kit_file "$1" "$2" "$RT/$1" && return 0
+  echo "  the rule groups for $1 could not be built (node $LIBJS guardrail-rules $1 failed), so only the rules in $2 go in: run cabinet doctor" >&2
+  return 1
+}
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
@@ -282,12 +288,13 @@ fi
 
 echo "== Claude Code"
 drop_excepted claude "$HOME/.claude/settings.json" "$G/claude-permissions.json" json
-merge_permissions "$(kit_file claude "$G/claude-permissions.json" "$RT/claude.json")" "$HOME/.claude/settings.json"
+kr="$(kit_rules claude "$G/claude-permissions.json")" || failures=1
+merge_permissions "$kr" "$HOME/.claude/settings.json"
 
 echo "== Codex"
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
   drop_excepted codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules" text
-  kr="$(kit_file codex "$G/codex-default.rules" "$RT/codex.rules")"
+  kr="$(kit_rules codex "$G/codex-default.rules")" || failures=1
   if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$kr"
   else place "$kr" "$HOME/.codex/rules/default.rules"; fi
   cfg="$HOME/.codex/config.toml"
@@ -305,13 +312,14 @@ fi
 echo "== Antigravity CLI (agy)"
 if [[ -d "$HOME/.gemini/antigravity-cli" ]] || command -v agy >/dev/null; then
   drop_excepted agy "$HOME/.gemini/antigravity-cli/settings.json" "$G/agy-permissions.json" json
-  merge_permissions "$(kit_file agy "$G/agy-permissions.json" "$RT/agy.json")" "$HOME/.gemini/antigravity-cli/settings.json"
+  kr="$(kit_rules agy "$G/agy-permissions.json")" || failures=1
+  merge_permissions "$kr" "$HOME/.gemini/antigravity-cli/settings.json"
 fi
 
 echo "== Gemini CLI"
 if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
   drop_excepted gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml" text
-  kr="$(kit_file gemini "$G/gemini-owner-control.toml" "$RT/gemini.toml")"
+  kr="$(kit_rules gemini "$G/gemini-owner-control.toml")" || failures=1
   if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$kr"
   else place "$kr" "$HOME/.gemini/policies/owner-control.toml"; fi
   g="$HOME/.gemini/settings.json"
@@ -332,7 +340,8 @@ echo "== Qwen Code"
 # Same rule format as Claude Code (permissions.deny / ask), so the same rules, with the groups on for Qwen.
 if [[ -d "$HOME/.qwen" ]] || command -v qwen >/dev/null; then
   drop_excepted qwen "$HOME/.qwen/settings.json" "$G/claude-permissions.json" json
-  merge_permissions "$(kit_file qwen "$G/claude-permissions.json" "$RT/qwen.json")" "$HOME/.qwen/settings.json"
+  kr="$(kit_rules qwen "$G/claude-permissions.json")" || failures=1
+  merge_permissions "$kr" "$HOME/.qwen/settings.json"
 fi
 
 echo "== Cursor CLI"
@@ -343,7 +352,8 @@ echo "== Cursor CLI"
 # does not change: there only the git push gate applies.
 if [[ -d "$HOME/.cursor" ]] || cursor_bin >/dev/null; then
   drop_excepted cursor "$HOME/.cursor/cli-config.json" "$G/cursor-permissions.json" json
-  merge_permissions "$(kit_file cursor "$G/cursor-permissions.json" "$RT/cursor.json")" "$HOME/.cursor/cli-config.json"
+  kr="$(kit_rules cursor "$G/cursor-permissions.json")" || failures=1
+  merge_permissions "$kr" "$HOME/.cursor/cli-config.json"
 fi
 
 echo "== Grok"
@@ -384,7 +394,8 @@ merge_opencode() {
 }
 if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
   drop_excepted opencode "$HOME/.config/opencode/opencode.json" "$G/claude-permissions.json" json
-  merge_opencode "$(kit_file opencode "$G/claude-permissions.json" "$RT/opencode.json")" "$HOME/.config/opencode/opencode.json"
+  kr="$(kit_rules opencode "$G/claude-permissions.json")" || failures=1
+  merge_opencode "$kr" "$HOME/.config/opencode/opencode.json"
 fi
 
 echo "== Schedules ($SCHEDULER)"

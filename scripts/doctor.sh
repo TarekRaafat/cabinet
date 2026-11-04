@@ -173,32 +173,35 @@ done < <(node "$LIBJS" guardrail-exceptions 2>/dev/null)
 # Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
 # Each tool's kit rules: its file in guardrails/ plus the rule groups on for it, as bootstrap merges them (kit_file).
-missing="$(json -s "$deny_missing" ~/.claude/settings.json "$(kit_file claude "$K/guardrails/claude-permissions.json" "$REC.claude")" 2>/dev/null || echo all)"
+# kit_rules <tool> <kit's file>: that file, or one that does not exist when the groups cannot be built, so the
+# tool's check below is a FIX.
+kit_rules() { local f; f="$(kit_file "$1" "$2" "$REC.$1")" && echo "$f" || echo "$REC.$1.none"; }
+missing="$(json -s "$deny_missing" ~/.claude/settings.json "$(kit_rules claude "$K/guardrails/claude-permissions.json")" 2>/dev/null || echo all)"
 [[ "$missing" == 0 ]] && ok guardrails.claude "Claude Code denies push and publish" || bad guardrails.claude "Claude Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 # Codex, agy and Gemini CLI: every kit rule, counted in the file (an older copy lacks the newer ones); Codex is also asked itself.
 if [[ -e ~/.codex/rules/default.rules ]] || command -v codex >/dev/null; then
-  missing="$(node "$LIBJS" rules-missing codex ~/.codex/rules/default.rules "$(kit_file codex "$K/guardrails/codex-default.rules" "$REC.codex")" 2>/dev/null || echo all)"
+  missing="$(node "$LIBJS" rules-missing codex ~/.codex/rules/default.rules "$(kit_rules codex "$K/guardrails/codex-default.rules")" 2>/dev/null || echo all)"
   if [[ "$missing" != 0 ]]; then bad guardrails.codex "Codex is missing $missing kit rule(s) in ~/.codex/rules/default.rules (run cabinet bootstrap)"
   elif command -v codex >/dev/null && [[ "$(codex execpolicy check --rules ~/.codex/rules/default.rules git push origin main 2>/dev/null | json -r '$.decision')" != "forbidden" ]]; then
     bad guardrails.codex "Codex push rule missing (run bin/bootstrap.sh)"
   else ok guardrails.codex "Codex holds the kit's rules and forbids git push"; fi
 fi
 if [[ -e ~/.gemini/antigravity-cli/settings.json ]] || command -v agy >/dev/null; then
-  missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$(kit_file agy "$K/guardrails/agy-permissions.json" "$REC.agy")" 2>/dev/null || echo all)"
+  missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$(kit_rules agy "$K/guardrails/agy-permissions.json")" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.agy "agy denies push and publish" || bad guardrails.agy "agy is missing $missing deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)"
 fi
 if [[ -e ~/.gemini/policies/owner-control.toml ]] || command -v gemini >/dev/null; then
-  missing="$(node "$LIBJS" rules-missing gemini ~/.gemini/policies/owner-control.toml "$(kit_file gemini "$K/guardrails/gemini-owner-control.toml" "$REC.gemini")" 2>/dev/null || echo all)"
+  missing="$(node "$LIBJS" rules-missing gemini ~/.gemini/policies/owner-control.toml "$(kit_rules gemini "$K/guardrails/gemini-owner-control.toml")" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.gemini "Gemini CLI policy holds the kit's rules" || bad guardrails.gemini "Gemini CLI is missing $missing kit rule(s) in ~/.gemini/policies/owner-control.toml (run cabinet bootstrap)"
 fi
 if command -v qwen >/dev/null; then
-  kit_deny="$(json -c '$.permissions.deny' "$(kit_file qwen "$K/guardrails/claude-permissions.json" "$REC.qwen")")"
+  kit_deny="$(json -c '$.permissions.deny' "$(kit_rules qwen "$K/guardrails/claude-permissions.json")" 2>/dev/null)"
   missing="$(json --argjson d "$kit_deny" '$d.filter((x) => !list(obj(obj($).permissions).deny).includes(x)).length' ~/.qwen/settings.json 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.qwen "Qwen Code denies push and publish" || bad guardrails.qwen "Qwen Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 fi
 if cb="$(cursor_bin)"; then
   # Checked against the file only: the rule format is Cursor's documented one, untested here.
-  missing="$(json -s "$deny_missing" ~/.cursor/cli-config.json "$(kit_file cursor "$K/guardrails/cursor-permissions.json" "$REC.cursor")" 2>/dev/null || echo all)"
+  missing="$(json -s "$deny_missing" ~/.cursor/cli-config.json "$(kit_rules cursor "$K/guardrails/cursor-permissions.json")" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.cursor "Cursor CLI config holds the deny rules (rule shapes probed live on Cursor CLI 2026.10.16)" || bad guardrails.cursor "Cursor CLI is missing $missing deny rule(s) in ~/.cursor/cli-config.json (run bin/bootstrap.sh)"
 fi
 if [[ -d /Applications/Cursor.app || -d "$HOME/Applications/Cursor.app" ]]; then
@@ -212,15 +215,16 @@ if command -v grok >/dev/null; then
   if json -e --arg f "$HOME/.claude/settings.json" '$.permissions.sources.some((s) => s.startsWith($f))' <<<"$gi" >/dev/null 2>&1 \
      && json -e '$.permissions.skipped.every((s) => /\b(Read|Edit|Write)\(/.test(JSON.stringify(s)))' <<<"$gi" >/dev/null 2>&1; then
     if [[ -z "$gfile" ]]; then ok guardrails.grok "Grok loads the Claude Code rules"
-    else note guardrails.grok "Grok loads the Claude Code command rules but skips these file rules, so its own file tools are not held by them: $gfile"; fi
+    else note guardrails.grok "Grok loads the Claude Code command rules but skips these file rules, so these rules do not cover Grok's own file tools: $gfile"; fi
   else bad guardrails.grok "Grok does not load the rules in ~/.claude/settings.json (check: grok inspect)"; fi
 fi
 if command -v opencode >/dev/null; then
-  kit_deny="$(json -c '$.permissions.deny' "$(kit_file opencode "$K/guardrails/claude-permissions.json" "$REC.opencode")")"
+  kit_deny="$(json -c '$.permissions.deny' "$(kit_rules opencode "$K/guardrails/claude-permissions.json")" 2>/dev/null)"
   # The last matching rule wins: each kit pattern must be the last bash rule that names it or "*".
   # opencode 1.x prints the rules it resolved; opencode 2.x has no such command (its
   # debug commands go through a background service), so there it is a note, not a FIX.
-  if rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && json -e 'Array.isArray($.permission)' <<<"$rs" >/dev/null 2>&1; then
+  if [[ -z "$kit_deny" ]]; then bad guardrails.opencode "the kit's rules for opencode could not be built (run bin/bootstrap.sh, which says why)"
+  elif rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && json -e 'Array.isArray($.permission)' <<<"$rs" >/dev/null 2>&1; then
     open_rules="$(json --argjson d "$kit_deny" -r '((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
       .filter((p) => ((l) => l?.pattern != p || l?.action != "deny")(rs.filter((x) => x.pattern == p || x.pattern == "*").at(-1))).join(", "))
       ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs")"
@@ -409,7 +413,7 @@ vo="$(node "$LIBJS" verdict-origin "$WS" 2>/dev/null)" || vo=nohistory
 if [[ "$vo" == nohistory ]]; then note handoffs.verdict-origin "who wrote each verdict line cannot be checked: the workspace has no git history to read"
 elif [[ -z "$vo" ]]; then ok handoffs.verdict-origin "every verdict line was written by bin/handoff.sh record or bin/spec.sh record"
 else vlist="$(awk -F'\t' '{printf "%s%s (%s)", (NR > 1 ? ", " : ""), $2, $3}' <<<"$vo" | term_text)"
-  note handoffs.verdict-origin "not written by record: $vlist (a reviewer records a verdict with bin/handoff.sh record or bin/spec.sh record; a summary can be copied, so this finds mistakes, not forgeries)"; fi
+  note handoffs.verdict-origin "not written by record: $vlist (a reviewer records a verdict with bin/handoff.sh record or bin/spec.sh record; a commit summary can be copied, so this finds mistakes, not forgeries)"; fi
 # A small task that passed stays small: its commits in one repo, touching no path AGENTS.md guards.
 notsmall=""
 while IFS=$'\t' read -r sid scommits; do

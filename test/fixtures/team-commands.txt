@@ -13,6 +13,9 @@ git -C ../cabinet log --oneline -3	AGENTS.md, How the kit is developed (agents r
 bin/handoff.sh list product-manager	core/CABINET.md, Start of every session 2
 bin/handoff.sh list --json	roles/chief-of-staff.md
 bin/handoff.sh add --from backend --to qa --changed x --needed y --depends-on H-1 Review	core/rules/builders.md 6
+git commit -m "Docs: more .env notes" -- docs/guardrails.md	qa review of the rule groups, B2 (a commit message naming .env)
+git commit -m "backup.sh is based on .env files, and the loader used .env.local first" -- scripts/backup.sh	qa review of the rule groups, B1 (printer names inside words)
+bin/handoff.sh add --from backend --to qa --changed "unless .env is listed, cat ~/.npmrc is refused" --needed y --depends-on H-1 Review	qa review of the rule groups, B1 and B2 (a handoff line naming .env and a secret path)
 bin/handoff.sh record H-1 --role qa PASS --commits abc --note specs/qa/n.md	core/rules/reviews.md
 bin/handoff.sh archive	core/CABINET.md, Handoffs
 bin/spec.sh check specs/a.md	core/rules/ready-to-build.md 3
