@@ -5225,6 +5225,70 @@ o="$(FAKE_GROK_SKIPPED='["Read(~/.ssh/**)"]' dj "$ON")"
 o="$(FAKE_GROK_SKIPPED='["Read(~/.ssh/**)", "Bash(*git push*)"]' dj "$ON")"
 [[ "$(res "$o" guardrails.grok)" == fix* ]] || fail "criterion 3: a skipped command rule is not a FIX: $(res "$o" guardrails.grok)"
 rm -f "$SB/grok"
+# Criterion 21 (Rule 13): the exceptions file, read as data. A rule of the owner's own in Claude Code's file stays
+# through all of it. rl <tool> <file>: the deny rules a file holds, as JSON.
+local EX="$ON/.config/cabinet/guardrail-exceptions" nb
+rl() { node "$RM" rules "$1" "$2" | j -c '$.deny'; }
+mkdir -p "${EX%/*}"
+j '($.permissions.deny.push("Bash(my-own-rule *)"), $)' "$ON/$(tf claude)" > "$T/sp-own" && cat "$T/sp-own" > "$ON/$(tf claude)"
+for t in $ALL; do rl "$t" "$ON/$(tf "$t")" > "$T/sp-pre-$t.json"; done
+before="$(cd "$ON" && find . -name '*.bak.*' | sort)"
+echo env-files > "$EX"
+sleep 1   # backups are named by the second
+spboot "$ON" "$ALL"
+nb="$(cd "$ON" && find . -name '*.bak.*' | sort | comm -13 <(printf '%s\n' "$before") -)"
+for t in $ALL; do
+  rl "$t" "$ON/$(tf "$t")" > "$T/sp-ex-$t.json"
+  # The groups still on: every group's rules but env-files, as guardrail-rules renders them with the file in place.
+  inh "$ON" CABINET_GUARDRAIL_PROBE="$ALL" node "$SW/bin/lib.js" guardrail-rules "$t" > "$T/sp-r-$t"
+  case $t in qwen) rl claude "$T/sp-r-$t" ;; opencode) rl claude "$T/sp-r-$t" | j -c '$.map((r) => r.slice(5, -1))' ;; *) rl "$t" "$T/sp-r-$t" ;; esac > "$T/sp-keep-$t.json"
+  j -e -s '((pre, now, add, keep) => JSON.stringify(now) == JSON.stringify(pre.filter((r) => !add.includes(r) || keep.includes(r))))($[0], $[1], $[2], $[3])' \
+    "$T/sp-pre-$t.json" "$T/sp-ex-$t.json" "$T/sp-add-$t.json" "$T/sp-keep-$t.json" >/dev/null || fail "criterion 21: env-files listed changed more than its rules in $t's file"
+  c="$(grep -c "^\./$(tf "$t")\.bak\." <<<"$nb" || true)"
+  case $t in claude|qwen|opencode|gemini) [[ "$c" == 1 ]] || fail "criterion 21: $c new backups of $t's file, not 1: $nb" ;; *) [[ "$c" == 0 ]] || fail "criterion 21: a backup of $t's file, which holds no .env rule: $nb" ;; esac
+done
+for t in claude qwen opencode gemini; do
+  node "$RM" rules "$t" "$ON/$(tf "$t")" | j -c '$.deny' > "$T/sp-now.json"
+  [[ -z "$(node "$RM" match "$t" "$T/sp-now.json" "cat .env" "grep KEY .env" "tail app/.env.local")" ]] || fail "criterion 21: $t still refuses a .env read with env-files listed"
+  [[ -n "$(node "$RM" match "$t" "$T/sp-now.json" "cat ~/.npmrc")" && -n "$(node "$RM" match "$t" "$T/sp-now.json" "git credential fill")" ]] || fail "criterion 21: $t lost another group's rules"
+done
+j -e '$.permissions.deny.includes("Bash(my-own-rule *)")' "$ON/$(tf claude)" >/dev/null || fail "criterion 21: the owner's own rule was removed"
+# The next bootstrap does not add them back, and the doctor names the group, with no FIX for it.
+for t in $ALL; do cp "$ON/$(tf "$t")" "$T/sp-keep-$t"; done
+before="$(cd "$ON" && find . -name '*.bak.*' | sort)"
+spboot "$ON" "$ALL"
+for t in $ALL; do cmp -s "$ON/$(tf "$t")" "$T/sp-keep-$t" || fail "criterion 21: the next bootstrap changed $t's file"; done
+[[ "$(cd "$ON" && find . -name '*.bak.*' | sort)" == "$before" ]] || fail "criterion 21: the next bootstrap made a backup"
+o="$(dj "$ON" "$ALL")"
+[[ "$(res "$o" guardrails.exceptions)" == "note the rule group env-files is off, as ~/.config/cabinet/guardrail-exceptions lists it: bootstrap leaves its rules out" ]] \
+  || fail "criterion 21: the doctor on env-files listed: $(res "$o" guardrails.exceptions)"
+for t in claude codex agy gemini; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "criterion 21: a FIX for $t with env-files listed: $(res "$o" "guardrails.$t")"; done
+# Every group listed: each file holds exactly what it holds with every group off (with the owner's own rule):
+# the kit's rules in guardrails/ are never removed.
+printf '%s\n' "# every group" git-credentials secret-files env-files > "$EX"
+spboot "$ON" "$ALL"
+for t in $ALL; do
+  o='[]'; [[ $t != claude ]] || o='["Bash(my-own-rule *)"]'
+  [[ "$(rl "$t" "$ON/$(tf "$t")" | j -c '$.slice().sort()')" == "$(j -c --argjson o "$o" '[...$.deny, ...$o].sort()' "$T/sp-off-$t.json")" ]] \
+    || fail "criterion 21 and risk 6: with every group listed, $t's file is not what it is with every group off"
+done
+# A line that names push, and one holding $(: each ignored and named, never run, and every group is on again.
+printf '%s\n' push "secret-files \$(touch $T/sp-ran)" > "$EX"
+spboot "$ON" "$ALL"
+[[ ! -e "$T/sp-ran" ]] || fail "criterion 21: a line of the exceptions file was run"
+for t in $ALL; do
+  [[ "$(rl "$t" "$ON/$(tf "$t")" | j -c '$.filter((r) => r != "Bash(my-own-rule *)").sort()')" == "$(j -c '$.deny.slice().sort()' "$T/sp-on-$t.json")" ]] \
+    || fail "criterion 21: with only lines that are ignored, $t's file does not hold every kit rule"
+done
+o="$(dj "$ON" "$ALL")"
+[[ "$(res "$o" guardrails.exceptions)" == "note ~/.config/cabinet/guardrail-exceptions: the line 'push' is ignored, since it names what can never be listed"*$'\n'"note ~/.config/cabinet/guardrail-exceptions: the line 'secret-files \$(touch $T/sp-ran)' is ignored, since it is not a group name"* ]] \
+  || fail "criterion 21: the doctor on ignored lines: $(res "$o" guardrails.exceptions)"
+# A folder narrows nothing in any tool the kit writes rules for: the doctor says it applies machine-wide there.
+echo "env-files /tmp/p" > "$EX"
+o="$(dj "$ON" "$ALL")"
+[[ "$(res "$o" guardrails.exceptions)" == "note the rule group env-files is off, as ~/.config/cabinet/guardrail-exceptions lists it for /tmp/p: bootstrap leaves its rules out, and since no rule format can narrow a rule to a folder, it is off machine-wide in claude qwen opencode gemini" ]] \
+  || fail "criterion 21: a folder that cannot narrow the exception: $(res "$o" guardrails.exceptions)"
+rm -f "$EX"
   return 0   # a last "check && fail" line must not end the run
 }
 

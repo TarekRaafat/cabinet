@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: guardrail-rules, guardrail-exceptions, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: guardrail-rules, guardrail-exceptions, rules-drop, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -1089,10 +1089,14 @@ function versionCheck(root) {
 // surrounding spaces trimmed. Gemini: each [[rule]] table, present when the live file has a rule with the
 // same toolName, decision, and commandPrefix or commandRegex. A live file that does not exist lacks all.
 const RULES_NOTE = "# Added by cabinet bootstrap: rules from a newer Cabinet kit";
-function kitRules(kind, file) {
-  const ls = read(file).split("\n");
+function kitRules(kind, file) { return kitRulesText(read(file), kind); }
+function kitRulesText(text, kind) {
+  const ls = text.split("\n");
   if (kind === "codex") return ls.filter((l) => l.trim().startsWith("prefix_rule(")).map((l) => ({ key: l.trim(), text: l.trim() }));
-  // Gemini: a table's text runs from [[rule]] to the first blank, comment or table line.
+  return geminiTables(ls).map((t) => ({ key: t.key, text: t.text }));
+}
+// Gemini: a table's text runs from [[rule]] to the first blank, comment or table line; lines from..to-1.
+function geminiTables(ls) {
   const val = (v) => {
     const m = /^"((?:[^"\\]|\\.)*)"/.exec(v) || /^'([^']*)'/.exec(v);
     if (!m) return v.replace(/\s+#.*$/, "").trim();
@@ -1100,16 +1104,16 @@ function kitRules(kind, file) {
   };
   const rules = [];
   let cur = null;
-  for (const l of ls) {
+  ls.forEach((l, i) => {
     const t = l.trim();
-    if (t === "[[rule]]") { cur = { f: {}, text: [t] }; rules.push(cur); continue; }
-    if (!cur) continue;
-    if (t === "" || t.startsWith("#") || t.startsWith("[")) { cur = null; continue; }
+    if (t === "[[rule]]") { if (cur) cur.to = i; cur = { f: {}, text: [t], from: i, to: ls.length }; rules.push(cur); return; }
+    if (!cur) return;
+    if (t === "" || t.startsWith("#") || t.startsWith("[")) { cur.to = i; cur = null; return; }
     const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(t);
     if (m) cur.f[m[1]] = val(m[2]);
     cur.text.push(l);
-  }
-  return rules.map((r) => ({ key: JSON.stringify([r.f.toolName, r.f.decision, "commandPrefix" in r.f ? "p" : "r", r.f.commandPrefix ?? r.f.commandRegex]), text: r.text.join("\n") }));
+  });
+  return rules.map((r) => ({ key: JSON.stringify([r.f.toolName, r.f.decision, "commandPrefix" in r.f ? "p" : "r", r.f.commandPrefix ?? r.f.commandRegex]), text: r.text.join("\n"), from: r.from, to: r.to }));
 }
 function rulesMissing(kind, live, kit) {
   let have = [];
@@ -1221,9 +1225,9 @@ function exceptions() {
     if (!l || l.startsWith("#")) continue;
     const m = /^([a-z][a-z-]*)(?:[ \t]+(\/[^\s"'`$\;|&<>(){}*?[\]]*))?$/.exec(l);
     let why = "";
-    if (!m) why = "not a group name, or a group and an absolute path without spaces, quotes or shell characters";
-    else if (NEVER_EXCEPTED.includes(m[1])) why = "can never be listed: push, merge, release and publish stay with you";
-    else if (!GROUPS[m[1]]) why = "no such rule group (" + Object.keys(GROUPS).join(", ") + ")";
+    if (!m) why = "is not a group name, or a group and an absolute path without spaces, quotes or shell characters";
+    else if (NEVER_EXCEPTED.includes(m[1])) why = "names what can never be listed: push, merge, release and publish stay with you";
+    else if (!GROUPS[m[1]]) why = "names no rule group (the groups: " + Object.keys(GROUPS).join(", ") + ")";
     if (why) { bad.push({ line: l.replace(/[\x00-\x1f\x7f]/g, "?"), why }); continue; }
     if (!groups.has(m[1])) groups.set(m[1], []);
     if (m[2]) groups.get(m[1]).push(m[2]);
@@ -1262,6 +1266,44 @@ function guardrailRules(tool, kit) {
   process.stdout.write(JSON.stringify(j, null, 2) + "\n");
 }
 
+// rules-drop <tool> <live file> <kit's file> [--count]: the live file without the rules of each group listed in the
+// exceptions file, exactly the strings guardrail-rules writes for that group (on or not), never one the kit's
+// file in guardrails/ holds; or (--count) how many it would remove. Every other rule, the owner's own too, stays.
+function rulesDrop(tool, live, kit, count) {
+  if (!RULE_TOOLS.includes(tool)) die("rules-drop: no such tool: " + tool, 2);
+  const listed = [...exceptions().groups.keys()];
+  let gone = listed.flatMap((g) => groupRules(tool, g)), n = 0, out;
+  const text = read(live);
+  if (tool === "codex" || tool === "gemini") {
+    const kept = new Set(kitRules(tool, kit).map((r) => r.key));
+    if (tool === "codex") {
+      gone = new Set(gone.filter((r) => !kept.has(r)));
+      const ls = text.split("\n");
+      out = ls.filter((l) => !(gone.has(l.trim()) && ++n)).join("\n");
+    } else {
+      const keyOf = (t) => kitRulesText(t).map((r) => r.key);
+      gone = new Set(gone.flatMap(keyOf).filter((k) => !kept.has(k)));
+      const ls = text.split("\n"), skip = new Set();
+      for (const t of geminiTables(ls)) if (gone.has(t.key)) { n++; for (let i = t.from; i < t.to; i++) skip.add(i); if (ls[t.to] === "") skip.add(t.to); }
+      out = ls.filter((l, i) => !skip.has(i)).join("\n");
+    }
+  } else {
+    const j = JSON.parse(text), k = JSON.parse(read(kit)), base = (k.permissions && k.permissions.deny) || [];
+    const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+    if (tool === "opencode") {
+      const keys = new Set(gone.filter((r) => !base.includes(r)).map((r) => r.replace(/^Bash\(([\s\S]*)\)$/, "$1")));
+      const b = isObj(j.permission) && isObj(j.permission.bash) ? j.permission.bash : {};
+      for (const key of Object.keys(b)) if (keys.has(key) && b[key] === "deny") { delete b[key]; n++; }
+    } else {
+      gone = new Set(gone.filter((r) => !base.includes(r)));
+      const p = isObj(j.permissions) ? j.permissions : {};
+      if (Array.isArray(p.deny)) p.deny = p.deny.filter((r) => !(gone.has(r) && ++n));
+    }
+    out = JSON.stringify(j, null, 2) + "\n";
+  }
+  process.stdout.write(count === "--count" ? n + "\n" : out);
+}
+
 // week-start <first day, 0 Sunday to 6 Saturday> [now, in seconds]: the local midnight this week began,
 // in seconds. Date keeps a day with a clock change whole, and a midnight the clock skips becomes the
 // first time that day has. "now" is for the tests.
@@ -1292,7 +1334,7 @@ function kitEdited(ws, manifest) {
 
 const COMMANDS = {
   "kit-edited": kitEdited,
-  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "guardrail-rules": guardrailRules, "guardrail-exceptions": guardrailExceptions,
+  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "guardrail-rules": guardrailRules, "guardrail-exceptions": guardrailExceptions, "rules-drop": rulesDrop,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,

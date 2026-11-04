@@ -115,6 +115,21 @@ add_rules() {  # add_rules codex|gemini <file> <kit's file>
   return 0
 }
 
+# The rule groups listed in the guardrail exceptions file (docs/guardrails.md, "Undoing the guardrails") come
+# out of a tool's file: exactly the strings the kit writes for them, never a rule of guardrails/ or one of
+# yours, after a backup; kit_file then leaves them out, so they are not added back. drop_excepted <tool> <file> <kit's file> json|text
+drop_excepted() {
+  local tool=$1 f=$2 kit=$3 kind=$4 n
+  [[ -f "$f" ]] || return 0
+  [[ "$kind" != json ]] || json_ok "$f" || return 0   # the merge after says why it is left as is
+  n="$(node "$LIBJS" rules-drop "$tool" "$f" "$kit" --count 2>/dev/null)" || { echo "  $f could not be read, so the rule groups in your guardrail exceptions stay in it"; failures=1; return 0; }
+  [[ "$n" == 0 ]] && return 0
+  if ((DRY)); then echo "  would remove $n rule(s) of the groups in your guardrail exceptions from $f, after a backup"; return 0; fi
+  backup "$f"
+  write_into "$f" "$kind" node "$LIBJS" rules-drop "$tool" "$f" "$kit" && echo "  removed $n rule(s) of the groups in your guardrail exceptions from $f (backed up beside it)"
+  return 0
+}
+
 # A clone URL from repos.tsv: a plain git URL, never an option or a line with control characters.
 # A relative path (./x, ../x) is relative to the workspace.
 url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]+:|/|\./|\.\./)[^[:space:][:cntrl:]]*$ ]]; }
@@ -266,10 +281,12 @@ else
 fi
 
 echo "== Claude Code"
+drop_excepted claude "$HOME/.claude/settings.json" "$G/claude-permissions.json" json
 merge_permissions "$(kit_file claude "$G/claude-permissions.json" "$RT/claude.json")" "$HOME/.claude/settings.json"
 
 echo "== Codex"
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
+  drop_excepted codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules" text
   kr="$(kit_file codex "$G/codex-default.rules" "$RT/codex.rules")"
   if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$kr"
   else place "$kr" "$HOME/.codex/rules/default.rules"; fi
@@ -287,11 +304,13 @@ fi
 
 echo "== Antigravity CLI (agy)"
 if [[ -d "$HOME/.gemini/antigravity-cli" ]] || command -v agy >/dev/null; then
+  drop_excepted agy "$HOME/.gemini/antigravity-cli/settings.json" "$G/agy-permissions.json" json
   merge_permissions "$(kit_file agy "$G/agy-permissions.json" "$RT/agy.json")" "$HOME/.gemini/antigravity-cli/settings.json"
 fi
 
 echo "== Gemini CLI"
 if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
+  drop_excepted gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml" text
   kr="$(kit_file gemini "$G/gemini-owner-control.toml" "$RT/gemini.toml")"
   if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$kr"
   else place "$kr" "$HOME/.gemini/policies/owner-control.toml"; fi
@@ -312,6 +331,7 @@ fi
 echo "== Qwen Code"
 # Same rule format as Claude Code (permissions.deny / ask), so the same rules, with the groups on for Qwen.
 if [[ -d "$HOME/.qwen" ]] || command -v qwen >/dev/null; then
+  drop_excepted qwen "$HOME/.qwen/settings.json" "$G/claude-permissions.json" json
   merge_permissions "$(kit_file qwen "$G/claude-permissions.json" "$RT/qwen.json")" "$HOME/.qwen/settings.json"
 fi
 
@@ -322,6 +342,7 @@ echo "== Cursor CLI"
 # editor's agent keeps its command rules in the editor's own settings, which the kit
 # does not change: there only the git push gate applies.
 if [[ -d "$HOME/.cursor" ]] || cursor_bin >/dev/null; then
+  drop_excepted cursor "$HOME/.cursor/cli-config.json" "$G/cursor-permissions.json" json
   merge_permissions "$(kit_file cursor "$G/cursor-permissions.json" "$RT/cursor.json")" "$HOME/.cursor/cli-config.json"
 fi
 
@@ -362,6 +383,7 @@ merge_opencode() {
   return 0
 }
 if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
+  drop_excepted opencode "$HOME/.config/opencode/opencode.json" "$G/claude-permissions.json" json
   merge_opencode "$(kit_file opencode "$G/claude-permissions.json" "$RT/opencode.json")" "$HOME/.config/opencode/opencode.json"
 fi
 

@@ -161,6 +161,14 @@ done
 [[ -z "$rr" ]] && ok guardrails.run-refusal "Cabinet runs are refused an amend or a rebase (the kit's hooks in $hooks)" \
   || note guardrails.run-refusal "the run refusal is not installed: $rr in ${hooks:-the global hooks folder} is missing or not the kit's, so a Cabinet run is not refused that (run bin/bootstrap.sh; it leaves a hook of your own as it is: move yours into each repo's own .git/hooks first)"
 
+# The rule groups you turned off in the guardrail exceptions file (read as data, never sourced), and each line ignored.
+exf="${XDG_CONFIG_HOME:-$HOME/.config}/cabinet/guardrail-exceptions"; exs="${exf/#$HOME/~}"
+while IFS=$'\t' read -r kind a b c; do
+  case "$kind" in
+    group) note guardrails.exceptions "the rule group $a is off, as $exs lists it${b:+ for $b}: bootstrap leaves its rules out${c:+, and since no rule format can narrow a rule to a folder, it is off machine-wide in $c}" ;;
+    bad) note guardrails.exceptions "$exs: the line '$a' is ignored, since it $b" ;;
+  esac
+done < <(node "$LIBJS" guardrail-exceptions 2>/dev/null)
 # Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
 # Each tool's kit rules: its file in guardrails/ plus the rule groups on for it, as bootstrap merges them (kit_file).
