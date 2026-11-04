@@ -20,9 +20,11 @@
 //   that looks like a token, key or password is dropped from the children's environment, and TMPDIR
 //   points inside the temporary root. After the run, two fixed-string searches (the whole key, its last
 //   16 characters) run over the temporary root and the log folder, with the text on grep's standard
-//   input; the log redacts both, so it never names either.
-// - A copy that still links to the real disk (a worktree's .git file, alternates, a local hooks or include
-//   setting, a symlink that leads outside the HOME) stops the run before any git command runs in it.
+//   input; the log redacts both, so it never names either. No GIT_* variable from the shell reaches a
+//   child (GIT_DIR or GIT_WORK_TREE would point every git command at another repo).
+// - A copy that still links to the real disk (a worktree's .git file, alternates, commondir, a local
+//   hooks, work tree, include or extensions setting, a config.worktree file, a symlink that leads outside
+//   the HOME) stops the run before any git command runs in it.
 // Results in <out>: probe-<tool>.json, probe-<tool>.log, requests-<tool>.txt (each request's output),
 // bootstrap-<tool>-<home>.txt and, for the team phase, team-<home>.txt. The temporary root is removed at
 // the end unless --keep.
@@ -145,7 +147,7 @@ const SECRETISH = /(TOKEN|SECRET|PASSWORD|PASSWD|_KEY|APIKEY|CREDENTIALS?)$/i;
 function baseEnv(home) {
   const env = {}, tmp = path.join(home, ".tmp");
   fs.mkdirSync(tmp, { recursive: true });
-  for (const [k, v] of Object.entries(process.env)) if (!SECRETISH.test(k) && !k.startsWith("CABINET_") && k !== "SSH_AUTH_SOCK") env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (!SECRETISH.test(k) && !k.startsWith("CABINET_") && !k.startsWith("GIT_") && k !== "SSH_AUTH_SOCK") env[k] = v;
   return Object.assign(env, {
     HOME: home, GIT_CONFIG_GLOBAL: path.join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1",
     XDG_CONFIG_HOME: path.join(home, ".config"), XDG_STATE_HOME: path.join(home, ".local", "state"),
@@ -166,14 +168,17 @@ function listedRepos(ws) {
   return out;
 }
 // Stops the run when a copy still links to the real disk, so no git command or write in it can reach there.
-function linksOut(copy, home) {
+// env: baseEnv's, so no GIT_* variable from the shell points the config read at another repo.
+function linksOut(copy, home, env) {
   const why = [], dotgit = path.join(copy, ".git");
   let st = null;
   try { st = fs.lstatSync(dotgit); } catch (e) { /* none */ }
   if (!st || !st.isDirectory()) why.push(".git is not a folder (a worktree, or no repo)");
   if (fs.existsSync(path.join(dotgit, "objects", "info", "alternates"))) why.push(".git/objects/info/alternates names another object store");
+  if (fs.existsSync(path.join(dotgit, "commondir"))) why.push(".git/commondir names another repo's git folder");
+  if (fs.existsSync(path.join(dotgit, "config.worktree"))) why.push(".git/config.worktree can set its own hooks path");
   if (st && st.isDirectory()) {
-    const r = spawnSync("git", ["config", "--file", path.join(dotgit, "config"), "--get-regexp", "^(core\\.hookspath|include\\.path|includeif\\..*)$"], { encoding: "utf8" });
+    const r = spawnSync("git", ["config", "--file", path.join(dotgit, "config"), "--get-regexp", "^(core\\.hookspath|core\\.worktree|include\\.path|includeif\\..*|extensions\\..*)$"], { encoding: "utf8", env });
     if (r.status === 0) why.push("its git config sets " + r.stdout.trim().split("\n").map((l) => l.split(" ")[0]).join(", "));
     else if (r.status !== 1) why.push("its git config could not be read");
   }
@@ -202,9 +207,10 @@ function setupHome(o, root, name, rules) {
   fs.cpSync(o.kit, path.join(home, "cabinet"), { recursive: true, verbatimSymlinks: true, filter: skip });
   fs.cpSync(o.ws, path.join(home, "ws"), { recursive: true, verbatimSymlinks: true, filter: skip });
   const ws = path.join(home, "ws"), kit = path.join(home, "cabinet");
-  for (const d of [kit, ws]) linksOut(d, home);
-  // The copy runs the kit copy, not a pinned one; and no remote is left to push to.
-  for (const f of ["package.json", "package-lock.json"]) fs.rmSync(path.join(ws, f), { force: true });
+  for (const d of [kit, ws]) linksOut(d, home, env);
+  // The copy runs the kit copy, not a pinned one; and no remote is left to push to. BRIEF.md is not tracked
+  // but is on disk: without it, the team phase sees whether the brief run really wrote one.
+  for (const f of ["package.json", "package-lock.json", "BRIEF.md"]) fs.rmSync(path.join(ws, f), { force: true });
   for (const d of [ws, kit]) {
     for (const r of sh("git", ["-C", d, "remote"], { env }).out.split("\n").filter(Boolean)) sh("git", ["-C", d, "remote", "remove", r], { env });
   }

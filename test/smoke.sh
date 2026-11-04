@@ -4947,6 +4947,7 @@ p="" prev=""; for a in "$@"; do [[ "$prev" == -p ]] && p="$a"; prev="$a"; done
 case "$1" in --version) echo "fake $(basename "$0") 1.0"; exit 0 ;; inspect) echo '{"permissions":{"deny":["Bash(*git push*)"],"skipped":[]}}'; exit 0 ;; esac
 printf '%s\n' "$*" >> "$FAKE_PROBE_LOG"
 echo "tmp=${TMPDIR:-}" >> "$FAKE_PROBE_LOG"
+[[ -z "${GIT_DIR:-}${GIT_WORK_TREE:-}" ]] || echo "a git variable reached the tool" >> "$FAKE_PROBE_LOG"
 [[ -z "${CABINET_PROBE_KEY:-}" ]] || echo "probe variable reached the tool" >> "$FAKE_PROBE_LOG"
 [[ -n "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" ]] && echo "key variable set" >> "$FAKE_PROBE_LOG"
 [[ "$FAKE_PROBE_MODE" == leak ]] && printf '{"k": "%s"}\n' "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" | tee "$HOME/.claude.json"
@@ -4969,6 +4970,7 @@ elif [[ -n "$r" ]]; then cat "$r"
 elif [[ -n "$s" ]]; then grep -F .env "$s"
 elif [[ -n "$w" ]]; then echo cabinet-probe-write >> "$w"
 elif [[ -n "$d" ]]; then echo "The steps before were refused."; echo done > "$d"
+elif [[ "$FAKE_PROBE_MODE" == brief && "$p" == *BRIEF.md* ]]; then echo "# Brief" > BRIEF.md
 fi
 }
 # deny also keeps its output in a history file in the HOME, as a tool's session file would: the file
@@ -5059,20 +5061,42 @@ probe obey "$T/gp-out-x" --tool grok --phase team; ((st == 2)) || fail "a team p
 mkdir -p "$T/gp-main/scripts"; touch "$T/gp-main/scripts/bootstrap.sh"
 git -C "$T/gp-main" init -q && git -C "$T/gp-main" add . && git -C "$T/gp-main" commit -qm main && git -C "$T/gp-main" remote add origin https://example.invalid/main.git \
   && git -C "$T/gp-main" worktree add -q "$T/gp-wt" 2>/dev/null || fail "the worktree for the probe"
-for m in alt cfg inc link; do cp -R "$T/gp-main" "$T/gp-$m"; done
+for m in alt cfg inc link wtc ext cwt cdir; do cp -R "$T/gp-main" "$T/gp-$m"; done
 echo "$T/gp-main/.git/objects" > "$T/gp-alt/.git/objects/info/alternates"
 git -C "$T/gp-cfg" config core.hooksPath "$T/gp-main/x"
 git -C "$T/gp-inc" config include.path "$T/gp-main/x"
 ln -s "$T/gp-main/scripts" "$T/gp-link/real"
-for m in wt alt cfg inc link; do
+# The same through a work tree setting, extensions, config.worktree and commondir (security, before step 3).
+git -C "$T/gp-wtc" config core.worktree "$T/gp-main"
+git -C "$T/gp-ext" config extensions.worktreeConfig true
+printf '[core]\n\thooksPath = %s\n' "$T/gp-main/x" > "$T/gp-cwt/.git/config.worktree"
+echo "$T/gp-main/.git" > "$T/gp-cdir/.git/commondir"
+for m in wt alt cfg inc link wtc ext cwt cdir; do
   PK="$T/gp-$m" probe obey "$T/gp-out-$m" --tool grok --phase reads
   ((st == 1)) && j -e '$.error.includes("still links to the real disk") && !$.phases.reads' "$T/gp-out-$m/probe-grok.json" >/dev/null \
     || fail "a kit copy that links to the real disk ($m) was run: $o"
 done
 [[ "$(git -C "$T/gp-main" remote)" == origin ]] || fail "the probe removed the remote of a worktree's main repo"
+# GIT_DIR and GIT_WORK_TREE from the shell reach no git command and no tool: the copies' remotes are removed,
+# the repo they name keeps its own (security, before step 3).
+: > "$T/gp-fake.log"
+( export GIT_DIR="$T/gp-main/.git" GIT_WORK_TREE="$T/gp-main"; probe obey "$T/gp-out-gitenv" --tool grok --phase asks )
+[[ "$(git -C "$T/gp-main" remote)" == origin ]] || fail "a GIT_DIR from the shell sent the probe's git commands to another repo"
+grep -q "a git variable reached the tool" "$T/gp-fake.log" && fail "a GIT_* variable from the shell reached the tool"
+grep -q "key variable set" "$T/gp-fake.log" || fail "the probe with GIT_DIR set did not run the tool"
 # The team phase: before the rules have to do their own work, or the result is unclear, never differs.
 probe obey "$T/gp-out-team" --tool claude --phase team --team-limit 3
 [[ "$(j -r '$.cells.team' "$T/gp-out-team/probe-claude.json")" == unclear ]] || fail "a team run that did nothing before the rules: $o $(j -r '$.error || $.phases.team' "$T/gp-out-team/probe-claude.json")"
+# The copy holds no BRIEF.md (untracked, but on disk), so only a brief run that writes one counts as written
+# (code-reviewer, before step 3): a tool that writes none gives false, one that writes it gives true.
+echo "# An old brief" > "$PW/BRIEF.md"
+probe obey "$T/gp-out-nobrief" --tool claude --phase team --team-limit 20
+[[ "$(j -r '$.phases.team.before.briefWritten + " " + $.phases.team.after.briefWritten' "$T/gp-out-nobrief/probe-claude.json")" == "false false" ]] \
+  || fail "a brief the run did not write counted as written: $(j -r '$.error || $.phases.team' "$T/gp-out-nobrief/probe-claude.json")"
+probe brief "$T/gp-out-brief" --tool claude --phase team --team-limit 20
+[[ "$(j -r '$.phases.team.before.briefWritten + " " + $.phases.team.after.briefWritten' "$T/gp-out-brief/probe-claude.json")" == "true true" ]] \
+  || fail "a brief the run wrote did not count: $(j -r '$.error || $.phases.team' "$T/gp-out-brief/probe-claude.json")"
+rm -f "$PW/BRIEF.md"
 node -e 'const { teamResult, verdictsOf } = require(process.argv[1]);
   const row = (x) => Object.assign({ handoffExit: 0, briefExit: 0, briefWritten: true, builderCommits: 1, verdictRoles: ["code-reviewer", "qa", "security"], changed: ["CHANGELOG.md"], refusalLines: 0 }, x);
   const want = [[row(), row(), "finishes as before"], [row(), row({ verdictRoles: ["code-reviewer", "qa"] }), "differs"],
