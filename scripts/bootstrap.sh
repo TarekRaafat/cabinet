@@ -378,18 +378,20 @@ merge_opencode() {
     mkdir -p "$(dirname "$target")"; echo '{"$schema": "https://opencode.ai/config.json"}' > "$target"
   fi
   # Missing: any kit rule absent, different, or not among the last entries.
-  missing="$(json --argjson r "$rules" '((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
+  # The rules go to json as a file: with every rule group on they are longer than Linux lets one argument be.
+  printf '%s\n' "$rules" > "$RT/opencode-bash.json"
+  missing="$(json -s '(($, $r) => ((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
     : ((tail) => Object.keys($r).filter((k) => tail[k] !== $r[k]).length)(Object.fromEntries(Object.entries(b).slice(-n)))))
-    (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length)' "$target")"
+    (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length))($[0], $[1])' "$target" "$RT/opencode-bash.json")"
   [[ "$missing" == 0 ]] && return 0
   backup "$target"
   if ((DRY)); then echo "  would add or reorder $missing bash rule(s) in $target"; return 0; fi
   # A rule set as one string ("permission": "ask") is the catch-all "*"; the kit's rules go last.
-  write_into "$target" json json --argjson r "$rules" '((p) => ((b) => ({...obj($), permission: {
+  write_into "$target" json json -s '(($, $r) => ((p) => ((b) => ({...obj($), permission: {
       ...Object.fromEntries(Object.entries(p).filter(([k]) => k != "bash")),
       bash: {...Object.fromEntries(Object.entries(b).filter(([k]) => !Object.hasOwn($r, k))), ...$r}}}))
-    (typeof p.bash == "string" ? {"*": p.bash} : obj(p.bash)))(typeof obj($).permission == "string" ? {"*": $.permission} : obj($.permission))' \
-    "$target" && echo "  added or reordered $missing bash rule(s) in $target"
+    (typeof p.bash == "string" ? {"*": p.bash} : obj(p.bash)))(typeof obj($).permission == "string" ? {"*": $.permission} : obj($.permission)))($[0], $[1])' \
+    "$target" "$RT/opencode-bash.json" && echo "  added or reordered $missing bash rule(s) in $target"
   return 0
 }
 if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then

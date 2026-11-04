@@ -196,7 +196,8 @@ if [[ -e ~/.gemini/policies/owner-control.toml ]] || command -v gemini >/dev/nul
 fi
 if command -v qwen >/dev/null; then
   kit_deny="$(json -c '$.permissions.deny' "$(kit_rules qwen "$K/guardrails/claude-permissions.json")" 2>/dev/null)"
-  missing="$(json --argjson d "$kit_deny" '$d.filter((x) => !list(obj(obj($).permissions).deny).includes(x)).length' ~/.qwen/settings.json 2>/dev/null || echo all)"
+  printf '%s\n' "$kit_deny" > "$REC.qwen-deny"   # a file: with every group on, longer than Linux lets one argument be
+  missing="$(json -s '$[1].filter((x) => !list(obj(obj($[0]).permissions).deny).includes(x)).length' ~/.qwen/settings.json "$REC.qwen-deny" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.qwen "Qwen Code denies push and publish" || bad guardrails.qwen "Qwen Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 fi
 if cb="$(cursor_bin)"; then
@@ -225,9 +226,10 @@ if command -v opencode >/dev/null; then
   # debug commands go through a background service), so there it is a note, not a FIX.
   if [[ -z "$kit_deny" ]]; then bad guardrails.opencode "the kit's rules for opencode could not be built (run bin/bootstrap.sh, which says why)"
   elif rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && json -e 'Array.isArray($.permission)' <<<"$rs" >/dev/null 2>&1; then
-    open_rules="$(json --argjson d "$kit_deny" -r '((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
+    printf '%s\n' "$kit_deny" > "$REC.opencode-deny"; printf '%s\n' "$rs" > "$REC.opencode-rs"   # files, as for Qwen Code
+    open_rules="$(json -s -r '(($, $d) => ((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
       .filter((p) => ((l) => l?.pattern != p || l?.action != "deny")(rs.filter((x) => x.pattern == p || x.pattern == "*").at(-1))).join(", "))
-      ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs")"
+      ($.permission.filter((x) => x.permission == "bash" || x.permission == "*")))($[0], $[1])' "$REC.opencode-rs" "$REC.opencode-deny")" || open_rules="(the check could not run)"
     [[ -z "$open_rules" ]] && ok guardrails.opencode "opencode denies push and publish" || bad guardrails.opencode "opencode does not deny: $open_rules (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)"
   else
     # Its version leads the note only when the version check works and prints one.

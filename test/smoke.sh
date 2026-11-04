@@ -5217,8 +5217,18 @@ for t in $ALL; do cmp -s "$ON/$(tf "$t")" "$T/sp-keep-$t" || fail "bootstrap aga
 [[ "$(cd "$ON" && find . -name '*.bak.*' | sort)" == "$before" ]] || fail "bootstrap again with the groups on made a backup"
 dj() { (cd "$SW" && inh "$1" CABINET_GUARDRAIL_PROBE="${2:-}" "$F" doctor --json 2>/dev/null) || true; }
 res() { j -r --arg i "$2" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$1"; }
+# Fake qwen and opencode, so their checks run too: opencode 1.x's debug command prints the bash rules in its file.
+printf '#!/bin/sh\nexit 0\n' > "$SB/qwen"
+cat > "$SB/opencode" <<'FAKE'
+#!/bin/sh
+[ "$1 $2 $3" = "debug agent build" ] || exit 1
+exec node -e 'const b = JSON.parse(require("fs").readFileSync(process.env.HOME + "/.config/opencode/opencode.json", "utf8")).permission.bash;
+  console.log(JSON.stringify({ permission: Object.entries(b).map(([pattern, action]) => ({ permission: "bash", pattern, action })) }))'
+FAKE
+chmod +x "$SB/qwen" "$SB/opencode"
 o="$(dj "$ON" "$ALL")"
-for t in claude codex agy gemini; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "doctor with the groups on, in the HOME that has them: $(res "$o" "guardrails.$t")"; done
+for t in claude codex agy gemini qwen opencode; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "doctor with the groups on, in the HOME that has them: $t: $(res "$o" "guardrails.$t")"; done
+rm -f "$SB/qwen" "$SB/opencode"
 o="$(dj "$OFF" "$ALL")"
 [[ "$(res "$o" guardrails.claude)" == "fix Claude Code is missing $(j -r '$.length' "$T/sp-add-claude.json") deny rule(s)"* ]] || fail "doctor did not count the missing group rules: $(res "$o" guardrails.claude)"
 [[ "$(res "$o" guardrails.codex)" == "fix Codex is missing $(j -r '$.length' "$T/sp-add-codex.json") kit rule(s)"* ]] || fail "doctor did not count the missing Codex group rules: $(res "$o" guardrails.codex)"
