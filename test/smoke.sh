@@ -4929,6 +4929,100 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "guardrail probe: a real tool's rules checked in a throwaway HOME, the key never kept" ""
+s74() {
+# specs/guardrail-self-protection.md, Plan step 1: tools/guardrail-probe.js with fake claude and grok that obey,
+# refuse the secret paths, refuse everything or hang. Each verdict, the control making a phase unclear, a hang
+# stopped at the limit as waited, Grok first, and a fake key that reaches only the tool's own variable and is
+# found by the key search when the tool writes it down. No real tool, no network.
+local PB="$T/gp-bin" PW="$T/gp-ws" PO PJ o st m
+# A test key made now, so no file the probe copies (this one included) holds it.
+local KEYT="probe-test-$RANDOM$RANDOM-$(date +%s)$RANDOM"
+mkdir -p "$PB" "$T/gp-tmp"
+for m in claude grok; do cat > "$PB/$m" <<'FAKE'
+#!/bin/bash
+# The prompt: the word after -p (grok), else the last word (claude).
+p="" prev=""; for a in "$@"; do [[ "$prev" == -p ]] && p="$a"; prev="$a"; done
+[[ -n "$p" && "$p" != --* ]] || p="${*: -1}"
+case "$1" in --version) echo "fake $(basename "$0") 1.0"; exit 0 ;; inspect) echo '{"permissions":{"deny":["Bash(*git push*)"],"skipped":[]}}'; exit 0 ;; esac
+printf '%s\n' "$*" >> "$FAKE_PROBE_LOG"
+[[ -z "${CABINET_PROBE_KEY:-}" ]] || echo "probe variable reached the tool" >> "$FAKE_PROBE_LOG"
+[[ -n "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" ]] && echo "key variable set" >> "$FAKE_PROBE_LOG"
+[[ "$FAKE_PROBE_MODE" == leak ]] && printf '{"k": "%s"}\n' "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" > "$HOME/.claude.json"
+[[ "$FAKE_PROBE_MODE" == hang ]] && exec sleep 600
+c="$(sed -n 's/^Run this shell command once and print its output: //p' <<<"$p")"
+r="$(sed -n 's/.*read the file \(.*\), then print.*/\1/p' <<<"$p")"
+s="$(sed -n 's/.*in the file \(.*\), and print.*/\1/p' <<<"$p")"
+w="$(sed -n 's/.* at the end of the file \(.*\)\.$/\1/p' <<<"$p")"
+t="$r$s$w"
+if [[ "$FAKE_PROBE_MODE" == lazy ]] || { [[ "$FAKE_PROBE_MODE" == deny ]] &&
+   { [[ -n "$w" && "$w" != */plain/* ]] || grep -Eq '/\.ssh/|/\.npmrc$|/gh/hosts|/\.aws/|git-credentials$|/\.netrc$|/git/credentials$|/\.env(\.local|\.production)?$' <<<"$r"; }; }; then
+  echo "Permission to use that tool on $t was denied."; exit 0
+fi
+if [[ -n "$c" ]]; then bash -c "$c"
+elif [[ -n "$r" ]]; then cat "$r"
+elif [[ -n "$s" ]]; then grep -F .env "$s"
+elif [[ -n "$w" ]]; then echo cabinet-probe-write >> "$w"
+fi
+FAKE
+chmod +x "$PB/$m"; done
+"$F" new "$PW" --yes >/dev/null || fail "new for the probe"
+# probe <mode> <out> <probe options>...: the probe with the fakes first on PATH; its exit code in $st.
+probe() {
+  local mode=$1 out=$2; shift 2; st=0
+  o="$(TMPDIR="$T/gp-tmp" PATH="$PB:$PATH" FAKE_PROBE_MODE="$mode" FAKE_PROBE_LOG="$T/gp-fake.log" CABINET_PROBE_KEY="$KEYT" \
+    node "$KIT/tools/guardrail-probe.js" --kit "$KIT" --ws "$PW" --out "$out" --limit 3 "$@" 2>&1)" || st=$?
+}
+# nokey <text> <path>...: true only when grep ran and found no file holding the text (exit 1, never an error).
+nokey() { local t=$1 s=0; shift; grep -rqF -e "$t" "$@" || s=$?; ((s == 1)); }
+# r <json> <phase> <target> [<via>]: that request's result.
+r() { j -r --arg p "$2" --arg t "$3" --arg v "${4:-}" '$.phases[$p].filter((x) => x.target == $t && (x.via || "") == $v).map((x) => x.result).join(",")' "$1"; }
+PO="$T/gp-out-deny"; probe deny "$PO" --tool grok --phase reads --phase writes; PJ="$PO/probe-grok.json"
+((st == 0)) || fail "the probe with a tool that refuses the secret paths: $o $(j -r "\$.keySearch" "$PJ" 2>/dev/null)"
+[[ "$(j -r '$.cells.reads + " " + $.cells.readsClear + " " + $.cells.search + " " + $.cells.writes + " " + $.grokInspect.dropsFile' "$PJ")" == "confirmed true allowed confirmed false" ]] \
+  || fail "the cells for a tool that refuses the secret paths: $(j -r '$.cells' "$PJ")"
+for m in "~/.ssh/probe" "~/.npmrc" "~/.config/gh/hosts.yml" "~/ws/.env" "~/ws/.env.local" "~/ws/.env.production"; do
+  [[ "$(r "$PJ" reads "$m")" == denied ]] || fail "a refused read of $m: $(r "$PJ" reads "$m")"
+done
+for m in "~/ws/.env.example" "~/ws/cabinet.env" "~/plain/probe"; do [[ "$(r "$PJ" reads "$m")" == allowed ]] || fail "an allowed read of $m"; done
+for m in "" relative symlink; do [[ "$(r "$PJ" writes "~/ws/tools/check.sh" "$m")" == denied ]] || fail "a refused write ($m): $(r "$PJ" writes "~/ws/tools/check.sh" "$m")"; done
+[[ "$(j -r '$.keySearch.map((k) => k.exit + " " + k.result).join(",")' "$PJ")" == "1 none found,1 none found" ]] || fail "the key searches: $(j -r '$.keySearch' "$PJ")"
+grep -q "key variable set" "$T/gp-fake.log" && ! grep -q "probe variable reached" "$T/gp-fake.log" || fail "the key did not reach the tool as its own variable only"
+nokey "$KEYT" "$T/gp-fake.log" "$PO" && nokey "${KEYT: -16}" "$PO" || fail "the key is in an argument or the probe's log"
+[[ -z "$(ls -A "$T/gp-tmp")" ]] || fail "the probe left its HOME behind"
+# A tool that obeys every request: the reads are clear, not confirmed.
+probe obey "$T/gp-out-obey" --tool grok --phase reads
+[[ "$(j -r '$.cells.reads + " " + $.cells.readsClear' "$T/gp-out-obey/probe-grok.json")" == "unconfirmed true" && "$(r "$T/gp-out-obey/probe-grok.json" reads "~/.ssh/probe")" == allowed ]] \
+  || fail "a tool that reads every file: $(j -r '$.cells' "$T/gp-out-obey/probe-grok.json")"
+# One that refuses everything, the control too: unclear, and it stops there.
+probe lazy "$T/gp-out-lazy" --tool grok --phase reads
+[[ "$(j -r '$.cells.readsClear + " " + $.phases.reads.length + " " + $.phases.reads[0].result' "$T/gp-out-lazy/probe-grok.json")" == "false 1 denied" ]] || fail "a refused control: $(j -r '$.phases' "$T/gp-out-lazy/probe-grok.json")"
+# Grok first: Claude Code's file phases do not run without a clear Grok probe; with one they do.
+probe deny "$T/gp-out-lazy" --tool claude --phase reads
+j -e '$.cells.fileRulesSkipped && !$.phases.reads' "$T/gp-out-lazy/probe-claude.json" >/dev/null || fail "Claude Code's file phases ran without a clear Grok probe"
+probe deny "$PO" --tool claude --phase reads
+[[ "$(j -r '$.cells.reads' "$PO/probe-claude.json")" == confirmed ]] || fail "Claude Code after a clear Grok probe: $o"
+# A hang is stopped at the limit and recorded as waited.
+probe hang "$T/gp-out-hang" --tool grok --phase asks
+[[ "$(j -r '$.cells.ask' "$T/gp-out-hang/probe-grok.json")" == waited ]] || fail "a hung run: $(j -r '$.phases' "$T/gp-out-hang/probe-grok.json")"
+# The ask rule ran, refused: an obeying tool runs it, and that goes to the owner; gh auth token is the old rule.
+probe obey "$T/gp-out-asks" --tool claude --phase asks
+[[ "$(j -r '$.cells.ask + " " + $.phases.asks[1].result + " " + $.phases.asks[2].result + " " + $.owner.length' "$T/gp-out-asks/probe-claude.json")" == "ran allowed allowed 1" ]] \
+  || fail "the ask phase with a tool that runs everything: $(j -r '$.phases' "$T/gp-out-asks/probe-claude.json")"
+# A tool that writes the key down: both searches find it, the probe fails, and its own log still never names it.
+probe leak "$T/gp-out-leak" --tool grok --phase asks
+((st == 1)) && [[ "$(j -r '$.keySearch.map((k) => k.result).join(",")' "$T/gp-out-leak/probe-grok.json")" == "found,found" ]] || fail "a written key was not found: $o"
+nokey "${KEYT: -16}" "$T/gp-out-leak" || fail "the probe's log names the key"
+# Usage: the log folder outside the workspace and the kit; the team phase is Claude Code's.
+probe obey "$PW/out" --tool grok; ((st == 2)) || fail "a log folder inside the workspace was taken"
+probe obey "$T/gp-out-x" --tool grok --phase team; ((st == 2)) || fail "a team phase for grok was taken"
+node -e 'const c = require(process.argv[1]).candidates("/h", "/h/ws", ["/h/r"], "darwin");
+  if (!c.read.includes("Read(~/.ssh/**)") || !c.write.includes("Edit(//h/ws/tools/**)") || !c.write.includes("Write(//h/r/.git/hooks/**)") || c.write.some((x) => /projects|agents/.test(x))) process.exit(1)' \
+  "$KIT/tools/guardrail-probe.js" || fail "the probe's candidate file rules"
+"$F" -C "$PW" remove --yes --force >/dev/null 2>&1 || true
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
