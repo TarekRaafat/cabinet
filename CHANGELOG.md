@@ -5,6 +5,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 ## 0.4.0 - Unreleased
 
 - Bootstrap and `cabinet doctor` now take each agent tool's rules from the kit's rule file plus named rule groups, all deny rules, listed on the guardrails page. No group is switched on yet, so nothing changes on your machine. A group can be turned off by listing its name in `~/.config/cabinet/guardrail-exceptions` and running `cabinet bootstrap`, which removes exactly that group's rules after a backup and leaves them out from then on; push, merge, release and publish can never be listed, and `cabinet doctor` names each group listed and each line it ignores. `cabinet doctor` also says, as a note, when Grok skips a file rule in `~/.claude/settings.json` (a skipped command rule stays a FIX).
+- `cabinet doctor` names, as a note, each verdict line in `HANDOFFS.md` or under a spec's "## Reviews" that was not added by a commit of `cabinet handoff record` or `cabinet spec record` (`handoffs.verdict-origin`). It reads `git blame`, so it finds lines written by hand or committed with other lines, not forgeries; the doctor's result is unchanged.
 
 ## 0.3.3 - 3 Nov 2026
 

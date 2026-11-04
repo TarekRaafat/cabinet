@@ -5289,6 +5289,37 @@ o="$(dj "$ON" "$ALL")"
 [[ "$(res "$o" guardrails.exceptions)" == "note the rule group env-files is off, as ~/.config/cabinet/guardrail-exceptions lists it for /tmp/p: bootstrap leaves its rules out, and since no rule format can narrow a rule to a folder, it is off machine-wide in claude qwen opencode gemini" ]] \
   || fail "criterion 21: a folder that cannot narrow the exception: $(res "$o" guardrails.exceptions)"
 rm -f "$EX"
+# Criteria 13 and 14 (Rule 8): a verdict line is checked against the commit that added it. The fresh workspace's
+# HANDOFFS.md holds the format line in its fenced example block, which is never named.
+local h1 h2 st0 st1
+o="$(dj "$OFF")"; [[ "$(res "$o" handoffs.verdict-origin)" == "ok every verdict line was written by bin/handoff.sh record or bin/spec.sh record" ]] \
+  || fail "criterion 13: the fresh workspace (the format line in its example block): $(res "$o" handoffs.verdict-origin)"
+h1="$("$SW/bin/handoff.sh" add --from backend --to security --changed x --needed y "One")"; h1="${h1%% *}"
+h2="$("$SW/bin/handoff.sh" add --from backend --to security --changed x --needed y "Two")"; h2="${h2%% *}"
+mkdir -p "$SW/specs/security" && echo checked > "$SW/specs/security/n.md" && git -C "$SW" add specs/security/n.md && git -C "$SW" commit -qm note -- specs/security/n.md
+"$SW/bin/handoff.sh" record "$h1" --role security PASS --commits none --note specs/security/n.md >/dev/null || fail "record for criterion 13"
+# Criterion 14: a record-made line, and the same entry's status line edited in a plain commit: ok.
+L sub-all "$SW/HANDOFFS.md" "/(### $h1:[^\\n]*\\n(?:[^\\n]*\\n)*?- Status: )open[^\\n]*/" '$1acknowledged (2026-11-04) by hand'
+grep -q '^- Status: acknowledged (2026-11-04) by hand$' "$SW/HANDOFFS.md" && git -C "$SW" commit -qm "status by hand" -- HANDOFFS.md || fail "criterion 14: the status line edit"
+o="$(dj "$OFF")"; [[ "$(res "$o" handoffs.verdict-origin)" == ok* ]] || fail "criterion 14: a record-made verdict with a status line edited by hand: $(res "$o" handoffs.verdict-origin)"
+st0=0; (cd "$SW" && inh "$OFF" "$F" doctor --json >/dev/null 2>&1) || st0=$?
+# Criterion 13: a well-formed verdict line added by a plain commit is a note naming its entry, never a FIX.
+L after "$SW/HANDOFFS.md" "/^### $h2:/" "- Verdict: security PASS $(date +%F) none specs/security/n.md" && git -C "$SW" commit -qm "verdict by hand" -- HANDOFFS.md
+st1=0; (cd "$SW" && inh "$OFF" "$F" doctor --json >/dev/null 2>&1) || st1=$?
+o="$(dj "$OFF")"
+[[ "$(res "$o" handoffs.verdict-origin)" == "note not written by record: $h2 (security PASS) "* ]] || fail "criterion 13: a verdict line written by hand: $(res "$o" handoffs.verdict-origin)"
+((st0 == st1)) || fail "criterion 13: the note changed the doctor's exit code ($st0, then $st1)"
+# The same for a spec's Reviews line: bin/spec.sh record's is not named, one added by hand is.
+cp "$SW/specs/_template.md" "$SW/specs/a.md" && cp "$SW/specs/_template.md" "$SW/specs/b.md" && git -C "$SW" add specs/a.md specs/b.md && git -C "$SW" commit -qm specs -- specs/a.md specs/b.md
+mkdir -p "$SW/specs/qa" && echo checked > "$SW/specs/qa/n.md" && git -C "$SW" add specs/qa/n.md && git -C "$SW" commit -qm note -- specs/qa/n.md
+"$SW/bin/spec.sh" record specs/a.md --role qa PASS --note specs/qa/n.md >/dev/null || fail "spec.sh record for criterion 13"
+printf '\n## Reviews\n\n- Verdict: qa PASS %s abc12345 specs/qa/n.md\n' "$(date +%F)" >> "$SW/specs/b.md" && git -C "$SW" commit -qm "review by hand" -- specs/b.md
+o="$(dj "$OFF")"
+[[ "$(res "$o" handoffs.verdict-origin)" == "note not written by record: $h2 (security PASS), specs/b.md (qa PASS) "* ]] || fail "criterion 13: a spec's Reviews line written by hand: $(res "$o" handoffs.verdict-origin)"
+# Criterion 15, its last line: with no git history to read, a note.
+cp -R "$SW" "$T/sp-nogit" && rm -rf "$T/sp-nogit/.git"
+o="$( (cd "$T/sp-nogit" && inh "$OFF" "$F" doctor --json 2>/dev/null) || true)"
+[[ "$(res "$o" handoffs.verdict-origin)" == "note who wrote each verdict line cannot be checked: the workspace has no git history to read" ]] || fail "criterion 15: no git history: $(res "$o" handoffs.verdict-origin)"
   return 0   # a last "check && fail" line must not end the run
 }
 

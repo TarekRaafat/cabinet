@@ -391,6 +391,13 @@ open_handoffs="$("$WS/bin/handoff.sh" list --json 2>/dev/null)"   # read once: "
 unread="$(json -r '$.filter((h) => (h.unread_verdicts ?? []).length > 0).map((h) => h.id).join(" ")' <<<"$open_handoffs" 2>/dev/null || true)"
 [[ -z "$unread" ]] && ok handoffs.unread-verdicts "no verdict is written outside a Verdict line" \
   || note handoffs.unread-verdicts "PASS, BLOCK or CHANGES written outside a Verdict line, so not counted: $unread (the reviewer records it with bin/handoff.sh record)"
+# Who added each verdict line, from git blame: bin/handoff.sh record and bin/spec.sh record commit theirs with
+# a summary of their own. A note, never a FIX: a summary can be copied, so this finds mistakes, not forgeries.
+vo="$(node "$LIBJS" verdict-origin "$WS" 2>/dev/null)" || vo=nohistory
+if [[ "$vo" == nohistory ]]; then note handoffs.verdict-origin "who wrote each verdict line cannot be checked: the workspace has no git history to read"
+elif [[ -z "$vo" ]]; then ok handoffs.verdict-origin "every verdict line was written by bin/handoff.sh record or bin/spec.sh record"
+else vlist="$(awk -F'\t' '{printf "%s%s (%s)", (NR > 1 ? ", " : ""), $2, $3}' <<<"$vo" | term_text)"
+  note handoffs.verdict-origin "not written by record: $vlist (a reviewer records a verdict with bin/handoff.sh record or bin/spec.sh record; a summary can be copied, so this finds mistakes, not forgeries)"; fi
 # A small task that passed stays small: its commits in one repo, touching no path AGENTS.md guards.
 notsmall=""
 while IFS=$'\t' read -r sid scommits; do

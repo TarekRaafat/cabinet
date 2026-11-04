@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: guardrail-rules, guardrail-exceptions, rules-drop, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: guardrail-rules, guardrail-exceptions, rules-drop, verdict-origin, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -1304,6 +1304,61 @@ function rulesDrop(tool, live, kit, count) {
   process.stdout.write(count === "--count" ? n + "\n" : out);
 }
 
+// verdict-origin <workspace>: each verdict line not added by a commit of bin/handoff.sh record or bin/spec.sh
+// record, by one git blame --porcelain per file that holds one: in HANDOFFS.md, a "- Verdict:" line (not in a
+// fenced example) whose commit's summary is not "handoffs: <its entry's ID> <role> <VERDICT>"; in a spec, a
+// line under "## Reviews" whose summary is not "specs: <file> <role> <VERDICT>". One line each,
+// "<file>\t<entry ID or spec>\t<role> <VERDICT>"; "nohistory" when the workspace has no git history. A line not
+// committed yet is left for its commit. A summary can be copied, so this finds mistakes and casual edits, not
+// forgeries. The archives are history and are never read.
+function verdictOrigin(ws) {
+  const git = (...a) => spawnSync("git", ["-C", ws, ...a], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  if (git("rev-parse", "--verify", "-q", "HEAD").status !== 0) { process.stdout.write("nohistory\n"); return; }
+  // blame <file>: [{text, summary}] per line, or null when git cannot read it (not tracked).
+  const blame = (f) => {
+    const r = git("blame", "--porcelain", "--", f);
+    if (r.status !== 0) return null;
+    const sums = new Map(), out = [];
+    let sha = "";
+    for (const l of r.stdout.split("\n")) {
+      const h = /^([0-9a-f]{40}) \d+ \d+/.exec(l);
+      if (h) { sha = h[1]; continue; }
+      if (l.startsWith("summary ")) { sums.set(sha, l.slice(8)); continue; }
+      if (l.startsWith("\t")) { const at = sha; out.push({ text: l.slice(1), sha: at, summary: () => sums.get(at) }); }
+    }
+    return out;
+  };
+  const uncommitted = (x) => /^0{40}$/.test(x.sha);
+  const verdict = (t) => /^- Verdict: (\S+) (\S+) /.exec(t);
+  const bad = [];
+  if (/^- Verdict: /m.test(fs.existsSync(path.join(ws, "HANDOFFS.md")) ? read(path.join(ws, "HANDOFFS.md")) : "")) {
+    let id = "", fenced = false;
+    for (const x of blame("HANDOFFS.md") || []) {
+      if (/^\s*```/.test(x.text)) { fenced = !fenced; continue; }
+      if (fenced) continue;
+      const h = /^### (H-[0-9]{8}-[0-9]+[a-z]?):/.exec(x.text);
+      if (h) { id = h[1]; continue; }
+      const v = verdict(x.text);
+      if (!v || uncommitted(x)) continue;
+      if (x.summary() !== "handoffs: " + id + " " + v[1] + " " + v[2]) bad.push(["HANDOFFS.md", id || "(no entry)", v[1] + " " + v[2]]);
+    }
+  }
+  let specs = [];
+  try { specs = fs.readdirSync(path.join(ws, "specs")).filter((f) => f.endsWith(".md")).sort(); } catch (e) { /* none */ }
+  for (const f of specs) {
+    const rel = "specs/" + f;
+    if (!/^## Reviews$[\s\S]*^- Verdict: /m.test(read(path.join(ws, rel)))) continue;
+    let on = false;
+    for (const x of blame(rel) || []) {
+      if (x.text.startsWith("## ")) { on = x.text === "## Reviews"; continue; }
+      const v = on && verdict(x.text);
+      if (!v || uncommitted(x)) continue;
+      if (x.summary() !== "specs: " + f + " " + v[1] + " " + v[2]) bad.push([rel, rel, v[1] + " " + v[2]]);
+    }
+  }
+  for (const b of bad) process.stdout.write(b.join("\t") + "\n");
+}
+
 // week-start <first day, 0 Sunday to 6 Saturday> [now, in seconds]: the local midnight this week began,
 // in seconds. Date keeps a day with a clock change whole, and a midnight the clock skips becomes the
 // first time that day has. "now" is for the tests.
@@ -1334,7 +1389,7 @@ function kitEdited(ws, manifest) {
 
 const COMMANDS = {
   "kit-edited": kitEdited,
-  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "guardrail-rules": guardrailRules, "guardrail-exceptions": guardrailExceptions, "rules-drop": rulesDrop,
+  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "guardrail-rules": guardrailRules, "guardrail-exceptions": guardrailExceptions, "rules-drop": rulesDrop, "verdict-origin": verdictOrigin,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
