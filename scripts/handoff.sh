@@ -12,8 +12,8 @@
 #       one of the two. --small with a --depends-on holding a handoff ID, for a reviewer, is refused:
 #       run does not count a --small entry as a review. --way-back says how to undo the change once pushed, released or published
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
-#       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, the entry is
-#       written but not committed, so their lines never go into its commit.
+#       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, add, attach and
+#       record still commit only their own change (save_own), so those lines never go into the commit.
 #       Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document,
 #       never double quotes: the shell would run it first.
 #   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."] --from <name>
@@ -117,17 +117,41 @@ lock_handoffs() {
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
   dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
 }
-# save <what was done> <commit message> <path>...: commit, or with someone else's uncommitted lines
-# in HANDOFFS.md, leave it written but uncommitted so their lines never go into this commit.
+# save <what was done> <commit message> <path>...: commit what the command changed. The command
+# defines own_change <file>, which makes its change to HANDOFFS.md in that file.
 save() {
   local did=$1 msg=$2; shift 2
-  if [[ -n "$dirty" ]]; then
-    echo "$did, not committed: HANDOFFS.md had other uncommitted lines. Commit only yours (git add -p HANDOFFS.md$( (($# > 1)) && echo ", and ${2}"))."
-    exit 0
-  fi
+  [[ -z "$dirty" ]] || save_own "$did" "$msg" "$@"
   git add -- "$@"
   git commit -q -m "$msg" -- "$@" || { echo "$did, but the commit failed (see above): commit $* yourself" >&2; exit 1; }
   echo "$did and committed"
+}
+# save_own, the same with someone else's uncommitted lines in HANDOFFS.md (R5): the command's own change
+# is made again on the committed file, and committed through an index of its own, so their lines are
+# in no commit; it is made on the staged file too, so what they staged stays staged and nothing else
+# is. When the change cannot be made on the committed file (its entry is not committed yet), the file
+# is left written and uncommitted, naming no command to run, which would take their lines.
+save_own() {
+  local did=$1 msg=$2 t="$K/handoffs.own" mode b; shift 2
+  rm -rf "$t"; mkdir -p "$t"
+  if ! { git show HEAD:HANDOFFS.md > "$t/head" && git show :HANDOFFS.md > "$t/index" \
+      && own_change "$t/head" && own_change "$t/index"; } 2>/dev/null; then
+    rm -rf "$t"
+    echo "$did, not committed: its entry is not committed yet, so it stays on disk with the other uncommitted lines in HANDOFFS.md."
+    exit 0
+  fi
+  mode="$(git ls-tree HEAD HANDOFFS.md | cut -d' ' -f1)"
+  b="$(git hash-object -w "$t/head")"
+  GIT_INDEX_FILE="$t/idx" git read-tree HEAD
+  GIT_INDEX_FILE="$t/idx" git update-index --cacheinfo "$mode,$b,HANDOFFS.md"
+  (($# == 1)) || GIT_INDEX_FILE="$t/idx" git add -- "${@:2}"
+  GIT_INDEX_FILE="$t/idx" git commit -q -m "$msg" || { rm -rf "$t"; echo "$did, but the commit failed (see above); HANDOFFS.md is written" >&2; exit 1; }
+  b="$(git hash-object -w "$t/index")"
+  git update-index --cacheinfo "$mode,$b,HANDOFFS.md"
+  (($# == 1)) || git add -- "${@:2}"
+  rm -rf "$t"
+  echo "$did and committed (only its own change: the other uncommitted lines in HANDOFFS.md stay as they were)"
+  exit 0
 }
 # entry <ID> info|evidence <links>|verdict <role> <line>: read or change one open entry in place.
 # info prints "<sender>\t<1 when it has evidence>\t<small when it is a small task>\t<addressee>". Exit 3 when the entry is not under "## Open".
@@ -220,6 +244,8 @@ entry="### $id: $title
 - Size: small}${back:+
 - Way back: $back}${evline:+
 - Evidence: $evline}"
+own_change() {
+grep -q '^## Open$' "$1" || return 1
 ENTRY="$entry" awk '
   function put() { if (!done) { sub(/\n+$/, "", buf); printf "%s\n\n%s\n", buf, ENVIRON["ENTRY"]; buf = ""; done = 1 } }
   /^## / && open && !done { put(); print ""; open = 0 }
@@ -227,8 +253,10 @@ ENTRY="$entry" awk '
   open && !done { buf = buf $0 "\n"; next }
   { print }
   END { if (open) put() }
-' HANDOFFS.md > "$K/handoffs.new"
-mv "$K/handoffs.new" HANDOFFS.md
+' "$1" > "$K/handoffs.new"
+mv "$K/handoffs.new" "$1"
+}
+own_change HANDOFFS.md
 
 paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
 save "$id filed for $to" "handoffs: $id $title" "${paths[@]}"
@@ -253,8 +281,11 @@ info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (b
 sender="${info%%$'\t'*}"
 [[ "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds evidence or a way back (a reviewer links its own in its note)" >&2; exit 1; }
 for e in ${ev[@]+"${ev[@]}"}; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
-[[ -z "$evline" ]] || entry "$id" evidence "$evline"
-[[ -z "$back" ]] || entry "$id" wayback "$back"
+own_change() {
+  [[ -z "$evline" ]] || node "$LIBJS" handoff-entry "$1" "$id" evidence "$evline" || return 1
+  [[ -z "$back" ]] || node "$LIBJS" handoff-entry "$1" "$id" wayback "$back"
+}
+own_change HANDOFFS.md
 paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
 if [[ -z "$evline" ]]; then save "$id: way back written" "handoffs: $id way back" "${paths[@]}"
 elif [[ -z "$back" ]]; then save "$id: evidence attached" "handoffs: $id evidence" "${paths[@]}"
@@ -335,13 +366,18 @@ if [[ "$verdict" == PASS && "$commits" != none && -z "$hasback" ]]; then
   why="$(hard_hit "$commits")"
   [[ -z "$why" ]] || { echo "$id changes $why, which \"Hard to undo\" in AGENTS.md names, and says no way back: record BLOCK; its sender adds one with bin/handoff.sh attach $id --way-back \"<how to undo it>\" --from $sender" >&2; exit 1; }
 fi
-entry "$id" verdict "$role" "- Verdict: $role $verdict $(date +%F) $commits $rel"
+vline="- Verdict: $role $verdict $(date +%F) $commits $rel"
+own_change() {
+  local c
+  node "$LIBJS" handoff-entry "$1" "$id" verdict "$role" "$vline" || return 1
+  for c in ${checked[@]+"${checked[@]}"}; do
+    grep -qF "]($c)" "$1" || node "$LIBJS" handoff-entry "$1" "$id" evidence "[${c##*/}]($c)" || return 1
+  done
+}
+own_change HANDOFFS.md
 local -a paths
 paths=(HANDOFFS.md)
-for c in ${checked[@]+"${checked[@]}"}; do
-  grep -qF "]($c)" HANDOFFS.md || entry "$id" evidence "[${c##*/}]($c)"
-  paths+=("$c")
-done
+for c in ${checked[@]+"${checked[@]}"}; do paths+=("$c"); done
 save "$id: $role $verdict recorded" "handoffs: $id $role $verdict" "${paths[@]}"
 }
 

@@ -318,7 +318,8 @@ git -C "$W" show --stat HEAD | grep -q "handoffs: H-$d-08 Raise the list limit" 
 "$W/bin/handoff.sh" list | grep -q "H-$d-01" && fail "an ID was reused"
 echo "- leftover line" >> "$W/HANDOFFS.md"
 out="$("$W/bin/handoff.sh" add --from qa --to architect --changed x --needed y "Second")"
-[[ "$out" == "H-$d-09 filed for architect, not committed"* ]] && git -C "$W" log -1 --format=%s | grep -q "H-$d-08" || fail "handoff committed someone else's uncommitted lines"
+[[ "$out" == "H-$d-09 filed for architect and committed (only its own change"* ]] && git -C "$W" log -1 --format=%s | grep -q "H-$d-09" \
+  && ! git -C "$W" show HEAD | grep -q "leftover line" && git -C "$W" diff HEAD -- HANDOFFS.md | grep -qx "+- leftover line" || fail "handoff committed someone else's uncommitted lines, or dropped them"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'ok    every handoff ID is unique' || fail "handoff made a duplicate ID"
 git -C "$W" checkout -q -- HANDOFFS.md
 "$W/bin/handoff.sh" add --from qa --to api "No details" >/dev/null 2>&1 && fail "a handoff without --changed and --needed was filed"
@@ -5369,6 +5370,48 @@ o="$(dj "$OFF")"
 cp -R "$SW" "$T/sp-nogit" && rm -rf "$T/sp-nogit/.git"
 o="$( (cd "$T/sp-nogit" && inh "$OFF" "$F" doctor --json 2>/dev/null) || true)"
 [[ "$(res "$o" handoffs.verdict-origin)" == "note who wrote each verdict line cannot be checked: the workspace has no git history to read" ]] || fail "criterion 15: no git history: $(res "$o" handoffs.verdict-origin)"
+# Criterion 15 (R5): with other roles' uncommitted lines in HANDOFFS.md, record, attach and add commit only their own
+# change, with their usual summary; the others' lines stay on disk byte for byte, a staged one stays staged.
+local R5="$T/sp-r5" r5a r5b r5d c n
+"$F" new "$R5" --yes >/dev/null || fail "new for criterion 15"
+r5a="$("$R5/bin/handoff.sh" add --from backend --to qa --changed x --needed y "R5 one")"; r5a="${r5a%% *}"
+r5b="$("$R5/bin/handoff.sh" add --from backend --to qa --changed x --needed y "R5 two")"; r5b="${r5b%% *}"
+r5d="$("$R5/bin/handoff.sh" add --from backend --to qa --changed x --needed y "R5 four")"; r5d="${r5d%% *}"
+mkdir -p "$R5/specs/qa" && echo checked > "$R5/specs/qa/n.md" && git -C "$R5" add specs/qa/n.md && git -C "$R5" commit -qm note -- specs/qa/n.md
+echo evidence > "$T/e.txt"
+[[ -z "$(git -C "$R5" status --porcelain)" ]] || fail "criterion 15: the fixture is not committed"
+L after "$R5/HANDOFFS.md" "/^### $r5d:/" "- Note: security staged this" && git -C "$R5" add HANDOFFS.md
+L after "$R5/HANDOFFS.md" "/^### $r5b:/" "- Note: security wrote this"
+L sub-all "$R5/HANDOFFS.md" "/(### $r5a:[^\\n]*\\n(?:[^\\n]*\\n)*?- Status: )open[^\\n]*/" '$1in progress'
+# lines <diff>: its added and removed lines only, so hunk headers and context do not count.
+lines() { grep '^[-+]' | grep -v '^+++ \|^--- ' || true; }
+git -C "$R5" diff HEAD -- HANDOFFS.md | lines > "$T/r5-head"; git -C "$R5" diff --cached -- HANDOFFS.md | lines > "$T/r5-cached"
+[[ "$(wc -l < "$T/r5-head")" -eq 4 && "$(wc -l < "$T/r5-cached")" -eq 1 ]] || fail "criterion 15: the fixture's other lines: $(cat "$T/r5-head")"
+r5check() {  # r5check <copy> <what> <summary> <its own lines, as git show adds them>
+  [[ "$(git -C "$1" log -1 --format=%s)" == "$3" && "$(git -C "$1" rev-list --count HEAD)" == "$n" ]] || fail "criterion 15, $2: not one commit with the summary $3: $(git -C "$1" log -3 --format=%s)"
+  [[ "$(git -C "$1" show HEAD -- HANDOFFS.md | lines)" == "$4" ]] || fail "criterion 15, $2: its commit changes more than its own lines: $(git -C "$1" show HEAD -- HANDOFFS.md | lines)"
+  git -C "$1" diff HEAD -- HANDOFFS.md | lines | cmp -s - "$T/r5-head" || fail "criterion 15, $2: the other roles' lines changed on disk: $(git -C "$1" diff HEAD -- HANDOFFS.md | lines)"
+  git -C "$1" diff --cached -- HANDOFFS.md | lines | cmp -s - "$T/r5-cached" || fail "criterion 15, $2: the staged line is not what was staged: $(git -C "$1" diff --cached -- HANDOFFS.md | lines)"
+  [[ "$(res "$( (cd "$1" && inh "$OFF" "$F" doctor --json 2>/dev/null) || true)" handoffs.verdict-origin)" == ok* ]] || fail "criterion 15, $2: the verdict check is not ok"
+}
+n=$(( $(git -C "$R5" rev-list --count HEAD) + 1 ))
+c="$T/sp-r5-record"; cp -R "$R5" "$c"
+"$c/bin/handoff.sh" record "$r5a" --role qa BLOCK --commits none --note specs/qa/n.md >/dev/null || fail "criterion 15: record exited non-zero"
+r5check "$c" record "handoffs: $r5a qa BLOCK" "+- Verdict: qa BLOCK $(date +%F) none specs/qa/n.md"
+c="$T/sp-r5-attach"; cp -R "$R5" "$c"
+"$c/bin/handoff.sh" attach "$r5a" "$T/e.txt" --from backend >/dev/null || fail "criterion 15: attach exited non-zero"
+r5check "$c" attach "handoffs: $r5a evidence" "+- Evidence: [e.txt](specs/evidence/$r5a/e.txt)"
+[[ "$(git -C "$c" show --name-only --format= HEAD | sort | tr '\n' ' ')" == "HANDOFFS.md specs/evidence/$r5a/e.txt " ]] || fail "criterion 15: attach did not commit the copied file with its line"
+c="$T/sp-r5-add"; cp -R "$R5" "$c"
+r5a="$("$c/bin/handoff.sh" add --from backend --to qa --changed x --needed y t)" || fail "criterion 15: add exited non-zero"; r5a="${r5a%% *}"
+r5check "$c" add "handoffs: $r5a t" "$(printf '+\n+### %s: t\n+- From: backend -> To: qa\n+- Status: open (%s)\n+- Changed: x\n+- Needed: y\n+- Depends on: none' "$r5a" "$(date +%F)")"
+# The other role's line is a whole entry never committed: record writes the verdict on disk, commits nothing, names no command.
+c="$T/sp-r5-new"; cp -R "$R5" "$c"; r5a="H-$(date +%Y%m%d)-99"
+printf '\n### %s: by hand\n- From: backend -> To: qa\n- Status: open (%s)\n- Changed: x\n- Needed: y\n- Depends on: none\n' "$r5a" "$(date +%F)" >> "$c/HANDOFFS.md"
+n="$(git -C "$c" rev-parse HEAD)"
+o="$("$c/bin/handoff.sh" record "$r5a" --role qa BLOCK --commits none --note specs/qa/n.md)" || fail "criterion 15: record on an uncommitted entry exited non-zero"
+[[ "$o" == *"not committed"* && "$o" != *"git add"* && "$o" != *"git commit"* && "$(git -C "$c" rev-parse HEAD)" == "$n" ]] || fail "criterion 15: record on an uncommitted entry: $o"
+grep -A7 "^### $r5a:" "$c/HANDOFFS.md" | grep -qxF -- "- Verdict: qa BLOCK $(date +%F) none specs/qa/n.md" || fail "criterion 15: record on an uncommitted entry did not write its verdict"
 # Criterion 19 (Rule 11): project settings that can loosen the rules, in a repo the workspace lists: a note for
 # each, naming the file and the tool, no FIX; the same files in a folder outside the workspace and repos.tsv: nothing.
 local SR="$T/sp-repo" SX="$T/sp-outside"
