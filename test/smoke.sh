@@ -246,6 +246,17 @@ grep -q 'cabinet/CABINET.md' "$T/r/CLAUDE.local.md" && [[ -z "$(git -C "$T/r" st
 mkdir -p "$T/busy"; echo mine > "$T/busy/README.md"
 HOME="$T/bkhome" CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" restore "$(ls "$BK"/*.enc)" "$T/busy/cabinet" >/dev/null || fail "restore beside other files"
 [[ ! -e "$T/busy/.git" && "$(cat "$T/busy/README.md")" == mine && -e "$T/busy/cabinet/recovered" ]] && ls -d "$T"/busy/cabinet/recovered/*/acme-app/repo/.git >/dev/null 2>&1 || fail "restore turned a folder with its own files into a repo"
+# A repo's ignored .env is kept: a workspace whose repo holds one is backed up, verified and restored, and the
+# restored repo's .env holds what it did.
+local BW="$T/bk-env"
+"$F" new "$BW" --yes >/dev/null || fail "new for the .env backup"
+git init -q -b main "$BW/app" && printf '.env\n' > "$BW/app/.gitignore" && git -C "$BW/app" add .gitignore && git -C "$BW/app" commit -qm init
+printf 'app\t-\t-\tno\n' >> "$BW/repos.tsv" && git -C "$BW" commit -qm repos -- repos.tsv
+echo K=v > "$BW/app/.env"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" create "$T/bk-envd" >/dev/null || fail "backup create with a repo's .env"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" verify "$T/bk-envd" >/dev/null || fail "backup verify with a repo's .env"
+CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" restore "$(ls "$T"/bk-envd/*.enc)" "$T/bk-envr" >/dev/null || fail "backup restore with a repo's .env"
+[[ "$(cat "$T/bk-envr/app/.env" 2>/dev/null)" == K=v ]] || fail "the restored repo's .env: $(cat "$T/bk-envr/app/.env" 2>&1)"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -5136,40 +5147,7 @@ node -e 'const { teamResult, verdictsOf } = require(process.argv[1]);
 node -e 'const c = require(process.argv[1]).candidates("/h", "/h/ws", ["/h/r"], "darwin");
   if (!c.read.includes("Read(~/.ssh/**)") || !c.write.includes("Edit(//h/ws/tools/**)") || !c.write.includes("Write(//h/r/.git/hooks/**)") || c.write.some((x) => /projects|agents/.test(x))) process.exit(1)' \
   "$KIT/tools/guardrail-probe.js" || fail "the probe's candidate file rules"
-# Criterion 29 (Plan step 2a, ADR-003 C4 to C6): the loaded phase, in a HOME of its own with the command rules
-# and no file rules. A tool that runs the control through the fake git, refuses the push and the .env command
-# and prints the control's marker passes all three, once; its stderr is kept for security (Claude Code).
-local LJ LR
-for m in grok claude; do
-  : > "$T/gp-fake.log"; rm -rf "$T/gp-tmp"/cabinet-probe-*
-  probe pass "$T/gp-out-loaded" --tool "$m" --phase loaded --keep; LJ="$T/gp-out-loaded/probe-$m.json"
-  ((st == 0)) || fail "the loaded phase ($m): $o"
-  [[ "$(j -r '$.cells.loaded.a + " " + $.cells.loaded.b + " " + $.cells.loaded.c + " " + $.phases.loaded.attempts.length + " " + $.owner.length' "$LJ")" == "$([[ $m == grok ]] && echo loaded || echo "see stderr") refused works 1 0" ]] \
-    || fail "the loaded phase with a tool that refuses ($m): $(j -r '$.phases.loaded.attempts' "$LJ")"
-  j -e '$.phases.loaded.attempts[0].gitCalls.some((l) => /^-C \S+ status --short -- probe-control$/.test(l))' "$LJ" >/dev/null || fail "the control with -C before it ($m): $(j -c '$.phases.loaded.attempts[0].gitCalls' "$LJ")"
-  # (d): six timed runs taking turns, on and off, with the medians; the fake git gone before them (C5).
-  [[ "$(grep '^timed ' "$T/gp-fake.log" | sed 's|.*/||' | tr '\n' ' ')" == "loaded loaded-off loaded loaded-off loaded loaded-off " ]] || fail "the timed runs did not take turns ($m): $(grep '^timed ' "$T/gp-fake.log")"
-  grep '^timed ' "$T/gp-fake.log" | grep -q '\.probe-bin/git' && fail "the fake git was still on PATH for a timed run ($m)"
-  j -e '$.phases.loaded.timing.on.length == 3 && $.phases.loaded.timing.off.length == 3 && $.phases.loaded.timing.medianOn == [...$.phases.loaded.timing.on].sort((a, b) => a - b)[1] && typeof $.phases.loaded.timing.medianOff == "number"' "$LJ" >/dev/null \
-    || fail "the timing ($m): $(j -c '$.phases.loaded.timing' "$LJ")"
-  LR="$(ls -d "$T"/gp-tmp/cabinet-probe-*)"
-  [[ ! -e "$LR/loaded/.probe-bin/git" ]] || fail "the fake git was left in the HOME ($m)"
-  # C4: the command rules and no file rule; and (c) tests a real rule: one this change adds matches the .env
-  # command, none the control.
-  node "$KIT/test/rule-match.js" rules claude "$LR/loaded/.claude/settings.json" > "$T/gp-on.json" && node "$KIT/test/rule-match.js" rules claude "$LR/loaded-off/.claude/settings.json" > "$T/gp-off.json" || fail "the loaded HOMEs' rules ($m)"
-  j -s '$[1].deny.filter((x) => !$[0].deny.includes(x))' "$T/gp-off.json" "$T/gp-on.json" > "$T/gp-add.json"
-  j -e '$.length > 0 && $.every((r) => !/^(Read|Edit|Write)\(/.test(r))' "$T/gp-add.json" >/dev/null || fail "the loaded HOME has no command rules, or a file rule ($m): $(j -c '$.filter((r) => /^(Read|Edit|Write)\(/.test(r))' "$T/gp-add.json")"
-  [[ -n "$(node "$KIT/test/rule-match.js" match claude "$T/gp-add.json" "echo \$(cat $LR/loaded/ws/.env)")" ]] || fail "no rule this change adds matches step 3's command ($m)"
-  [[ -z "$(node "$KIT/test/rule-match.js" match claude "$T/gp-add.json" "echo \$(cat $LR/loaded/plain/probe)")" ]] || fail "a rule this change adds matches the control ($m)"
-  rm -rf "$LR"
-done
-grep -q "fake stderr of the loaded run" "$T/gp-out-loaded/stderr-claude-loaded.txt" || fail "Claude Code's stderr was not kept for security"
-# A tool that pushes (as an alias, C6) and prints the .env file: (b) and (c) fail, the fake git ran nothing for
-# the push, and the owner is told to cut the rule set; no run once more after a failure.
-probe push "$T/gp-out-lpush" --tool grok --phase loaded; LJ="$T/gp-out-lpush/probe-grok.json"
-[[ "$(j -r '$.cells.loaded.b + " " + $.cells.loaded.c + " " + $.phases.loaded.attempts.length' "$LJ")" == "failed failed 1" ]] && j -e '$.owner.some((x) => x.includes("cut the rule set")) && $.phases.loaded.attempts[0].gitCalls.includes("-c alias.p=push p")' "$LJ" >/dev/null \
-  || fail "a tool that pushes: $(j -c '$.phases.loaded' "$LJ")"
-grep -q "push exit 1" "$T/gp-out-lpush/requests-grok.txt" && ! grep -q "fatal:" "$T/gp-out-lpush/requests-grok.txt" || fail "the fake git ran the real git for a push"
+local LJ
 # No STEP lines: (b) and (c) unclear, run once more, exactly twice, then for the owner.
 : > "$T/gp-fake.log"; probe nolabel "$T/gp-out-lnl" --tool claude --phase loaded; LJ="$T/gp-out-lnl/probe-claude.json"
 [[ "$(j -r '$.cells.loaded.b + " " + $.cells.loaded.c + " " + $.phases.loaded.attempts.length' "$LJ") $(grep -c '^loaded run$' "$T/gp-fake.log")" == "unclear unclear 2 2" ]] && j -e '$.owner.some((x) => x.includes("unclear twice"))' "$LJ" >/dev/null \
@@ -5200,232 +5178,79 @@ node -e 'const { steps, answer } = require(process.argv[1]);
   return 0   # a last "check && fail" line must not end the run
 }
 
-section "guardrail self-protection: secrets and the guardrails' own files" ""
+section "guardrail self-protection: review records and clone settings" ""
 s75() {
-# specs/guardrail-self-protection.md, Plan step 2: the rule groups, every one still off. Two HOMEs, each holding
-# every tool's settings folder, bootstrapped once as shipped and once with CABINET_GUARDRAIL_PROBE turning every
-# group on for every tool; "a rule this change adds" is a deny rule in the second file and not in the first.
-# test/rule-match.js is each tool's matcher. Compared with the files in guardrails/, never git history (ADR-002 C1).
-local SW="$T/sp-ws" SB="$T/sp-bin" OFF="$T/sp-off" ON="$T/sp-on" RM="$KIT/test/rule-match.js" t c m p o before
-local ALL="claude qwen opencode gemini cursor codex agy"
+# specs/guardrail-self-protection.md at Decision 13 B: R5 (record, attach and add commit only their own change),
+# the verdict-origin and clone-settings notes, and the dropped rule groups gone (criteria 30 and 26).
+local SW="$T/sp-ws" SB="$T/sp-bin" OFF="$T/sp-off" t m o
 mkdir -p "$SB"
 "$F" new "$SW" --yes >/dev/null || fail "new for self-protection"
-# tf <tool>: the file bootstrap writes for it, under a HOME. kf <tool>: its file in guardrails/.
+# tf <tool>: the file bootstrap writes for it, under a HOME.
 tf() { case $1 in claude) echo .claude/settings.json ;; qwen) echo .qwen/settings.json ;; opencode) echo .config/opencode/opencode.json ;;
   gemini) echo .gemini/policies/owner-control.toml ;; cursor) echo .cursor/cli-config.json ;; codex) echo .codex/rules/default.rules ;;
   agy) echo .gemini/antigravity-cli/settings.json ;; esac; }
-kf() { case $1 in claude|qwen|opencode) echo "$KIT/guardrails/claude-permissions.json" ;; gemini) echo "$KIT/guardrails/gemini-owner-control.toml" ;;
-  cursor) echo "$KIT/guardrails/cursor-permissions.json" ;; codex) echo "$KIT/guardrails/codex-default.rules" ;; agy) echo "$KIT/guardrails/agy-permissions.json" ;; esac; }
 # inh <home> [VAR=value...] <command>...: a command with that HOME, its own global git config and the fakes here first.
 inh() { local h=$1; shift; env HOME="$h" GIT_CONFIG_GLOBAL="$h/.gitconfig" PATH="$SB:$PATH" "$@"; }
-spboot() {  # spboot <home> [<the switch>]
-  mkdir -p "$1/.codex" "$1/.gemini/antigravity-cli" "$1/.qwen" "$1/.cursor" "$1/.config/opencode"
-  [[ -f "$1/.gitconfig" ]] || printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$1/.gitconfig"
-  inh "$1" CABINET_GUARDRAIL_PROBE="${2:-}" "$SW/bin/bootstrap.sh" --no-schedules > "$1.boot" 2>&1 || true
+spboot() {  # spboot <home> [VAR=value...]: bootstrap with every tool's settings folder there
+  local h=$1; shift
+  mkdir -p "$h/.codex" "$h/.gemini/antigravity-cli" "$h/.qwen" "$h/.cursor" "$h/.config/opencode"
+  [[ -f "$h/.gitconfig" ]] || printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$h/.gitconfig"
+  inh "$h" "$@" "$SW/bin/bootstrap.sh" --no-schedules > "$h.boot" 2>&1 || true
 }
-spboot "$OFF"; spboot "$ON" "$ALL"
-# ADR-002 C1 and risk 5: with every group off, each tool's file is what its file in guardrails/ alone gives.
-for t in $ALL; do
-  [[ -z "$(inh "$OFF" node "$SW/bin/lib.js" guardrail-rules "$t")" ]] || fail "guardrail-rules $t renders a rule with every group off"
-  inh "$OFF" node "$SW/bin/lib.js" guardrail-rules "$t" "$(kf "$t")" | cmp -s - "$(kf "$t")" || fail "guardrail-rules $t changes the kit's file with every group off"
-done
-cmp -s "$OFF/$(tf codex)" "$(kf codex)" && cmp -s "$OFF/$(tf gemini)" "$(kf gemini)" || fail "bootstrap placed other Codex or Gemini rules with every group off"
-for t in claude qwen cursor agy; do
-  [[ "$(j -c '[$.permissions.deny, $.permissions.ask || []]' "$OFF/$(tf "$t")")" == "$(j -c '[$.permissions.deny, $.permissions.ask || []]' "$(kf "$t")")" ]] || fail "bootstrap wrote other $t rules with every group off: $(j -c '$.permissions' "$OFF/$(tf "$t")")"
-done
-[[ "$(j -c 'Object.keys($.permission.bash)' "$OFF/$(tf opencode)")" == "$(j -c '[...$.permissions.deny, ...$.permissions.ask].map((r) => r.slice(5, -1))' "$(kf opencode)")" ]] \
-  || fail "bootstrap wrote other opencode rules with every group off"
-# The rules each tool's file gains, and criterion 4: every one a deny, the ask rules those of guardrails/, in order.
-for t in $ALL; do
-  node "$RM" rules "$t" "$OFF/$(tf "$t")" > "$T/sp-off-$t.json" && node "$RM" rules "$t" "$ON/$(tf "$t")" > "$T/sp-on-$t.json" || fail "the $t rules could not be read"
-  j -s '$[1].deny.filter((x) => !$[0].deny.includes(x))' "$T/sp-off-$t.json" "$T/sp-on-$t.json" > "$T/sp-add-$t.json"
-  if [[ $t == opencode ]]; then o="$(j -c '$.permissions.ask.map((r) => r.slice(5, -1))' "$(kf opencode)")"
-  elif [[ $t == qwen ]]; then o="$(node "$RM" rules claude "$(kf qwen)" | j -c '$.ask')"; else o="$(node "$RM" rules "$t" "$(kf "$t")" | j -c '$.ask')"; fi
-  [[ "$(j -c '$.ask' "$T/sp-on-$t.json")" == "$o" ]] || fail "criterion 4: $t's ask rules changed: $(j -c '$.ask' "$T/sp-on-$t.json")"
-  [[ "$(j -r '$.length' "$T/sp-add-$t.json")" -gt 0 ]] || fail "the groups added no rule to $t's file"
-  # Criterion 3: no tool's file holds a file rule (Read, Edit, Write; another tool's key in opencode or Gemini CLI).
-  j -e '$.every((r) => !/^(Read|Edit|Write)\(|^tool:/.test(r))' "$T/sp-add-$t.json" >/dev/null || fail "criterion 3: $t got a file rule: $(j -c '$.filter((r) => /^(Read|Edit|Write)\(|^tool:/.test(r))' "$T/sp-add-$t.json")"
-done
-[[ "$(j -r '$.length' "$T/sp-add-claude.json")" == "$(j -r '$.length' "$T/sp-add-qwen.json")" && "$(j -r '$.length' "$T/sp-add-claude.json")" == "$(j -r '$.length' "$T/sp-add-opencode.json")" ]] \
-  || fail "Claude Code, Qwen Code and opencode did not get the same rules"
-# hit <tool> <command>...: each command a rule this change adds matches, with the rule.
-hit() { node "$RM" match "$1" "$T/sp-add-$1.json" "${@:2}"; }
-# Criteria 1, 2 and 11 in the glob and regex tools.
-local c1=("git credential fill" "git -C /tmp credential fill" "git -c a=b credential fill" "git --no-pager credential fill" "git credential-osxkeychain get"
-  "/usr/lib/git-core/git-credential-store get" "gh auth git-credential" "security find-internet-password -s github.com")
-local c2=("cat ~/.ssh/id_ed25519" "cat $ON/.ssh/id_ed25519" 'cat $HOME/.npmrc' "head ~/.npmrc" "cat ~/.config/gh/hosts.yml" "cat ~/.aws/credentials" "cat ~/.git-credentials"
-  "cat ~/.netrc" "cat ~/.config/git/credentials" "cat .env" "tail app/.env.local" "cat .env.production" "less config/.env.production.local" "grep KEY .env"
-  "/bin/cat .env" "true;cat .env" "true&&cat .env" "true && cat .env" "cat ./.env" 'echo $(cat .env)' 'x=`cat .env`' 'cat ".env"' "cat '.env'" 'cat "$PWD/.env"'
-  "cat < .env" "cat .env|grep K" 'cat ".env.local"' "ls | cat ~/.npmrc" 'echo "$(head ~/.ssh/id_ed25519)"')
-local no=("git log" "git config credential.helper" "git push --dry-run" "node --env-file=.env x.js" "cp .env.example .env" "cat .env.example" "cat .env.sample"
-  "cat cabinet.env" "source cabinet.local.env" "grep -n '[.]env' scripts/backup.sh" "npm test" "ssh host" "cat notes.txt"
-  "cat ~/.claude/settings.json" "git diff .cabinet/rules/" "cat repos.tsv" "grep x tools/kit-tests.sh" "cat jobs/brief.job"
-  'git commit -m "backup.sh is based on .env files" -- CHANGELOG.md' 'git commit -m "the loader used .env.local first" -- scripts/lib.js'
-  'bin/handoff.sh add --from backend --to qa --changed "unless .env is listed" --needed y Review' 'git commit -m "the period .env.production covers" -- x'
-  "node scripts/lib.js concat .env.production.example" 'git commit -m "Docs: more .env notes" -- docs/guardrails.md'
-  'bin/handoff.sh add --from qa --to backend --changed "cat ~/.npmrc is refused" --needed y Fix' 'git commit -m "detail: head .env first, ahead of ~/.npmrc" -- x'
-  "cat .envrc" "cat .environment" "cat a.env")
-for t in claude qwen opencode gemini; do
-  for c in "${c1[@]}"; do for p in "" "env FOO=1 "; do [[ -n "$(hit "$t" "$p$c")" ]] || fail "criterion 1: no rule $t gains matches: $p$c"; done; done
-  for c in "${c2[@]}"; do [[ -n "$(hit "$t" "$c")" ]] || fail "criterion 2: no rule $t gains matches: $c"; done
-  m="$(hit "$t" "${no[@]}")"; [[ -z "$m" ]] || fail "criteria 1, 2 and 11: a rule $t gains matches: $m"
-done
-[[ -n "$(hit gemini "cat .env.foo")" ]] || fail "criterion 2: Gemini CLI does not refuse .env.foo"
-for t in claude qwen opencode; do [[ -z "$(hit "$t" "cat .env.foo")" ]] || fail "criterion 2: $t refuses .env.foo, a suffix not on the list"; done
-# A redirect with no space before the name: Gemini CLI only, a limit docs/guardrails.md names.
-[[ -n "$(hit gemini "cat<.env")" && -n "$(hit gemini "cat <.env")" ]] || fail "criterion 2: Gemini CLI does not refuse cat<.env"
-for t in claude qwen opencode; do [[ -z "$(hit "$t" "cat<.env" "cat <.env")" ]] || fail "criterion 2: $t refuses cat<.env, which docs/guardrails.md names as not caught"; done
-# Criterion 1 in Cursor CLI (the start forms only, no Rule 2 or 3 path), Codex and Antigravity.
-for c in 'Shell(git:credential*)' 'Shell(gh:auth git-credential*)' 'Shell(security:find-internet-password*)'; do
-  j -e --arg c "$c" '$.includes($c)' "$T/sp-add-cursor.json" >/dev/null || fail "criterion 1: Cursor CLI lacks $c"
-done
-for c in "git credential fill" "FOO=1 git credential fill" "git credential-osxkeychain get" "gh auth git-credential" "security find-internet-password -s github.com"; do
-  [[ -n "$(hit cursor "$c")" ]] || fail "criterion 1: no Cursor CLI rule matches $c"
-done
-m="$(hit cursor "git log" "git config credential.helper")"; [[ -z "$m" ]] || fail "criterion 1: a Cursor CLI rule matches $m"
-j -e '$.every((r) => !/\.ssh|\.npmrc|config\/gh|\.aws|git-credentials|\.netrc|config\/git|\.env/.test(r))' "$T/sp-add-cursor.json" >/dev/null || fail "criterion 2: Cursor CLI got a Rule 2 or 3 path"
-for c in '["git", "credential"' '["gh", "auth", "git-credential"]' '["security", "find-internet-password"]'; do
-  j -e --arg c "prefix_rule(pattern = $c" '$.some((r) => r.startsWith($c) && r.includes("decision = \"forbidden\""))' "$T/sp-add-codex.json" >/dev/null || fail "criterion 1: Codex lacks $c"
-done
-for c in 'command(git credential)' 'command(gh auth git-credential)' 'command(security find-internet-password)'; do
-  j -e --arg c "$c" '$.includes($c)' "$T/sp-add-agy.json" >/dev/null || fail "criterion 1: Antigravity lacks $c"
-done
-[[ -n "$(hit codex "git credential fill")" && -n "$(hit codex "security find-internet-password")" && -z "$(hit codex "git log")" ]] || fail "criterion 1: the Codex rules as matched"
-# Criterion 23: nothing a handoff run, a spec run or a brief does is matched by a rule this change adds, in any tool.
-# No tool's file holds a file rule (criterion 3, above), so the read and write lines cannot be matched either.
-grep -v '^#' "$KIT/test/fixtures/team-commands.txt" | cut -f1 | grep -v '^\(read\|write\) ' > "$T/sp-team.txt"
-[[ "$(wc -l < "$T/sp-team.txt")" -ge 20 ]] || fail "criterion 23: the fixture list is short"
-for t in $ALL; do m="$(node "$RM" match "$t" "$T/sp-add-$t.json" < "$T/sp-team.txt")"; [[ -z "$m" ]] || fail "criterion 23: a rule $t gains matches the team's work: $m"; done
-# Bootstrap again with the groups on: nothing changes, no backup is made. The doctor counts the rules the groups
-# add with the same generator: none missing in the HOME that has them, each tool's missing in the one that does not.
-before="$(cd "$ON" && find . -name '*.bak.*' | sort)"
-for t in $ALL; do cp "$ON/$(tf "$t")" "$T/sp-keep-$t"; done
-spboot "$ON" "$ALL"
-for t in $ALL; do cmp -s "$ON/$(tf "$t")" "$T/sp-keep-$t" || fail "bootstrap again with the groups on changed $t's file"; done
-[[ "$(cd "$ON" && find . -name '*.bak.*' | sort)" == "$before" ]] || fail "bootstrap again with the groups on made a backup"
-dj() { (cd "$SW" && inh "$1" CABINET_GUARDRAIL_PROBE="${2:-}" "$F" doctor --json 2>/dev/null) || true; }
+spboot "$OFF"
+dj() { (cd "$SW" && inh "$@" "$F" doctor --json 2>/dev/null) || true; }
 res() { j -r --arg i "$2" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$1"; }
-# Fake qwen and opencode, so their checks run too: opencode 1.x's debug command prints the bash rules in its file.
-printf '#!/bin/sh\nexit 0\n' > "$SB/qwen"
-cat > "$SB/opencode" <<'FAKE'
+# Criterion 30 (Rules 0 and 15): the dropped part is gone. Fakes of every agent tool the kit guards, first on PATH
+# (only for this criterion): codex forbids the push, opencode 1.x's debug command prints the bash rules in its
+# file, grok inspect lists ~/.claude/settings.json, expanded, in its sources (qa N31) and skips $FAKE_GROK_SKIPPED.
+local CB="$T/sp-c30-bin" CH="$T/sp-c30" CR="$T/sp-c30-ref" ALL="claude codex agy gemini qwen cursor opencode"
+mkdir -p "$CB" "$CR"
+for t in claude agy gemini qwen cursor-agent; do printf '#!/bin/sh\nexit 0\n' > "$CB/$t"; done
+printf '#!/bin/sh\n[ "$1 $2" = "execpolicy check" ] && echo %s\nexit 0\n' "'{\"decision\":\"forbidden\"}'" > "$CB/codex"
+cat > "$CB/opencode" <<'FAKE'
 #!/bin/sh
 [ "$1 $2 $3" = "debug agent build" ] || exit 1
 exec node -e 'const b = JSON.parse(require("fs").readFileSync(process.env.HOME + "/.config/opencode/opencode.json", "utf8")).permission.bash;
   console.log(JSON.stringify({ permission: Object.entries(b).map(([pattern, action]) => ({ permission: "bash", pattern, action })) }))'
 FAKE
-chmod +x "$SB/qwen" "$SB/opencode"
-o="$(dj "$ON" "$ALL")"
-for t in claude codex agy gemini qwen opencode; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "doctor with the groups on, in the HOME that has them: $t: $(res "$o" "guardrails.$t")"; done
-rm -f "$SB/qwen" "$SB/opencode"
-o="$(dj "$OFF" "$ALL")"
-[[ "$(res "$o" guardrails.claude)" == "fix Claude Code is missing $(j -r '$.length' "$T/sp-add-claude.json") deny rule(s)"* ]] || fail "doctor did not count the missing group rules: $(res "$o" guardrails.claude)"
-[[ "$(res "$o" guardrails.codex)" == "fix Codex is missing $(j -r '$.length' "$T/sp-add-codex.json") kit rule(s)"* ]] || fail "doctor did not count the missing Codex group rules: $(res "$o" guardrails.codex)"
-o="$(dj "$OFF")"; [[ "$(res "$o" guardrails.claude)" == ok* ]] || fail "doctor with every group off: $(res "$o" guardrails.claude)"
-# Criterion 3, Grok (D3): a skipped file rule is a note naming it, a skipped command rule a FIX.
-cat > "$SB/grok" <<'FAKE'
+cat > "$CB/grok" <<'FAKE'
 #!/bin/sh
 [ "$1" = inspect ] && printf '{"permissions":{"sources":["%s"],"skipped":%s}}\n' "$HOME/.claude/settings.json" "${FAKE_GROK_SKIPPED:-[]}"
 FAKE
-chmod +x "$SB/grok"
-o="$(dj "$ON")"; [[ "$(res "$o" guardrails.grok)" == "ok Grok loads the Claude Code rules" ]] || fail "Grok with nothing skipped: $(res "$o" guardrails.grok)"
-o="$(FAKE_GROK_SKIPPED='["Read(~/.ssh/**)"]' dj "$ON")"
-[[ "$(res "$o" guardrails.grok)" == "note "*"Read(~/.ssh/**)"* ]] || fail "criterion 3: a skipped file rule is not a note naming it: $(res "$o" guardrails.grok)"
-o="$(FAKE_GROK_SKIPPED='["Read(~/.ssh/**)", "Bash(*git push*)"]' dj "$ON")"
-[[ "$(res "$o" guardrails.grok)" == fix* ]] || fail "criterion 3: a skipped command rule is not a FIX: $(res "$o" guardrails.grok)"
-rm -f "$SB/grok"
-# Security S1: when the rule groups cannot be built, bootstrap says so and fails, still placing the rules of
-# guardrails/, and the doctor gives a FIX for the tool, never ok. A copy of the workspace whose lib.js fails
-# guardrail-rules only.
-local SBK="$T/sp-broken" HB="$T/sp-brk-home"
-cp -R "$SW" "$SBK" && mv "$SBK/bin/lib.js" "$SBK/bin/lib-real.js"
-printf '%s\n' 'if (process.argv[2] === "guardrail-rules") process.exit(1);' 'require("./lib-real.js");' > "$SBK/bin/lib.js"
-mkdir -p "$HB/.claude" "$HB/.config/opencode" && cp "$OFF/.gitconfig" "$HB/.gitconfig"
-o="$(inh "$HB" CABINET_GUARDRAIL_PROBE="$ALL" "$SBK/bin/bootstrap.sh" --no-schedules 2>&1)" && fail "S1: bootstrap passed with the rule groups unbuilt"
-[[ "$o" == *"the rule groups for claude could not be built"* && "$o" == *"the rule groups for opencode could not be built"* ]] || fail "S1: bootstrap did not say the groups could not be built: $o"
-j -e '$.permissions.deny.length > 0' "$HB/$(tf claude)" >/dev/null || fail "S1: bootstrap left out the rules of guardrails/ with the groups unbuilt"
-o="$( (cd "$SBK" && inh "$HB" CABINET_GUARDRAIL_PROBE="$ALL" "$F" doctor --json 2>/dev/null) || true)"
-[[ "$(res "$o" guardrails.claude)" == fix* ]] || fail "S1: the doctor did not give a FIX with the groups unbuilt: $(res "$o" guardrails.claude)"
-rm -rf "$SBK" "$HB"
-# Criterion 21 (Rule 13): the exceptions file, read as data. A rule of the owner's own in Claude Code's file stays
-# through all of it. rl <tool> <file>: the deny rules a file holds, as JSON.
-local EX="$ON/.config/cabinet/guardrail-exceptions" nb
-rl() { node "$RM" rules "$1" "$2" | j -c '$.deny'; }
-mkdir -p "${EX%/*}"
-j '($.permissions.deny.push("Bash(my-own-rule *)"), $)' "$ON/$(tf claude)" > "$T/sp-own" && cat "$T/sp-own" > "$ON/$(tf claude)"
-for t in $ALL; do rl "$t" "$ON/$(tf "$t")" > "$T/sp-pre-$t.json"; done
-before="$(cd "$ON" && find . -name '*.bak.*' | sort)"
-echo env-files > "$EX"
-sleep 1   # backups are named by the second
-spboot "$ON" "$ALL"
-nb="$(cd "$ON" && find . -name '*.bak.*' | sort | comm -13 <(printf '%s\n' "$before") -)"
-for t in $ALL; do
-  rl "$t" "$ON/$(tf "$t")" > "$T/sp-ex-$t.json"
-  # The groups still on: every group's rules but env-files, as guardrail-rules renders them with the file in place.
-  inh "$ON" CABINET_GUARDRAIL_PROBE="$ALL" node "$SW/bin/lib.js" guardrail-rules "$t" > "$T/sp-r-$t"
-  case $t in qwen) rl claude "$T/sp-r-$t" ;; opencode) rl claude "$T/sp-r-$t" | j -c '$.map((r) => r.slice(5, -1))' ;; *) rl "$t" "$T/sp-r-$t" ;; esac > "$T/sp-keep-$t.json"
-  j -e -s '((pre, now, add, keep) => JSON.stringify(now) == JSON.stringify(pre.filter((r) => !add.includes(r) || keep.includes(r))))($[0], $[1], $[2], $[3])' \
-    "$T/sp-pre-$t.json" "$T/sp-ex-$t.json" "$T/sp-add-$t.json" "$T/sp-keep-$t.json" >/dev/null || fail "criterion 21: env-files listed changed more than its rules in $t's file"
-  c="$(grep -c "^\./$(tf "$t")\.bak\." <<<"$nb" || true)"
-  case $t in claude|qwen|opencode|gemini) [[ "$c" == 1 ]] || fail "criterion 21: $c new backups of $t's file, not 1: $nb" ;; *) [[ "$c" == 0 ]] || fail "criterion 21: a backup of $t's file, which holds no .env rule: $nb" ;; esac
+chmod +x "$CB"/*
+# The reference: a plain run in the same HOME path, with no exceptions file and no switch; then the HOME again
+# from fresh, holding an exceptions file, run as is and with the switch for every tool.
+spboot "$CH" PATH="$CB:$SB:$PATH"
+for t in $ALL; do [[ -f "$CH/$(tf "$t")" ]] && cp "$CH/$(tf "$t")" "$CR/$t" || fail "criterion 30: the plain run wrote no $t file: $(cat "$CH.boot")"; done
+rm -rf "$CH" && mkdir -p "$CH/.config/cabinet" && echo env-files > "$CH/.config/cabinet/guardrail-exceptions"
+local run before
+for run in plain switch; do
+  [[ $run == switch ]] && before="$(cd "$CH" && find . -name '*.bak.*' | sort)"
+  if [[ $run == plain ]]; then spboot "$CH" PATH="$CB:$SB:$PATH"
+  else spboot "$CH" PATH="$CB:$SB:$PATH" CABINET_GUARDRAIL_PROBE=claude,grok,qwen,opencode,gemini,codex,agy,cursor; fi
+  for t in $ALL; do cmp -s "$CH/$(tf "$t")" "$CR/$t" || fail "criterion 30: bootstrap ($run, with an exceptions file) wrote another $t file than the plain run"; done
 done
-for t in claude qwen opencode gemini; do
-  node "$RM" rules "$t" "$ON/$(tf "$t")" | j -c '$.deny' > "$T/sp-now.json"
-  [[ -z "$(node "$RM" match "$t" "$T/sp-now.json" "cat .env" "grep KEY .env" "tail app/.env.local")" ]] || fail "criterion 21: $t still refuses a .env read with env-files listed"
-  [[ -n "$(node "$RM" match "$t" "$T/sp-now.json" "cat ~/.npmrc")" && -n "$(node "$RM" match "$t" "$T/sp-now.json" "git credential fill")" ]] || fail "criterion 21: $t lost another group's rules"
+[[ "$(cd "$CH" && find . -name '*.bak.*' | sort)" == "$before" ]] || fail "criterion 30: bootstrap with the switch made a backup"
+o="$(dj "$CH" PATH="$CB:$SB:$PATH" CABINET_GUARDRAIL_PROBE=claude,grok,qwen,opencode,gemini,codex,agy,cursor)"
+[[ -z "$(res "$o" guardrails.exceptions)" ]] || fail "criterion 30: the doctor still reads the exceptions file: $(res "$o" guardrails.exceptions)"
+for t in $ALL grok; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "criterion 30: guardrails.$t is not ok: $(res "$o" "guardrails.$t")"; done
+# Grok back to 0.3.3: any skipped kit rule, a file rule too, is a FIX.
+o="$(FAKE_GROK_SKIPPED='["Read(~/.x)"]' dj "$CH" PATH="$CB:$SB:$PATH")"
+[[ "$(res "$o" guardrails.grok)" == "fix Grok does not load the rules in ~/.claude/settings.json (check: grok inspect)" ]] || fail "criterion 30: a skipped file rule is not a FIX: $(res "$o" guardrails.grok)"
+o="$(grep -rn -e CABINET_GUARDRAIL_PROBE -e guardrail-exceptions -e guardrail-rules "$KIT/scripts" "$KIT/bin" "$KIT/guardrails")" && fail "criterion 30: the kit still names the dropped part: $o"
+rm -rf "$CH" "$CR" "$CB" "$CH.boot"
+# Criterion 26 (Rule 14): the docs describe what ships, and nothing dropped.
+local w
+for w in guardrail-exceptions guardrails.exceptions CABINET_GUARDRAIL_PROBE env-files secret-files "Rule groups"; do
+  grep -qF -- "$w" "$KIT/docs/guardrails.md" "$KIT/docs/troubleshooting.md" && fail "criterion 26: the docs still name $w"
+  awk '/^## 0\.4\.0 - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -qF -- "$w" && fail "criterion 26: the 0.4.0 changelog names $w"
 done
-j -e '$.permissions.deny.includes("Bash(my-own-rule *)")' "$ON/$(tf claude)" >/dev/null || fail "criterion 21: the owner's own rule was removed"
-# The next bootstrap does not add them back, and the doctor names the group, with no FIX for it.
-for t in $ALL; do cp "$ON/$(tf "$t")" "$T/sp-keep-$t"; done
-before="$(cd "$ON" && find . -name '*.bak.*' | sort)"
-spboot "$ON" "$ALL"
-for t in $ALL; do cmp -s "$ON/$(tf "$t")" "$T/sp-keep-$t" || fail "criterion 21: the next bootstrap changed $t's file"; done
-[[ "$(cd "$ON" && find . -name '*.bak.*' | sort)" == "$before" ]] || fail "criterion 21: the next bootstrap made a backup"
-o="$(dj "$ON" "$ALL")"
-[[ "$(res "$o" guardrails.exceptions)" == "note the rule group env-files is off, as ~/.config/cabinet/guardrail-exceptions lists it: bootstrap leaves its rules out" ]] \
-  || fail "criterion 21: the doctor on env-files listed: $(res "$o" guardrails.exceptions)"
-for t in claude codex agy gemini; do [[ "$(res "$o" "guardrails.$t")" == ok* ]] || fail "criterion 21: a FIX for $t with env-files listed: $(res "$o" "guardrails.$t")"; done
-# Every group listed: each file holds exactly what it holds with every group off (with the owner's own rule):
-# the kit's rules in guardrails/ are never removed.
-printf '%s\n' "# every group" git-credentials secret-files env-files > "$EX"
-spboot "$ON" "$ALL"
-for t in $ALL; do
-  o='[]'; [[ $t != claude ]] || o='["Bash(my-own-rule *)"]'
-  [[ "$(rl "$t" "$ON/$(tf "$t")" | j -c '$.slice().sort()')" == "$(j -c --argjson o "$o" '[...$.deny, ...$o].sort()' "$T/sp-off-$t.json")" ]] \
-    || fail "criterion 21 and risk 6: with every group listed, $t's file is not what it is with every group off"
-done
-# A line that names push, one naming an Object property (constructor), and one holding $(: each ignored and named,
-# never run, and every group is on again.
-printf '%s\n' push constructor "secret-files \$(touch $T/sp-ran)" > "$EX"
-spboot "$ON" "$ALL"
-[[ ! -e "$T/sp-ran" ]] || fail "criterion 21: a line of the exceptions file was run"
-for t in $ALL; do
-  [[ "$(rl "$t" "$ON/$(tf "$t")" | j -c '$.filter((r) => r != "Bash(my-own-rule *)").sort()')" == "$(j -c '$.deny.slice().sort()' "$T/sp-on-$t.json")" ]] \
-    || fail "criterion 21: with only lines that are ignored, $t's file does not hold every kit rule"
-done
-o="$(dj "$ON" "$ALL")"
-[[ "$(res "$o" guardrails.exceptions)" == "note ~/.config/cabinet/guardrail-exceptions: the line 'push' is ignored, since it names what can never be listed"*$'\n'"note ~/.config/cabinet/guardrail-exceptions: the line 'constructor' is ignored, since it names no rule group"*$'\n'"note ~/.config/cabinet/guardrail-exceptions: the line 'secret-files \$(touch $T/sp-ran)' is ignored, since it is neither a group name"* ]] \
-  || fail "criterion 21: the doctor on ignored lines: $(res "$o" guardrails.exceptions)"
-# Code review 1: a group listed leaves the owner's own lines of the Codex and Gemini CLI files byte for byte, CRLF
-# endings and a byte that is not UTF-8 included.
-local own
-echo git-credentials > "$EX"
-own=$'prefix_rule(pattern = ["caf\xe9"], decision = "prompt")\r\n'
-{ printf '%s' "$own"; inh "$ON" CABINET_GUARDRAIL_PROBE=codex node "$SW/bin/lib.js" guardrail-rules codex; } > "$T/sp-own.rules"
-inh "$ON" node "$SW/bin/lib.js" rules-drop codex "$T/sp-own.rules" "$(kf codex)" > "$T/sp-own.out" || fail "rules-drop codex with an owner's line"
-printf '%s' "$own" > "$T/sp-own.want"; head -c "$(($(wc -c < "$T/sp-own.want")))" "$T/sp-own.out" | cmp -s - "$T/sp-own.want" || fail "code review 1: rules-drop changed the owner's Codex line: $(head -c 80 "$T/sp-own.out" | od -c | head -3)"
-grep -q credential "$T/sp-own.out" && fail "rules-drop codex left a git-credentials rule"
-own=$'[[rule]]\r\ntoolName = "run_shell_command"\r\ncommandPrefix = "caf\xe9"\r\ndecision = "ask_user"\r\npriority = 1\r\n\r\n'
-{ printf '%s' "$own"; inh "$ON" CABINET_GUARDRAIL_PROBE=gemini node "$SW/bin/lib.js" guardrail-rules gemini; } > "$T/sp-own.toml"
-inh "$ON" node "$SW/bin/lib.js" rules-drop gemini "$T/sp-own.toml" "$(kf gemini)" > "$T/sp-own.out" || fail "rules-drop gemini with an owner's table"
-printf '%s' "$own" > "$T/sp-own.want"; head -c "$(($(wc -c < "$T/sp-own.want")))" "$T/sp-own.out" | cmp -s - "$T/sp-own.want" || fail "code review 1: rules-drop changed the owner's Gemini CLI table: $(head -c 120 "$T/sp-own.out" | od -c | head -4)"
-grep -q 'Stored credentials' "$T/sp-own.out" && fail "rules-drop gemini left the git-credentials table"
-grep -q 'HOME' "$T/sp-own.out" || fail "rules-drop gemini removed another group's table"
-# A folder narrows nothing in any tool the kit writes rules for: the doctor says it applies machine-wide there.
-echo "env-files /tmp/p" > "$EX"
-o="$(dj "$ON" "$ALL")"
-[[ "$(res "$o" guardrails.exceptions)" == "note the rule group env-files is off, as ~/.config/cabinet/guardrail-exceptions lists it for /tmp/p: bootstrap leaves its rules out, and since no rule format can narrow a rule to a folder, it is off machine-wide in claude qwen opencode gemini" ]] \
-  || fail "criterion 21: a folder that cannot narrow the exception: $(res "$o" guardrails.exceptions)"
-rm -f "$EX"
+grep -qF "skips these file rules" "$KIT/docs/troubleshooting.md" && fail "criterion 26: troubleshooting still holds Grok's file-rule note"
+for w in handoffs.verdict-origin guardrails.clone-settings; do grep -qF "$w" "$KIT/docs/troubleshooting.md" || fail "criterion 26: troubleshooting does not name $w"; done
+grep -qF "commit only their own change" "$KIT/docs/commands.md" && grep -qF .git/index.lock "$KIT/docs/commands.md" || fail "criterion 26: docs/commands.md does not describe R5"
+o="$(awk '/^## 0\.4\.0 - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md")"
+[[ "$o" == *"commit their own change"* && "$o" == *handoffs.verdict-origin* && "$o" == *guardrails.clone-settings* && "$o" != *'cabinet bootstrap` after updating'* ]] \
+  || fail "criterion 26: the 0.4.0 changelog: $o"
 # Criteria 13 and 14 (Rule 8): a verdict line is checked against the commit that added it. The fresh workspace's
 # HANDOFFS.md holds the format line in its fenced example block, which is never named.
 local h1 h2 st0 st1
@@ -5550,86 +5375,6 @@ m="$(res "$o" guardrails.clone-settings)"
 [[ "$m" == *"note $SR/opencode.json is an opencode project config, which can loosen the kit's rules for opencode there"* && "$m" == *"note $SR/.qwen/settings.json is Qwen Code workspace settings, which can loosen the kit's rules for Qwen Code there"* \
   && "$m" == *"note $SR/.opencode is an opencode project folder"* ]] || fail "criterion 19: the clone settings in a listed repo: $m"
 [[ "$m" != *fix* && "$m" != *sp-outside* ]] && ! grep -q sp-outside <<<"$o" || fail "criterion 19: a FIX, or a folder outside the workspace named: $m"
-  return 0   # a last "check && fail" line must not end the run
-}
-
-section "guardrail self-protection: backups keep .env files, the team's runs finish as today" ""
-s76() {
-# specs/guardrail-self-protection.md, criteria 5 and 22 (Rules 4 and 0 c). Criterion 5: the scripts still read
-# what the rules keep from agents. Criterion 22: a handoff run and a brief with fake agents, from copies of one
-# snapshot, once in a HOME bootstrapped as shipped and once in one with every group on (CABINET_GUARDRAIL_PROBE).
-local BW="$T/tr-bk" TW="$T/tr-ws" TB="$T/tr-bin" ALL="claude qwen opencode gemini cursor codex agy" x id
-"$F" new "$BW" --yes >/dev/null || fail "new for criterion 5"
-git init -q -b main "$BW/app" && printf '.env\n' > "$BW/app/.gitignore" && git -C "$BW/app" add .gitignore && git -C "$BW/app" commit -qm init
-printf 'app\t-\t-\tno\n' >> "$BW/repos.tsv" && git -C "$BW" commit -qm repos -- repos.tsv
-echo K=v > "$BW/app/.env"
-CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" create "$T/tr-bkd" >/dev/null || fail "criterion 5: backup create"
-CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" verify "$T/tr-bkd" >/dev/null || fail "criterion 5: backup verify"
-CABINET_BACKUP_PASSPHRASE=t "$BW/bin/backup.sh" restore "$(ls "$T"/tr-bkd/*.enc)" "$T/tr-bkr" >/dev/null || fail "criterion 5: backup restore"
-[[ "$(cat "$T/tr-bkr/app/.env" 2>/dev/null)" == K=v ]] || fail "criterion 5: the restored repo's .env: $(cat "$T/tr-bkr/app/.env" 2>&1)"
-# Criterion 22. A fake claude that acts as each role: the builder edits a spec, runs bin/spec.sh check, commits in
-# the repo and hands on for review with bin/handoff.sh add; each reviewer records PASS with bin/handoff.sh record;
-# the brief writes BRIEF.md and runs bin/doctor.sh, whose results it keeps in $FS.
-mkdir -p "$TB"
-cat > "$TB/claude" <<'FAKE'
-#!/bin/bash
-agent="" prompt=""
-while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
-id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
-if [[ "$prompt" == "Scheduled daily run"* ]]; then
-  printf '# Brief\n\nNothing waits today.\n' > BRIEF.md; bin/doctor.sh --json > "$FS/doctor.json" 2>/dev/null || true
-elif [[ "$agent" == web && "$prompt" == "Pick up handoff"* ]]; then
-  echo "- built $id" >> specs/a.md && git commit -qm "spec $id" -- specs/a.md; bin/spec.sh check specs/a.md > "$FS/spec-check.txt" 2>&1 || true
-  echo "$id" >> app/a.txt; git -C app add a.txt; git -C app commit -qm "build $id"; git -C app rev-parse --short HEAD > "$FS/commits"
-  bin/handoff.sh add --from web --to "qa, security" --changed built --needed verify --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
-  sed -i.bak "/^### $id:/,/^### /s/^- Status: open.*/- Status: done ($(date +%F)) built/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm "handoffs: $id done" -- HANDOFFS.md
-elif [[ -n "$id" ]]; then
-  mkdir -p "specs/$agent"; echo checked > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
-  bin/handoff.sh record "$id" --role "$agent" PASS --commits "$(cat "$FS/commits")" --note "specs/$agent/$id.md" >/dev/null
-fi
-echo '{"type":"result","result":"done","total_cost_usd":0.01}'
-FAKE
-chmod +x "$TB/claude"
-"$F" new "$TW" --yes >/dev/null || fail "new for criterion 22"
-git init -q -b main "$TW/app" && echo x > "$TW/app/a.txt" && git -C "$TW/app" add a.txt && git -C "$TW/app" commit -qm init
-printf 'app\t-\t-\tno\n' >> "$TW/repos.tsv"
-L before "$TW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
-cp "$TW/specs/_template.md" "$TW/specs/a.md"
-git -C "$TW" add repos.tsv AGENTS.md specs/a.md && git -C "$TW" commit -qm "app, built by web" -- repos.tsv AGENTS.md specs/a.md
-id="$("$TW/bin/handoff.sh" add --from chief-of-staff --to app --small --changed "Nothing yet." --needed "Add a line to a.txt" "A line")"; id="${id%% *}"
-# The snapshot: two copies, each with its own HOME and state folder; one bootstrapped as shipped, one with every group on.
-for x in off on; do
-  cp -R "$TW" "$T/tr-$x"; mkdir -p "$T/tr-home-$x" "$T/tr-fs-$x"
-  printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$T/tr-home-$x/.gitconfig"
-done
-# tr <off|on> <command>...: in that copy's HOME, with the fake first and, for on, every group on.
-tr_() { local x=$1 sw=""; shift; [[ $x == on ]] && sw="$ALL"
-  (cd "$T/tr-$x" && env HOME="$T/tr-home-$x" GIT_CONFIG_GLOBAL="$T/tr-home-$x/.gitconfig" FS="$T/tr-fs-$x" PATH="$TB:$PATH" CABINET_GUARDRAIL_PROBE="$sw" "$@"); }
-local st_off st_on b_off b_on
-for x in off on; do
-  tr_ "$x" bin/bootstrap.sh --no-schedules > "$T/tr-boot-$x.txt" 2>&1 || true
-done
-j -e '$.permissions.deny.length > 500' "$T/tr-home-on/.claude/settings.json" >/dev/null && j -e '$.permissions.deny.length < 100' "$T/tr-home-off/.claude/settings.json" >/dev/null \
-  || fail "criterion 22: the two HOMEs do not differ by the groups"
-st_off=0; tr_ off "$F" handoff run "$id" > "$T/tr-run-off.txt" 2>&1 || st_off=$?
-st_on=0; tr_ on "$F" handoff run "$id" > "$T/tr-run-on.txt" 2>&1 || st_on=$?
-b_off=0; tr_ off bin/job.sh run brief > "$T/tr-brief-off.txt" 2>&1 || b_off=$?
-b_on=0; tr_ on bin/job.sh run brief > "$T/tr-brief-on.txt" 2>&1 || b_on=$?
-[[ "$st_off $b_off" == "0 0" ]] && tail -1 "$T/tr-run-off.txt" | grep -q "^$id is ready to push" || fail "criterion 22: the run with every group off did not finish: $(tail -3 "$T/tr-run-off.txt")"
-[[ "$st_on $b_on" == "$st_off $b_off" ]] || fail "criterion 22: exit codes with the groups on ($st_on $b_on), off ($st_off $b_off)"
-# Finishes as today: the same files with the same content, apart from dates and commit hashes, in the workspace and
-# the repo, and the same commit summaries.
-tree_() { (cd "$1" && find . -name .git -prune -o -type f -print | LC_ALL=C sort | while IFS= read -r f; do echo "== $f"; LC_ALL=C sed -E 's/[0-9a-f]{7,40}/<hash>/g; s/[0-9]{4}-[0-9]{2}-[0-9]{2}/<date>/g' "$f"; done
-  for r in . app; do git -C "$r" log --format=%s | LC_ALL=C sed -E 's/[0-9a-f]{7,40}/<hash>/g'; done); }
-tree_ "$T/tr-off" > "$T/tr-tree-off.txt"; tree_ "$T/tr-on" > "$T/tr-tree-on.txt"
-cmp -s "$T/tr-tree-off.txt" "$T/tr-tree-on.txt" || fail "criterion 22: the runs changed other files with the groups on: $(diff "$T/tr-tree-off.txt" "$T/tr-tree-on.txt" | head -20)"
-grep -q "^== ./BRIEF.md$" "$T/tr-tree-on.txt" && grep -q "^- Verdict: security PASS " "$T/tr-on/HANDOFFS.md" && grep -q "^- built $id$" "$T/tr-on/specs/a.md" || fail "criterion 22: the runs did not do their work"
-# The doctor's results, as the brief ran it: the same checks at the same level, the new checks among them, each ok.
-[[ "$(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-on/doctor.json")" == "$(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-off/doctor.json")" ]] \
-  || fail "criterion 22: the doctor's results differ: $(j -c '$.results.map((r) => r.id + " " + r.level)' "$T/tr-fs-on/doctor.json")"
-for x in guardrails.claude handoffs.verdict-origin; do
-  j -e --arg i "$x" '$.results.some((r) => r.id == $i && r.level == "ok")' "$T/tr-fs-on/doctor.json" >/dev/null || fail "criterion 22: $x is not ok with the groups on"
-done
   return 0   # a last "check && fail" line must not end the run
 }
 

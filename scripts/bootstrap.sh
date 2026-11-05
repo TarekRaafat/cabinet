@@ -16,14 +16,6 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 G="$K/guardrails"
 DRY=0 failures=0 set_schedules=""
-# Each tool's rules: the kit's file plus the rule groups on for it (kit_file), written here. kit_rules <tool>
-# <kit's file>: that file's path; when the groups cannot be built, the kit's file, and bootstrap says so and fails.
-RT="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-rules.XXXXXX")"; trap 'rm -rf "$RT"' EXIT
-kit_rules() {
-  kit_file "$1" "$2" "$RT/$1" && return 0
-  echo "  the rule groups for $1 could not be built (node $LIBJS guardrail-rules $1 failed), so only the rules in $2 go in: run cabinet doctor" >&2
-  return 1
-}
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
@@ -118,21 +110,6 @@ add_rules() {  # add_rules codex|gemini <file> <kit's file>
   fi
   write_into "$f" text cat "$tmp" && echo "  added $n kit rule(s) to $f (a newer kit has them; the file was backed up to $bak)"
   rm -f "$tmp"
-  return 0
-}
-
-# The rule groups listed in the guardrail exceptions file (docs/guardrails.md, "Undoing the guardrails") come
-# out of a tool's file: exactly the strings the kit writes for them, never a rule of guardrails/ or one of
-# yours, after a backup; kit_file then leaves them out, so they are not added back. drop_excepted <tool> <file> <kit's file> json|text
-drop_excepted() {
-  local tool=$1 f=$2 kit=$3 kind=$4 n
-  [[ -f "$f" ]] || return 0
-  [[ "$kind" != json ]] || json_ok "$f" || return 0   # the merge after says why it is left as is
-  n="$(node "$LIBJS" rules-drop "$tool" "$f" "$kit" --count 2>/dev/null)" || { echo "  $f could not be read, so the rule groups in your guardrail exceptions stay in it"; failures=1; return 0; }
-  [[ "$n" == 0 ]] && return 0
-  if ((DRY)); then echo "  would remove $n rule(s) of the groups in your guardrail exceptions from $f, after a backup"; return 0; fi
-  backup "$f"
-  write_into "$f" "$kind" node "$LIBJS" rules-drop "$tool" "$f" "$kit" && echo "  removed $n rule(s) of the groups in your guardrail exceptions from $f (backed up beside it)"
   return 0
 }
 
@@ -287,16 +264,12 @@ else
 fi
 
 echo "== Claude Code"
-drop_excepted claude "$HOME/.claude/settings.json" "$G/claude-permissions.json" json
-kr="$(kit_rules claude "$G/claude-permissions.json")" || failures=1
-merge_permissions "$kr" "$HOME/.claude/settings.json"
+merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
 
 echo "== Codex"
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
-  drop_excepted codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules" text
-  kr="$(kit_rules codex "$G/codex-default.rules")" || failures=1
-  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$kr"
-  else place "$kr" "$HOME/.codex/rules/default.rules"; fi
+  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules"
+  else place "$G/codex-default.rules" "$HOME/.codex/rules/default.rules"; fi
   cfg="$HOME/.codex/config.toml"
   if [[ -f "$cfg" ]] && ! grep -q '^approval_policy' "$cfg"; then
     backup "$cfg"
@@ -311,17 +284,13 @@ fi
 
 echo "== Antigravity CLI (agy)"
 if [[ -d "$HOME/.gemini/antigravity-cli" ]] || command -v agy >/dev/null; then
-  drop_excepted agy "$HOME/.gemini/antigravity-cli/settings.json" "$G/agy-permissions.json" json
-  kr="$(kit_rules agy "$G/agy-permissions.json")" || failures=1
-  merge_permissions "$kr" "$HOME/.gemini/antigravity-cli/settings.json"
+  merge_permissions "$G/agy-permissions.json" "$HOME/.gemini/antigravity-cli/settings.json"
 fi
 
 echo "== Gemini CLI"
 if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
-  drop_excepted gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml" text
-  kr="$(kit_rules gemini "$G/gemini-owner-control.toml")" || failures=1
-  if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$kr"
-  else place "$kr" "$HOME/.gemini/policies/owner-control.toml"; fi
+  if [[ -e "$HOME/.gemini/policies/owner-control.toml" ]]; then add_rules gemini "$HOME/.gemini/policies/owner-control.toml" "$G/gemini-owner-control.toml"
+  else place "$G/gemini-owner-control.toml" "$HOME/.gemini/policies/owner-control.toml"; fi
   g="$HOME/.gemini/settings.json"
   if ! json_ok "$g"; then
     echo "  $g is not plain JSON, or a rewrite would change one of its values, left as is: set context.fileName to [\"AGENTS.md\", \"GEMINI.md\"] by hand"; failures=1
@@ -337,11 +306,9 @@ if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
 fi
 
 echo "== Qwen Code"
-# Same rule format as Claude Code (permissions.deny / ask), so the same rules, with the groups on for Qwen.
+# Same rule format as Claude Code (permissions.deny / ask), so the same rules.
 if [[ -d "$HOME/.qwen" ]] || command -v qwen >/dev/null; then
-  drop_excepted qwen "$HOME/.qwen/settings.json" "$G/claude-permissions.json" json
-  kr="$(kit_rules qwen "$G/claude-permissions.json")" || failures=1
-  merge_permissions "$kr" "$HOME/.qwen/settings.json"
+  merge_permissions "$G/claude-permissions.json" "$HOME/.qwen/settings.json"
 fi
 
 echo "== Cursor CLI"
@@ -351,9 +318,7 @@ echo "== Cursor CLI"
 # editor's agent keeps its command rules in the editor's own settings, which the kit
 # does not change: there only the git push gate applies.
 if [[ -d "$HOME/.cursor" ]] || cursor_bin >/dev/null; then
-  drop_excepted cursor "$HOME/.cursor/cli-config.json" "$G/cursor-permissions.json" json
-  kr="$(kit_rules cursor "$G/cursor-permissions.json")" || failures=1
-  merge_permissions "$kr" "$HOME/.cursor/cli-config.json"
+  merge_permissions "$G/cursor-permissions.json" "$HOME/.cursor/cli-config.json"
 fi
 
 echo "== Grok"
@@ -378,26 +343,22 @@ merge_opencode() {
     mkdir -p "$(dirname "$target")"; echo '{"$schema": "https://opencode.ai/config.json"}' > "$target"
   fi
   # Missing: any kit rule absent, different, or not among the last entries.
-  # The rules go to json as a file: with every rule group on they are longer than Linux lets one argument be.
-  printf '%s\n' "$rules" > "$RT/opencode-bash.json"
-  missing="$(json -s '(($, $r) => ((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
+  missing="$(json --argjson r "$rules" '((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
     : ((tail) => Object.keys($r).filter((k) => tail[k] !== $r[k]).length)(Object.fromEntries(Object.entries(b).slice(-n)))))
-    (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length))($[0], $[1])' "$target" "$RT/opencode-bash.json")"
+    (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length)' "$target")"
   [[ "$missing" == 0 ]] && return 0
   backup "$target"
   if ((DRY)); then echo "  would add or reorder $missing bash rule(s) in $target"; return 0; fi
   # A rule set as one string ("permission": "ask") is the catch-all "*"; the kit's rules go last.
-  write_into "$target" json json -s '(($, $r) => ((p) => ((b) => ({...obj($), permission: {
+  write_into "$target" json json --argjson r "$rules" '((p) => ((b) => ({...obj($), permission: {
       ...Object.fromEntries(Object.entries(p).filter(([k]) => k != "bash")),
       bash: {...Object.fromEntries(Object.entries(b).filter(([k]) => !Object.hasOwn($r, k))), ...$r}}}))
-    (typeof p.bash == "string" ? {"*": p.bash} : obj(p.bash)))(typeof obj($).permission == "string" ? {"*": $.permission} : obj($.permission)))($[0], $[1])' \
-    "$target" "$RT/opencode-bash.json" && echo "  added or reordered $missing bash rule(s) in $target"
+    (typeof p.bash == "string" ? {"*": p.bash} : obj(p.bash)))(typeof obj($).permission == "string" ? {"*": $.permission} : obj($.permission))' \
+    "$target" && echo "  added or reordered $missing bash rule(s) in $target"
   return 0
 }
 if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
-  drop_excepted opencode "$HOME/.config/opencode/opencode.json" "$G/claude-permissions.json" json
-  kr="$(kit_rules opencode "$G/claude-permissions.json")" || failures=1
-  merge_opencode "$kr" "$HOME/.config/opencode/opencode.json"
+  merge_opencode "$G/claude-permissions.json" "$HOME/.config/opencode/opencode.json"
 fi
 
 echo "== Schedules ($SCHEDULER)"

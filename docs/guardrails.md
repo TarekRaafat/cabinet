@@ -73,20 +73,6 @@ Side effects: some harmless commands are refused too, such as an npm script name
 
 **Not caught by any tool's rules:** git config keys in unusual letter case (except in Gemini), an agent editing `.git/config` with its file tools (the doctor reports a repo's own `core.hooksPath` afterwards), an agent removing a repo's row from `repos.tsv` or deleting a workspace's record in the log folder, which takes that repo out of the gate (the workspace's git history shows a `repos.tsv` change; the doctor's `guardrails.claim` shows a missing record), and other ways of faking a terminal.
 
-## Rule groups
-
-Rules added after Cabinet 0.3.3 come in named groups. Bootstrap writes each group into a tool's own rule file from the kit's table (each workspace's `bin/lib.js`), after the rules in `.cabinet/guardrails/`, which stay as they are; `cabinet doctor` counts the same rules. Every rule in a group is a deny, never an ask. No group is switched on yet, so bootstrap places nothing new on this machine.
-
-| Group | Denies | Tools |
-|---|---|---|
-| `git-credentials` | `git credential` (any subcommand), git's credential helpers run by hand, `gh auth git-credential`, `security find-internet-password` | Claude Code, Grok, Qwen Code, opencode and Gemini CLI, also after `git -C <dir>`, `git -c <key>=<value>` and `git --no-pager` and with a helper's full path; Cursor CLI, Codex and Antigravity only where the command starts with `git credential`, `gh auth git-credential` or `security find-internet-password` |
-| `secret-files` | a printing command (`cat`, `head`, `tail`, `less`, `more`, `bat`, `nl`, `strings`, `xxd`, `od`, `hexdump`, `base64`, `grep`, `rg`, `awk`, `sed`) naming `~/.ssh/`, `~/.npmrc`, `~/.config/gh/`, `~/.aws/`, `~/.git-credentials`, `~/.netrc` or `~/.config/git/credentials`, written with `~/`, `$HOME/`, `${HOME}/` or the full path | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
-| `env-files` | a printing command naming a `.env` file as a whole file name (after a space, a `/` or a quote, and `.env` itself followed by the end, a space, a quote, `)`, a backtick, `;`, `|` or `&`): in Gemini CLI `.env` and every `.env.<suffix>` but `.env.example` and `.env.sample`; in the others `.env` and `.env.local`, `.env.development`, `.env.dev`, `.env.production`, `.env.prod`, `.env.staging` and `.env.test`, each also with more after it. `cabinet.env` is never matched | Claude Code, Grok, Qwen Code, opencode, Gemini CLI |
-
-A printing command counts only where a command starts: at the start, right after `;`, `&`, `|`, `(` (so `$(`) or a backtick, or after a `/` (a full path such as `/bin/cat`). So the words of a message are not read as one: `git commit -m "more .env notes"` and a handoff line such as `the loader used .env.local first` are not refused. Prose that itself holds a command start before a printer is: `"; cat .env"`, `"(more .env notes)"` or a backtick before `cat .env`. Give that commit message with `git commit -F <file>`.
-
-Not caught, by design: a printer after another word (`sudo cat .env`, `env X=1 cat .env`, `xargs cat .env`, `time cat .env`), `source .env`, and a program that reads the file itself (`python -c`, a script), as with every rule here. In the glob tools (all but Gemini CLI), a redirect with no space before the name (`cat <.env`, `cat<.env`) is not caught either; `cat < .env` is. `git-credentials` still matches its commands anywhere in a command, quoted prose included.
-
 ## Runs never rewrite
 
 An agent may run a rebase, a local merge or another git action that can be undone only when you ask for it in its session, except an amend of its own newest commit before it is pushed or named in a handoff or verdict ([git actions](concepts.md#git-actions)). In a Cabinet run (a scheduled job, `cabinet handoff run`, `cabinet spec run` or the pipeline, where `CABINET_AGENT` is set) no one is there to ask, so two of the kit's global hooks refuse them:
@@ -116,7 +102,6 @@ These are on the [roadmap](../ROADMAP.md):
 
 The guardrails are shared by every workspace on the machine, so removing a workspace leaves them. To remove them:
 
-- **A rule group** ([Rule groups](guardrails.md#rule-groups)): list its name on a line of `~/.config/cabinet/guardrail-exceptions` (under `$XDG_CONFIG_HOME` when that is set), then run `cabinet bootstrap`. It removes exactly the rules it writes for that group from each tool's file, after the usual backup, never one of the kit's other rules or one of yours, and does not add them back while the line is there. Delete the line and run it again to turn the group back on. The file is read as data, never run. Each line is a group name, or a group name, a space and an absolute folder; no rule format the kit writes can limit a rule to a folder, so a folder still turns the group off machine-wide, and `cabinet doctor` says so. Push, merge, release and publish, the push gate's files and this file itself are no group and can never be listed: such a line, and any line that is not a group name, is ignored, and `cabinet doctor` names it (`guardrails.exceptions`), as it names every group you listed, on every run.
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
 - **The push gate, its helper, the hook stubs, the credit hook and `pre-rebase`:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
 - **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules` (rules bootstrap added later follow the line `# Added by cabinet bootstrap: rules from a newer Cabinet kit`).
