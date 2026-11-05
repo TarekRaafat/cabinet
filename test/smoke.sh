@@ -5480,6 +5480,40 @@ r5check "$c" attach "handoffs: $r5a evidence" "+- Evidence: [e.txt](specs/eviden
 c="$T/sp-r5-add"; cp -R "$R5" "$c"
 r5a="$("$c/bin/handoff.sh" add --from backend --to qa --changed x --needed y t)" || fail "criterion 15: add exited non-zero"; r5a="${r5a%% *}"
 r5check "$c" add "handoffs: $r5a t" "$(printf '+\n+### %s: t\n+- From: backend -> To: qa\n+- Status: open (%s)\n+- Changed: x\n+- Needed: y\n+- Depends on: none' "$r5a" "$(date +%F)")"
+# Another commit made while record commits (a fake git makes it just before save_own's commit): through the real
+# index it is refused, as git refuses any commit while another runs, and goes in when run again, never undone;
+# through an index of its own (no index lock), record fails naming both commits.
+local rg p h rc; rg="$(command -v git)"; mkdir -p "$T/r5-race"
+cat > "$T/r5-race/git" <<RACE
+#!/bin/bash
+if [[ "\$1" == commit && -n "\${GIT_INDEX_FILE:-}" && ! -e r5-raced ]]; then
+  : > r5-raced; echo raced >> specs/other.md
+  if [[ "\$R5_RACE" == own ]]; then
+    GIT_INDEX_FILE=r5-oi "$rg" read-tree HEAD && GIT_INDEX_FILE=r5-oi "$rg" update-index --add specs/other.md && GIT_INDEX_FILE=r5-oi "$rg" commit -qm other
+  else
+    env -u GIT_INDEX_FILE "$rg" commit -qm other -- specs/other.md
+  fi > r5-race.out 2>&1; echo \$? > r5-race.rc
+fi
+exec "$rg" "\$@"
+RACE
+chmod +x "$T/r5-race/git"
+for m in real own; do
+  c="$T/sp-r5-race-$m"; cp -R "$R5" "$c"; printf 'r5-*\n' >> "$c/.git/info/exclude"
+  echo one > "$c/specs/other.md" && git -C "$c" add specs/other.md && git -C "$c" commit -qm other -- specs/other.md
+  n="$(git -C "$c" rev-parse HEAD)"
+  rc=0; o="$(cd "$c" && R5_RACE=$m PATH="$T/r5-race:$PATH" "$c/bin/handoff.sh" record "$r5b" --role qa BLOCK --commits none --note specs/qa/n.md 2>&1)" || rc=$?
+  [[ -f "$c/r5-race.rc" ]] || fail "criterion 15, race $m: the fake git did not run: $o"
+  if [[ $m == real ]]; then
+    [[ $rc == 0 && "$(cat "$c/r5-race.rc")" != 0 && "$(git -C "$c" rev-parse HEAD^)" == "$n" && "$(git -C "$c" show HEAD:specs/other.md)" == one ]] || fail "criterion 15, race through the real index: not refused (rc $rc, $(cat "$c/r5-race.out")): $o"
+    grep -q 'index.lock' "$c/r5-race.out" || fail "criterion 15, race: refused for another reason: $(cat "$c/r5-race.out")"
+    git -C "$c" commit -qm other -- specs/other.md && [[ "$(git -C "$c" show HEAD:specs/other.md)" == "$(printf 'one\nraced')" ]] \
+      && git -C "$c" show HEAD:HANDOFFS.md | grep -qxF -- "- Verdict: qa BLOCK $(date +%F) none specs/qa/n.md" || fail "criterion 15, race: the refused commit could not be run again, or the verdict was undone"
+  else
+    [[ $rc == 1 && "$(cat "$c/r5-race.rc")" == 0 ]] || fail "criterion 15, race through an index of its own: record did not fail (rc $rc): $o"
+    p="$(git -C "$c" rev-parse HEAD^)"; h="$(git -C "$c" rev-parse HEAD)"
+    [[ "$p" != "$n" && "$o" == *"$p"* && "$o" == *"$h"* && "$o" == *undoes* ]] || fail "criterion 15, race through an index of its own: the message does not name both commits: $o"
+  fi
+done
 # The other role's line is a whole entry never committed: record writes the verdict on disk, commits nothing, names no command.
 c="$T/sp-r5-new"; cp -R "$R5" "$c"; r5a="H-$(date +%Y%m%d)-99"
 printf '\n### %s: by hand\n- From: backend -> To: qa\n- Status: open (%s)\n- Changed: x\n- Needed: y\n- Depends on: none\n' "$r5a" "$(date +%F)" >> "$c/HANDOFFS.md"

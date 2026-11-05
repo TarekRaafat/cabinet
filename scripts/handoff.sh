@@ -132,20 +132,35 @@ save() {
 # is. When the change cannot be made on the committed file (its entry is not committed yet), the file
 # is left written and uncommitted, naming no command to run, which would take their lines.
 save_own() {
-  local did=$1 msg=$2 t="$K/handoffs.own" mode b; shift 2
+  local did=$1 msg=$2 t="$K/handoffs.own" mode b h n p il; shift 2
+  # Git's own index lock, taken as git takes it and held until this commit is made: the commit is made
+  # from HEAD as read here, so a commit landing in between would be undone by it. A commit through the
+  # real index meanwhile is refused, as git refuses any while another runs, and can be run again.
+  il="$(git rev-parse --git-path index.lock)"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    ( set -C; : > "$il" ) 2>/dev/null && { ilock="$il"; break; }
+    sleep 1
+  done
+  [[ -n "${ilock:-}" ]] || { echo "$did, but git's index is locked by another command ($il): HANDOFFS.md is written, not committed" >&2; exit 1; }
+  trap '[[ -z "${ilock:-}" ]] || rm -f "$ilock"; rmdir "$lock" 2>/dev/null || true' EXIT
+  h="$(git rev-parse HEAD)"
   rm -rf "$t"; mkdir -p "$t"
-  if ! { git show HEAD:HANDOFFS.md > "$t/head" && git show :HANDOFFS.md > "$t/index" \
+  if ! { git show "$h:HANDOFFS.md" > "$t/head" && git show :HANDOFFS.md > "$t/index" \
       && own_change "$t/head" && own_change "$t/index"; } 2>/dev/null; then
     rm -rf "$t"
     echo "$did, not committed: its entry is not committed yet, so it stays on disk with the other uncommitted lines in HANDOFFS.md."
     exit 0
   fi
-  mode="$(git ls-tree HEAD HANDOFFS.md | cut -d' ' -f1)"
+  mode="$(git ls-tree "$h" HANDOFFS.md | cut -d' ' -f1)"
   b="$(git hash-object -w "$t/head")"
-  GIT_INDEX_FILE="$t/idx" git read-tree HEAD
+  GIT_INDEX_FILE="$t/idx" git read-tree "$h"
   GIT_INDEX_FILE="$t/idx" git update-index --cacheinfo "$mode,$b,HANDOFFS.md"
   (($# == 1)) || GIT_INDEX_FILE="$t/idx" git add -- "${@:2}"
   GIT_INDEX_FILE="$t/idx" git commit -q -m "$msg" || { rm -rf "$t"; echo "$did, but the commit failed (see above); HANDOFFS.md is written" >&2; exit 1; }
+  rm -f "$ilock"; ilock=""
+  # A commit that skips the index lock (one through an index of its own) can still land in between: say so.
+  n="$(git rev-parse HEAD)" p="$(git rev-parse -q --verify HEAD^ || true)"
+  [[ "$p" == "$h" ]] || { rm -rf "$t"; echo "$did and committed as $n, but commit $p was made at the same time and $n is made from the files before it, so it undoes $p's changes (git diff $p $n); HANDOFFS.md is written" >&2; exit 1; }
   b="$(git hash-object -w "$t/index")"
   git update-index --cacheinfo "$mode,$b,HANDOFFS.md"
   (($# == 1)) || git add -- "${@:2}"
