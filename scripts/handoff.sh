@@ -562,9 +562,9 @@ rd="$(readiness)"
 w="$(json -c --arg i "$id" '$[$i] ?? undefined' <<<"$rd")"
 [[ -n "$w" ]] || { echo "$id is not in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # One builder, and work that is ready to build: what the steps start from.
-builder="$(sed -n "/^### $id:/,/^### /s/^- From: .* -> To: //p" HANDOFFS.md | head -1 | sed 's/([^)]*)//g; s/ and /,/g; s/&/,/g' | tr -d '\`' | tr ',' '\n' \
-  | while IFS= read -r x; do x="$(lc "$(printf '%s' "$x" | sed 's/^ *//; s/ *$//')")"; [[ -n "$x" ]] && builds_repos "$x" && echo "$x"; done)"
-[[ -n "$builder" && "$builder" != *$'\n'* ]] || { echo "$id is not work for one builder: run takes a handoff to one repo or builder" >&2; exit 1; }
+# readiness's builder, as spec run reads it (ADR-006).
+builder="$(json -r '$.builder ?? ""' <<<"$w")"
+[[ -n "$builder" ]] || { echo "$id is not work for one builder: run takes a handoff to one repo or builder" >&2; exit 1; }
 has "$(team_roles)" "$builder" || builder="$(owner_of "$builder")"
 [[ -n "$builder" ]] || { echo "$id: no role owns its repo in the team table of AGENTS.md" >&2; exit 1; }
 [[ "$(json -r '$.small' <<<"$w")" == true || -n "$(json -r '$.spec' <<<"$w")" ]] || { echo "$id is neither --small nor --spec: only work that is ready to build is run (.cabinet/rules/ready-to-build.md)" >&2; exit 1; }

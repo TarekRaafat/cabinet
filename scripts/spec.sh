@@ -123,7 +123,7 @@ local lock="$K/run-spec-$name.lock" log="$LOGDIR/run-$name.log"
 if ((dry == 0)); then
   mkdir "$lock" 2>/dev/null || { echo "$spec is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
   out="$(mktemp)"
-  trap 'rmdir "$lock" 2>/dev/null || true; rm -f "$out" "$out.x"' EXIT
+  trap 'rmdir "$lock" 2>/dev/null || true; rm -f "$out"' EXIT
 fi
 SPEND_LABEL="$spec"
 local mark="$LOGDIR/run-spec-$name.stopped"
@@ -167,10 +167,11 @@ while :; do
     say "running $w"
     # Its output, a refusal on stderr too, goes to the screen and this log; the stop names how it ended,
     # or, when it ended before a step (a refusal), its last line.
-    x=0; : >"$out"; { "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} 2>&1 || echo $? > "$out.x"; } | tee -a "$log" "$out"
-    [[ ! -f "$out.x" ]] || { x="$(cat "$out.x")"; rm -f "$out.x"; }
+    # The exit code from PIPESTATUS, never through a file.
+    x=0; : >"$out"; "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} 2>&1 | tee -a "$log" "$out" || x=${PIPESTATUS[0]}
     ((x != 3)) || exit 3   # the cost limit: paused, not stopped
-    ((x == 0)) || { r="$(run_result <"$out")" || r="$(tail -1 "$out")"; stop "$w did not reach ready to push: ${r#Stopped: }, so the rest of $spec waits"; }
+    ((x == 0)) || { r="$(run_result <"$out")" || r="$(tail -1 "$out")"; r="${r#Stopped: }"
+      stop "$w did not reach ready to push, so the rest of $spec waits: ${r:-its run ended with exit $x and printed nothing; see $LOGDIR/run-$w.log}"; }
   done
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
   total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$works" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"

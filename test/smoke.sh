@@ -2252,21 +2252,41 @@ cfgp --budget off --pipeline off >/dev/null; sched; grep -q 'The pipeline is off
 hid() { sed -n "s/^### \(H-[0-9]*-[0-9]*\): $1\$/\1/p" "$PW/HANDOFFS.md"; }
 lw="$(hs add --from product-manager --to chief-of-staff --spec specs/login.md --changed x --needed "Route the login build" "Route login")"; lw="${lw%% *}"
 lq="$(hs add --from product-manager --to qa --spec specs/login.md --changed x --needed "Check the criteria" "Criteria for login")"; lq="${lq%% *}"
-lr="$(hs add --from chief-of-staff --to app --spec specs/login.md --changed x --needed "Add a remember-me box" "Remember me")"; lr="${lr%% *}"
+# Addressed to its builder and a reviewer, the reviewer last: handoff run builds it, as spec run counts it
+# (qa B1: at 78e7d4f handoff run exited 1 with no message).
+lr="$(hs add --from chief-of-staff --to "app, qa" --spec specs/login.md --changed x --needed "Add a remember-me box" "Remember me")"; lr="${lr%% *}"
 "$PW/bin/handoff.sh" list --json | j -e --arg w "$lw" --arg q "$lq" --arg r "$lr" \
   '$.find((h) => h.id == $w).builder === null && $.find((h) => h.id == $q).builder === null && $.find((h) => h.id == $r).builder == "app"' >/dev/null \
   || fail "handoff list --json: builder: $("$PW/bin/handoff.sh" list --json)"
+out="$(run "$lr" --dry-run)" || true; [[ "$out" == "web: builds $lr" ]] || fail "handoff run of a builder handoff that names a reviewer last: $out"
 # A handoff run that stops: spec run's stop says why, and its log holds the run's output, a refusal on
 # stderr too (ADR-006 A). Before, it said "(see above)" with nothing above.
 mkdir "$PW/.cabinet/run-$lr.lock"; rc=0; out="$(srun specs/login.md)" || rc=$?; rmdir "$PW/.cabinet/run-$lr.lock"
 [[ $rc == 1 ]] && ! echo "$out" | grep -qE "$lw|$lq|is not work for one builder" \
-  && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push: $lr is already being run (.*), so the rest of specs/login.md waits$" \
+  && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push, so the rest of specs/login.md waits: $lr is already being run (.*)$" \
   && grep -q "$lr is already being run" "$PL/run-login.log" || fail "spec run's stop on a refusal: $out"
+# A handoff run that ends with no output (here the spec's first): the stop still names its exit code and its
+# log (code-reviewer C3).
+cp "$PW/bin/handoff.sh" "$T/handoff.sh.keep"; printf '#!/bin/bash\nexit 5\n' > "$PW/bin/handoff.sh"
+rc=0; out="$(srun specs/login.md)" || rc=$?; cp "$T/handoff.sh.keep" "$PW/bin/handoff.sh"
+[[ $rc == 1 ]] && echo "$out" | grep -qE "^Stopped: (H-[0-9]+-[0-9]+) did not reach ready to push, so the rest of specs/login.md waits: its run ended with exit 5 and printed nothing; see /.*/pipe/run-H-[0-9]+-[0-9]+\.log$" \
+  || fail "spec run's stop when the run printed nothing: $out"
 touch "$FS/reject"; rc=0; out="$(srun specs/login.md)" || rc=$?; rm -f "$FS/reject"
-[[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push: web sent $lr back (its status line says why), so the rest of specs/login.md waits$" \
+[[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push, so the rest of specs/login.md waits: web sent $lr back (its status line says why)$" \
   && grep -q "Stopped: web sent $lr back" "$PL/run-login.log" || fail "spec run's stop names no reason: $out"
-out="$(srun specs/login.md)" && echo "$out" | tail -1 | grep -q '^specs/login.md is ready to push' && ! echo "$out" | grep -qE "$lw|$lq|$lr" \
+# The exit code never goes through a file (security S1): a file planted beside each temp file, which
+# bash arithmetic would run, is never read.
+mkdir -p "$T/mkt"; rm -f "$T/planted"
+cat > "$T/mkt/mktemp" <<'FAKE'
+#!/bin/bash
+f="$(PATH="$MKT_PATH" mktemp "$@")" || exit 1
+(($#)) || echo "step[\$(touch $MKT_PLANTED)]" > "$f.x"
+echo "$f"
+FAKE
+chmod +x "$T/mkt/mktemp"
+out="$(MKT_PLANTED="$T/planted" MKT_PATH="$PATH" PATH="$T/mkt:$PATH" srun specs/login.md)" && echo "$out" | tail -1 | grep -q '^specs/login.md is ready to push' && ! echo "$out" | grep -qE "$lw|$lq|$lr" \
   || fail "spec run ran a handoff that is no builder's work: $out"
+[[ ! -e "$T/planted" ]] || fail "spec run read an exit code from a file planted beside its temp file"
 # handoff run waits for every review of the work, one filed --spec too, and runs each one's reviewers;
 # a later builder handoff in the spec's chain is no review (ADR-006 B).
 ls="$(hid "Login screen")"; l1="$(hid "Review $ls")"
