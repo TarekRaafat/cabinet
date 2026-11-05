@@ -5522,10 +5522,14 @@ for m in real own; do
       && git -C "$c" show HEAD:HANDOFFS.md | grep -qxF -- "- Verdict: qa BLOCK $(date +%F) none specs/qa/n.md" || fail "criterion 15, race: the refused commit could not be run again, or the verdict was undone"
   else
     [[ $rc == 1 && "$(cat "$c/r5-race.rc")" == 0 ]] || fail "criterion 15, race through an index of its own: record did not fail (rc $rc): $o"
-    p="$(git -C "$c" rev-parse HEAD^)"; h="$(git -C "$c" rev-parse HEAD)"
-    [[ "$p" != "$n" && "$o" == *"$p"* && "$o" == *"$h"* && "$o" == *undoes* ]] || fail "criterion 15, race through an index of its own: the message does not name both commits: $o"
+    p="$(git -C "$c" rev-parse --short HEAD^)"; h="$(git -C "$c" rev-parse --short HEAD)"
+    [[ "$p" != "${n:0:${#p}}" && "$o" == *"commit $p landed"* && "$o" == *"git diff $p $h" ]] || fail "criterion 15, race through an index of its own: the message does not name both commits: $o"
   fi
 done
+# The index lock held past 10 s (left by a git that was stopped): the verdict is written, not committed, the lock named.
+c="$T/sp-r5-lock"; cp -R "$R5" "$c"; : > "$c/.git/index.lock"; h="$(git -C "$c" rev-parse HEAD)"
+rc=0; o="$(cd "$c" && "$c/bin/handoff.sh" record "$r5b" --role qa BLOCK --commits none --note specs/qa/n.md 2>&1)" || rc=$?
+[[ $rc == 1 && "$o" == *"not committed: git's index stayed locked for 10 s"*"index.lock"* && "$(git -C "$c" rev-parse HEAD)" == "$h" && -e "$c/.git/index.lock" ]]   && grep -qxF -- "- Verdict: qa BLOCK $(date +%F) none specs/qa/n.md" "$c/HANDOFFS.md" || fail "criterion 15, a held index lock: rc $rc: $o"
 # The other role's line is a whole entry never committed: record writes the verdict on disk, commits nothing, names no command.
 c="$T/sp-r5-new"; cp -R "$R5" "$c"; r5a="H-$(date +%Y%m%d)-99"
 printf '\n### %s: by hand\n- From: backend -> To: qa\n- Status: open (%s)\n- Changed: x\n- Needed: y\n- Depends on: none\n' "$r5a" "$(date +%F)" >> "$c/HANDOFFS.md"

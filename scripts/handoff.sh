@@ -141,7 +141,7 @@ save_own() {
     ( set -C; : > "$il" ) 2>/dev/null && { ilock="$il"; break; }
     sleep 1
   done
-  [[ -n "${ilock:-}" ]] || { echo "$did, but git's index is locked by another command ($il): HANDOFFS.md is written, not committed" >&2; exit 1; }
+  [[ -n "${ilock:-}" ]] || { echo "$did, not committed: git's index stayed locked for 10 s, by another git command or one that was stopped ($il), so HANDOFFS.md is written and the change is not committed." >&2; exit 1; }
   trap '[[ -z "${ilock:-}" ]] || rm -f "$ilock"; rmdir "$lock" 2>/dev/null || true' EXIT
   h="$(git rev-parse HEAD)"
   rm -rf "$t"; mkdir -p "$t"
@@ -160,7 +160,8 @@ save_own() {
   rm -f "$ilock"; ilock=""
   # A commit that skips the index lock (one through an index of its own) can still land in between: say so.
   n="$(git rev-parse HEAD)" p="$(git rev-parse -q --verify HEAD^ || true)"
-  [[ "$p" == "$h" ]] || { rm -rf "$t"; echo "$did and committed as $n, but commit $p was made at the same time and $n is made from the files before it, so it undoes $p's changes (git diff $p $n); HANDOFFS.md is written" >&2; exit 1; }
+  [[ "$p" == "$h" ]] || { rm -rf "$t"; n="$(git rev-parse --short "$n")" p="$(git rev-parse --short "$p")"
+    echo "$did and committed as $n, but commit $p landed at the same moment and $n undoes its changes. Nothing is lost: $p is still in the history. To see what to put back: git diff $p $n" >&2; exit 1; }
   b="$(git hash-object -w "$t/index")"
   git update-index --cacheinfo "$mode,$b,HANDOFFS.md"
   (($# == 1)) || git add -- "${@:2}"
