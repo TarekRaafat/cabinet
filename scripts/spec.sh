@@ -17,9 +17,10 @@
 #   bin/spec.sh run <spec> [--retries <n>] [--dry-run]
 #       Move a spec that is ready to build until all its work is ready to push, an agent run per step:
 #       chief-of-staff routes it (one handoff per builder, --spec), each builder writes its plan, and
-#       for more than one repo architect reviews the plan; then each of its handoffs is run in order
-#       (bin/handoff.sh run, with --retries). It stops at the first step that does not finish, as
-#       handoff run does. Logged as run-<spec>.log; routing, plans and review are recorded under the
+#       for more than one repo architect reviews the plan; then each of its handoffs to one builder is
+#       run in order (bin/handoff.sh run, with --retries); a routing request or a review filed --spec
+#       is not its work. It stops at the first step that does not finish, as handoff run does, and
+#       says why. Logged as run-<spec>.log; routing, plans and review are recorded under the
 #       spec's path in the spend file, each handoff's runs under its ID.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
@@ -95,7 +96,7 @@ echo "$spec: $role $verdict recorded and committed"
 
 s_run() {
 usage="usage: bin/spec.sh run <spec> [--retries <n>] [--dry-run]"
-local spec="" retries=2 dry=0 routed=0 step=0 st works w r o x c total
+local spec="" retries=2 dry=0 routed=0 step=0 st works w r o x c total out=""
 local -a pass
 pass=()
 while (($#)); do
@@ -121,7 +122,8 @@ local name="${spec#specs/}"; name="${name%.md}"
 local lock="$K/run-spec-$name.lock" log="$LOGDIR/run-$name.log"
 if ((dry == 0)); then
   mkdir "$lock" 2>/dev/null || { echo "$spec is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
-  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  out="$(mktemp)"
+  trap 'rmdir "$lock" 2>/dev/null || true; rm -f "$out" "$out.x"' EXIT
 fi
 SPEND_LABEL="$spec"
 local mark="$LOGDIR/run-spec-$name.stopped"
@@ -135,8 +137,9 @@ agent() {  # agent <role> <what it does> <prompt>
   AGENT=$1 PROMPT=$3
   run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
-# Its work: every handoff filed with --spec for it, not sent back, oldest first (the order routing set).
-work() { readiness | json -r --each --arg s "$spec" 'Object.keys($).filter((k) => $[k].spec == $s && !/^rejected/.test($[k].status_now)).sort()'; }
+# Its work: every handoff filed with --spec for it to one builder, not sent back, oldest first (the order
+# routing set). A routing request or a review filed with --spec is not work for a builder.
+work() { readiness | json -r --each --arg s "$spec" 'Object.keys($).filter((k) => $[k].spec == $s && $[k].builder !== null && !/^rejected/.test($[k].status_now)).sort()'; }
 while :; do
   step=$((step + 1)); ((step <= 20)) || stop "more steps than a spec takes; the owner looks at it"
   works="$(work)"
@@ -162,9 +165,12 @@ while :; do
   for w in $works; do
     if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
     say "running $w"
-    x=0; "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} || x=$?
+    # Its output, a refusal on stderr too, goes to the screen and this log; the stop names how it ended,
+    # or, when it ended before a step (a refusal), its last line.
+    x=0; : >"$out"; { "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} 2>&1 || echo $? > "$out.x"; } | tee -a "$log" "$out"
+    [[ ! -f "$out.x" ]] || { x="$(cat "$out.x")"; rm -f "$out.x"; }
     ((x != 3)) || exit 3   # the cost limit: paused, not stopped
-    ((x == 0)) || stop "$w did not reach ready to push (see above), so the rest of $spec waits"
+    ((x == 0)) || { r="$(run_result <"$out")" || r="$(tail -1 "$out")"; stop "$w did not reach ready to push: ${r#Stopped: }, so the rest of $spec waits"; }
   done
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
   total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$works" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"

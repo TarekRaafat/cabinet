@@ -36,8 +36,8 @@
 #       rejected, in full; the start-of-session read. --json: the same as JSON (id, status, date,
 #       age_days, from, to, title; with a name, each entry's full text too), with its readiness:
 #       verdicts, needs (the reviewers it needs), missing, blocking, stale (a PASS that does not
-#       cover every commit a verdict names), ready (true, false, or null when it needs no review)
-#       and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read).
+#       cover every commit a verdict names), ready (true, false, or null when it needs no review),
+#       builder (the one addressee that builds, else null) and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read).
 #       --ready: only the entries ready for the owner to push.
 #   bin/handoff.sh run <ID> [--retries <n>] [--dry-run]
 #       Move one piece of work (a handoff to one builder, filed --small or --spec) through the steps
@@ -49,7 +49,9 @@
 #       blocking reviewers check again, up to --retries rounds (default 2), and once one reviewer's
 #       BLOCK or CHANGES on the work, counted over every run (blocks in list --json), pass --retries,
 #       it stops for the owner before another round. It decides nothing: it reads the state
-#       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready.
+#       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready:
+#       when every open review of it is (each entry that depends on it, not --small and not to a
+#       builder, --spec or not).
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
 #       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
 #   bin/handoff.sh run --scheduled
@@ -532,7 +534,7 @@ for item in ${items[@]+"${items[@]}"}; do
   if [[ -f "$mark" ]]; then lines+=("- $key: skipped, stopped on $(cut -d' ' -f1 "$mark") for you: $(cut -d' ' -f2- "$mark") Once settled, run it by hand: cabinet ${item%% *} run $key"); continue; fi
   # Chosen outside $( ): bash 3.2 ends a command substitution at a case pattern's ")".
   if [[ "$item" == spec* ]]; then cmd=("$WS/bin/spec.sh" run "$key"); else cmd=("$0" run "$key"); fi
-  last="$("${cmd[@]}" 2>&1 | grep -E '^(Stopped|Paused|.* is ready to push)' | tail -1)" || true
+  last="$("${cmd[@]}" 2>&1 | run_result)" || true
   lines+=("- $key: ${last:-no result; see the log}")
   [[ "$last" != Paused* ]] || break
 done
@@ -544,7 +546,7 @@ report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for on
 h_run() {
 usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
 [[ "${1:-}" != --scheduled ]] || { (($# == 1)) || { echo "--scheduled takes nothing else. usage: bin/handoff.sh run --scheduled" >&2; exit 2; }; h_scheduled; exit $?; }
-local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v r todo x before ag
+local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v vs r todo x before ag
 while (($#)); do
   case "$1" in
     --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; shift 2 ;;
@@ -651,9 +653,12 @@ while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
   w="$(json -c --arg i "$id" '$[$i]' <<<"$rd")"
-  v="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && !$[k].small && $[k].spec == "" && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
-    && !/^(done|rejected)/.test($[k].status_now))' <<<"$rd")"
-  if [[ -z "$v" ]]; then
+  # Its reviews: every open entry that depends on it, not filed --small and not work for a builder (a
+  # later handoff in a spec's chain), --spec or not. Ready only when every one that needs review is.
+  vs="$(json -r --arg i "$id" 'Object.keys($).filter((k) => k != $i && !$[k].small && $[k].builder === null && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
+    && !/^(done|rejected)/.test($[k].status_now)).join(" ")' <<<"$rd")"
+  v="$(json -r --arg v "$vs" '$v.split(" ").find((k) => $[k]?.ready === false)' <<<"$rd")"
+  if [[ -z "$vs" ]]; then
     case "$(json -r '$.status_now' <<<"$w")" in
       rejected*) stop "$builder sent $id back (its status line says why)" ;;
       done*)
@@ -666,12 +671,13 @@ while :; do
     agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done. If it is not ready to build, set $id to rejected with what is missing instead."
     built=1; continue
   fi
-  r="$(json -c --arg v "$v" '$[$v]' <<<"$rd")"
-  if [[ "$(json -r '$.ready' <<<"$r")" == true ]]; then
-    say "$id is ready to push: every reviewer passed $v$(spent). Push it from your terminal; chief-of-staff closes $v once it is pushed."
+  if [[ -z "$v" ]]; then
+    x="$(json -r --arg v "$vs" '$v.split(" ").filter((k) => $[k].ready === true).join(", ")' <<<"$rd")"
+    [[ -n "$x" ]] || stop "${vs// /, } needs no review, so there is nothing to run"
+    say "$id is ready to push: every reviewer passed $x$(spent). Push it from your terminal; chief-of-staff closes $x once it is pushed."
     rm -f "$mark"; exit 0
   fi
-  [[ "$(json -r '$.ready ?? null' <<<"$r")" != null ]] || stop "$v needs no review, so there is nothing to run"
+  r="$(json -c --arg v "$v" '$[$v]' <<<"$rd")"
   if [[ "$(json '$.blocking.length' <<<"$r")" != 0 ]] && ((fixed == 0)); then
     # The loop breaker: a reviewer's BLOCK or CHANGES are counted over every run (blocks, from git's
     # history of HANDOFFS.md), so one past --retries goes to the owner, though this run fixed nothing yet.

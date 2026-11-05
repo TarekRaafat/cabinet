@@ -2247,6 +2247,41 @@ grep -qF -- "- $y: skipped, stopped on $(date +%F) for you: qa has blocked it 3 
 # A spent week, or the runner off: nothing runs.
 cfgp --budget 0.01 >/dev/null; sched; grep -q "budget (\$0.01) is spent, so nothing ran" "$PW/PIPELINE.md" || fail "the runner past the week's budget: $(cat "$PW/PIPELINE.md")"
 cfgp --budget off --pipeline off >/dev/null; sched; grep -q 'The pipeline is off' "$PW/PIPELINE.md" && [[ -f "$PW/jobs/pipeline.job" ]] || fail "the runner off: $(cat "$PW/PIPELINE.md")"
+# spec run's work is only handoffs to one builder (builder in handoff list --json): a routing request
+# and a review, each filed --spec, are not run (ADR-006 A).
+hid() { sed -n "s/^### \(H-[0-9]*-[0-9]*\): $1\$/\1/p" "$PW/HANDOFFS.md"; }
+lw="$(hs add --from product-manager --to chief-of-staff --spec specs/login.md --changed x --needed "Route the login build" "Route login")"; lw="${lw%% *}"
+lq="$(hs add --from product-manager --to qa --spec specs/login.md --changed x --needed "Check the criteria" "Criteria for login")"; lq="${lq%% *}"
+lr="$(hs add --from chief-of-staff --to app --spec specs/login.md --changed x --needed "Add a remember-me box" "Remember me")"; lr="${lr%% *}"
+"$PW/bin/handoff.sh" list --json | j -e --arg w "$lw" --arg q "$lq" --arg r "$lr" \
+  '$.find((h) => h.id == $w).builder === null && $.find((h) => h.id == $q).builder === null && $.find((h) => h.id == $r).builder == "app"' >/dev/null \
+  || fail "handoff list --json: builder: $("$PW/bin/handoff.sh" list --json)"
+# A handoff run that stops: spec run's stop says why, and its log holds the run's output, a refusal on
+# stderr too (ADR-006 A). Before, it said "(see above)" with nothing above.
+mkdir "$PW/.cabinet/run-$lr.lock"; rc=0; out="$(srun specs/login.md)" || rc=$?; rmdir "$PW/.cabinet/run-$lr.lock"
+[[ $rc == 1 ]] && ! echo "$out" | grep -qE "$lw|$lq|is not work for one builder" \
+  && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push: $lr is already being run (.*), so the rest of specs/login.md waits$" \
+  && grep -q "$lr is already being run" "$PL/run-login.log" || fail "spec run's stop on a refusal: $out"
+touch "$FS/reject"; rc=0; out="$(srun specs/login.md)" || rc=$?; rm -f "$FS/reject"
+[[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push: web sent $lr back (its status line says why), so the rest of specs/login.md waits$" \
+  && grep -q "Stopped: web sent $lr back" "$PL/run-login.log" || fail "spec run's stop names no reason: $out"
+out="$(srun specs/login.md)" && echo "$out" | tail -1 | grep -q '^specs/login.md is ready to push' && ! echo "$out" | grep -qE "$lw|$lq|$lr" \
+  || fail "spec run ran a handoff that is no builder's work: $out"
+# handoff run waits for every review of the work, one filed --spec too, and runs each one's reviewers;
+# a later builder handoff in the spec's chain is no review (ADR-006 B).
+ls="$(hid "Login screen")"; l1="$(hid "Review $ls")"
+lb="$(hs add --from web --to api --spec specs/login.md --changed x --needed "Accept a remember flag" --depends-on "$ls" "Remember flag")"; lb="${lb%% *}"
+l2="$(hs add --from web --to qa --spec specs/login.md --changed built --needed "Check the screen against the spec" --depends-on "$ls" --evidence https://example.com/p "Spec check of the screen")"; l2="${l2%% *}"
+out="$(run "$ls" --dry-run)" || true; echo "$out" | grep -qE "^[a-z-]+: verifies $l2$" || fail "handoff run did not count a review filed --spec: $out"
+out="$(run "$ls")" || fail "handoff run with a review filed --spec: $out"
+echo "$out" | grep -qE ": verifies $l2$" && ! echo "$out" | grep -q "$lb" \
+  && echo "$out" | tail -1 | grep -q "^$ls is ready to push: every reviewer passed $l1, $l2[,.]" || fail "handoff run with a --spec review and a builder handoff: $out"
+# Two reviews, the first passed and the second open: not ready to push; the second's reviewers run.
+p="$(work "Add a tooltip")"; out="$(run "$p")" || fail "run for two reviews: $out"
+p1="$(hid "Review $p")"
+p2="$(hs add --from web --to qa --changed built --needed "A second look" --depends-on "$p" --evidence https://example.com/p "Second look")"; p2="${p2%% *}"
+out="$(run "$p" --dry-run)" || true; echo "$out" | grep -qE "^[a-z-]+: verifies $p2$" || fail "ready to push with a review still open: $out"
+out="$(run "$p")" && echo "$out" | tail -1 | grep -q "^$p is ready to push: every reviewer passed $p1, $p2[,.]" || fail "run of a second review: $out"
 sed -i.bak 's/^status: ready/status: draft/' "$PW/specs/login.md" && rm "$PW/specs/login.md.bak" && git -C "$PW" commit -qam draft
 srun specs/login.md >/dev/null && fail "spec run took a draft spec"
 "$F" -C "$PW" remove --yes --force >/dev/null

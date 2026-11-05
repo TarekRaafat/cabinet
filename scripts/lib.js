@@ -277,8 +277,11 @@ function readiness(spend, ...files) {
     let ready = needs.length ? !missing.length && !blocking.length && !stale.length : null, sessionBranch = null;
     if (ready) sessionBranch = onlyOnSession(work);
     if (sessionBranch) ready = false;
+    // The one addressee that builds (a repo, or a role that builds one), else null: work for one builder,
+    // as spec run and handoff run count it (ADR-006).
+    const bs = [...new Set(names(to).filter((n) => builds.has(n)))];
     out[e.id] = {
-      session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
+      builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
       cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
       ready, unread_verdicts: unread,

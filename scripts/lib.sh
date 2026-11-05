@@ -373,6 +373,9 @@ builds_repos() {
       a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (index(names, " " a " ")) print o
     }' "$WS/AGENTS.md" 2>/dev/null | grep -qxF "$n"
 }
+# run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused or ready to
+# push), or nothing; for handoff run --scheduled and spec run.
+run_result() { grep -E '^(Stopped|Paused|.* is ready to push)' | tail -1; }
 # guarded_paths: "<repo>\t<path>" for every path a small task must not touch: the files contracts live
 # in ("Source of truth" in the contracts table of AGENTS.md) and the paths under "Hard to undo", each
 # written as `<repo>/<path>`.
