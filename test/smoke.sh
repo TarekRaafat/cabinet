@@ -5174,6 +5174,12 @@ node -e 'const { steps, answer } = require(process.argv[1]);
   const s = steps("**STEP 1:** a\n## STEP 2: b\nSTEP 4: d"), a = answer("{\"result\":\"STEP 3: x\"}");
   if (s[1].trim() !== "a" || s[2].trim() !== "b" || s[3] !== undefined || s[4].trim() !== "d" || steps(a.text)[3].trim() !== "x" || answer("plain").text !== "plain") process.exit(1)' \
   "$KIT/tools/guardrail-probe.js" || fail "the loaded phase reads its STEP lines"
+# Criterion 31 (Rule 16): the probe stays in the repo, unshipped, with its limits written down. The key words are
+# searched in its header's "Known limits" only, from that line to the end of the comment.
+local p; p="$(cd "$KIT" && npm pack --dry-run --json 2>/dev/null | j -r --each 'Object.values($)[0].files.map((f) => f.path)')"
+[[ -n "$p" ]] && ! grep -qE '^(tools|test)/' <<<"$p" || fail "criterion 31: the package would ship tools/ or test/"
+o="$(awk '/^\/\/ Known limits/ { on = 1 } on && !/^\/\// { exit } on' "$KIT/tools/guardrail-probe.js")"
+for w in "rule groups" "has been denied" key unclear "Claude Code and Grok"; do [[ "$o" == *"$w"* ]] || fail "criterion 31: the probe's Known limits do not say: $w"; done
 "$F" -C "$PW" remove --yes --force >/dev/null 2>&1 || true
   return 0   # a last "check && fail" line must not end the run
 }

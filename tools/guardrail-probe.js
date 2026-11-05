@@ -28,6 +28,19 @@
 // Results in <out>: probe-<tool>.json, probe-<tool>.log, requests-<tool>.txt (each request's output),
 // bootstrap-<tool>-<home>.txt, for the team phase team-<home>.txt and, for Claude Code's loaded phase,
 // stderr-claude-loaded.txt. The temporary root is removed at the end unless --keep.
+//
+// Known limits (written 5 Nov 2026, when the owner chose to ship without the rule groups):
+// (a) The rule groups and the probe switch it relies on (CABINET_GUARDRAIL_PROBE, which bootstrap read to
+//     place the candidate rules) were removed from the kit, so bootstrap now ignores the switch and the
+//     phases that need those rules cannot run until they come back. The code still sets it.
+// (b) Claude Code words a refusal as "Permission to use Bash with command <the command> has been denied.",
+//     which matches none of the words in REFUSED below, so the team phase counts such a refusal as none
+//     and the loaded phase reads it as unclear.
+// (c) How a probe-only key reaches it is undecided: CABINET_PROBE_KEY in the shell is only how it reads
+//     one, not a decided way for the owner to hand it over.
+// (d) The loaded phase's (b) and (c) results read the model's own words (STEP lines, refusal words), so a
+//     tool that words things another way gives unclear, not a result.
+// (e) It covers Claude Code and Grok only; no other agent tool is probed.
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
