@@ -2271,6 +2271,10 @@ cp "$PW/bin/handoff.sh" "$T/handoff.sh.keep"; printf '#!/bin/bash\nexit 5\n' > "
 rc=0; out="$(srun specs/login.md)" || rc=$?; cp "$T/handoff.sh.keep" "$PW/bin/handoff.sh"
 [[ $rc == 1 ]] && echo "$out" | grep -qE "^Stopped: (H-[0-9]+-[0-9]+) did not reach ready to push, so the rest of specs/login.md waits: its run ended with exit 5 and printed nothing; see /.*/pipe/run-H-[0-9]+-[0-9]+\.log$" \
   || fail "spec run's stop when the run printed nothing: $out"
+# The cost limit (exit 3) still pauses spec run, with no stop (security S1).
+printf '#!/bin/bash\nexit 3\n' > "$PW/bin/handoff.sh"
+rc=0; out="$(srun specs/login.md)" || rc=$?; cp "$T/handoff.sh.keep" "$PW/bin/handoff.sh"
+[[ $rc == 3 ]] && ! echo "$out" | grep -q "^Stopped:" || fail "spec run did not pause on exit 3 (exit $rc): $out"
 touch "$FS/reject"; rc=0; out="$(srun specs/login.md)" || rc=$?; rm -f "$FS/reject"
 [[ $rc == 1 ]] && echo "$out" | grep -q "^Stopped: $lr did not reach ready to push, so the rest of specs/login.md waits: web sent $lr back (its status line says why)$" \
   && grep -q "Stopped: web sent $lr back" "$PL/run-login.log" || fail "spec run's stop names no reason: $out"
