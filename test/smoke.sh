@@ -5159,20 +5159,29 @@ act | if [[ "$FAKE_PROBE_MODE" == deny ]]; then tee -a "$HOME/.fake-history"; el
 FAKE
 chmod +x "$PB/$m"; done
 "$F" new "$PW" --yes >/dev/null || fail "new for the probe"
+# The probe refuses a kit copy whose local git settings name an include, an includeIf, extensions, a hooks
+# path or a work tree, and a CI checkout leaves such keys in the kit repo's. So the probe gets a copy of the
+# kit, uncommitted work kept, with those keys dropped from its local settings; the probe's check is unchanged.
+local KC="$T/gp-kit" k
+cp -R "$KIT" "$KC" || fail "the kit copy for the probe"
+git config --file "$KC/.git/config" --name-only --get-regexp '^(core\.hookspath|core\.worktree|include\.path|includeif\..*|extensions\..*)$' 2>/dev/null | sort -u > "$T/gp-kit-keys"
+while read -r k; do
+  git config --file "$KC/.git/config" --unset-all "$k" || fail "dropping $k from the kit copy's git settings"
+done < "$T/gp-kit-keys"
 # The kit as a repo of the workspace, beside it, as the step 3 workspace lists it: its copy is <HOME>/cabinet.
 printf 'cabinet\t-\t-\tno\t../cabinet\n' >> "$PW/repos.tsv"
 # probe <mode> <out> <probe options>...: the probe with the fakes first on PATH; its exit code in $st.
 probe() {
   local mode=$1 out=$2; shift 2; st=0
   o="$(TMPDIR="$T/gp-tmp" PATH="$PB:$PATH" FAKE_PROBE_MODE="$mode" FAKE_PROBE_LOG="$T/gp-fake.log" CABINET_PROBE_KEY="$KEYT" \
-    node "$KIT/tools/guardrail-probe.js" --kit "${PK:-$KIT}" --ws "$PW" --out "$out" --limit 3 "$@" 2>&1)" || st=$?
+    node "$KIT/tools/guardrail-probe.js" --kit "${PK:-$KC}" --ws "$PW" --out "$out" --limit 3 "$@" 2>&1)" || st=$?
 }
 # nokey <text> <path>...: true only when grep ran and found no file holding the text (exit 1, never an error).
 nokey() { local t=$1 s=0; shift; grep -rqF -e "$t" "$@" || s=$?; ((s == 1)); }
 # r <json> <phase> <target> [<via>]: that request's result.
 r() { j -r --arg p "$2" --arg t "$3" --arg v "${4:-}" '$.phases[$p].filter((x) => x.target == $t && (x.via || "") == $v).map((x) => x.result).join(",")' "$1"; }
 PO="$T/gp-out-deny"; probe deny "$PO" --tool grok --phase reads --phase writes --phase deny-continues; PJ="$PO/probe-grok.json"
-((st == 0)) || fail "the probe with a tool that refuses the secret paths: $o $(j -r "\$.keySearch" "$PJ" 2>/dev/null)"
+((st == 0)) || fail "the probe with a tool that refuses the secret paths: $o $(j -r "\$.error || ''" "$PJ" 2>/dev/null) $(j -r "\$.keySearch" "$PJ" 2>/dev/null)"
 # The tools' temporary folder is inside the probe's root, so the key search and the clean-up cover it.
 grep '^tmp=' "$T/gp-fake.log" | grep -qv '/cabinet-probe-[^/]*/home/\.tmp$' && fail "a tool ran with TMPDIR outside the probe's HOME: $(grep '^tmp=' "$T/gp-fake.log" | sort -u)"
 [[ "$(r "$PJ" deny-continues "3 denied step(s), then a write")" == "went on" ]] || fail "a tool that goes on after denied steps: $(j -r '$.phases["deny-continues"]' "$PJ")"
