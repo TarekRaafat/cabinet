@@ -3582,9 +3582,9 @@ git -C "$PB" reset -q --hard "$base"
 echo a > "$PB/app/HANDOFFS.md"; git -C "$PB/app" add HANDOFFS.md; git -C "$PB/app" commit -qm "app HANDOFFS.md"; a1="$(git -C "$PB/app" rev-parse --short HEAD)"
 mkdir -p "$PB/app/notes"; echo a > "$PB/app/notes/n.md"; git -C "$PB/app" add notes/n.md; git -C "$PB/app" commit -qm "app notes/n.md"; a2="$(git -C "$PB/app" rev-parse --short HEAD)"
 pcb; ends app "$a2 is on no handoff"; cl app "$a1" "app HANDOFFS.md" "no handoff" false; cl app "$a2" "app notes/n.md" "no handoff" false
-# Criteria 6 and 7: the docs and the top Unreleased changelog section say so.
+# Criteria 6 and 7: the docs and the 0.4.0 changelog section say so.
 grep -q coordination "$KIT/docs/commands.md" && grep -qF 'specs/adr/' "$KIT/docs/commands.md" || fail "docs/commands.md does not describe push-check's coordination commits"
-awk '/^## .* - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -q coordination || fail "CHANGELOG.md's Unreleased section has no coordination line"
+awk '/^## 0\.4\.0 - / { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -q coordination || fail "CHANGELOG.md's 0.4.0 section has no coordination line"
 "$F" -C "$PB" remove --yes --force >/dev/null 2>&1 || true
 "$F" -C "$PC" remove --yes --force >/dev/null 2>&1 || true
   return 0   # a last "check && fail" line must not end the run
@@ -5390,12 +5390,12 @@ rm -rf "$CH" "$CR" "$CB" "$CH.boot"
 local w
 for w in guardrail-exceptions guardrails.exceptions CABINET_GUARDRAIL_PROBE env-files secret-files "Rule groups"; do
   grep -qF -- "$w" "$KIT/docs/guardrails.md" "$KIT/docs/troubleshooting.md" && fail "criterion 26: the docs still name $w"
-  awk '/^## 0\.4\.0 - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -qF -- "$w" && fail "criterion 26: the 0.4.0 changelog names $w"
+  awk '/^## 0\.4\.0 - / { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -qF -- "$w" && fail "criterion 26: the 0.4.0 changelog names $w"
 done
 grep -qF "skips these file rules" "$KIT/docs/troubleshooting.md" && fail "criterion 26: troubleshooting still holds Grok's file-rule note"
 for w in handoffs.verdict-origin guardrails.clone-settings; do grep -qF "$w" "$KIT/docs/troubleshooting.md" || fail "criterion 26: troubleshooting does not name $w"; done
 grep -qF "commit only their own change" "$KIT/docs/commands.md" && grep -qF .git/index.lock "$KIT/docs/commands.md" || fail "criterion 26: docs/commands.md does not describe R5"
-o="$(awk '/^## 0\.4\.0 - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md")"
+o="$(awk '/^## 0\.4\.0 - / { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md")"
 [[ "$o" == *"commit their own change"* && "$o" == *handoffs.verdict-origin* && "$o" == *guardrails.clone-settings* && "$o" != *'cabinet bootstrap` after updating'* ]] \
   || fail "criterion 26: the 0.4.0 changelog: $o"
 # Criteria 13 and 14 (Rule 8): a verdict line is checked against the commit that added it. The fresh workspace's
