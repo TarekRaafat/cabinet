@@ -3504,6 +3504,88 @@ j -e --arg c1 "$c1" --arg c4 "$c4" '((a) => Object.keys(a).join() == "name,path,
 # In a terminal: ready to push green, not ready red.
 o="$(cd "$PC" && TERM=xterm in_tty "$F" push-check | tr -d '\r')"
 grep -qF "  ${ESC}[32mready to push${ESC}[0m" <<<"$o" && grep -qF "  ${ESC}[31mnot ready${ESC}[0m: detached HEAD" <<<"$o" || fail "push-check's colors: $o"
+# Coordination commits (the workspace's own bookkeeping) need no handoff, in its row only. A second
+# workspace, $PB, has an upstream (a bare clone, its ref set as if pushed) so its row reaches the commit checks.
+local PB="$T/pb" wb2 base k1 h x n k sb a1 a2
+"$F" new "$PB" --yes --roles "qa security code-reviewer design-lead" >/dev/null || fail "new for push-check's coordination tests"
+git clone -q "$T/pc-src" "$PB/app"; printf 'app\t-\t-\tno\n' >> "$PB/repos.tsv"
+mkdir -p "$PB/notes"; echo a > "$PB/notes/a.md"; git -C "$PB" add -f -- repos.tsv notes/a.md; git -C "$PB" commit -qm "coordination setup"
+wb2="$(git -C "$PB" symbolic-ref --short HEAD)"; git clone -q --bare "$PB" "$T/pb-up.git"; git -C "$PB" remote add origin "$T/pb-up.git"
+git -C "$PB" update-ref "refs/remotes/origin/$wb2" HEAD; git -C "$PB" branch -q --set-upstream-to="origin/$wb2"; base="$(git -C "$PB" rev-parse HEAD)"
+# wcm <path> <subject>: one workspace commit changing that one path; prints its short hash.
+wcm() { mkdir -p "$PB/$(dirname "$1")"; echo "$2" >> "$PB/$1"; git -C "$PB" add -f -- "$1"; git -C "$PB" commit -qm "$2"; git -C "$PB" rev-parse --short HEAD; }
+psnap() { local r; for r in "$PB" "$PB/app"; do git -C "$r" for-each-ref; git -C "$r" status --porcelain; done; cksum < "$PB/HANDOFFS.md"; }
+# pcb: push-check in $PB, text into out and JSON into o, each run read-only (criterion 9).
+pcb() {
+  local s; s="$(psnap)"
+  out="$(cd "$PB" && "$F" push-check)" || fail "push-check in $PB: $out"
+  [[ "$(psnap)" == "$s" ]] || fail "push-check changed refs, status or HANDOFFS.md in $PB"
+  o="$(cd "$PB" && "$F" push-check --json)" || fail "push-check --json in $PB: $o"
+  [[ "$(psnap)" == "$s" && ! -e "$PB/.git/FETCH_HEAD" && ! -e "$PB/app/.git/FETCH_HEAD" ]] || fail "push-check --json changed refs, status or HANDOFFS.md, or fetched, in $PB"
+}
+# ends <repo> <why, or empty for ready to push>: the row's last text line and its JSON ready and why; then every commit's shape.
+ends() {
+  local x="  ready to push"; [[ -z "$2" ]] || x="  not ready: $2"
+  [[ "$(tail -1 <<<"$(part "$1")")" == "$x" ]] || fail "push-check's $1 should end '$x':$nl$(part "$1")"
+  j -e --arg n "$1" --arg w "$2" '((r) => $w ? r.ready === false && r.why == $w : r.ready === true && r.why === null)($.repos.find((r) => r.name == $n))' <<<"$o" >/dev/null || fail "push-check --json's $1 should end '$x': $o"
+  # Every commit's keys are hash,subject,handoffs,coordination, and coordination is false outside the workspace's row (4, 5).
+  j -e '$.repos.every((r) => r.commits.every((c) => Object.keys(c).join() == "hash,subject,handoffs,coordination" && (r.name == "workspace" || c.coordination === false)))' <<<"$o" >/dev/null \
+    || fail "push-check's commit keys, or coordination outside the workspace: $o"
+}
+# cl <repo> <hash> <subject> <label> <coordination>: the commit line and its JSON coordination.
+cl() {
+  grep -qxF "  $2 $3 ($4)" <<<"$(part "$1")" || fail "push-check's $1 has no line '  $2 $3 ($4)':$nl$(part "$1")"
+  j -e --arg n "$1" --arg h "$2" --arg v "$5" '$.repos.find((r) => r.name == $n).commits.find((c) => c.hash == $h).coordination === ($v == "true")' <<<"$o" >/dev/null || fail "push-check --json: $2's coordination should be $5: $o"
+}
+# Criterion 1's commits: one per coordination path, then a delete.
+h="$(wcm HANDOFFS.md "coord HANDOFFS.md")"; n="$h"
+for x in BRIEF.md handoffs/archive-2026.md notes/n.md specs/evidence/H-20260101-09/e.md specs/qa/q.md specs/security/s.md specs/reviews/r.md specs/design/d.md specs/adr/a.md; do
+  n+=" $(wcm "$x" "coord $x")"
+done
+git -C "$PB" rm -q notes/n.md; git -C "$PB" commit -qm "coord delete notes/n.md"; n+=" $(git -C "$PB" rev-parse --short HEAD)"; k1="$(git -C "$PB" rev-parse HEAD)"
+# Criterion 1: only coordination commits, on no handoff: the workspace is ready to push.
+pcb; ends workspace ""
+[[ "$(wc -w <<<"$n")" -eq 11 ]] || fail "criterion 1 needs eleven commits: $n"
+for x in $n; do grep -qE "^  $x coord .* \(coordination\)$" <<<"$(part workspace)" || fail "push-check: $x should read (coordination):$nl$(part workspace)"; done
+j -e '((r) => r.commits.length == 11 && r.commits.every((c) => c.coordination === true))($.repos[0])' <<<"$o" >/dev/null || fail "push-check --json: every workspace commit should be coordination: $o"
+# Criterion 2: one more commit that is not coordination holds the row.
+for x in specs/login.md specs/ROADMAP.md AGENTS.md bin/x.sh .cabinet/rules/x.md specs/qa-notes.md notesx/a.md both rename empty merge; do
+  git -C "$PB" reset -q --hard "$k1"
+  case "$x" in
+    both) echo y >> "$PB/HANDOFFS.md"; mkdir -p "$PB/bin"; echo y >> "$PB/bin/x.sh"; git -C "$PB" add -f -- HANDOFFS.md bin/x.sh; git -C "$PB" commit -qm "case both" ;;
+    rename) mkdir -p "$PB/bin"; git -C "$PB" mv notes/a.md bin/a.sh; git -C "$PB" commit -qm "case rename" ;;
+    empty) git -C "$PB" commit -q --allow-empty -m "case empty" ;;
+    merge) git -C "$PB" checkout -q -b side; sb="$(wcm notes/b.md "coord notes/b.md")"; git -C "$PB" checkout -q "$wb2"; git -C "$PB" merge -q --no-ff -m "case merge" side; git -C "$PB" branch -q -D side ;;
+    *) wcm "$x" "case $x" >/dev/null ;;
+  esac
+  k="$(git -C "$PB" rev-parse --short HEAD)"
+  pcb; ends workspace "$k is on no handoff"; cl workspace "$k" "case $x" "no handoff" false
+  [[ "$x" != merge ]] || cl workspace "$sb" "coord notes/b.md" coordination true
+done
+git -C "$PB" reset -q --hard "$k1"
+# Criterion 3: a verdict naming a coordination commit still holds it until its entry is ready.
+cat >> "$PB/HANDOFFS.md" <<HO
+
+### H-20260101-07: Work naming a coordination commit
+- From: backend -> To: qa, security, code-reviewer
+- Status: open (2026-01-01)
+- Changed: x
+- Needed: y
+- Verdict: qa PASS 2026-01-02 $h specs/qa/e7.md
+- Verdict: code-reviewer PASS 2026-01-02 $h specs/reviews/e7.md
+HO
+git -C "$PB" add -f -- HANDOFFS.md; git -C "$PB" commit -qm "coord entries"
+pcb; ends workspace "$h is on H-20260101-07, missing security"; cl workspace "$h" "coord HANDOFFS.md" H-20260101-07 true
+git -C "$PB" reset -q --hard "$k1"
+# Criterion 4: in a product repo, the same paths are not coordination.
+git -C "$PB" reset -q --hard "$base"
+echo a > "$PB/app/HANDOFFS.md"; git -C "$PB/app" add HANDOFFS.md; git -C "$PB/app" commit -qm "app HANDOFFS.md"; a1="$(git -C "$PB/app" rev-parse --short HEAD)"
+mkdir -p "$PB/app/notes"; echo a > "$PB/app/notes/n.md"; git -C "$PB/app" add notes/n.md; git -C "$PB/app" commit -qm "app notes/n.md"; a2="$(git -C "$PB/app" rev-parse --short HEAD)"
+pcb; ends app "$a2 is on no handoff"; cl app "$a1" "app HANDOFFS.md" "no handoff" false; cl app "$a2" "app notes/n.md" "no handoff" false
+# Criteria 6 and 7: the docs and the top Unreleased changelog section say so.
+grep -q coordination "$KIT/docs/commands.md" && grep -qF 'specs/adr/' "$KIT/docs/commands.md" || fail "docs/commands.md does not describe push-check's coordination commits"
+awk '/^## .* - Unreleased/ { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -q coordination || fail "CHANGELOG.md's Unreleased section has no coordination line"
+"$F" -C "$PB" remove --yes --force >/dev/null 2>&1 || true
 "$F" -C "$PC" remove --yes --force >/dev/null 2>&1 || true
   return 0   # a last "check && fail" line must not end the run
 }

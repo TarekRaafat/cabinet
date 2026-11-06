@@ -2083,7 +2083,7 @@ cmd_push_check() {
     rows+="$rn"$'\t'"$rp"$'\n'
   done < <(awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2' "$ws/repos.tsv" 2>/dev/null)
   hs="$("$ws/bin/handoff.sh" list --json 2>/dev/null)" || hs="[]"
-  out="$(REPOS="$rows" HANDOFFS="$hs" node "$LIBJS" push-check)" || die "could not read the repos' git state"
+  out="$(REPOS="$rows" HANDOFFS="$hs" WS="$ws" node "$LIBJS" push-check)" || die "could not read the repos' git state"
   if ((json)); then printf '%s\n' "$out"; return 0; fi
   # Styled (platform.sh): repo names bold, hashes, IDs and folders dim, ready to push green, not ready red;
   # commit subjects and the rest of the project's text through term_text first.
@@ -2092,7 +2092,7 @@ cmd_push_check() {
   local kind a b c d e f g h
   echo "${S_B}Ready to push, per repo${S_Z} ${S_D}($(printf '%s' "${ws/#$HOME/$TILDE}" | term_text))${S_Z}${S_B}:${S_Z}"
   json -r --arg hs "$hs" '((hs) => $.repos.flatMap((r) => [["R", r.name, r.path, r.branch ?? "-", r.upstream ?? "-", r.commits.length, r.files, r.insertions, r.deletions],
-      ...r.commits.map((c) => ["C", c.hash, c.handoffs.join(" ") || "-", c.subject]),
+      ...r.commits.map((c) => ["C", c.hash, c.handoffs.join(", ") || (c.coordination ? "coordination" : "no handoff"), c.subject]),
       ...[...new Set(r.commits.flatMap((c) => c.handoffs))].map((i) => ((e) => ["H", i, e.ready === true ? "ready" : [["missing", e.missing], ["blocking", e.blocking], ["stale", e.stale]]
         .filter(([, x]) => x.length).map(([k, x]) => k + " " + x.join(", ")).join("; ") || (e.ready === null ? "needs no review" : "not ready")])(hs.find((h) => h.id == i))),
       ["E", r.ready, r.why ?? "-"]]).map((l) => l.map((x) => String(x).replace(/[\t\n]/g, " ")).join("\t")).join("\n"))(JSON.parse($hs))' <<<"$out" | term_text \
@@ -2101,7 +2101,7 @@ cmd_push_check() {
       R) echo; echo "${S_B}$a${S_Z} ${S_D}(${b/#$HOME/$TILDE})${S_Z}"
          if [[ "$c" != - && "$d" != - ]]; then echo "  Branch $c, upstream $d: $e unpushed commit(s), $f file(s) changed, $g insertion(s), $h deletion(s)"
          elif [[ "$c" != - ]]; then echo "  Branch $c"; fi ;;
-      C) [[ "$b" == - ]] && b="no handoff" || b="${b// /, }"; echo "  ${S_D}$a${S_Z} $c ${S_D}($b)${S_Z}" ;;
+      C) echo "  ${S_D}$a${S_Z} $c ${S_D}($b)${S_Z}" ;;
       H) echo "  ${S_D}$a${S_Z}: $b" ;;
       E) if [[ "$a" == true ]]; then echo "  ${S_G}ready to push${S_Z}"; else echo "  ${S_R}not ready${S_Z}: $b"; fi ;;
     esac

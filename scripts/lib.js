@@ -934,7 +934,10 @@ function changelogRender(width) {
 }
 
 // push-check: what is ready to push, per repo (cabinet push-check). REPOS holds "<name>\t<path>" lines,
-// HANDOFFS what handoff list --json gives. Local refs only: no fetch, nothing written.
+// HANDOFFS what handoff list --json gives, WS the workspace's folder. Local refs only: no fetch, nothing written.
+// In the workspace's row, a coordination commit (not a merge, and every path it changes, at least one,
+// is HANDOFFS.md, BRIEF.md or under one of COORD's folders) needs no handoff; a verdict naming it still counts.
+const COORD = ["handoffs/", "notes/", "specs/evidence/", "specs/qa/", "specs/security/", "specs/reviews/", "specs/design/", "specs/adr/"];
 function pushCheck() {
   const hs = JSON.parse(env("HANDOFFS") || "[]");
   const git = (dir, ...a) => { const r = spawnSync("git", ["-C", dir, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.replace(/\n$/, "") : null; };
@@ -949,16 +952,22 @@ function pushCheck() {
     if (!o.branch) return { ...o, branch: null, why: "detached HEAD" };
     o.upstream = git(p, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
     if (!o.upstream) return { ...o, upstream: null, why: "no upstream: nothing to compare with" };
-    for (const l of (git(p, "log", "--format=%H%x09%h%x09%s", "@{u}..HEAD") || "").split("\n").filter(Boolean)) {
-      const [full, hash, ...s] = l.split("\t");
+    // --no-renames lists both paths of a rename; -z keeps each path as git stores it.
+    const coord = (full, parents) => {
+      if (p !== env("WS") || parents.split(" ").filter(Boolean).length > 1) return false;
+      const ps = (git(p, "diff-tree", "--root", "--no-commit-id", "--no-renames", "-r", "-z", "--name-only", full) || "").split("\0").filter(Boolean);
+      return ps.length > 0 && ps.every((f) => f === "HANDOFFS.md" || f === "BRIEF.md" || COORD.some((d) => f.startsWith(d)));
+    };
+    for (const l of (git(p, "log", "--format=%H%x09%P%x09%h%x09%s", "@{u}..HEAD") || "").split("\n").filter(Boolean)) {
+      const [full, parents, hash, ...s] = l.split("\t");
       const handoffs = hs.filter((e) => e.verdicts.some((v) => v.commits.some((c) => c.length >= 7 && full.startsWith(c)))).map((e) => e.id);
-      o.commits.push({ hash, subject: s.join("\t"), handoffs });
+      o.commits.push({ hash, subject: s.join("\t"), handoffs, coordination: coord(full, parents) });
     }
     const st = git(p, "diff", "--shortstat", "@{u}..HEAD") || "";
     for (const [k, re] of [["files", /(\d+) files? changed/], ["insertions", /(\d+) insertions?/], ["deletions", /(\d+) deletions?/]]) o[k] = Number((st.match(re) || [0, 0])[1]);
     if (!o.commits.length) return { ...o, why: "nothing to push" };
     for (const c of o.commits) {
-      if (!c.handoffs.length) { o.why = c.hash + " is on no handoff"; break; }
+      if (!c.handoffs.length) { if (c.coordination) continue; o.why = c.hash + " is on no handoff"; break; }
       const e = c.handoffs.map((i) => hs.find((h) => h.id === i)).find((h) => h.ready !== true);
       if (e) { o.why = c.hash + " is on " + e.id + ", " + state(e); break; }
     }
