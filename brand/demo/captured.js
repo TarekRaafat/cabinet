@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.3.3).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.4.0).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -114,7 +114,7 @@ var CAPTURED = {
    "<span class=\"b\">Product repos</span>",
    "  <span class=\"green\">ok   </span> product repos checked",
    "<span class=\"b\">Kit and roles</span>",
-   "  <span class=\"green\">ok   </span> cabinet 0.3.3",
+   "  <span class=\"green\">ok   </span> cabinet 0.4.0",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -151,6 +151,7 @@ var CAPTURED = {
    "  <span class=\"green\">ok   </span> every handoff ID is unique",
    "  <span class=\"green\">ok   </span> every verdict is in the verdict format, with its note",
    "  <span class=\"green\">ok   </span> no verdict is written outside a Verdict line",
+   "  <span class=\"green\">ok   </span> every verdict line was written by bin/handoff.sh record or bin/spec.sh record",
    "  <span class=\"green\">ok   </span> every small task that passed stayed small",
    "  <span class=\"green\">ok   </span> every qa PASS has evidence",
    "<span class=\"b\">Critical areas</span>",
@@ -183,7 +184,7 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "               cabinet 0.3.3",
+   "               cabinet 0.4.0",
    "⬤              One person, a whole team.",
    "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
@@ -193,13 +194,13 @@ var CAPTURED = {
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261103-01 filed for qa and committed"
+   "H-20261106-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261103-01 </span>  qa                        Checkout screens ready"
+   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261106-01 </span>  qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -212,7 +213,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.3.3).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.4.0).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",

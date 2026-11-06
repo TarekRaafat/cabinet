@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.4.0 - Unreleased
+## 0.4.0 - 6 Nov 2026
 
 - `cabinet push-check` no longer stops at the workspace's own bookkeeping: a workspace commit that is not a merge and changes only `HANDOFFS.md`, `BRIEF.md`, or files under `handoffs/`, `notes/`, `specs/evidence/`, `specs/qa/`, `specs/security/`, `specs/reviews/`, `specs/design/` or `specs/adr/` needs no handoff, and prints `(coordination)`. Any other workspace commit still needs one, and one a Verdict line names still waits for that handoff. `push-check --json` gives each commit `coordination`, `true` for such a commit; a new field, none is renamed or removed.
 - `cabinet handoff run` says ready to push only when every open review of the work is ready, and runs the reviewers of each one that is not. Before, it looked only at the first open entry that depended on the work, so a task that happened to pass let it say ready to push with another review still open, and a review filed `--spec` never counted. A later builder handoff in a spec's chain is still not a review.
