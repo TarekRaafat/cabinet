@@ -5168,6 +5168,8 @@ git config --file "$KC/.git/config" --name-only --get-regexp '^(core\.hookspath|
 while read -r k; do
   git config --file "$KC/.git/config" --unset-all "$k" || fail "dropping $k from the kit copy's git settings"
 done < "$T/gp-kit-keys"
+# A CI checkout also turns worktree settings on and writes .git/config.worktree; the copy no longer turns them on.
+rm -f "$KC/.git/config.worktree" || fail "dropping config.worktree from the kit copy"
 # The kit as a repo of the workspace, beside it, as the step 3 workspace lists it: its copy is <HOME>/cabinet.
 printf 'cabinet\t-\t-\tno\t../cabinet\n' >> "$PW/repos.tsv"
 # probe <mode> <out> <probe options>...: the probe with the fakes first on PATH; its exit code in $st.
