@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.4.1 - Unreleased
+
+- Backups keep and verify the newest archives by the time in their names, not by when each file was last modified. Before, an older archive touched by a synced drive or a copy counted as newest, so cleanup could delete a newer one, even the archive just written, and `cabinet backup verify` checked an older one. A backup now never deletes the archive it has just written.
+
 ## 0.4.0 - 6 Nov 2026
 
 - `cabinet push-check` no longer stops at the workspace's own bookkeeping: a workspace commit that is not a merge and changes only `HANDOFFS.md`, `BRIEF.md`, or files under `handoffs/`, `notes/`, `specs/evidence/`, `specs/qa/`, `specs/security/`, `specs/reviews/`, `specs/design/` or `specs/adr/` needs no handoff, and prints `(coordination)`. Any other workspace commit still needs one, and one a Verdict line names still waits for that handoff. `push-check --json` gives each commit `coordination`, `true` for such a commit; a new field, none is renamed or removed.

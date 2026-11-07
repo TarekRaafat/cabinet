@@ -13,10 +13,10 @@
 # Passphrase: $CABINET_BACKUP_PASSPHRASE, else the item cabinet.<slug>.backup in the login
 # keychain (macOS) or the secret store (Linux; bin/bootstrap.sh prints how to create it). Keep the
 # same passphrase in your password manager: without it no archive opens.
-# Keeps the newest CABINET_BACKUP_KEEP archives (at least 1) of this workspace
-# only. The folder must be outside the workspace and every repo it lists: a
-# backup next to what it protects is lost with it, and inside a repo it would
-# copy itself into every later archive and could be committed.
+# Keeps the newest CABINET_BACKUP_KEEP archives (at least 1, newest by the time in the name) of
+# this workspace only, and never deletes the one it just wrote. The folder must be outside the
+# workspace and every repo it lists: a backup next to what it protects is lost with it, and inside
+# a repo it would copy itself into every later archive and could be committed.
 # Reads repos; never changes them.
 set -euo pipefail
 usage="usage: bin/backup.sh create [dest-dir] | verify [dest-dir] [--json] | restore <archive> [dir]"
@@ -214,7 +214,8 @@ pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "$KEYCHAIN_ITEM" || true)}"
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # This workspace's archives only: <slug>-YYYYMMDD-HHMMSS.tar.gz.enc exactly, so app never takes app-web's.
-mine() { ls -1t "$dest" 2>/dev/null | grep -E "^${CABINET_SLUG//./\\.}-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$" || true; }
+# Newest first by the time in the name, never by modified time, which a synced drive or a copy changes.
+mine() { ls -1 "$dest" 2>/dev/null | grep -E "^${CABINET_SLUG//./\\.}-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$" | LC_ALL=C sort -r || true; }
 # What the backup holds: "label<TAB>folder<TAB>place in the archive". A shared workspace inside a
 # project has no git of its own: the project's repo holds it.
 targets() {
@@ -365,5 +366,6 @@ tar -C "$tmp" -czf - "$CABINET_SLUG-$stamp" | openssl enc -aes-256-cbc -pbkdf2 -
 mv "$file.part" "$file"
 echo "== Wrote $file ($(du -h "$file" | cut -f1))"
 
-# Only this workspace's archives are removed, never another's in the same folder.
-mine | tail -n +$((CABINET_BACKUP_KEEP + 1)) | while IFS= read -r old; do rm -f "$dest/$old"; done
+# Only this workspace's archives are removed, never another's in the same folder, and never the one
+# just written (an archive named later, from a clock ahead, can outrank it).
+mine | tail -n +$((CABINET_BACKUP_KEEP + 1)) | while IFS= read -r old; do [[ "$dest/$old" == "$file" ]] || rm -f "$dest/$old"; done

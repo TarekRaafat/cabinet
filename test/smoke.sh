@@ -1390,6 +1390,27 @@ HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  the last verified restore wa
 rm "$VH/$LOGS/acme-app/backup-verified"
 HOME="$VH" "$C/bin/doctor.sh" 2>&1 | grep -q 'note  no restore of a backup has been verified on this machine yet' || fail "the doctor missed a missing verify"
 cp "$T/env.bak" "$C/cabinet.env"
+# Archives are ordered by the time in their names, never by modified time (a synced drive, another clock).
+g="$(ls "$VB")"; s="${g%-*-*}"; rm -f "$VB/$g"
+put() { cp -p "$T/good.enc" "$VB/$s-$1.tar.gz.enc"; touch -t "${2:-202601010000}" "$VB/$s-$1.tar.gz.enc"; }
+keep() { sedi "s/^CABINET_BACKUP_KEEP=.*/CABINET_BACKUP_KEEP=$1/" "$C/cabinet.env"; grep -q "^CABINET_BACKUP_KEEP=$1$" "$C/cabinet.env" || echo "CABINET_BACKUP_KEEP=$1" >> "$C/cabinet.env"; }
+wrote() { echo "$1" | sed -n 's|^== Wrote \(.*\) (.*|\1|p'; }
+# K1: KEEP=2, the oldest touched after the others: the next backup keeps the two newest by name.
+put 20260101-000000 209901010000; put 20260102-000000; keep 2
+bk >/dev/null || fail "K1 backup"
+ls "$VB" | grep -q "20260102-000000" && ! ls "$VB" | grep -q "20260101-000000" && [[ "$(ls "$VB" | wc -l | tr -d ' ')" == 2 ]] || fail "K1: cleanup kept the wrong archives: $(ls "$VB")"
+# K2: KEEP=1, an archive modified an hour ahead: the archive just written is kept.
+rm -f "$VB"/*; put 20260101-000000 209901010000; keep 1
+out="$(bk)" || fail "K2 backup"; new="$(wrote "$out")"
+[[ -n "$new" && -f "$new" ]] && ! ls "$VB" | grep -q "20260101-000000" || fail "K2: backup create deleted the archive it wrote: $(ls "$VB")"
+# An archive named later (a clock ahead) outranks it, and still the archive just written is kept.
+rm -f "$VB"/*; put 20990101-000000; out="$(bk)" || fail "K2 later name backup"; new="$(wrote "$out")"
+[[ -n "$new" && -f "$new" && -f "$VB/$s-20990101-000000.tar.gz.enc" ]] || fail "K2: an archive named later made backup create delete its own: $(ls "$VB")"
+# K3: an older archive touched after the newest: verify checks the newest by name.
+rm -f "$VB"/*; put 20260101-000000 209901010000; put 20260102-000000
+out="$(bk verify)" || true
+echo "$out" | grep -q "^Verifying $s-20260102-000000.tar.gz.enc " || fail "K3: verify did not check the newest by name: $(echo "$out" | head -1)"
+rm -f "$VB"/*; cp "$T/env.bak" "$C/cabinet.env"
   return 0   # a last "check && fail" line must not end the run
 }
 

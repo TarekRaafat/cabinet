@@ -1948,7 +1948,7 @@ An encrypted daily archive of everything a lost machine would take with it, and 
 
 It also includes Claude Code's memory for the workspace and `~/.claude/settings.json`. A repo with no commits yet (for example a workspace made without an owner identity) is kept as its files.
 
-Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`, encrypted with AES-256-CBC (PBKDF2, 200000 iterations), readable only by you (mode 600). The newest `CABINET_BACKUP_KEEP` (default 14) of this workspace's archives are kept; another workspace's archives in the same folder are never touched.
+Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`, encrypted with AES-256-CBC (PBKDF2, 200000 iterations), readable only by you (mode 600). The newest `CABINET_BACKUP_KEEP` (default 14) of this workspace's archives are kept, newest by the time in their names, never by when the file was last modified (which a synced drive or a copy changes); the archive a backup has just written is never deleted, and another workspace's archives in the same folder are never touched.
 
 ## Setting it up
 
@@ -1990,7 +1990,7 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 cabinet backup verify      # or bin/backup.sh verify [folder]
 ```
 
-It restores the newest archive of this workspace into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace, each repo and each session it holds it prints one line (a session as `<repo> session <name>`, with its worktree rebuilt on its branch and its changes applied): restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
+It restores the newest archive of this workspace (by the time in its name) into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace, each repo and each session it holds it prints one line (a session as `<repo> session <name>`, with its worktree rebuilt on its branch and its changes applied): restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
 
 
 ========================================================================
@@ -2388,6 +2388,10 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.4.1 - Unreleased
+
+- Backups keep and verify the newest archives by the time in their names, not by when each file was last modified. Before, an older archive touched by a synced drive or a copy counted as newest, so cleanup could delete a newer one, even the archive just written, and `cabinet backup verify` checked an older one. A backup now never deletes the archive it has just written.
 
 ## 0.4.0 - 6 Nov 2026
 
