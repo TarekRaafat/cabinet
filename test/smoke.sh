@@ -2434,6 +2434,16 @@ grep -q "^area=billing handoff=$b commits=$cb args=--fast$" "$CW/specs/evidence/
   && [[ -z "$(git -C "$CW" status --porcelain -- specs HANDOFFS.md)" ]] || fail "the check's output as evidence"
 rec "$b" finance "$cb" >/dev/null || fail "finance PASS"; [[ "$(cj "$b" '$.ready')" == true ]] || fail "work through a critical area is not ready: $(cj "$b" '$')"
 rec "$o" security "$cs" >/dev/null && [[ "$(cj "$o" '$.ready')" == true ]] || fail "work outside the areas needed more"
+# A sender's file named as the check's output is never written over (H-20261103-02), and attach refuses that name.
+v="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --needed y --evidence https://example.com/v "Void")"; v="${v%% *}"
+mkdir -p "$CW/specs/evidence/$v" && printf 'my own run\n' > "$CW/specs/evidence/$v/check-billing.txt" && cp "$CW/specs/evidence/$v/check-billing.txt" "$T/mine.txt"
+git -C "$CW" add specs/evidence && git -C "$CW" commit -qm "evidence attached before attach refused the name"
+rec "$v" qa "$cb" >/dev/null && out="$(rec "$v" security "$cb")" || fail "security PASS beside a sender's check-billing.txt: $out"
+cmp -s "$T/mine.txt" "$CW/specs/evidence/$v/check-billing.txt" || fail "record wrote over the sender's check-billing.txt"
+grep -q "^area=billing handoff=$v " "$CW/specs/evidence/$v/check-billing-2.txt" && grep -qF "[check-billing-2.txt](specs/evidence/$v/check-billing-2.txt)" "$CW/HANDOFFS.md" || fail "the check's output beside a sender's file"
+cp "$T/mine.txt" "$T/Check-Billing.txt"; out="$("$CW/bin/handoff.sh" attach "$v" "$T/Check-Billing.txt" --from backend 2>&1)" && fail "attach took a file named as a check output"
+echo "$out" | grep -q "check-billing.txt is the name record gives the billing check's output" && ! grep -q 'Check-Billing' "$CW/HANDOFFS.md" || fail "attach of check-billing.txt: $out"
+out="$("$CW/bin/handoff.sh" add --from backend --to qa --changed x --needed y --evidence "$T/mine.txt" "Fine")" || fail "evidence named as a plain file: $out"
 # A workspace file as an area, for work with no code; and a spec that names an area before any commit.
 echo "Pro: 12 dollars" >> "$CW/guides/pricing.md"; git -C "$CW" commit -qm price -- guides/pricing.md; cp="$(git -C "$CW" rev-parse --short HEAD)"
 q="$("$CW/bin/handoff.sh" add --from product-manager --to qa --changed x --needed y --evidence https://example.com/p "Prices")"; q="${q%% *}"

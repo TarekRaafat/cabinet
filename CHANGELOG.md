@@ -4,6 +4,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.4.1 - Unreleased
 
+- `cabinet handoff record` never writes a critical area check's output over a file already in the entry's evidence folder: when `check-<area>.txt` is taken, the output goes to `check-<area>-2.txt` (and on). Before, it replaced evidence the sender had attached under that name. `cabinet handoff add --evidence` and `attach` now refuse a file named `check-<area>.txt` for an area in `AGENTS.md`.
 - Backups keep and verify the newest archives by the time in their names, not by when each file was last modified. Before, an older archive touched by a synced drive or a copy counted as newest, so cleanup could delete a newer one, even the archive just written, and `cabinet backup verify` checked an older one. A backup now never deletes the archive it has just written.
 
 ## 0.4.0 - 6 Nov 2026

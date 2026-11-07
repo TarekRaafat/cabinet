@@ -28,7 +28,8 @@
 #       that change a path under "Hard to undo" in AGENTS.md while the entry has no "- Way back:"
 #       line (hard_hit in lib.sh). A PASS from a
 #       reviewer a critical area requires counts only when the area's check (a command in tools/)
-#       passes at those commits; its output is kept as evidence on the entry. --commits none is for
+#       passes at those commits; its output is kept as evidence on the entry, as check-<area>.txt
+#       or the next free check-<area>-<n>.txt, never over a file already there. --commits none is for
 #       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
 #   bin/handoff.sh list [name] [--ready] [--json]
 #       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
@@ -83,8 +84,16 @@ way_back() {
   printf '%s' "$t"
 }
 # ev_arg <value>: a link as it is, or a file as an absolute path. Read before the script moves to
-# the workspace: a path is from the caller's folder, else from the workspace.
+# the workspace: a path is from the caller's folder, else from the workspace. A file named as record
+# names an area check's output (check-<area>.txt) is refused, so the two are never mistaken.
 ev_arg() {
+  local n a _
+  if [[ ! "$1" =~ ^https?:// ]]; then
+    n="$(printf %s "${1##*/}" | tr -c 'A-Za-z0-9._-' '-' | sed 's/^[.-]*//' | tr '[:upper:]' '[:lower:]')"
+    while IFS=$'\t' read -r a _; do
+      [[ "$n" != "check-$a.txt" ]] || { echo "evidence $1: check-$a.txt is the name record gives the $a check's output; rename your file. $usage" >&2; exit 2; }
+    done < <(critical_areas)
+  fi
   if [[ "$1" =~ ^https?://[^[:space:]\<\>]+$ ]]; then printf '%s\n' "$1"
   elif [[ -f "$1" ]]; then printf '%s/%s\n' "$(cd "$(dirname "$1")" && pwd -P)" "$(basename "$1")"
   elif [[ "$1" != /* && -f "$WS/$1" ]]; then printf '%s/%s\n' "$(cd "$(dirname "$WS/$1")" && pwd -P)" "$(basename "$1")"
@@ -336,8 +345,10 @@ rel="$(ws_md --note "$note")" || exit 1
 local -a checked
 checked=()
 run_check() {  # run_check <area> <command>
-  local a=$1 cmd=$2 out="specs/evidence/$id/check-$1.txt" st=0
+  local a=$1 cmd=$2 out="specs/evidence/$id/check-$1.txt" st=0 n=1
   local -a w
+  # Never over a file already there (a sender's evidence, an earlier run): the next free name.
+  while [[ -e "$WS/$out" ]]; do n=$((n + 1)); out="specs/evidence/$id/check-$a-$n.txt"; done
   [[ "$cmd" =~ ^tools/[A-Za-z0-9._/-]+( [A-Za-z0-9._/=:,-]+)*$ && "$cmd" != *..* ]] \
     || { echo "the $a check in AGENTS.md, '$cmd', is not a command in tools/ (letters, digits and . _ - / = : , only)" >&2; return 1; }
   set -f; w=($cmd); set +f
