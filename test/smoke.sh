@@ -1365,6 +1365,22 @@ echo "$out" | grep -qF 'guides/b key.md:2: an AWS access key' && ! echo "$out" |
 git -C "$W" add guides; out="$(git -C "$W" commit -qm "keys" 2>&1)" && fail "a staged key in a file named with a space was not refused"
 echo "$out" | grep -qF 'guides/b key.md:2: an AWS access key' || fail "the staged scan lost the line number of a file named with a space: $out"
 git -C "$W" rm -qf "guides/a-nonl.md" "guides/b key.md" >/dev/null || fail "cleanup"
+# A name git quotes (non-ASCII, a double quote) is read by both scans, never skipped (H-20261107-11).
+for n in 'café.md' 'مذكرة.md' 'a"b.md' 'c d"é.md'; do
+  printf 'x\n%s\n' "$key" > "$W/notes/$n"
+  out="$("$W/bin/secret.sh" check 2>&1)" && fail "the full scan missed a key in notes/$n"
+  echo "$out" | grep -qF "notes/$n:2: an AWS access key" || fail "the full scan did not name notes/$n: $out"
+  git -C "$W" add -- "notes/$n"; out="$(git -C "$W" commit -qm "keys" 2>&1)" && fail "a staged key in notes/$n was not refused"
+  echo "$out" | grep -qF "notes/$n:2: an AWS access key" || fail "the staged scan did not name notes/$n: $out"
+  git -C "$W" rm -qf -- "notes/$n" >/dev/null || fail "cleanup"
+done
+# A file the full scan cannot read is reported, not skipped (root reads anything, so only as another user).
+if [[ "$(id -u)" != 0 ]]; then
+  printf 'x\n' > "$W/notes/locked.md"; chmod 000 "$W/notes/locked.md"
+  out="$("$W/bin/secret.sh" check 2>&1)" && fail "an unreadable file passed the check"
+  echo "$out" | grep -qF 'notes/locked.md:0: a file the check could not read' || fail "the unreadable file was not named: $out"
+  rm -f "$W/notes/locked.md"
+fi
 # A shared cabinet/ is committed with the project: no hook of its own, its files still scanned.
 "$S/cabinet/bin/doctor.sh" 2>&1 | grep -q 'ok    the workspace is committed with the project, whose own hooks run' || fail "shared layout: secrets hook check"
 [[ ! -e "$S/.git/hooks/pre-commit" ]] || fail "a hook was placed in the project's own git"

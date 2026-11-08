@@ -738,8 +738,13 @@ function isBinary(buf) {
   for (const x of b) if (x > 127 || (x < 32 && ![8, 9, 10, 12, 13, 27].includes(x))) odd++;
   return odd * 3 > b.length;
 }
+// A name as git quotes it in a diff ("b/caf\303\251.md"): C escapes, octal ones one byte each.
+const CQ = { a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v" };
+const unquote = (s) => s.replace(/\\([0-7]{3}|.)/g, (_, e) => e.length === 3 ? String.fromCharCode(parseInt(e, 8) & 255) : CQ[e] || e);
 // secret-scan [--staged]: "<file>:<line>: <kind>" for each likely secret. Reads, on stdin, the staged
 // diff (--staged) or the NUL-separated list of files to scan. A line with not-a-secret is skipped.
+// Names stay bytes (latin1) from input to output, so a UTF-8 name is printed as it is. A file the
+// full scan cannot read is reported as "<file>:0: a file the check could not read", never skipped.
 function secretScan(mode) {
   const input = fs.readFileSync(0).toString("latin1");
   let out = "";
@@ -752,17 +757,19 @@ function secretScan(mode) {
     let f = null, n = 0;
     for (const l of input.split("\n")) {
       let m;
-      if ((m = l.match(/^\+\+\+ b\/(.*)$/))) { f = m[1].replace(/\t$/, ""); continue; }  // git ends a name with a space by a tab
+      // git ends a name with a space by a tab, and quotes one with a ", a \ or a byte above 127.
+      if ((m = l.replace(/\t$/, "").match(/^\+\+\+ (?:b\/(.*)|"b\/(.*)")$/))) { f = m[1] !== undefined ? m[1] : unquote(m[2]); continue; }
       if ((m = l.match(/^@{2} -\S+ \+(\d+)/))) { n = Number(m[1]); continue; }  // a hunk header
       if (l.startsWith("+") && f !== null) { scan(f, n, l.slice(1).replace(/\t/g, " ")); n++; }
     }
   } else {
     for (const f of input.split("\0")) {
       if (!f) continue;
+      const p = Buffer.from(f, "latin1");  // the name's own bytes
       let st, buf;
-      try { st = fs.statSync(f); } catch (e) { continue; }
+      try { st = fs.statSync(p); } catch (e) { if (e.code !== "ENOENT") out += f + ":0: a file the check could not read\n"; continue; }  // ENOENT: deleted, not yet staged
       if (!st.isFile() || st.size > 2000000) continue;
-      try { buf = fs.readFileSync(f); } catch (e) { continue; }
+      try { buf = fs.readFileSync(p); } catch (e) { out += f + ":0: a file the check could not read\n"; continue; }
       if (isBinary(buf)) continue;
       const text = buf.toString("latin1");
       const ls = text.split("\n");
