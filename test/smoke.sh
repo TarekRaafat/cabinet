@@ -336,8 +336,31 @@ git -C "$W" checkout -q -- HANDOFFS.md
 "$W/bin/handoff.sh" add --from qa --to api "No details" >/dev/null 2>&1 && fail "a handoff without --changed and --needed was filed"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "a refused handoff changed a file"
 "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once A" > "$T/ha" & "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "At once B" > "$T/hb"; wait
-[[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
-# A lock left by a writer that was stopped is taken over after a minute, not waited on.
+[[ "$(cut -d' ' -f1 "$T/ha")" != "$(cut -d' ' -f1 "$T/hb")" ]] && grep -q committed "$T/ha" && grep -q committed "$T/hb" \
+  && git -C "$W" show HEAD:HANDOFFS.md | grep -q ": At once A$" && git -C "$W" show HEAD:HANDOFFS.md | grep -q ": At once B$" || fail "two handoffs filed at once: $(cat "$T/ha" "$T/hb")"
+# A live writer's lock is never taken over, fresh or over a minute old: add waits, then exits 1 naming
+# it, and changes nothing (HANDOFFS.md, git, the lock). The lock's process ID stays out of git status.
+h="$(git -C "$W" rev-parse HEAD)"; cp "$W/HANDOFFS.md" "$T/hlive"
+mkdir "$W/.cabinet/handoff.lock" && printf '*\n' > "$W/.cabinet/handoff.lock/.gitignore" && echo $$ > "$W/.cabinet/handoff.lock/pid"
+for age in fresh old; do
+  [[ $age == fresh ]] || touch -t 202001010000 "$W/.cabinet/handoff.lock"
+  rc=0; out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "While locked" 2>&1)" || rc=$?
+  [[ $rc == 1 && "$out" == *"process $$ holds "*"/.cabinet/handoff.lock"* && "$(cat "$W/.cabinet/handoff.lock/pid")" == "$$" ]] && cmp -s "$T/hlive" "$W/HANDOFFS.md" \
+    && [[ "$(git -C "$W" rev-parse HEAD)" == "$h" && -z "$(git -C "$W" status --porcelain)" ]] || fail "a writer went ahead without the lock ($age lock, exit $rc): $out"
+done
+rm -rf "$W/.cabinet/handoff.lock"
+# A writer stopped mid-write leaves a lock whose process is gone: the next writer takes it over at once.
+sleep 0 & dead=$!; wait "$dead"
+mkdir "$W/.cabinet/handoff.lock" && echo "$dead" > "$W/.cabinet/handoff.lock/pid"
+s=$SECONDS; out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "After a stopped writer")" && [[ "$out" == *committed && ! -d "$W/.cabinet/handoff.lock" ]] \
+  && ((SECONDS - s < 5)) || fail "the lock of a stopped writer was not taken over at once: $out"
+# An ilock from the environment is not git's index lock: with the index locked by someone else, add with
+# someone else's lines stops uncommitted and removes neither that lock nor the file ilock names.
+echo "- leftover line" >> "$W/HANDOFFS.md"; : > "$W/.git/index.lock"; echo keep > "$T/victim"
+rc=0; out="$(ilock="$T/victim" "$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "Index locked" 2>&1)" || rc=$?
+[[ $rc == 1 && "$out" == *"not committed: git's index stayed locked"* && -f "$W/.git/index.lock" && -f "$T/victim" ]] || fail "save_own went ahead on an ilock from the environment (exit $rc): $out"
+rm -f "$W/.git/index.lock"; git -C "$W" checkout -q -- HANDOFFS.md
+# A lock with no process ID (an older kit's) left by a writer that was stopped is taken over after a minute, not waited on.
 mkdir "$W/.cabinet/handoff.lock" && touch -t 202001010000 "$W/.cabinet/handoff.lock"
 out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "After a stale lock")" && [[ "$out" == *committed && ! -d "$W/.cabinet/handoff.lock" ]] || fail "a stale handoff lock was not taken over: $out"
 grep -q 'never by hand' "$KIT/templates/workspace/HANDOFFS.md" && grep -q 'never by hand, since a hand-numbered entry' "$KIT/core/CABINET.md" || fail "the rule to file handoffs only with handoff add left the template or CABINET.md"

@@ -110,23 +110,40 @@ ev_link() {
   printf '[%s](%s/%s)' "$name" "$dir" "$name"
 }
 # One writer at a time, or two agents filing at once could take the same number or lose a line.
+# The lock folder holds the writer's process ID, and locked says this process took it.
+# writer_gone <ID read from the lock, or empty>: true when the lock's writer is no longer running.
+writer_gone() {
+  if [[ "$1" =~ ^[0-9]+$ ]]; then ! kill -0 "$1" 2>/dev/null
+  else (( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) > 60 )); fi
+}
 lock_handoffs() {
   cd "$WS"
   grep -q '^## Open$' HANDOFFS.md || { echo "no '## Open' heading in HANDOFFS.md" >&2; exit 1; }
-  lock="$K/handoff.lock"
-  # A write takes under a second: a lock older than a minute was left by a writer that was stopped.
+  lock="$K/handoff.lock" locked="" ilock=""
+  local p=""
+  # A lock is taken over only when its writer is gone: its process has ended or, with no process ID in
+  # it (stopped between mkdir and writing the ID, or left by an older kit), it is over a minute old.
   # Renamed away, not removed, so of several waiters only one breaks it.
   # ponytail: a waiter that saw it stale just as another took it over could move the new lock; the doctor's unique-ids check is the backstop.
+  # ponytail: a process ID reused after a crash reads as a live writer until that process ends; the refusal names the folder to remove.
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    mkdir "$lock" 2>/dev/null && break
-    if (( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) > 60 )) && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
+    # Its .gitignore keeps the ID out of git status, and so out of any commit, even when a writer is stopped.
+    if mkdir "$lock" 2>/dev/null; then printf '*\n' > "$lock/.gitignore"; echo $$ > "$lock/pid"; locked=1; break; fi
+    p="$(cat "$lock/pid" 2>/dev/null || true)"
+    if writer_gone "$p" && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
       rm -rf "$lock.stale.$$"; continue
     fi
     sleep 1
   done
-  [[ -d "$lock" ]] || { echo "another handoff is being written ($lock); try again, or remove the folder if none is" >&2; exit 1; }
-  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  [[ -n "$locked" ]] || { echo "another handoff is being written (${p:+process $p holds }$lock), so nothing was changed: try again, or remove the folder if no handoff command is running" >&2; exit 1; }
+  trap unlock_handoffs EXIT
   dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
+}
+# Removes only the locks this process took: git's index lock from save_own, and the handoff lock
+# while it still holds this process's ID.
+unlock_handoffs() {
+  [[ -z "${ilock:-}" ]] || rm -f "$ilock"
+  [[ -z "${locked:-}" || "$(cat "$lock/pid" 2>/dev/null)" != "$$" ]] || rm -rf "$lock"
 }
 # save <what was done> <commit message> <path>...: commit what the command changed. The command
 # defines own_change <file>, which makes its change to HANDOFFS.md in that file.
@@ -147,13 +164,12 @@ save_own() {
   # Git's own index lock, taken as git takes it and held until this commit is made: the commit is made
   # from HEAD as read here, so a commit landing in between would be undone by it. A commit through the
   # real index meanwhile is refused, as git refuses any while another runs, and can be run again.
-  il="$(git rev-parse --git-path index.lock)"
+  il="$(git rev-parse --git-path index.lock)" ilock=""
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     ( set -C; : > "$il" ) 2>/dev/null && { ilock="$il"; break; }
     sleep 1
   done
   [[ -n "${ilock:-}" ]] || { echo "$did, not committed: git's index stayed locked for 10 s, by another git command or one that was stopped ($il), so HANDOFFS.md is written and the change is not committed." >&2; exit 1; }
-  trap '[[ -z "${ilock:-}" ]] || rm -f "$ilock"; rmdir "$lock" 2>/dev/null || true' EXIT
   h="$(git rev-parse HEAD)"
   rm -rf "$t"; mkdir -p "$t"
   if ! { git show "$h:HANDOFFS.md" > "$t/head" && git show :HANDOFFS.md > "$t/index" \
