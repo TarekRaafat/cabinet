@@ -402,7 +402,10 @@ hard_hit() {
   return 0
 }
 # commit_files <hash,...>: "<repo>\t<file>" for every file the commits change, each commit found in
-# the workspace ("workspace") or a repo on this machine; "?\t<hash>" for one found nowhere.
+# the workspace ("workspace") or a repo on this machine; "?\t<hash>" for one found nowhere. A commit
+# belongs to the first of them with a local branch that contains it, so a copy fetched elsewhere does
+# not take it; with no branch anywhere (a detached commit), to the first that has the object. A merge
+# lists what it changes against its first parent: what it brought in.
 commit_files() {
   local c name url files link path d found t=$'\t'
   local -a dirs
@@ -412,11 +415,12 @@ commit_files() {
     found=""
     for d in "${dirs[@]}"; do
       git -C "${d#*$t}" cat-file -e "$c^{commit}" 2>/dev/null || continue
-      found="${d%%$t*}"
-      git -C "${d#*$t}" diff-tree --root --no-commit-id --name-only -r "$c" | sed "s#^#$found$t#"
-      break
+      [[ -n "$found" ]] || found="$d"
+      [[ -n "$(git -C "${d#*$t}" for-each-ref --count=1 --contains "$c" refs/heads 2>/dev/null)" ]] && { found="$d"; break; }
     done
-    [[ -n "$found" ]] || printf '?\t%s\n' "$c"
+    if [[ -n "$found" ]]; then
+      git -C "${found#*$t}" diff-tree --root --no-commit-id --name-only -r -m --first-parent "$c" | sed "s#^#${found%%$t*}$t#"
+    else printf '?\t%s\n' "$c"; fi
   done
   return 0
 }

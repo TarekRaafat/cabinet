@@ -1961,7 +1961,7 @@ git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa" "$W/specs/adr" "$W/spe
 
 section "small tasks: marked when filed, checked against their commits" "0"
 s49() {
-local base id out rc c1 c2 c3 c4 r
+local base id out rc c1 c2 c3 c4 c5 c6 r
 base="$(git -C "$W" rev-parse HEAD)"
 for r in api app; do
   git init -q "$W/$r" && echo x > "$W/$r/a.js" && git -C "$W/$r" add -A && git -C "$W/$r" commit -qm init
@@ -1999,6 +1999,14 @@ out="$(rec "$c1,$c2")" && fail "a small task spanning two repos passed"; echo "$
 out="$(rec "$c3")" && fail "a small task changing a migration passed"; echo "$out" | grep -q 'changes api/migrations/001.sql' || fail "hard to undo: $out"
 out="$(rec "$c4")" && fail "a small task changing a contract file passed"; echo "$out" | grep -q 'changes api/openapi.yaml' || fail "contract: $out"
 out="$(rec deadbee)" && fail "a small task with an unknown commit passed"; echo "$out" | grep -q 'commit deadbee is in no repo on this machine' || fail "unknown commit: $out"
+# A no-ff merge lists the files it brings in; a commit fetched into the workspace stays the repo's that made it.
+r="$(git -C "$W/api" rev-parse --abbrev-ref HEAD)"; git -C "$W/api" checkout -qb side
+c api five migrations/002.sql >/dev/null; git -C "$W/api" checkout -q "$r"; c api six src/other.js >/dev/null
+git -C "$W/api" merge -q --no-ff -m merge side && c5="$(git -C "$W/api" rev-parse --short HEAD)" || fail "test setup: the merge"
+out="$(rec "$c5")" && fail "a small task whose merge brings in a migration passed"; echo "$out" | grep -q 'changes api/migrations/002.sql' || fail "a merge: $out"
+c6="$(c api seven migrations/003.sql)"; git -C "$W" fetch -q "$W/api" "HEAD:refs/remotes/api/main" || fail "test setup: the fetch"
+out="$(rec "$c6")" && fail "a small task fetched into the workspace passed"; echo "$out" | grep -q 'changes api/migrations/003.sql' || fail "a fetched commit: $out"
+git -C "$W" update-ref -d refs/remotes/api/main
 "$W/bin/handoff.sh" record "$id" --role qa BLOCK --commits "$c3" --note specs/qa/s.md >/dev/null || fail "a BLOCK on a small task that grew was refused"
 out="$(rec "$c1")" || fail "a small task that stayed small did not pass: $out"
 "$W/bin/doctor.sh" 2>&1 | grep -q 'every small task that passed stayed small' || fail "doctor: a small task that stayed small"
