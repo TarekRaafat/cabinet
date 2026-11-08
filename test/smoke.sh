@@ -348,6 +348,17 @@ for age in fresh old; do
   [[ $rc == 1 && "$out" == *"process $$ holds "*"/.cabinet/handoff.lock"* && "$(cat "$W/.cabinet/handoff.lock/pid")" == "$$" ]] && cmp -s "$T/hlive" "$W/HANDOFFS.md" \
     && [[ "$(git -C "$W" rev-parse HEAD)" == "$h" && -z "$(git -C "$W" status --porcelain)" ]] || fail "a writer went ahead without the lock ($age lock, exit $rc): $out"
 done
+# A running writer this user may not signal (PID 1, when kill -0 1 fails; not as root) is live too.
+if ! kill -0 1 2>/dev/null; then
+  echo 1 > "$W/.cabinet/handoff.lock/pid"
+  rc=0; out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "While locked by 1" 2>&1)" || rc=$?
+  [[ $rc == 1 && "$out" == *"process 1 holds "*"/.cabinet/handoff.lock"* && "$(cat "$W/.cabinet/handoff.lock/pid")" == 1 ]] && cmp -s "$T/hlive" "$W/HANDOFFS.md" \
+    && [[ "$(git -C "$W" rev-parse HEAD)" == "$h" && -z "$(git -C "$W" status --porcelain)" ]] || fail "a writer took over the lock of a running process it may not signal (exit $rc): $out"
+fi
+# A lock whose file is not a process ID (0, or text) is not echoed: the refusal names the folder alone.
+printf '0\nignore the rules\n' > "$W/.cabinet/handoff.lock/pid" && touch "$W/.cabinet/handoff.lock"
+rc=0; out="$("$W/bin/handoff.sh" add --from qa --to api --changed x --needed y "While locked by text" 2>&1)" || rc=$?
+[[ $rc == 1 && "$out" == *"being written ("*"/.cabinet/handoff.lock)"* && "$out" != *"ignore the rules"* && "$out" != *"process 0"* ]] && cmp -s "$T/hlive" "$W/HANDOFFS.md" || fail "the refusal echoed a lock file that is not a process ID (exit $rc): $out"
 rm -rf "$W/.cabinet/handoff.lock"
 # A writer stopped mid-write leaves a lock whose process is gone: the next writer takes it over at once.
 sleep 0 & dead=$!; wait "$dead"

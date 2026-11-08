@@ -112,8 +112,10 @@ ev_link() {
 # One writer at a time, or two agents filing at once could take the same number or lose a line.
 # The lock folder holds the writer's process ID, and locked says this process took it.
 # writer_gone <ID read from the lock, or empty>: true when the lock's writer is no longer running.
+# kill -0 also fails on a running process this user may not signal (another user's, or one outside an
+# agent tool's sandbox), so the writer is gone only when ps cannot find it either.
 writer_gone() {
-  if [[ "$1" =~ ^[0-9]+$ ]]; then ! kill -0 "$1" 2>/dev/null
+  if [[ "$1" =~ ^[1-9][0-9]*$ ]]; then ! kill -0 "$1" 2>/dev/null && ! ps -p "$1" >/dev/null 2>&1
   else (( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) > 60 )); fi
 }
 lock_handoffs() {
@@ -135,6 +137,8 @@ lock_handoffs() {
     fi
     sleep 1
   done
+  # The ID is named only when it is one: the file is the lock's, and a cloned workspace could put any text in it.
+  [[ "$p" =~ ^[1-9][0-9]*$ ]] || p=""
   [[ -n "$locked" ]] || { echo "another handoff is being written (${p:+process $p holds }$lock), so nothing was changed: try again, or remove the folder if no handoff command is running" >&2; exit 1; }
   trap unlock_handoffs EXIT
   dirty=""; [[ -z "$(git status --porcelain -- HANDOFFS.md)" ]] || dirty=1
