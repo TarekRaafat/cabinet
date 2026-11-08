@@ -4,7 +4,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.4.1 - Unreleased
 
-- On macOS, the credit hook (now v8) no longer takes a new commit in a Cabinet run for an amend when its `-m` message or a path holds `--amount` or `--amend`: only `--amend`, `--am`, `--ame` or `--amen` given as an argument of its own counts. Linux is unchanged. `cabinet bootstrap` replaces the v7 hook with v8.
+- On macOS, the credit hook (now v8) no longer takes a new commit in a Cabinet run for an amend when its `-m` message or a path holds `--amount` or `--amend`: only `--amend`, `--am`, `--ame` or `--amen` given as an argument of its own counts, and a real amend is still refused whatever its message holds, also with `-F` or `-v`. Linux is unchanged. `cabinet bootstrap` replaces the v7 hook with v8.
 - The scripts no longer fail with a stack trace when a reader stops early, such as `head -1` or `grep -q`: the kit's JavaScript ignores the closed pipe and exits cleanly.
 - `cabinet handoff record` never writes a critical area check's output over a file already in the entry's evidence folder: when `check-<area>.txt` is taken, the output goes to `check-<area>-2.txt` (and on). Before, it replaced evidence the sender had attached under that name. `cabinet handoff add --evidence` and `attach` now refuse a file named `check-<area>.txt` for an area in `AGENTS.md`.
 - `cabinet doctor` reports `guardrails.opencode` as a FIX, saying opencode's rules could not be read, when the rules opencode 1.x prints cannot be checked. Before, such a failure read as ok: "opencode denies push and publish".

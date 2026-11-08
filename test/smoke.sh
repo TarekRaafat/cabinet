@@ -3055,6 +3055,18 @@ am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix --amount" -m "--amend
 am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m $'two\n--amend lines'; amok $'two\n--amend lines'
 for m in "--amend" e "x --amend -m y"; do am CABINET_AMEND_AS=code-reviewer -- --amend -m "$m"; amno "HEAD is qa's commit"; done
 printf 'say --amend\n' > "$T/am-msg3"; am CABINET_AMEND_AS=code-reviewer -- --amend -F "$T/am-msg3"; amno "HEAD is qa's commit"
+# In a run, a real amend whose message file holds lines that did not come from -m is still refused where ps
+# joins the arguments: -F of a file holding the command's own words, and -v whose diff below the scissors
+# line holds --amend (with the default and another comment character). The -F lines that match the ps text
+# here (--amend; commit --amend, since ps shows git's full path on macOS) and -v passed v8 at 6ae8d97.
+printf -- '--amend\n' > "$T/am-msg4"; printf 'git commit --amend\n' > "$T/am-msg5"; printf 'commit --amend\n' > "$T/am-msg6"
+for f in am-msg4 am-msg5 am-msg6; do rm -rf "$T/am"; cp -R "$T/am-base" "$T/am"; amgo CABINET_AGENT=qa git commit --amend -F "$T/$f"; amno "no amend in a Cabinet run"; done
+for c in "" "-c core.commentChar=;"; do
+  rm -rf "$T/am"; cp -R "$T/am-base" "$T/am"; printf -- '-amend\n' > "$T/am/f"; amgo git commit -qa -m d
+  echo g > "$T/am/g"; git -C "$T/am" add g; amgo git commit -q -m e; printf 'b\n' > "$T/am/f"; git -C "$T/am" add f
+  h="$(git -C "$T/am" rev-parse HEAD)"; amgo GIT_EDITOR=true CABINET_AGENT=qa git $c commit -q --amend -v -e -m x
+  [[ "$ams" != 0 && "$(git -C "$T/am" rev-parse HEAD)" == "$h" ]] && grep -qF "no amend in a Cabinet run" "$T/am-err" || fail "amend guard: a run's amend with -v and a diff line --amend was not refused ($c): $(cat "$T/am-err")"
+done
 # An editor amend that deletes the line makes the commit without it; then the role's next amend is refused.
 am CABINET_AMEND_AS=qa "GIT_EDITOR=sed -i.b /^Co-authored-by/d" -- --amend; amok work
 amgo CABINET_AMEND_AS=qa git commit -q --amend -m z; [[ "$ams" != 0 ]] && grep -qF "HEAD has no Cabinet credit line at the end" "$T/am-err" || fail "amend guard: an amend after the line was deleted: $(cat "$T/am-err")"

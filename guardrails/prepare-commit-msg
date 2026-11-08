@@ -12,9 +12,9 @@
 # refused too), but "message" with -m or -F, as it gives a new commit: so the arguments of the git command
 # that runs this hook (its parent process) are read too, for --amend or an abbreviation of it given as an
 # argument of its own. On Linux each argument is read on its own. ps (elsewhere) joins them with spaces, so
-# there each line of the message that stands in them as words of its own (a -m message) is taken out
-# first, and a -m message that mentions --amend or --amount is a new commit. One it cannot take out (a
-# tab, say) is still read as an amend, and each refusal says to give the message with -F <file>.
+# there each line of a -m message that stands in them as words of its own is taken out first, and a -m
+# message that mentions --amend or --amount is a new commit. One it cannot take out (a tab, say) is still
+# read as an amend, and each refusal says to give the message with -F <file>.
 # An agent amends its own commit as CABINET_AMEND_AS=<role> git commit --amend: the amend is refused unless
 # HEAD's message holds exactly one Cabinet credit line, as its last line, for that role, so no agent
 # rewrites another role's commit or the owner's. The role is compared as it is written, before anything is
@@ -29,14 +29,21 @@ if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
 # amend_arg <message file>: an amend in the git command's arguments, one argument --am, --ame, --amen or
 # --amend. From /proc on Linux. Elsewhere from what ps prints (the arguments joined by spaces, a newline
 # inside one as \012): each line of the message is taken out once where it stands between spaces, then
-# the words are matched. Only a whole line between spaces is taken out, so the words left are the ones
-# outside the message; a message from -F is not in the arguments, so nothing of an amend is taken out.
-# Anything but a clean "no amend" from awk (the file unreadable, say) is an amend.
+# the words are matched. Only text a -m gives may be taken out: a line of the file that did not come from
+# the arguments could take out the real --amend. So nothing is taken out when any word could be a -F or
+# --file option (--fil..., or a short group holding F, even inside a message), and reading stops at the
+# first comment line (one starting with # or the comment character, as the scissors line of -v does),
+# since git writes nothing from -m below one. Both only ever give more refusals. Anything but a clean
+# "no amend" from awk (the file unreadable, say) is an amend.
 amend_arg() {
   if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' '\n' < "/proc/$PPID/cmdline" | grep -qxE -e '--am(e(n(d)?)?)?'; return; fi
-  CABINET_PS_ARGS=" $(ps -ww -o args= -p "$PPID" 2>/dev/null) " awk '
-    BEGIN { a = ENVIRON["CABINET_PS_ARGS"]; gsub(/\\012/, " ", a) }
-    { sub(/[ \t]+$/, ""); if ($0 != "" && (i = index(a, " " $0 " "))) a = substr(a, 1, i) substr(a, i + length($0) + 1) }
+  cc="$(git config core.commentString 2>/dev/null || git config core.commentChar 2>/dev/null)"
+  case "$cc" in auto) cc='#;@!$%^&|:' ;; *) cc="#$(printf '%s' "$cc" | cut -c1)" ;; esac
+  CABINET_PS_CC="$cc" CABINET_PS_ARGS=" $(ps -ww -o args= -p "$PPID" 2>/dev/null) " awk '
+    BEGIN { a = ENVIRON["CABINET_PS_ARGS"]; gsub(/\\012/, " ", a); cc = ENVIRON["CABINET_PS_CC"]
+      n = split(a, w, " "); for (k = 1; k <= n; k++) if (w[k] ~ /^--fil/ || w[k] ~ /^-[^-]*F/) stop = 1 }
+    !stop && $0 != "" && index(cc, substr($0, 1, 1)) { stop = 1 }
+    !stop { sub(/[ \t]+$/, ""); if ($0 != "" && (i = index(a, " " $0 " "))) a = substr(a, 1, i) substr(a, i + length($0) + 1) }
     END { n = split(a, w, " "); for (k = 1; k <= n; k++) if (w[k] ~ /^--am(e(n(d)?)?)?$/) exit 0; exit 1 }' "$1" 2>/dev/null
   [ $? -ne 1 ]
 }
