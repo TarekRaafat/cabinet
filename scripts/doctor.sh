@@ -367,13 +367,20 @@ hfiles=("$WS/HANDOFFS.md"); for f in "$WS"/handoffs/archive-*.md; do [[ -f "$f" 
 dups="$(awk '/^### H-/ {n++; id[n]=$2} /^- Note: duplicate ID/ {skip[n]=1}
   END {for (i=1;i<=n;i++) if (!skip[i]) c[id[i]]++; for (k in c) if (c[k]>1) print k}' "${hfiles[@]}" | sed 's/:$//' | sort | tr '\n' ' ')"
 [[ -z "$dups" ]] && ok handoffs.unique-ids "every handoff ID is unique" || bad handoffs.unique-ids "these handoff IDs are used more than once: $dups(file the next free number)"
+# Entries as the handoff reader sees them (handoff-rows): where each starts and ends, and its status word.
+hrows="$(node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" 2>/dev/null)" || hrows="[]"
+# A status word the kit does not know makes the runner stop and keeps the entry out of the archive.
+hstatus="$(json -r '$.filter((e) => e.section == "open" && !e.known).map((e) => e.id + " (" + e.status_said + ")").join("; ")' <<<"$hrows" 2>/dev/null | term_text || true)"
+[[ -z "$hstatus" ]] && ok handoffs.status "every open handoff's status word is open, acknowledged, done or rejected" \
+  || bad handoffs.status "handoffs with a status word the kit does not know: $hstatus (rewrite each status line as one of open, acknowledged, done or rejected)"
+# Each open entry's own text, so the checks below never read past its end (a "## " section after it).
+htext="$(json -r --each '$.filter((e) => e.section == "open").map((e) => e.text)' <<<"$hrows" 2>/dev/null || true)"
 # Verdicts in the one format (.cabinet/rules/reviews.md), each with its note; a qa PASS needs evidence.
 # Open entries only: the archives are history, written before the format. The note's path is
 # checked by the shell only after the pattern limits it to safe characters.
 vcheck="$(cd "$WS" && awk '
   function end() { if (id != "" && pass && !ev) nev = nev " " id; id = ""; pass = 0; ev = 0 }
-  /^## / { end(); open = ($0 == "## Open"); next }
-  /^### H-/ { end(); if (open) { id = $2; sub(/:$/, "", id) }; next }
+  /^### H-/ { end(); id = $2; sub(/:$/, "", id); next }
   id == "" { next }
   /^- Evidence:.*(\]\(|<https?:)/ { ev = 1 }
   /^- Verdict:/ {
@@ -382,7 +389,7 @@ vcheck="$(cd "$WS" && awk '
     else if ($3 == "qa" && $4 == "PASS") pass = 1
   }
   END { end(); print substr(bad, 2) "|" substr(nev, 2) }
-' HANDOFFS.md 2>/dev/null)"
+' <<<"$htext" 2>/dev/null)"
 vbad="${vcheck%%|*}" vnev="${vcheck#*|}"
 [[ -z "$vbad" ]] && ok handoffs.verdicts "every verdict is in the verdict format, with its note" \
   || bad handoffs.verdicts "verdicts not in the format, or naming a note that does not exist: $vbad (rewrite each as - Verdict: <role> <verdict> <YYYY-MM-DD> <commits> <note under specs/>, and commit its note)"
@@ -405,12 +412,11 @@ while IFS=$'\t' read -r sid scommits; do
   why="$(small_problems "$scommits")"; [[ -z "$why" ]] || notsmall="${notsmall:+$notsmall; }$sid ($why)"
 done < <(cd "$WS" && awk '
   function end() { if (id != "" && small && c != "") print id "\t" substr(c, 2); id = ""; small = 0; c = "" }
-  /^## / { end(); open = ($0 == "## Open"); next }
-  /^### H-/ { end(); if (open) { id = $2; sub(/:$/, "", id) }; next }
+  /^### H-/ { end(); id = $2; sub(/:$/, "", id); next }
   id != "" && /^- Size: small *$/ { small = 1 }
   id != "" && /^- Verdict: [a-z0-9-]+ PASS [0-9-]+ [0-9a-f]+(,[0-9a-f]+)* / { c = c "," $6 }   # hex only: it reaches git
   END { end() }
-' HANDOFFS.md 2>/dev/null)
+' <<<"$htext" 2>/dev/null)
 [[ -z "$notsmall" ]] && ok handoffs.small "every small task that passed stayed small" \
   || bad handoffs.small "handoffs marked small that were not: $notsmall (route the work again from a spec)"
 [[ -z "$vnev" ]] && ok handoffs.evidence "every qa PASS has evidence" \

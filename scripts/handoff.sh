@@ -12,6 +12,7 @@
 #       one of the two. --small with a --depends-on holding a handoff ID, for a reviewer, is refused:
 #       run does not count a --small entry as a review. --way-back says how to undo the change once pushed, released or published
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
+#       --to writes owner and founder in lower case, in any case given (the handoff reader in lib.js).
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, add, attach and
 #       record still commit only their own change (save_own), so those lines never go into the commit.
 #       Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document,
@@ -32,9 +33,11 @@
 #       or the next free check-<area>-<n>.txt, never over a file already there. --commits none is for
 #       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
 #   bin/handoff.sh list [name] [--ready] [--json]
-#       No name: every open or acknowledged entry: age in days, ID, addressee, title, oldest first.
+#       No name: every open or acknowledged entry, and each whose status word the kit does not know:
+#       age in days, status, ID, addressee, title, oldest first, then by status and ID (idOrder).
 #       A repo or role name (api, qa, owner, ...): every entry addressed to it that is not done or
-#       rejected, in full; the start-of-session read. --json: the same as JSON (id, status, date,
+#       rejected, in full; the start-of-session read. Entries, status words, the owner (owner or
+#       founder in any case) and ID order come from the handoff reader in lib.js (handoff-rows). --json: the same as JSON (id, status, date,
 #       age_days, from, to, title; with a name, each entry's full text too), with its readiness:
 #       verdicts, needs (the reviewers it needs), missing, blocking, stale (a PASS that does not
 #       cover every commit a verdict names), ready (true, false, or null when it needs no review),
@@ -54,7 +57,8 @@
 #       when every open review of it is (each entry that depends on it, not --small and not to a
 #       builder, --spec or not).
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
-#       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only.
+#       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only. On an
+#       entry whose status word the kit does not know (Done, closed, none), it stops before any agent.
 #   bin/handoff.sh run --scheduled
 #       What the pipeline job runs: every piece of work CABINET_PIPELINE allows (small: handoffs filed
 #       --small; all: those and every spec ready to build), oldest first, within CABINET_PIPELINE_LIMIT
@@ -64,7 +68,8 @@
 #   bin/handoff.sh archive
 #       Move every committed closed entry (done or rejected) to handoffs/archive-YYYY-MM.md (month of
 #       its ID) and commit the move; chief-of-staff runs it daily. Refuses while HANDOFFS.md has
-#       uncommitted lines, so no agent's unsaved update is lost.
+#       uncommitted lines, so no agent's unsaved update is lost. An unknown status word stays, and so
+#       does a "## " section after the entries; it commits only HANDOFFS.md and the archives it wrote.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -242,7 +247,7 @@ while (($#)); do
 done
 # One line each: a line break would end the entry's field, or start a heading.
 one() { printf '%s' "$1" | tr '\r\n\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//'; }
-from="$(one "$from")" to="$(one "$to")" changed="$(one "$changed")" needed="$(one "$needed")" depends="$(one "$depends")" title="$(one "$title")"
+from="$(one "$from")" to="$(node "$LIBJS" owner-case "$(one "$to")")" changed="$(one "$changed")" needed="$(one "$needed")" depends="$(one "$depends")" title="$(one "$title")"
 missing=""
 for v in from to changed needed title; do [[ -n "${!v}" ]] || missing="$missing ${v/title/a title}"; done
 [[ -z "$missing" ]] || { echo "missing:$missing. $usage" >&2; exit 2; }
@@ -446,68 +451,52 @@ today=$(epoch "$(date +%F)")
 if ((json)); then
   # One record per entry under "## Open" (and a legacy "## Archive"); json picks the same
   # entries as the text output: open and acknowledged, or with a name, all not closed.
-  who="${1:-}"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
-  awk '
-  function flush() { if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, st, from, to, title, sec, body; id=""; body="" }
-  /^## / { flush(); on = ($0 ~ /^## (Open|Archive)/); sec = ($0 ~ /^## Open/) ? "open" : "archive"; next }
-  !on { next }
-  /^### H-/ { flush(); id=$2; sub(/:$/, "", id); title=$0; sub(/^### [^:]+: /, "", title); st=""; from=""; to="" }
-  /^- From:/ && from == "" { from=$0; sub(/^- From: /, "", from); sub(/ -> To: .*/, "", from); to=$0; sub(/.*-> To: /, "", to) }
-  /^- Status:/ && st == "" { st=$0; sub(/^- Status: /, "", st) }
-  id != "" { gsub(/\t/, " "); body = body $0 "\001" }
-  END { flush() }
-  ' "$WS/HANDOFFS.md" | json -R --arg who "$who" --argjson today "$today" --argjson r "$rd" --argjson only "$ready" '
-    ((es) => ($who == "" ? es.sort((a, b) => (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99", "en")).map(({text, ...e}) => e) : es)
+  # Entries, status words, the owner and ID order from the handoff reader (handoff-rows, json's helpers).
+  who="${1:-}"
+  node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json --arg who "$who" --argjson today "$today" --argjson r "$rd" --argjson only "$ready" '
+    ((es) => ($who == "" ? es.sort((a, b) => (a.date ?? "9999-99-99").localeCompare(b.date ?? "9999-99-99", "en") || idOrder(a.id, b.id)).map(({text, ...e}) => e) : es)
       .map((e) => (({status_now, ...more}) => ({...e, ...more}))($r[e.id] ?? {}))
       .filter((e) => $only != 1 || e.ready === true))(
-    $.map((l) => l.split("\t")).map((f) => ((date) => ({id: f[0], status_line: f[1], from: f[2], to: f[3], title: f[4], section: f[5],
-        text: f[6].replaceAll("\u0001", "\n"), status: f[1].match(/^[a-z]+/)?.[0] ?? "", date,
-        age_days: date ? Math.floor(($today - Date.parse(date) / 1000 + 43200) / 86400) : null}))(f[1].match(/[0-9]{4}-[0-9]{2}-[0-9]{2}/)?.[0] ?? null))
-     .filter((e) => ($who == "" ? e.section == "open" && (e.status == "open" || e.status == "acknowledged")
-       : new RegExp("(^|[^a-z-])(" + $who + ")([^a-z-]|$)").test(e.to) && !/^(done|rejected)/.test(e.status)))
-     .map(({section, ...e}) => e))'
+    $.map((h) => ((date) => ({id: h.id, status_line: h.status_line, from: h.from, to: h.to, title: h.title, section: h.section, owner: h.owner,
+        text: h.text, status: h.status, known: h.known, date,
+        age_days: date ? Math.floor(($today - Date.parse(date) / 1000 + 43200) / 86400) : null}))(h.status_line.match(/[0-9]{4}-[0-9]{2}-[0-9]{2}/)?.[0] ?? null))
+     .filter((e) => ($who == "" ? e.section == "open" && (e.status == "open" || e.status == "acknowledged" || !e.known)
+       : (ownerIn($who) ? e.owner : new RegExp("(^|[^a-z-])(" + $who + ")([^a-z-]|$)").test(e.to)) && !(e.known && statusClosed(e.status))))
+     .map(({section, owner, known, ...e}) => e))'
   exit 0
 fi
 
 if [[ $# -gt 0 ]]; then
   ((ready == 0)) || { echo "--ready lists every entry ready to push; it takes no name (or add --json)" >&2; exit 2; }
-  # "owner" and "founder" name the same person.
-  who="$1"; [[ "$who" == founder || "$who" == owner ]] && who="founder|owner"
+  # "owner" and "founder" name the same person, in any case (the handoff reader's ownerIn); an unknown
+  # status word is not closed.
   # Styled (platform.sh): on a Verdict line, PASS green, BLOCK and CHANGES red, after term_text.
-  term_text < "$WS/HANDOFFS.md" | awk -v who="$who" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
-  function flush() { if (e != "" && to ~ ("(^|[^a-z-])(" who ")([^a-z-]|$)") && st !~ /^(done|rejected)/) printf "%s\n", e; e=""; to=""; st="" }
-  /^## / && $0 !~ /^## Open/ { flush(); on=0; if ($0 ~ /^## Archive/) on=1; next }
-  /^## Open/ { flush(); on=1; next }
-  !on { next }
-  /^### H-/ { flush() }
-  /^- From:/ && to == "" { to=$0; sub(/.*-> To: /, "", to) }
-  /^- Status:/ && st == "" { st=$0; sub(/^- Status: /, "", st) }
+  node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json -r --each --arg who "$1" '$.filter((e) => (ownerIn($who) ? e.owner
+      : new RegExp("(^|[^a-z-])(" + $who + ")([^a-z-]|$)").test(e.to)) && !(e.known && statusClosed(e.status))).map((e) => e.text)' \
+    | term_text | awk -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
   z != "" && /^- Verdict: / && $4 ~ /^(PASS|BLOCK|CHANGES)$/ && index($0, "- Verdict: " $3 " " $4) == 1 { p = length("- Verdict: " $3 " ")
     $0 = substr($0, 1, p) ($4 == "PASS" ? g : r) $4 z substr($0, p + length($4) + 1) }
-  e != "" || /^### H-/ { e = e $0 "\n" }
-  END { flush() }
+  { print }
   '
   exit 0
 fi
 
-term_text < "$WS/HANDOFFS.md" | awk '
-# Entries live under "## Open"; the template above it is not one.
-/^## / { on = ($0 ~ /^## Open/); next }
-!on { next }
-/^### H-/ { id=$2; sub(/:$/, "", id); title=$0; sub(/^### [^:]+: /, "", title); to=""; next }
-/^- From:/ { to=$0; sub(/.*-> To: /, "", to); next }
-/^- Status: (open|acknowledged)/ && id {
-  # An entry without an ISO date still shows, with its age unknown ("?"), after the dated ones.
-  d = match($0, /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) ? substr($0, RSTART, RLENGTH) : "9999-99-99"
-  st=$3; sub(/[^a-z].*/, "", st); print d "\t" st "\t" id "\t" to "\t" title; id=""
-}
-' | sort | while IFS=$'\t' read -r d st id to title; do
+# Entries under "## Open" that are open, acknowledged or have a status word the kit does not know (shown as
+# written), by date, status word, then ID (the handoff reader's idOrder). An entry without an ISO date
+# still shows, with its age unknown ("?"), after the dated ones. Fields split by hand: an empty one stays.
+node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json -r --each '$.filter((e) => e.section == "open" && (e.status == "open" || e.status == "acknowledged" || !e.known))
+  .map((e) => ({...e, d: e.status_line.match(/[0-9]{4}-[0-9]{2}-[0-9]{2}/)?.[0] ?? "9999-99-99"}))
+  .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0) || (a.status < b.status ? -1 : a.status > b.status ? 1 : 0) || idOrder(a.id, b.id))
+  .map((e) => [e.d, e.status, e.id, e.owner ? 1 : "", e.to, e.title].map((x) => String(x).replace(/[\t\n]/g, " ")).join("\t"))' \
+  | term_text | while IFS= read -r x; do
+  d="${x%%$'\t'*}" x="${x#*$'\t'}" st="${x%%$'\t'*}" x="${x#*$'\t'}" id="${x%%$'\t'*}" x="${x#*$'\t'}"
+  own="${x%%$'\t'*}" x="${x#*$'\t'}" to="${x%%$'\t'*}" title="${x#*$'\t'}"
   ((ready == 0)) || json -e --arg i "$id" '$[$i]?.ready === true' <<<"$rd" >/dev/null || continue
   if [[ "$d" == 9999-99-99 ]]; then age="?"
   else age=$(( (today - $(epoch "$d") + 43200) / 86400 )); fi  # rounded, so a DST day still counts as one
   # Styled (platform.sh): the age and ID dim, the owner yellow; padded from the plain text.
   printf -v pto '%-24s' "$to"
-  [[ "$to" == owner || "$to" == founder ]] && pto="$S_Y$to$S_Z${pto:${#to}}"
+  [[ -z "$own" ]] || pto="$S_Y$to$S_Z${pto:${#to}}"
   printf '%s%3sd%s  %-12s  %s%-14s%s  %s  %s\n' "$S_D" "$age" "$S_Z" "$st" "$S_D" "$id" "$S_Z" "$pto" "$title"
 done | { out="$(cat)"; [[ -n "$out" ]] && printf '%s\n' "$out" || { ((ready)) && echo "No handoffs ready to push." || echo "No open handoffs."; }; }
 # Passed work held only because its commits are on a session branch: said, with the command that shows the merge
@@ -524,11 +513,17 @@ if [[ -n "$(git status --porcelain -- HANDOFFS.md)" ]]; then
   exit 1
 fi
 
-n="$(node "$LIBJS" handoff-archive "$WS")"
+# The count, then each archive file it wrote: only those and HANDOFFS.md are committed, by path, never
+# the handoffs/ folder, which may hold someone else's draft (kit rule 12).
+local out n f
+local -a files
+out="$(node "$LIBJS" handoff-archive "$WS")"
+n="$(head -1 <<<"$out")" files=()
+while IFS= read -r f; do [[ -z "$f" ]] || files+=("$f"); done < <(tail -n +2 <<<"$out")
 
 if [[ "$n" == 0 ]]; then echo "nothing to archive"; exit 0; fi
-git add -- HANDOFFS.md handoffs
-git commit -q -m "handoffs: archive $n closed entries (bin/handoff.sh archive)" -- HANDOFFS.md handoffs
+git add -- HANDOFFS.md ${files[@]+"${files[@]}"}
+git commit -q -m "handoffs: archive $n closed entries (bin/handoff.sh archive)" -- HANDOFFS.md ${files[@]+"${files[@]}"}
 echo "archived $n closed entries"
 }
 
@@ -548,14 +543,15 @@ spend_counts || { report "$CABINET_RUNNER's cost cannot be counted, so the limit
 if [[ -n "$CABINET_BUDGET" ]] && awk -v s="$(spend_since "$(week_start)")" -v b="$CABINET_BUDGET" 'BEGIN { exit !(s + 0 >= b + 0) }'; then
   report "This week's budget (\$$CABINET_BUDGET) is spent, so nothing ran."; exit 0
 fi
-# The work, oldest first: specs ready to build (all), then handoffs filed --small that are still open
-# or wait on their review; never one archived, sent back, or closed with nothing left to review.
+# The work, oldest first (idOrder): specs ready to build (all), then handoffs filed --small that are still
+# open or wait on their review; never one archived, sent back, or closed with nothing left to review. One
+# whose status word the kit does not know is taken too: its run stops, naming it, before any agent run.
 if [[ "$CABINET_PIPELINE" == all ]]; then
   while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | json -r --each '$.filter((s) => (s.status == "ready" || s.status == "building") && s.problems.length == 0).map((s) => s.spec)')
 fi
 while IFS= read -r x; do items+=("handoff $x"); done < <(readiness | json -r --each '
-  Object.keys($).filter((i) => $[i].small && !$[i].archived && !/^rejected/.test($[i].status_now)).sort()
-    .filter((i) => !/^done/.test($[i].status_now) || Object.values($).some((w) => !w.small && w.spec == "" && w.depends_on.includes(i) && !/^(done|rejected)/.test(w.status_now)))')
+  Object.keys($).filter((i) => $[i].small && !$[i].archived && $[i].status_now != "rejected").sort(idOrder)
+    .filter((i) => $[i].status_now != "done" || Object.values($).some((w) => !w.small && w.spec == "" && w.depends_on.includes(i) && !statusClosed(w.status_now)))')
 export CABINET_RUN_LIMIT="$limit" CABINET_RUN_SINCE="$(date +%s)" CABINET_RUN_SCHEDULED=1
 local -a lines
 lines=()
@@ -680,6 +676,11 @@ again() {
   [[ -z "$u" ]] || s="unknown, read the whole change"
   echo "$1's last verdict covers $a, commits since: ${s:-none}"
 }
+# A status word the kit does not know (Done, closed, in-progress, none) is no step to take: stop, naming it.
+if ! json -e 'statusKnown($.status_now)' <<<"$w" >/dev/null; then
+  x="$(node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json -r --arg i "$id" '$.find((e) => e.id == $i)?.status_said ?? "no status line"' | term_text)"
+  stop "$id has a status word the kit does not know ($x): rewrite its status line as one of open, acknowledged, done or rejected, then run it again"
+fi
 while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"

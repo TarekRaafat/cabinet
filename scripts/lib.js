@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: verdict-origin, hard-write, handoff-entry, handoff-archive, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -60,22 +60,79 @@ function hardWrite(file, ...given) {
   fs.renameSync(file + ".new", file);
 }
 
+// The handoff reader (one place for what an entry is): where an entry starts and ends, its status word,
+// whether an addressee is the owner, and the order of two IDs. Every command that reads HANDOFFS.md uses
+// these, from here, through handoff-rows or through json's helpers.
+// handoffEntries(lines, whole): [{id, title, section, start, end, lines}]: an entry starts at a "### H-"
+// line under "## Open" or a legacy "## Archive" (anywhere when whole: an archive file) and ends before the
+// next line starting "### " or "## ", or at the end. start is its heading's index, end the index after
+// it, lines its body; section is "open" or "archive". A "## " section after "## Open" is no entry's.
+function handoffEntries(lines, whole) {
+  const out = [];
+  let on = !!whole, section = "archive", cur = null;
+  lines.forEach((l, i) => {
+    const h2 = l.startsWith("## ");
+    if (!h2 && !l.startsWith("### ")) { if (cur) cur.lines.push(l); return; }
+    if (cur) { cur.end = i; cur = null; }
+    if (h2) { section = l.startsWith("## Open") ? "open" : "archive"; on = !!whole || section === "open" || l.startsWith("## Archive"); return; }
+    if (on && l.startsWith("### H-")) {
+      cur = { id: words(l)[1].replace(/:+$/, ""), title: l.replace(/^### [^:]+: /, ""), section, start: i, end: lines.length, lines: [] };
+      out.push(cur);
+    }
+  });
+  return out;
+}
+// statusOf(body): the first "- Status:" line's text after "- Status: " (rest), its word (up to the first
+// space or "(", or the end), whether the word is known (exactly open, acknowledged, done or rejected), and
+// the line as written, or "no status line" (said).
+const STATUS_WORDS = ["open", "acknowledged", "done", "rejected"];
+function statusOf(body) {
+  const l = body.find((x) => x.startsWith("- Status:"));
+  const rest = l === undefined ? "" : l.replace(/^- Status: ?/, "");
+  const word = rest.match(/^[^ (]*/)[0];
+  return { rest, word, known: STATUS_WORDS.includes(word), said: l === undefined ? "no status line" : l };
+}
+const statusKnown = (w) => STATUS_WORDS.includes(w);
+const statusClosed = (w) => w === "done" || w === "rejected";
+// The owner: "owner" or "founder" as a whole word of the addressee, in any case ("Owner and qa" too,
+// never "owners" or "co-owner"). ownerCase writes those words in lower case, and nothing else.
+const OWNER_RE = /(^|[^a-z-])(owner|founder)(?![a-z-])/gi;
+const ownerIn = (to) => new RegExp(OWNER_RE.source, "i").test(to || "");
+const ownerCase = (to) => to.replace(OWNER_RE, (m, a, b) => a + b.toLowerCase());
+// idOrder(a, b): IDs by their date (the eight digits), then their number as a number: H-20261107-100
+// after H-20261107-99. Anything else by its text.
+function idOrder(a, b) {
+  const p = (x) => /^H-(\d{8})-(\d+)/.exec(x), x = p(a), y = p(b);
+  const text = a < b ? -1 : a > b ? 1 : 0;
+  if (!x || !y) return text;
+  return x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : Number(x[2]) - Number(y[2]) || text;
+}
+// handoff-rows <HANDOFFS.md>: every entry as JSON, in file order: id, title, section, status_line (the
+// text after "- Status: "), status (its word), known, status_said, from, to, owner, text (in full).
+function handoffRows(file) {
+  // CRLF line ends end lines; a lone \r stays in its line, so a terminal shows it as ? (term_text).
+  const lines = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n").split("\n");
+  const rows = handoffEntries(lines).map((e) => {
+    const s = statusOf(e.lines);
+    const fl = e.lines.find((l) => l.startsWith("- From:")) || "";
+    const m = fl.match(/^- From: ?(.*?) -> To: (.*)$/);
+    const from = m ? m[1] : fl.replace(/^- From: ?/, ""), to = m ? m[2] : "";
+    const text = lines.slice(e.start, e.end).join("\n").replace(/\n+$/, "") + "\n";
+    return { id: e.id, title: e.title, section: e.section, status_line: s.rest, status: s.word, known: s.known, status_said: s.said,
+      from, to, owner: ownerIn(to), text };
+  });
+  process.stdout.write(JSON.stringify(rows) + "\n");
+}
+
 // handoff-entry <HANDOFFS.md> <ID> info|evidence <links>|verdict <role> <line>|wayback <text>: read or
 // change one open entry in place. info prints "<sender>\t<1 when it has evidence>\t<small>\t<1 when it
 // has a way back>\t<addressee>".
 // Exit 3 when the entry is not under "## Open".
 function handoffEntry(file, hid, mode, ...args) {
   const lines = read(file).split("\n");
-  const open = lines.indexOf("## Open");
-  if (open < 0) die("", 3);
-  let start = -1;
-  for (let i = open + 1; i < lines.length; i++) {
-    if (lines[i].startsWith("## ")) break;
-    if (lines[i].startsWith("### " + hid + ":")) { start = i; break; }
-  }
-  if (start < 0) die("", 3);
-  let end = start + 1;
-  while (end < lines.length && !lines[end].startsWith("### ") && !lines[end].startsWith("## ")) end++;
+  const e = handoffEntries(lines).find((x) => x.section === "open" && x.id === hid && lines[x.start].startsWith("### " + hid + ":"));
+  if (!e) die("", 3);
+  const start = e.start, end = e.end;
   let last = end - 1;
   while (last > start && !lines[last].trim()) last--;
   let body = lines.slice(start + 1, last + 1);
@@ -117,33 +174,43 @@ function handoffEntry(file, hid, mode, ...args) {
 }
 
 // handoff-archive <workspace>: move done and rejected entries to handoffs/archive-<YYYY-MM>.md by their
-// ID's month; prints how many moved. HANDOFFS.md is left untouched when none did.
+// ID's month (only a known done or rejected: handoffEntries, statusOf); prints how many moved, then each
+// archive file it wrote, from the workspace. HANDOFFS.md is left untouched when none did. A "## " section
+// after "## Open" (other than a legacy "## Archive", whose heading is dropped and its entries sorted like
+// the rest) stays where it is, byte for byte.
 function handoffArchive(ws) {
   const file = path.join(ws, "HANDOFFS.md");
-  const text = read(file);
-  const at = text.indexOf("\n## Open\n");
-  if (at < 0) die("no '## Open' heading in HANDOFFS.md");
-  const head = text.slice(0, at), sep = "\n## Open\n";
-  // Entries start at '### H-'; the old '## Archive' heading is dropped and its entries sorted like the rest.
-  const parts = text.slice(at + sep.length).split("\n## Archive\n").join("\n").split(/\n(?=### H-)/);
-  const preamble = parts[0], keep = [], moved = {};
-  for (let e of parts.slice(1)) {
-    e = e.replace(/^\n+|\n+$/g, "");
-    const st = e.match(/^- Status: (\S+)/m);
-    const m = e.match(/^### H-(\d{4})(\d{2})/);
-    if (st && m && /^(done|rejected)\b/.test(st[1])) (moved[m[1] + "-" + m[2]] = moved[m[1] + "-" + m[2]] || []).push(e);
-    else keep.push(e);
-  }
-  fs.mkdirSync(path.join(ws, "handoffs"), { recursive: true });
+  const lines = read(file).split("\n");
+  const open = lines.indexOf("## Open");
+  if (open < 0) die("no '## Open' heading in HANDOFFS.md");
+  let tail = lines.findIndex((l, i) => i > open && l.startsWith("## ") && !l.startsWith("## Archive"));
+  if (tail < 0) tail = lines.length;
+  const es = handoffEntries(lines.slice(0, tail)).filter((e) => e.start > open);
+  const text = (a, b) => lines.slice(a, b).filter((l) => !l.startsWith("## Archive")).join("\n").replace(/^\n+|\n+$/g, "");
+  const keep = [], moved = {};
+  es.forEach((e, k) => {
+    const t = text(e.start, e.end), m = e.id.match(/^H-(\d{4})(\d{2})/), st = statusOf(e.lines).word;
+    if (m && statusClosed(st)) (moved[m[1] + "-" + m[2]] = moved[m[1] + "-" + m[2]] || []).push(t);
+    else keep.push(t);
+    const gap = text(e.end, k + 1 < es.length ? es[k + 1].start : tail);  // a "### " block that is no entry stays
+    if (gap) keep.push(gap);
+  });
+  const written = [];
   for (const month of Object.keys(moved).sort()) {
-    const p = path.join(ws, "handoffs", "archive-" + month + ".md");
+    fs.mkdirSync(path.join(ws, "handoffs"), { recursive: true });
+    const rel = "handoffs/archive-" + month + ".md", p = path.join(ws, rel);
     let add = fs.existsSync(p) ? "" : "# Closed handoffs, IDs from " + month + "\n\nMoved from HANDOFFS.md by bin/handoff.sh archive. Read only.\n";
     for (const e of moved[month]) add += "\n" + e.split("](specs/").join("](../specs/") + "\n";  // links now read from handoffs/
     fs.appendFileSync(p, add, "utf8");
+    written.push(rel);
   }
-  const n = Object.values(moved).reduce((a, es) => a + es.length, 0);
-  if (n) write(file, head + sep + preamble.replace(/\n+$/, "") + "\n\n" + keep.join("\n\n") + "\n");  // untouched otherwise
-  process.stdout.write(n + "\n");
+  const n = Object.values(moved).reduce((a, x) => a + x.length, 0);
+  if (n) {  // untouched otherwise
+    const preamble = lines.slice(open + 1, es[0].start).filter((l) => !l.startsWith("## Archive")).join("\n").replace(/\n+$/, "");
+    const body = keep.length ? preamble + "\n\n" + keep.join("\n\n") + "\n" : preamble ? preamble + "\n" : "";
+    write(file, lines.slice(0, open + 1).join("\n") + "\n" + body + (tail < lines.length ? "\n" + lines.slice(tail).join("\n") : ""));
+  }
+  process.stdout.write([n, ...written].join("\n") + "\n");
 }
 
 // readiness <spend file> <HANDOFFS.md> [<archive>...]: {"<ID>": {verdicts, needs, missing, blocking,
@@ -183,14 +250,8 @@ function readiness(spend, ...files) {
     .split(",").map((n) => n.trim()).filter(Boolean).map((n) => n.toLowerCase());
   const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h) || h.startsWith(w)));  // short and long hashes match
   const entries = [];
-  let cur = null;
   files.forEach((file, n) => {  // HANDOFFS.md, then the archives (closed work a run may still need)
-    let on = n > 0;
-    for (const l of read(file).split("\n")) {
-      if (l.startsWith("## ")) { on = l.startsWith("## Open") || l.startsWith("## Archive"); cur = null; }
-      else if (on && l.startsWith("### H-")) { cur = { id: words(l)[1].replace(/:+$/, ""), lines: [], archived: n > 0 }; entries.push(cur); }
-      else if (cur) cur.lines.push(l);
-    }
+    for (const e of handoffEntries(read(file).split("\n"), n > 0)) entries.push({ id: e.id, lines: e.lines, archived: n > 0 });
   });
   const field = (e, k) => { const l = e.lines.find((x) => x.startsWith(k)); return l ? l.slice(k.length).trim() : ""; };
   // Every BLOCK or CHANGES a reviewer ever recorded on an entry, though a later Verdict line replaced it:
@@ -270,7 +331,6 @@ function readiness(spend, ...files) {
       if (passed.some((p) => covers(p.commits, work)) || ok.some((o) => blocking.includes(o))) continue;  // passed, or blocking
       (passed.length ? stale : missing).push(w);
     }
-    const st = field(e, "- Status:");
     for (const l of e.lines) addBlock(e.id, l);
     const blocks = {};
     for (const l of blockLines[e.id] || []) { const r = l.match(VER)[1]; blocks[r] = (blocks[r] || 0) + 1; }
@@ -283,7 +343,7 @@ function readiness(spend, ...files) {
     // as spec run and handoff run count it (ADR-006).
     const bs = [...new Set(names(to).filter((n) => builds.has(n)))];
     out[e.id] = {
-      builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: st ? st.split(" ")[0] : "",
+      builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: statusOf(e.lines).word,
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
       cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
       ready, unread_verdicts: unread,
@@ -854,7 +914,8 @@ function json(...argv) {
   const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
   const list = (x) => { if (x == null) return []; if (!Array.isArray(x)) throw new Error("not a list"); return x; };
   const obj = (x) => { if (x == null) return {}; if (typeof x != "object" || Array.isArray(x)) throw new Error("not an object"); return x; };
-  const helpers = { num, str, sum, list, obj };
+  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed and ownerIn.
+  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn };
   try { fn = new Function("$", ...Object.keys(helpers), ...o.names, "return (" + expr + ");"); } catch (e) { die("json: " + e.message, 5); }
   let out = "";
   const put = (v) => {
@@ -1190,15 +1251,16 @@ function verdictOrigin(ws) {
   const verdict = (t) => /^- Verdict: (\S+) (\S+) /.exec(t);
   const bad = [];
   if (/^- Verdict: /m.test(fs.existsSync(path.join(ws, "HANDOFFS.md")) ? read(path.join(ws, "HANDOFFS.md")) : "")) {
-    let id = "", fenced = false;
-    for (const x of blame("HANDOFFS.md") || []) {
+    let fenced = false;
+    const b = blame("HANDOFFS.md") || [], of = [];  // the entry each line is in (handoffEntries), or none
+    for (const e of handoffEntries(b.map((x) => x.text))) for (let i = e.start + 1; i < e.end; i++) of[i] = e.id;
+    for (const [i, x] of b.entries()) {
       if (/^\s*```/.test(x.text)) { fenced = !fenced; continue; }
       if (fenced) continue;
-      const h = /^### (H-[0-9]{8}-[0-9]+[a-z]?):/.exec(x.text);
-      if (h) { id = h[1]; continue; }
-      const v = verdict(x.text);
+      const id = of[i];
+      const v = id && verdict(x.text);
       if (!v || uncommitted(x)) continue;
-      if (x.summary() !== "handoffs: " + id + " " + v[1] + " " + v[2]) bad.push(["HANDOFFS.md", id || "(no entry)", v[1] + " " + v[2]]);
+      if (x.summary() !== "handoffs: " + id + " " + v[1] + " " + v[2]) bad.push(["HANDOFFS.md", id, v[1] + " " + v[2]]);
     }
   }
   let specs = [];
@@ -1248,7 +1310,7 @@ function kitEdited(ws, manifest) {
 const COMMANDS = {
   "kit-edited": kitEdited,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "verdict-origin": verdictOrigin,
-  "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, readiness,
+  "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,

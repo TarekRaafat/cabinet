@@ -138,8 +138,9 @@ agent() {  # agent <role> <what it does> <prompt>
   run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
 # Its work: every handoff filed with --spec for it to one builder, not sent back, oldest first (the order
-# routing set). A routing request or a review filed with --spec is not work for a builder.
-work() { readiness | json -r --each --arg s "$spec" 'Object.keys($).filter((k) => $[k].spec == $s && $[k].builder !== null && !/^rejected/.test($[k].status_now)).sort()'; }
+# routing set, by the handoff reader's idOrder). A routing request or a review filed with --spec is not work
+# for a builder.
+work() { readiness | json -r --each --arg s "$spec" 'Object.keys($).filter((k) => $[k].spec == $s && $[k].builder !== null && $[k].status_now != "rejected").sort(idOrder)'; }
 while :; do
   step=$((step + 1)); ((step <= 20)) || stop "more steps than a spec takes; the owner looks at it"
   works="$(work)"

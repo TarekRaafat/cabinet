@@ -5698,6 +5698,294 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "handoff reading: a workspace, a builder and the fixtures" ""
+s77() {
+HW="$T/hr"; HC="$T/hr-calls"; mkdir -p "$T/hrfakes"
+"$F" new "$HW" --yes >/dev/null || fail "new for handoff reading"
+HW="$(cd "$HW" && pwd -P)"
+git init -q "$HW/api" && echo x > "$HW/api/a.txt" && git -C "$HW/api" add -A && git -C "$HW/api" commit -qm init
+printf 'api\t-\t-\tno\n' >> "$HW/repos.tsv"
+L before "$HW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'
+git -C "$HW" commit -qam "api, built by backend"
+"$F" -C "$HW" config --yes --pipeline small --pipeline-limit 5 >/dev/null || fail "the runner for handoff reading"
+HL="$HOME/$LOGS/hr"
+sed '/^## Open$/q' "$HW/HANDOFFS.md" > "$T/hr-head"
+# A fake claude: each call appends its prompt (one line) to $HC and costs $0.01. With $HC.build present,
+# the builder builds, hands on to qa with --depends-on and sets the work done; a reviewer records PASS.
+cat > "$T/hrfakes/claude" <<'FAKE'
+#!/bin/bash
+agent="" prompt=""
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+printf '%s\n' "$prompt" | tr '\n' ' ' >> "$HC"; echo >> "$HC"
+id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
+if [[ -f "$HC.build" && "$agent" == backend && "$prompt" == "Pick up handoff"* ]]; then
+  echo "$id" >> api/a.txt; git -C api commit -qam "build $id"; git -C api rev-parse --short HEAD > "$HC.c-$id"
+  bin/handoff.sh add --from backend --to qa --changed built --needed verify --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
+  sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: done/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
+elif [[ -f "$HC.build" && "$agent" != backend ]]; then
+  w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
+  mkdir -p "specs/$agent"; echo checked > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
+  bin/handoff.sh record "$id" --role "$agent" PASS --commits "$(cat "$HC.c-$w")" --note "specs/$agent/$id.md" >/dev/null
+fi
+echo '{"type":"result","result":"done","total_cost_usd":0.01}'
+FAKE
+chmod +x "$T/hrfakes/claude"
+  return 0   # a last "check && fail" line must not end the run
+}
+# hr_ent <ID> <status, or - for no status line> <to> [<line>...]: one entry.
+hr_ent() {
+  local id="$1" st="$2" to="$3"; shift 3
+  printf '\n### %s: Work %s\n- From: chief-of-staff -> To: %s\n' "$id" "$id" "$to"
+  [[ "$st" == - ]] || printf -- '- Status: %s\n' "$st"
+  printf -- '- Changed: x\n- Needed: y\n'
+  local l; for l in "$@"; do printf '%s\n' "$l"; done
+}
+hr_small() { hr_ent "$1" "$2" backend "- Depends on: none" "- Size: small"; }
+# hr_fix <name> <entries...>: HANDOFFS.md as the template's head and these entries, committed; no
+# stopped marks, no agent calls, no PIPELINE.md.
+hr_fix() {
+  local m="$1"; shift
+  { cat "$T/hr-head"; "$@"; } > "$HW/HANDOFFS.md"
+  git -C "$HW" add HANDOFFS.md; git -C "$HW" commit -qm "fixture $m" -- HANDOFFS.md >/dev/null || true   # the same fixture again: nothing to commit
+  rm -f "$HL"/run-*.stopped "$HC" "$HC".* "$HW/PIPELINE.md"
+}
+# Fixture F (specs/handoff-reading.md): known and unknown status words, one done with a closed review.
+hr_F() {
+  hr_small H-20261107-01 "open (2026-11-07)"; hr_small H-20261107-02 "Done (2026-11-07)"; hr_small H-20261107-03 "closed (2026-11-07)"
+  hr_small H-20261107-04 "in-progress (2026-11-07)"; hr_small H-20261107-05 -; hr_small H-20261107-06 "acknowledged (2026-11-07)"
+  hr_small H-20261107-07 "done (2026-11-07)"; hr_ent H-20261107-08 "done (2026-11-07)" qa "- Depends on: H-20261107-07"
+  hr_small H-20261107-09 "rejected (2026-11-07)"; hr_small H-20261107-10 "done(2026-11-07)"
+}
+hr_known() { hr_small H-20261107-01 "open (2026-11-07)"; hr_small H-20261107-06 "acknowledged (2026-11-07)"; hr_small H-20261107-07 "done (2026-11-07)"
+  hr_ent H-20261107-08 "done (2026-11-07)" qa "- Depends on: H-20261107-07"; hr_small H-20261107-09 "rejected (2026-11-07)"; }
+hr_run() { HC="$HC" PATH="$T/hrfakes:$PATH" "$F" -C "$HW" handoff run "$@" 2>&1; }
+hr_sched() { (cd "$HW" && HC="$HC" PATH="$T/hrfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1); }
+hr_named() { grep -qE "$1([^0-9]|\$)" "$2" 2>/dev/null; }   # hr_named <ID> <file>: the ID, whole
+hr_doc() { "$HW/bin/doctor.sh" --json 2>/dev/null | j -c --arg i "$1" '$.results.find((r) => r.id == $i) ?? {}'; }
+HR_SAID=(H-20261107-02 "- Status: Done (2026-11-07)" H-20261107-03 "- Status: closed (2026-11-07)" H-20261107-04 "- Status: in-progress (2026-11-07)" H-20261107-05 "no status line")
+HR_WORDS="open, acknowledged, done or rejected"
+# hr_notes <status>: H-20261107-01, then a "## Notes" section holding lines that look like entry fields.
+hr_notes() { hr_small H-20261107-01 "$1"; printf '\n## Notes\n\nkeep me\n- Status: open\n- Verdict: qa PASS 2026-11-07 none specs/qa/x.md\n'; }
+
+section "handoff reading 1: the doctor names each unknown status word" "77"
+s78() {
+hr_fix F hr_F
+r="$(hr_doc handoffs.status)"
+[[ "$(j -r '$.level' <<<"$r")" == fix ]] || fail "handoffs.status is not a FIX on Fixture F: $r"
+m="$(j -r '$.message' <<<"$r")"
+for ((i = 0; i < ${#HR_SAID[@]}; i += 2)); do [[ "$m" == *"${HR_SAID[$i]} (${HR_SAID[$((i + 1))]})"* ]] || fail "handoffs.status does not name ${HR_SAID[$i]} with its status line: $m"; done
+for i in 01 06 07 08 09 10; do [[ "$m" != *"H-20261107-$i"* ]] || fail "handoffs.status names H-20261107-$i: $m"; done
+[[ "$m" == *"$HR_WORDS"* ]] || fail "handoffs.status does not say the four words: $m"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 2: known status words are ok" "77"
+s79() {
+hr_fix known hr_known
+r="$(hr_doc handoffs.status)"
+[[ "$(j -r '$.level' <<<"$r")" == ok ]] || fail "handoffs.status on known words: $r"
+"$HW/bin/doctor.sh" --json 2>/dev/null | j -e '!$.results.some((r) => r.id == "handoffs.status" && r.level == "fix")' >/dev/null || fail "a handoffs.status FIX on known words"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 3: run stops on an unknown status word" "77"
+s80() {
+for k in 0 2 6; do
+  i="${HR_SAID[$k]}" s="${HR_SAID[$((k + 1))]}"
+  hr_fix F hr_F
+  rc=0; out="$(hr_run "$i")" || rc=$?
+  l="$(grep '^Stopped: ' <<<"$out" || true)"
+  [[ $rc == 1 && "$l" == *"$i"* && "$l" == *"$s"* && "$l" == *"$HR_WORDS"* ]] || fail "run $i on its unknown word (exit $rc): $out"
+  [[ ! -s "$HC" ]] || fail "run $i made an agent run: $(cat "$HC")"
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 4: the scheduled run skips unknown words, naming each" "77"
+s81() {
+hr_fix F hr_F
+hr_sched || fail "the scheduled run on Fixture F: $(cat "$HW/PIPELINE.md" 2>/dev/null)"
+for i in 01 06; do hr_named "Pick up handoff H-20261107-$i" "$HC" || fail "no agent run for H-20261107-$i: $(cat "$HC" 2>/dev/null)"; done
+for i in 02 03 04 05 07 09 10; do ! hr_named "H-20261107-$i" "$HC" || fail "an agent run names H-20261107-$i: $(cat "$HC")"; done
+for ((k = 0; k < ${#HR_SAID[@]}; k += 2)); do
+  grep -F -- "- ${HR_SAID[$k]}: " "$HW/PIPELINE.md" | grep -F -- "${HR_SAID[$((k + 1))]}" | grep -qF "$HR_WORDS" || fail "PIPELINE.md does not name ${HR_SAID[$k]} with its reason: $(cat "$HW/PIPELINE.md")"
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 5: a scheduled run with every word unknown builds nothing" "77"
+s82() {
+hr_F_closed() { hr_F | sed 's/^- Status: .*/- Status: closed (2026-11-07)/'; }
+hr_fix closed hr_F_closed
+rc=0; (cd "$HW" && HC="$HC" PATH="$T/hrfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || rc=$?
+[[ $rc == 0 ]] || fail "the scheduled run with every word unknown exited $rc: $(cat "$HW/PIPELINE.md" 2>/dev/null)"
+[[ ! -s "$HC" ]] || fail "an agent run with every word unknown: $(cat "$HC")"
+for i in 01 02 03 04 05 06 07 09 10; do
+  s="- Status: closed (2026-11-07)"; [[ $i == 05 ]] && s="no status line"
+  grep -F -- "- H-20261107-$i: " "$HW/PIPELINE.md" | grep -F -- "$s" | grep -qF "$HR_WORDS" || fail "PIPELINE.md does not name H-20261107-$i: $(cat "$HW/PIPELINE.md")"
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 6: unknown words stay in the lists" "77"
+s83() {
+hr_fix F hr_F
+out="$("$HW/bin/handoff.sh" list)"
+grep -qE '^ *[0-9]+d  Done +H-20261107-02 ' <<<"$out" && grep -qE '^ *[0-9]+d  closed +H-20261107-03 ' <<<"$out" && grep -qE '^ *[0-9]+d  in-progress +H-20261107-04 ' <<<"$out" \
+  && grep -qE '^ *\?d {16}H-20261107-05 ' <<<"$out" && grep -qE '^ *[0-9]+d  open +H-20261107-01 ' <<<"$out" && grep -qE '^ *[0-9]+d  acknowledged +H-20261107-06 ' <<<"$out" || fail "plain list on Fixture F: $out"
+out="$("$HW/bin/handoff.sh" list backend)"
+for k in 0 2 4 6; do
+  i="${HR_SAID[$k]}"; grep -qx "### $i: Work $i" <<<"$out" && grep -qx -- "- Needed: y" <<<"$out" || fail "list backend does not show $i: $out"
+done
+for k in 0 2 4; do grep -qxF -- "${HR_SAID[$((k + 1))]}" <<<"$out" || fail "list backend lacks the line ${HR_SAID[$((k + 1))]}: $out"; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 7: archive moves known closed words only" "77"
+s84() {
+hr_fix F hr_F
+"$HW/bin/handoff.sh" archive >/dev/null || fail "archive on Fixture F"
+for i in 01 02 03 04 05 06; do grep -q "^### H-20261107-$i:" "$HW/HANDOFFS.md" || fail "archive moved H-20261107-$i"; done
+for i in 07 08 09 10; do ! grep -q "^### H-20261107-$i:" "$HW/HANDOFFS.md" && grep -q "^### H-20261107-$i:" "$HW/handoffs/archive-2026-11.md" || fail "archive did not move H-20261107-$i"; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 8: add writes the owner in lower case" "77"
+s85() {
+hr_fix empty true
+a() { (cd "$HW" && bin/handoff.sh add --from qa "$@" --changed x --needed y "t1" >/dev/null) || fail "add $*"; }
+a --to Owner; a --to FOUNDER; a --to "Owner and qa"; a --to Backend --small
+grep -qx -- "- From: qa -> To: owner" "$HW/HANDOFFS.md" && grep -qx -- "- From: qa -> To: founder" "$HW/HANDOFFS.md" \
+  && grep -qx -- "- From: qa -> To: owner and qa" "$HW/HANDOFFS.md" && grep -qx -- "- From: qa -> To: Backend" "$HW/HANDOFFS.md" || fail "add --to: $(grep -- '-> To:' "$HW/HANDOFFS.md")"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 9: the owner in any case counts everywhere" "77"
+s86() {
+hr_to() { hr_ent H-20261107-01 "open (2026-11-07)" "$1"; hr_ent H-20261107-02 "open (2026-11-07)" "$2"; hr_ent H-20261107-03 "open (2026-11-07)" founder
+  hr_ent H-20261107-04 "open (2026-11-07)" "$3"; hr_ent H-20261107-05 "open (2026-11-07)" owners; }
+hr_cased() { hr_to Owner OWNER "Owner and qa"; }
+hr_plain() { hr_to owner owner "owner and qa"; }
+local nx="" dg="" dc=""
+for fx in hr_cased hr_plain; do
+  hr_fix "$fx" "$fx"
+  out="$("$HW/bin/handoff.sh" list owner)"
+  for i in 01 02 03 04; do grep -qx "### H-20261107-$i: Work H-20261107-$i" <<<"$out" || fail "$fx: list owner lacks H-20261107-$i: $out"; done
+  ! grep -q "H-20261107-05" <<<"$out" || fail "$fx: list owner shows owners: $out"
+  [[ "$("$HW/bin/handoff.sh" list owner --json | j -r '$.map((h) => h.id).join(" ")')" == "H-20261107-01 H-20261107-02 H-20261107-03 H-20261107-04" ]] || fail "$fx: list owner --json: $("$HW/bin/handoff.sh" list owner --json | j -c '$.map((h) => h.id)')"
+  x="$("$F" -C "$HW" next 2>/dev/null | grep 'wait on you' || true)"
+  [[ "$x" == *"4 handoff(s) wait on you."* ]] || fail "$fx: cabinet next: $x"
+  [[ -z "$nx" || "$x" == "$nx" ]] || fail "cabinet next differs: $x, against $nx"; nx="$x"
+  x="$("$F" digest 2>/dev/null | grep -F "/hr && cabinet handoff list owner" || true)"
+  [[ "$x" == *"4 handoff(s) wait on you"* ]] || fail "$fx: cabinet digest: $x"
+  [[ -z "$dg" || "$x" == "$dg" ]] || fail "cabinet digest differs: $x, against $dg"; dg="$x"
+  x="$(j -r '$.message' <<<"$(hr_doc handoffs.addressee)")"
+  [[ "$x" == *"H-20261107-05 (owners)"* ]] || fail "$fx: handoffs.addressee: $x"
+  for i in 01 02 03 04; do [[ "$x" != *"H-20261107-$i"* ]] || fail "$fx: handoffs.addressee names H-20261107-$i: $x"; done
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 10: IDs past 99 a day in order" "77"
+s87() {
+hr_ids() { for i in H-20261107-101 H-20261107-99 H-20261107-100 H-20261106-100 H-20261107-98; do hr_small "$i" "open (2026-11-07)"; done; }
+hr_fix ids hr_ids
+x="$("$HW/bin/handoff.sh" list | awk '$3 ~ /^H-20261107-/ { print $3 }' | paste -sd ' ' -)"
+[[ "$x" == "H-20261107-98 H-20261107-99 H-20261107-100 H-20261107-101" ]] || fail "plain list order: $x"
+x="$("$HW/bin/handoff.sh" list --json | j -r '$.map((h) => h.id).join(" ")')"
+[[ "$x" == "H-20261106-100 H-20261107-98 H-20261107-99 H-20261107-100 H-20261107-101" ]] || fail "list --json order: $x"
+hr_sched || true
+x="$(grep -oE '^Pick up handoff H-[0-9]+-[0-9]+' "$HC" | cut -d' ' -f4 | paste -sd ' ' -)"
+[[ "$x" == "H-20261106-100 H-20261107-98 H-20261107-99 H-20261107-100 H-20261107-101" ]] || fail "scheduled run order: $x"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 11: spec run takes its work in ID order" "77"
+s88() {
+cat > "$HW/specs/hr.md" <<'SPEC'
+---
+feature: hr
+status: building
+repos: [api]
+areas: []
+---
+
+# HR
+
+## Rules
+
+One.
+
+## Acceptance criteria
+
+- It works.
+
+## Decisions
+
+| # | Question | Options | Recommendation | Owner answer (date) |
+|---|---|---|---|---|
+
+## Plan
+
+### api
+
+- the change, with tests
+
+## Reviews
+
+SPEC
+mkdir -p "$HW/specs/qa"; echo ok > "$HW/specs/qa/hr.md"
+git -C "$HW" add specs/hr.md specs/qa/hr.md && git -C "$HW" commit -qm "hr spec" -- specs/hr.md specs/qa/hr.md
+"$HW/bin/spec.sh" record specs/hr.md --role qa PASS --note specs/qa/hr.md >/dev/null && "$HW/bin/spec.sh" check specs/hr.md >/dev/null || fail "test setup: a building spec: $("$HW/bin/spec.sh" check specs/hr.md)"
+hr_spec() { for i in H-20261107-101 H-20261107-99 H-20261107-100 H-20261106-100 H-20261107-98; do hr_ent "$i" "open (2026-11-07)" backend "- Depends on: none" "- Spec: specs/hr.md"; done; }
+hr_fix spec hr_spec
+touch "$HC.build"
+out="$(cd "$HW" && HC="$HC" PATH="$T/hrfakes:$PATH" bin/spec.sh run specs/hr.md 2>&1)" || fail "spec run: $out"
+x="$(grep -oE '^Pick up handoff H-[0-9]+-[0-9]+' "$HC" | cut -d' ' -f4 | paste -sd ' ' -)"
+[[ "$x" == "H-20261106-100 H-20261107-98 H-20261107-99 H-20261107-100 H-20261107-101" ]] || fail "spec run order: $x"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 12: archive keeps a section after the entries" "77"
+s89() {
+hr_nd() { hr_notes "done (2026-11-07)"; }
+hr_fix notes hr_nd
+cp "$HW/HANDOFFS.md" "$T/hr-S"
+"$HW/bin/handoff.sh" archive >/dev/null || fail "archive with a Notes section"
+! grep -q '^### H-20261107-01:' "$HW/HANDOFFS.md" || fail "archive did not move H-20261107-01"
+n="$(sed -n '/^## Notes$/,$p' "$T/hr-S" | wc -c | tr -d ' ')"   # HANDOFFS.md ends with the Notes section as it was
+cmp -s <(tail -c "$n" "$T/hr-S") <(tail -c "$n" "$HW/HANDOFFS.md") \
+  || fail "archive changed the Notes section: $(cat "$HW/HANDOFFS.md")"
+! grep -q '## Notes\|keep me' "$HW/handoffs/archive-2026-11.md" || fail "the Notes section went into the archive"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 13: no reader reads past a section heading" "77"
+s90() {
+hr_no() { hr_notes "open (2026-11-07)"; }
+hr_fix notes-open hr_no
+"$HW/bin/handoff.sh" list --json | j -e '((h) => h.status == "open" && !h.verdicts.some((v) => v.role == "qa"))($.find((h) => h.id == "H-20261107-01"))' >/dev/null \
+  || fail "list --json reads the Notes section: $("$HW/bin/handoff.sh" list --json | j -c '$.find((h) => h.id == "H-20261107-01")')"
+for c in handoffs.verdicts handoffs.verdict-origin; do
+  r="$(hr_doc "$c")"; [[ "$(j -r '$.level' <<<"$r")" == ok ]] || fail "$c reads the Notes section: $r"
+done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "handoff reading 14: archive commits only its own files" "77"
+s91() {
+hr_fix one-done hr_small H-20261107-01 "done (2026-11-07)"
+mkdir -p "$HW/handoffs"; echo "old" > "$HW/handoffs/archive-2026-10.md"; git -C "$HW" add handoffs/archive-2026-10.md; git -C "$HW" commit -qm "an October archive" -- handoffs/archive-2026-10.md
+rm -f "$HW/handoffs/archive-2026-11.md"; git -C "$HW" rm -q --cached --ignore-unmatch handoffs/archive-2026-11.md >/dev/null; git -C "$HW" commit -qm "no November archive" >/dev/null 2>&1 || true
+echo "draft" > "$HW/handoffs/draft.md"; echo "edited" >> "$HW/handoffs/archive-2026-10.md"
+"$HW/bin/handoff.sh" archive >/dev/null || fail "archive with others' files in handoffs/"
+[[ "$(git -C "$HW" show --name-only --format= HEAD | sort | paste -sd ' ' -)" == "HANDOFFS.md handoffs/archive-2026-11.md" ]] || fail "archive committed: $(git -C "$HW" show --name-only --format= HEAD)"
+x="$(git -C "$HW" status --porcelain)"
+grep -qx '?? handoffs/draft.md' <<<"$x" && grep -qx ' M handoffs/archive-2026-10.md' <<<"$x" || fail "archive took others' files: $x"
+rm -f "$HW/handoffs/draft.md"; git -C "$HW" checkout -q -- handoffs/archive-2026-10.md
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
