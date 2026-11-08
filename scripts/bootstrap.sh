@@ -236,10 +236,11 @@ if cmp -s "$G/pre-push" "$hooks/pre-push" && ! cmp -s "$G/cabinet-push-gate.js" 
   else cp "$G/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js.cabinet-new" && mv -f "$hooks/cabinet-push-gate.js.cabinet-new" "$hooks/cabinet-push-gate.js" && echo "  placed the push gate's helper at $hooks/cabinet-push-gate.js"; fi
 fi
 # The credit hook as released: v3 in 0.2.0 and 0.2.1, v4 in 0.3.0; v5 and v6 only on main before 0.3.1, never in
-# a package, listed since machines that build the kit run them. Add the current one's here when it changes.
+# a package, listed since machines that build the kit run them; v7 in 0.3.1 to 0.4.0. Add the current one's here when it changes.
 kit_hook prepare-commit-msg "credit hook" "credit roles cannot add their line, and runs are not refused an amend," \
   7184259644c63e37567e8b7d41b278f6534cfac98a05afcee543cf69b868c706 7f3e0132d1f4b10b9b5a76e6d3e3863714fd8e71ad762c4efd9d97ca4320bbca \
-  14a81cff4ba50bdf15ac42ce5a8ae881fb87bc64bc784f26c9d160e88060e933 3a637a27d1f7867449f5f158c662533d169051d1cc3d7c692646fe0c36c669f4
+  14a81cff4ba50bdf15ac42ce5a8ae881fb87bc64bc784f26c9d160e88060e933 3a637a27d1f7867449f5f158c662533d169051d1cc3d7c692646fe0c36c669f4 \
+  ea20fda3866fd4a8992ce443fc06ab1d8ad16cdbb00013b91d465222bc75746c
 # The pre-rebase hook as released: v1 in 0.3.0 is the current one. Add its SHA-256 here when it changes.
 kit_hook pre-rebase "pre-rebase hook" "runs are not refused a rebase"
 for h in "$hooks"/*; do [[ -f "$h" && ! -x "$h" ]] && run chmod +x "$h"; done

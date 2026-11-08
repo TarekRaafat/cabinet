@@ -1587,6 +1587,9 @@ for args in "nope" "role nope" "handoff nope" "next --bogus" "new $T/x --name" "
 done
 st=0; "$F" status "$CW" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a folder argument was taken (exit $st), not refused for -C"
 st=0; "$CW/bin/handoff.sh" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a script without its verb exited $st, not 2"
+# A reader that stops early (head -1) is no failure: lib.js exits 0 on the closed pipe, with no stack trace.
+o="$(set -o pipefail; L json -nr '[...Array(300000).keys()].join("\n")' 2>"$T/epipe-err" | head -1)" && [[ "$o" == 0 && ! -s "$T/epipe-err" ]] \
+  || fail "lib.js into head -1: '$o' / $(head -3 "$T/epipe-err")"
 # -C runs a command as if started in that folder.
 (cd "$T/plain" && "$F" -C "$CW" status --json) | j -e --arg w "$(cd "$CW" && pwd -P)" '$.workspace == $w' >/dev/null || fail "-C"
 bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP_CWORD=4; _cabinet; echo "${COMPREPLY[*]}"' _ "$F" | grep -q 'add.*remove.*list' || fail "completion of verbs after -C"
@@ -3044,10 +3047,14 @@ am CABINET_AMEND_AS=code-reviewer -- --amend --no-edit; amno "HEAD is qa's commi
 am CABINET_AMEND_AS=q -- --amend -m x; amno "HEAD is qa's commit" "no amend as q:" "$FIX" "$MF"
 # With -c or -C, git gives the source commit, so it counts as an amend, as in v3.
 am CABINET_AMEND_AS=code-reviewer -- --allow-empty -C HEAD; amno "HEAD is qa's commit" "$MF"
-# A new commit whose -m mentions --amend: on Linux it commits; where ps joins the arguments, it is taken as
-# an amend and the refusal says to use -F.
-am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix the --amend doc"
-if [[ -r /proc/self/cmdline ]]; then amok "fix the --amend doc"; else amno "HEAD is qa's commit" "$MF"; fi
+# A new commit whose -m mentions --amend or --amount commits, on Linux (/proc) and where ps joins the
+# arguments (macOS, from v8): only an amend option given as an argument of its own counts. A real amend whose
+# -m also mentions --amend, or holds only a letter of it, is still one.
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix the --amend doc"; amok "fix the --amend doc"
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix --amount" -m "--amend"; amok $'fix --amount\n\n--amend'
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m $'two\n--amend lines'; amok $'two\n--amend lines'
+for m in "--amend" e "x --amend -m y"; do am CABINET_AMEND_AS=code-reviewer -- --amend -m "$m"; amno "HEAD is qa's commit"; done
+printf 'say --amend\n' > "$T/am-msg3"; am CABINET_AMEND_AS=code-reviewer -- --amend -F "$T/am-msg3"; amno "HEAD is qa's commit"
 # An editor amend that deletes the line makes the commit without it; then the role's next amend is refused.
 am CABINET_AMEND_AS=qa "GIT_EDITOR=sed -i.b /^Co-authored-by/d" -- --amend; amok work
 amgo CABINET_AMEND_AS=qa git commit -q --amend -m z; [[ "$ams" != 0 ]] && grep -qF "HEAD has no Cabinet credit line at the end" "$T/am-err" || fail "amend guard: an amend after the line was deleted: $(cat "$T/am-err")"
@@ -3099,16 +3106,16 @@ am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD has more than one Cabinet cre
 amfix $'work\n\nCo-authored-by: Cabinet q\001a <'"$KM"'>'
 am CABINET_AMEND_AS=qa -- --amend -m x; amno "HEAD is qa's commit" "no amend as qa:" "$FIX"
 ! grep -q $'\001' "$T/am-err" || fail "amend guard: the refusal holds a control character"
-# 10. Bootstrap replaces the released v3 and v4, and v5 and v6 from before 0.3.1, with the current hook byte for byte, keeping no copy of
-# them, and leaves an edited copy of the current one as it is.
-[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v7" ]] || fail "the credit hook is not v7"
-for c in def9076 d2d3ceb 2176245 e072b05; do
+# 10. Bootstrap replaces the released v3 and v4, v5 and v6 from before 0.3.1, and v7 (0.3.1 to 0.4.0), with the current hook
+# byte for byte, keeping no copy of them, and leaves an edited copy of the current one as it is.
+[[ "$(sed -n 2p "$KH")" == "# cabinet credit hook v8" ]] || fail "the credit hook is not v8"
+for c in def9076 d2d3ceb 2176245 e072b05 7abc0c2; do
   cp "$KIT/test/fixtures/$c/prepare-commit-msg" "$HK/prepare-commit-msg"; boot
-  cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the kit's credit hook of $c with v7"
+  cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not replace the kit's credit hook of $c with v8"
 done
 [[ -z "$(ls "$HK" | grep cabinet-v)" ]] || fail "bootstrap kept a released credit hook: $(ls "$HK")"
 sed '3s/.*/# edited by the owner/' "$KH" > "$HK/prepare-commit-msg"; chmod +x "$HK/prepare-commit-msg"; cp "$HK/prepare-commit-msg" "$T/am-edited"; boot
-cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v7"
+cmp -s "$T/am-edited" "$HK/prepare-commit-msg" || fail "bootstrap replaced an edited copy of v8"
 cp "$KH" "$HK/prepare-commit-msg"; rm -rf "$T/am" "$T/am-base"
 
 # Existing and shared workspaces (criteria 27 to 29).
@@ -4300,11 +4307,15 @@ for r in claude codex antigravity qwen grok opencode cursor; do
   [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse side)" == "$sh" && "$(git -C "$RR" branch --show-current)" == main ]] || fail "$r: a rebase in a run was not refused ($s), or moved the branch"
 done
 [[ "$(prun codex 'echo y >> f && git commit -qam new')" == 0 ]] || fail "a new commit in a run was refused"
-# A new commit whose -m message mentions --amend: made where each argument can be read on its own (/proc,
-# Linux), refused elsewhere with the -F hint; through -F it is made everywhere.
-h="$(git -C "$RR" rev-parse HEAD)"; s="$(prun codex 'echo y2 >> f && git commit -qa -m "docs: say --amend is refused" 2>../ps-err')"
-if [[ -r /proc/self/cmdline ]]; then [[ "$s" == 0 && "$(git -C "$RR" log -1 --format=%s)" == "docs: say --amend is refused" ]] || fail "a new commit whose message mentions --amend was refused on Linux ($s): $(cat "$T/ps-err")"
-else [[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse HEAD)" == "$h" ]] && grep -qF 'give the message with -F <file> instead of -m' "$T/ps-err" || fail "a -m message mentioning --amend: not refused with the -F hint ($s): $(cat "$T/ps-err")"; fi
+# A new commit whose -m message mentions --amend or --amount is made, on Linux (/proc) and where ps joins the
+# arguments (macOS, from v8); --am given as an argument of its own is still an amend.
+for m in "docs: say --amend is refused" "fix --amount"; do
+  h="$(git -C "$RR" rev-parse HEAD)"; s="$(PS_M="$m" prun codex 'echo y2 >> f && git commit -qa -m "$PS_M" 2>../ps-err')"
+  [[ "$s" == 0 && "$(git -C "$RR" rev-parse HEAD~1)" == "$h" && "$(git -C "$RR" log -1 --format=%s)" == "$m" ]] || fail "a new commit in a run whose -m message is '$m' was refused ($s): $(cat "$T/ps-err")"
+done
+h="$(git -C "$RR" rev-parse HEAD)"; s="$(prun codex 'echo y4 >> f && git commit -qa --am -m "fix --amount"')"
+[[ "$s" =~ ^[1-9] && "$(git -C "$RR" rev-parse HEAD)" == "$h" ]] || fail "--am with a -m message holding --amount in a run was not refused ($s)"
+git -C "$RR" checkout -q -- f
 h="$(git -C "$RR" rev-parse HEAD)"; s="$(prun codex 'echo y3 >> f && printf "docs: say --amend is refused\n" > ../ps-msg && git commit -qa -F ../ps-msg')"
 [[ "$s" == 0 && "$(git -C "$RR" rev-parse HEAD~1)" == "$h" && "$(git -C "$RR" log -1 --format=%s)" == "docs: say --amend is refused" ]] || fail "a new commit in a run with -F and a message mentioning --amend ($s)"
 h="$(git -C "$RR" rev-parse HEAD)"

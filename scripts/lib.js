@@ -19,6 +19,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawn, spawnSync } = require("node:child_process");
+// A reader that stops early (head -1, grep -q) closes the pipe: that is not a failure, so exit 0 quietly.
+process.stdout.on("error", (e) => { if (e.code === "EPIPE") process.exit(0); throw e; });
 
 // Read text as the scripts always have: UTF-8, with \r\n and \r read as \n.
 const read = (p) => fs.readFileSync(p, "utf8").replace(/\r\n?/g, "\n");
