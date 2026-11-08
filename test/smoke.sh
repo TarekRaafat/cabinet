@@ -1092,6 +1092,22 @@ mkdir -p "$T/oc"; for v in 'echo "opencode 9.9.9"' 'true' 'echo partial; exit 3'
   case "$v" in echo\ \"*) w='9.9.9 of opencode cannot be checked from here' ;; *) w='opencode cannot be checked from here' ;; esac
   [[ "$m" == "$w: "* ]] || fail "doctor's opencode note with a version check that runs $v: $m"
 done
+# opencode 1.x prints its rules: every kit deny last is ok, none is a FIX naming them, and rules the check cannot read are a FIX, never ok.
+printf '#!/bin/sh\n[ "$1 $2 $3" = "debug agent build" ] && { cat "%s"; exit 0; }\nexit 1\n' "$T/oc/rules.json" > "$T/oc/opencode"
+for c in ok open unread; do
+  case $c in
+    ok) j -c '({permission: $.permissions.deny.map((r) => ({permission: "bash", pattern: r.replace(/^Bash\((.*)\)$/, "$1"), action: "deny"}))})' "$KIT/guardrails/claude-permissions.json" ;;
+    open) echo '{"permission":[]}' ;;
+    unread) echo '{"permission":[null]}' ;;
+  esac > "$T/oc/rules.json"
+  r="$(cd "$W" && PATH="$T/oc:$PATH" "$F" doctor --json | j -c '$.results.find((r) => r.id == "guardrails.opencode")')"
+  case $c in
+    ok) j -e '$.level == "ok" && $.message == "opencode denies push and publish"' <<<"$r" >/dev/null ;;
+    open) j -e '$.level == "fix" && $.message.startsWith("opencode does not deny: git push*, ")' <<<"$r" >/dev/null ;;
+    unread) j -e '$.level == "fix" && $.message.startsWith("opencode" + String.fromCharCode(39) + "s rules could not be read, ")' <<<"$r" >/dev/null ;;
+  esac || fail "doctor's opencode check with rules that are $c: $r"
+done
+rm -r "$T/oc"
   return 0   # a last "check && fail" line must not end the run
 }
 

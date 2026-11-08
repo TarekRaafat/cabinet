@@ -206,10 +206,13 @@ if command -v opencode >/dev/null; then
   # opencode 1.x prints the rules it resolved; opencode 2.x has no such command (its
   # debug commands go through a background service), so there it is a note, not a FIX.
   if rs="$(cd "$WS" && opencode debug agent build 2>/dev/null)" && json -e 'Array.isArray($.permission)' <<<"$rs" >/dev/null 2>&1; then
-    open_rules="$(json --argjson d "$kit_deny" -r '((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
+    # A json step that fails prints nothing, which must be a FIX, never the empty list that means ok.
+    if ! open_rules="$(json --argjson d "$kit_deny" -r '((rs) => $d.map((r) => r.replace(/^Bash\((.*)\)$/, "$1"))
       .filter((p) => ((l) => l?.pattern != p || l?.action != "deny")(rs.filter((x) => x.pattern == p || x.pattern == "*").at(-1))).join(", "))
-      ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs")"
-    [[ -z "$open_rules" ]] && ok guardrails.opencode "opencode denies push and publish" || bad guardrails.opencode "opencode does not deny: $open_rules (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)"
+      ($.permission.filter((x) => x.permission == "bash" || x.permission == "*"))' <<<"$rs" 2>/dev/null)"; then
+      bad guardrails.opencode "opencode's rules could not be read, so its denies are unchecked: confirm them by hand (run bin/bootstrap.sh; the kit's rules are in ~/.config/opencode/opencode.json)"
+    elif [[ -z "$open_rules" ]]; then ok guardrails.opencode "opencode denies push and publish"
+    else bad guardrails.opencode "opencode does not deny: $open_rules (run bin/bootstrap.sh; a rule in opencode.jsonc comes last and wins)"; fi
   else
     # Its version leads the note only when the version check works and prints one.
     ov="$(opencode --version 2>/dev/null)" || ov=""; ov="${ov%%$'\n'*}"; ov="${ov#opencode }"
