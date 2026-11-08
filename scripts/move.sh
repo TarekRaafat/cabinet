@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Move the workspace to a new folder and update everything that remembers its
 # path: Claude Code's per-folder memory and history, its trusted projects,
-# Codex's trusted projects, and the schedules.
+# Codex's trusted projects, the schedules, and the sessions (git worktree repair). Refused, before
+# anything changes, when repos.tsv names a repo by a relative path that leaves the workspace (../app).
 #
 #   bin/move.sh <new-path> [--dry-run]
 #
@@ -24,6 +25,24 @@ case "$CABINET_LAYOUT" in
   inside) die "this workspace is cabinet/ inside a project: move the whole project folder instead, then run cabinet/bin/bootstrap.sh" ;;
   beside) die "this workspace points at a project beside it (repos.tsv): move both by hand, fix the path in repos.tsv, then run bin/bootstrap.sh" ;;
 esac
+# leaves <path>: true when a relative repos.tsv path climbs out of the workspace (a .. past its top),
+# which would name a folder that is not there once the workspace moves.
+leaves() {
+  local depth=0 part
+  local -a parts
+  case "$1" in /*|"~/"*) return 1 ;; esac
+  IFS=/ read -ra parts <<<"$1"
+  for part in ${parts[@]+"${parts[@]}"}; do
+    case "$part" in ""|.) ;; ..) depth=$((depth - 1)); ((depth >= 0)) || return 0 ;; *) depth=$((depth + 1)) ;; esac
+  done
+  return 1
+}
+rows="$(repos 2>/dev/null)"; out_rows=""
+while IFS=$'\t' read -r name url files link path; do
+  leaves "$path" && out_rows+="  $name ($(printf '%s' "$path" | term_text))"$'\n'
+done <<<"$rows"
+[[ -z "$out_rows" ]] || die "repos.tsv names these repos by a relative path that leaves the workspace, which would point nowhere after the move:
+${out_rows}Give each its absolute path in repos.tsv (the 5th column), commit it, then run the move again."
 [[ -e "$NEW" ]] && die "$NEW already exists"
 [[ -d "$(dirname "$NEW")" ]] || die "$(dirname "$NEW") does not exist"
 case "$NEW" in
@@ -49,6 +68,25 @@ while IFS= read -r -d '' sub; do cands+=("$sub"); done < <(find "$OLD" -mindepth
 
 echo "== Move $OLD -> $NEW"
 run mv "$OLD" "$NEW"
+
+echo "== Sessions"
+# git records each session's folder (sessions/<repo>/<name>/) and its repo's .git by absolute path,
+# so both ends point at the old folder until git worktree repair is given the new one.
+gv="$(git --version | sed -n 's/^git version \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
+old_git=0; [[ -n "$gv" ]] && (( ${gv% *} < 2 || (${gv% *} == 2 && ${gv#* } < 30) )) && old_git=1
+while IFS=$'\t' read -r name url files link path; do
+  [[ -n "$name" ]] || continue
+  case "$path" in /*) d="$path" ;; "~/"*) d="$HOME/${path#"~/"}" ;; *) d="$NEW/$path" ;; esac
+  ((DRY)) && base="$OLD/sessions/$name" || base="$NEW/sessions/$name"
+  wts=()
+  for s in "$base"/*/; do [[ -f "$s.git" ]] && wts+=("$NEW/sessions/$name/$(basename "$s")"); done
+  ((${#wts[@]})) || continue
+  if ((old_git)); then
+    echo "  git ${gv/ /.} cannot repair moved sessions; with git 2.30 or later run: git -C $(printf '%q' "$d") worktree repair$(printf ' %q' "${wts[@]}")"
+  else
+    run git -C "$d" worktree repair "${wts[@]}" || echo "  git could not repair the sessions of $name (see above); run: git -C $(printf '%q' "$d") worktree repair$(printf ' %q' "${wts[@]}")"
+  fi
+done <<<"$rows"
 
 echo "== Claude Code memory and history"
 # Claude names a folder's memory after its path, so only folders that really are the

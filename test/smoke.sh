@@ -5606,6 +5606,40 @@ m="$(res "$o" guardrails.clone-settings)"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "move: a repo outside by a relative path is refused, sessions move with the workspace" ""
+s76() {
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+MH="$T/mv-home"; mkdir -p "$MH"; export HOME="$MH" GIT_CONFIG_GLOBAL="$MH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+mkr() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add -A && git -C "$1" commit -qm init; }
+MW="$T/mv-ws"; "$F" new "$MW" --yes >/dev/null || fail "new"
+MW="$(cd "$MW" && pwd -P)"
+mkr "$MW/app"; printf 'app\t-\t-\tno\tapp\n' >> "$MW/repos.tsv"
+# A repo beside the workspace, named by a path that leaves it: refused before anything changes.
+mkr "$T/mv-beside"; printf 'beside\t-\t-\tno\t../mv-beside\nodd\t-\t-\tno\tx/../../mv-beside\n' >> "$MW/repos.tsv"; git -C "$MW" add -A; git -C "$MW" commit -qm repos
+st=0; o="$(cd "$MW" && "$F" move "$T/mv-new" 2>&1)" || st=$?
+((st == 1)) && [[ -d "$MW" && ! -e "$T/mv-new" ]] || fail "move with a ../ repo was not refused, or moved: $st $o"
+grep -qF 'beside (../mv-beside)' <<<"$o" && grep -qF 'odd (x/../../mv-beside)' <<<"$o" && grep -q 'absolute path' <<<"$o" && ! grep -qF 'app (' <<<"$o" || fail "the refusal does not name each ../ row and what to do: $o"
+(cd "$MW" && "$F" move "$T/mv-new" --dry-run) >/dev/null 2>&1 && fail "move --dry-run with a ../ repo was not refused"
+# With that row absolute, the move goes ahead and the session follows the workspace.
+grep -v 'mv-beside' "$MW/repos.tsv" > "$T/mv-tsv"; printf 'beside\t-\t-\tno\t%s\n' "$T/mv-beside" >> "$T/mv-tsv"; cat "$T/mv-tsv" > "$MW/repos.tsv"; git -C "$MW" commit -qam "absolute"
+(cd "$MW" && "$F" session start s1 --repo app) >/dev/null || fail "session start s1"
+(cd "$MW" && "$F" session start s2 --repo beside) >/dev/null || fail "session start s2"
+echo w > "$MW/sessions/app/s1/w"; git -C "$MW/sessions/app/s1" add w; git -C "$MW/sessions/app/s1" commit -qm "session work"
+NW="$T/mv-new"
+o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || fail "move: $o"
+[[ ! -e "$MW" && -d "$NW/sessions/app/s1" ]] || fail "the workspace did not move: $o"
+NW="$(cd "$NW" && pwd -P)"
+o="$(cd "$NW" && "$F" session list --json)"
+j -e --arg f "$NW/sessions/app/s1" '$.some((s) => s.name == "s1" && s.folder == $f && s.gone === false && s.ahead == 1) && $.some((s) => s.name == "s2" && s.gone === false)' <<<"$o" >/dev/null || fail "session list after a move: $o"
+[[ "$(git -C "$NW/sessions/app/s1" rev-parse --show-toplevel)" == "$NW/sessions/app/s1" ]] || fail "the session's folder no longer finds its repo"
+o="$(cd "$NW" && "$F" session end s1 2>&1)" && [[ ! -e "$NW/sessions/app/s1" ]] && git -C "$NW/app" rev-parse -q --verify session/s1 >/dev/null || fail "session end s1 after a move: $o"
+grep -q 'worktree repair' "$KIT/docs/commands.md" && grep -q 'leaves the workspace' "$KIT/docs/commands.md" || fail "docs/commands.md does not say what move refuses and repairs"
+"$F" -C "$NW" remove --yes --force >/dev/null 2>&1 || true
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

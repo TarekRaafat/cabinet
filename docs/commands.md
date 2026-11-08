@@ -398,7 +398,7 @@ Which model a run gets (a scheduled job, a step of `handoff run` or `spec run`, 
 cabinet move <new-path> [--dry-run]
 ```
 
-Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules. Refused for the inside and beside layouts. Exit 0, or 1 when refused.
+Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules, and each [session](#cabinet-session) (it runs `git worktree repair` with the sessions' new folders; with a git older than 2.30 it prints that command for you to run after updating git). Refused for the inside and beside layouts, and, before anything changes, when a row of `repos.tsv` names its repo by a relative path that leaves the workspace (such as `../app`), which would point nowhere after the move: it names each such row; give it its absolute path, commit, and move again. Exit 0, or 1 when refused.
 
 ## cabinet remove
 
