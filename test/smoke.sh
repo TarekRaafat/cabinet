@@ -5798,6 +5798,14 @@ for k in 0 2 6; do
   [[ $rc == 1 && "$l" == *"$i"* && "$l" == *"$s"* && "$l" == *"$HR_WORDS"* ]] || fail "run $i on its unknown word (exit $rc): $out"
   [[ ! -s "$HC" ]] || fail "run $i made an agent run: $(cat "$HC")"
 done
+# A review whose word is unknown but starts with done or rejected is not closed (Rule 6): run asks qa.
+hr_review() { hr_small H-20261107-01 "done (2026-11-07)"; hr_ent H-20261107-02 "$1 (2026-11-07)" qa "- Depends on: H-20261107-01"; }
+for s in done-ish rejected-later; do
+  hr_fix "review $s" hr_review "$s"
+  out="$(hr_run H-20261107-01)" || true
+  [[ "$out" != *"no review handoff depends on it"* ]] || fail "run counts a review with status $s as closed: $out"
+  grep -q '^Verify handoff H-20261107-02 ' "$HC" 2>/dev/null || fail "run did not ask qa to verify a review with status $s: $out"
+done
   return 0   # a last "check && fail" line must not end the run
 }
 

@@ -676,26 +676,27 @@ again() {
   [[ -z "$u" ]] || s="unknown, read the whole change"
   echo "$1's last verdict covers $a, commits since: ${s:-none}"
 }
-# A status word the kit does not know (Done, closed, in-progress, none) is no step to take: stop, naming it.
-if ! json -e 'statusKnown($.status_now)' <<<"$w" >/dev/null; then
-  x="$(node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json -r --arg i "$id" '$.find((e) => e.id == $i)?.status_said ?? "no status line"' | term_text)"
-  stop "$id has a status word the kit does not know ($x): rewrite its status line as one of open, acknowledged, done or rejected, then run it again"
-fi
 while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
   w="$(json -c --arg i "$id" '$[$i]' <<<"$rd")"
+  # A status word the kit does not know (Done, closed, in-progress, none) is no step to take: stop, naming it,
+  # checked each step, since an agent may have rewritten it.
+  if ! json -e 'statusKnown($.status_now)' <<<"$w" >/dev/null; then
+    x="$(node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" | json -r --arg i "$id" '$.find((e) => e.id == $i)?.status_said ?? "no status line"' | term_text)"
+    stop "$id has a status word the kit does not know ($x): rewrite its status line as one of open, acknowledged, done or rejected, then run it again"
+  fi
   # Its reviews: every open entry that depends on it, not filed --small and not work for a builder (a
   # later handoff in a spec's chain), --spec or not. Ready only when every one that needs review is.
   vs="$(json -r --arg i "$id" 'Object.keys($).filter((k) => k != $i && !$[k].small && $[k].builder === null && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
-    && !/^(done|rejected)/.test($[k].status_now)).join(" ")' <<<"$rd")"
+    && !statusClosed($[k].status_now)).join(" ")' <<<"$rd")"
   v="$(json -r --arg v "$vs" '$v.split(" ").find((k) => $[k]?.ready === false)' <<<"$rd")"
   if [[ -z "$vs" ]]; then
     case "$(json -r '$.status_now' <<<"$w")" in
-      rejected*) stop "$builder sent $id back (its status line says why)" ;;
-      done*)
+      rejected) stop "$builder sent $id back (its status line says why)" ;;
+      done)
         x="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && $[k].small && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
-          && !/^(done|rejected)/.test($[k].status_now))' <<<"$rd")"
+          && !statusClosed($[k].status_now))' <<<"$rd")"
         [[ -z "$x" ]] || stop "$id is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $id, without --small"
         stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
     esac
