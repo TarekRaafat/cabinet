@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..." --needed "..." [--depends-on "..."] [--spec <file> | --small] [--way-back "..."] [--evidence <file or URL>]... "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..."|--changed-file <file> --needed "..."|--needed-file <file> [--depends-on "..."] [--spec <file> | --small] [--way-back "..."|--way-back-file <file>] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
@@ -16,8 +16,10 @@
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, add, attach and
 #       record still commit only their own change (save_own), so those lines never go into the commit.
 #       Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document,
-#       never double quotes: the shell would run it first.
-#   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."] --from <name>
+#       never double quotes: the shell would run it first. Or put it in a file: --changed-file,
+#       --needed-file and --way-back-file read the value from a file byte for byte (one trailing
+#       newline dropped), so the text never reaches a shell; each is refused with its plain twin.
+#   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."|--way-back-file <file>] --from <name>
 #       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
 #       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.
 #       --way-back adds the entry's "- Way back:" line, or replaces it, before its first verdict.
@@ -83,10 +85,26 @@ names_of() {
 }
 # way_back <text>: the text of a "- Way back:" line, or exit 2: never empty, never more than one line.
 way_back() {
-  [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]] || { echo "--way-back is one line: no line breaks. $usage" >&2; return 2; }
+  [[ "$1" != *$'\n'* && "$1" != *$'\r'* ]] || { echo "${2:---way-back} is one line: no line breaks. $usage" >&2; return 2; }
   local t; t="$(printf '%s' "$1" | tr '\t' ' ' | sed 's/  */ /g; s/^ //; s/ $//')"
-  [[ -n "$t" ]] || { echo "--way-back needs how to undo the change, or why there is no way back. $usage" >&2; return 2; }
+  [[ -n "$t" ]] || { echo "${2:---way-back} needs how to undo the change, or why there is no way back. $usage" >&2; return 2; }
   printf '%s' "$t"
+}
+# file_text <option> <file> <var>: sets <var> to the file's text byte for byte, one trailing newline
+# dropped (never through a command substitution, which drops them all), or exit 2. Read before the
+# script moves to the workspace: a path is from the caller's folder, else from the workspace.
+file_text() {
+  local f="$2" t=""
+  [[ -f "$f" || "$f" == /* ]] || f="$WS/$f"
+  [[ -f "$f" && -r "$f" ]] || { echo "$1 $2: no such file, or it cannot be read. $usage" >&2; exit 2; }
+  IFS= read -r -d '' t < "$f" || true
+  printf -v "$3" '%s' "${t%$'\n'}"
+}
+# twin <option>: exit 2 when its twin (--x for --x-file, and the other way) was given too ($given).
+twin() {
+  local o="$1-file"; [[ "$1" != *-file ]] || o="${1%-file}"
+  case " $given " in *" $o "*) echo "${1%-file} or ${1%-file}-file, not both. $usage" >&2; exit 2 ;; esac
+  given="$given $1"
 }
 # ev_arg <value>: a link as it is, or a file as an absolute path. Read before the script moves to
 # the workspace: a path is from the caller's folder, else from the workspace. A file named as record
@@ -212,8 +230,8 @@ entry() {
 }
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\" --needed \"...\" [--depends-on \"...\"] [--spec <file> | --small] [--way-back \"...\"] [--evidence <file or URL>]... \"<title>\""
-from="" to="" changed="" needed="" depends="none" title="" spec="" small="" back=""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\"|--changed-file <file> --needed \"...\"|--needed-file <file> [--depends-on \"...\"] [--spec <file> | --small] [--way-back \"...\"|--way-back-file <file>] [--evidence <file or URL>]... \"<title>\""
+from="" to="" changed="" needed="" depends="none" title="" spec="" small="" back="" given="" v=""
 local -a ev
 ev=()
 while (($#)); do
@@ -223,9 +241,14 @@ while (($#)); do
       ev+=("$(ev_arg "$2")") || exit 2
       shift 2 ;;
     --small) small=1; shift ;;
-    --way-back)
+    --way-back|--way-back-file)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
-      back="$(way_back "$2")" || exit 2
+      twin "$1"; v="$2"; [[ "$1" == --way-back ]] || file_text "$1" "$2" v
+      back="$(way_back "$v" "$1")" || exit 2
+      shift 2 ;;
+    --changed-file|--needed-file)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      twin "$1"; v="${1#--}"; file_text "$1" "$2" "${v%-file}"
       shift 2 ;;
     --spec)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
@@ -236,8 +259,8 @@ while (($#)); do
       case "$1" in
         --from) from="$2" ;;
         --to) to="$2" ;;
-        --changed) changed="$2" ;;
-        --needed) needed="$2" ;;
+        --changed) twin "$1"; changed="$2" ;;
+        --needed) twin "$1"; needed="$2" ;;
         --depends-on) depends="$2" ;;
       esac
       shift 2 ;;
@@ -315,14 +338,16 @@ save "$id filed for $to" "handoffs: $id $title" "${paths[@]}"
 }
 
 h_attach() {
-usage="usage: bin/handoff.sh attach <ID> [<file or URL>...] [--way-back \"...\"] --from <name>"
-local id="" from="" evline="" e back=""
+usage="usage: bin/handoff.sh attach <ID> [<file or URL>...] [--way-back \"...\"|--way-back-file <file>] --from <name>"
+local id="" from="" evline="" e back="" given="" v=""
 local -a ev
 ev=()
 while (($#)); do
   case "$1" in
     --from) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; from="$2"; shift 2 ;;
-    --way-back) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; back="$(way_back "$2")" || exit 2; shift 2 ;;
+    --way-back|--way-back-file) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      twin "$1"; v="$2"; [[ "$1" == --way-back ]] || file_text "$1" "$2" v
+      back="$(way_back "$v" "$1")" || exit 2; shift 2 ;;
     -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
     *) if [[ -z "$id" ]]; then id="$1"; else ev+=("$(ev_arg "$1")") || exit 2; fi; shift ;;
   esac

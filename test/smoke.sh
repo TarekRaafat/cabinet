@@ -6048,6 +6048,54 @@ L sub "$HW/specs/arn.md" -- '/^status: ready/' 'status: building'; git -C "$HW" 
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "handoff text from a file: --changed-file, --needed-file and --way-back-file" "0"
+s93() {
+local base d id ent sum h0 o
+base="$(git -C "$W" rev-parse HEAD)" d="$T/hfile"
+mkdir -p "$d"
+printf '%s\n' 'cost $HOME and `git push` stay' > "$d/c.txt"
+printf '%s' 'run `rm -rf x` if $1 fails' > "$d/n.txt"
+printf '%s\n' 'restore `backup` $ID' > "$d/w.txt"
+printf 'one\ntwo\n' > "$d/two.txt"
+printf 'one\n\n' > "$d/nl2.txt"
+ent() { awk -v id="### $1:" 'index($0, id) == 1 { on = 1; print; next } /^##/ { on = 0 } on' "$W/HANDOFFS.md"; }
+# add: the files' text, $ and backticks too, is written as given; a relative path is read from the caller's folder.
+id="$(cd "$d" && "$W/bin/handoff.sh" add --from backend --to qa --changed-file c.txt --needed-file "$d/n.txt" --way-back-file w.txt "From files")" || fail "add with file options: $id"
+id="${id%% *}"; ent="$(ent "$id")"
+grep -qxF -- '- Changed: cost $HOME and `git push` stay' <<<"$ent" && grep -qxF -- '- Needed: run `rm -rf x` if $1 fails' <<<"$ent" \
+  && grep -qxF -- '- Way back: restore `backup` $ID' <<<"$ent" || fail "add did not write the files' text as given: $ent"
+# attach --way-back-file the same.
+"$W/bin/handoff.sh" attach "$id" --way-back-file "$d/n.txt" --from backend >/dev/null || fail "attach --way-back-file"
+ent "$id" | grep -qxF -- '- Way back: run `rm -rf x` if $1 fails' || fail "attach --way-back-file: $(ent "$id")"
+# Refused with exit 2, nothing written: a missing file, a file option with its plain twin, a way back of two lines.
+h0="$(git -C "$W" rev-parse HEAD)" sum="$(cksum < "$W/HANDOFFS.md")"
+ad() { "$W/bin/handoff.sh" add --from backend --to qa "$@" "Bad" 2>&1; }
+at() { "$W/bin/handoff.sh" attach "$id" --from backend "$@" 2>&1; }
+ex() { local want="$1" s; shift; s=0; o="$("$@")" || s=$?; [[ $s == 2 ]] && grep -qF -- "$want" <<<"$o" || fail "$* gave $s: $o"; }
+ex "$d/none.txt" ad --changed-file "$d/none.txt" --needed y
+ex "$d/none.txt" ad --changed x --needed-file "$d/none.txt"
+ex "$d/none.txt" ad --changed x --needed y --way-back-file "$d/none.txt"
+ex "$d/none.txt" at --way-back-file "$d/none.txt"
+ex "$d" at --way-back-file "$d"
+ex "not both" ad --changed x --changed-file "$d/c.txt" --needed y
+ex "not both" ad --changed-file "$d/c.txt" --changed x --needed y
+ex "not both" ad --changed x --needed y --needed-file "$d/n.txt"
+ex "not both" ad --changed x --needed-file "$d/n.txt" --needed y
+ex "not both" ad --changed x --needed y --way-back z --way-back-file "$d/w.txt"
+ex "not both" ad --changed x --needed y --way-back-file "$d/w.txt" --way-back z
+ex "not both" at --way-back z --way-back-file "$d/w.txt"
+ex "not both" at --way-back-file "$d/w.txt" --way-back z
+ex "one line" ad --changed x --needed y --way-back-file "$d/two.txt"
+ex "one line" at --way-back-file "$d/two.txt"
+ex "one line" at --way-back-file "$d/nl2.txt"
+[[ "$(cksum < "$W/HANDOFFS.md")" == "$sum" && "$(git -C "$W" rev-parse HEAD)" == "$h0" ]] || fail "a refused file option wrote or committed"
+# A plain option given twice still works as before (the last one counts).
+id="$("$W/bin/handoff.sh" add --from backend --to qa --changed a --changed b --needed y "Twice")" || fail "add with --changed twice: $id"
+ent "${id%% *}" | grep -qx -- '- Changed: b' || fail "--changed twice: $(ent "${id%% *}")"
+git -C "$W" reset -q --hard "$base"; rm -rf "$d"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
