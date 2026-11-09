@@ -1370,8 +1370,13 @@ function deletePlan(...argv) {
   decide(lines, unread, force, dry);
 }
 
-// git in <dir>: its output, or null when git fails; gitZ splits -z output into fields.
-const gitRun = (dir, a) => spawnSync("git", ["-C", dir, ...a], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
+// git in <dir>: its output, or null when git fails; gitZ splits -z output into fields. <dir> can be a
+// repo found inside the folder, whose own config anyone could have written: the -c options (which
+// reach every git it starts) stop that config running a program, and no optional lock writes its index.
+// ponytail: a clean or process filter from that repo's own config and .gitattributes can still run
+// when git rehashes a file whose stat changed; overriding it needs each driver's name.
+const gitRun = (dir, a) => spawnSync("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
+  "-c", "core.hooksPath=/dev/null", "-C", dir, ...a], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
 const gitOut = (dir, ...a) => { const r = gitRun(dir, a); return r.status === 0 ? r.stdout.trim() : null; };
 const gitZ = (dir, ...a) => { const r = gitRun(dir, a); return r.status === 0 ? r.stdout.split("\0").filter((x) => x !== "") : null; };
 const lst = (p) => { try { return fs.lstatSync(p); } catch (e) { return null; } };
@@ -1410,37 +1415,57 @@ function folderPlan(root, reposTsv, lines, unread) {
     const toplevel = gitOut(abs, "rev-parse", "--show-toplevel");
     const repoTop = toplevel ? fs.realpathSync(toplevel) : "";
     const dotGit = lst(path.join(abs, ".git"));
-    // Which AGENTS.md names what is safe: a linked worktree's main checkout's, so a session cannot
-    // widen its own list; else the folder's own.
-    let main = abs;
-    if (repoTop === abs && dotGit && dotGit.isFile()) {
-      const c = gitOut(abs, "rev-parse", "--git-common-dir");
-      if (c) main = path.dirname(path.resolve(abs, c));
+    // A repo with its own history: its git folder is its common one (a main checkout, a submodule); a
+    // linked worktree's history is its main repo's. Which AGENTS.md names what is safe: a linked
+    // worktree's main checkout's, so a session cannot widen its own list; else the folder's own.
+    let main = abs, own = false;
+    if (repoTop === abs && dotGit) {
+      const g = (gitOut(abs, "rev-parse", "--absolute-git-dir", "--git-common-dir") || "").split("\n");
+      const [gd, cd] = g.map((x) => { try { return fs.realpathSync(path.resolve(abs, x)); } catch (e) { return ""; } });
+      own = !!gd && gd === cd;
+      if (!own && cd) main = path.dirname(cd);
     }
     const sl = safeList(path.join(main, "AGENTS.md"));
     for (const u of sl.unread) unread.push([path.join(main, "AGENTS.md"), u]);
     const safe = sl.paths.slice();
     if (isRoot && lst(path.join(abs, ".cabinet", "version"))) safe.push(...KIT_UNTRACKED);   // a workspace
     // An entry names <p> exactly, or a folder entry covers it (never a repo or a .env: Decision 8 B).
-    const exact = (p) => safe.some((s) => s === p || s === p + "/" || s + "/" === p);
+    const exact = (p) => safe.some((s) => s === p || (p.endsWith("/") && s + "/" === p));
     const covered = (p, exactOnly) => exact(p) || (!exactOnly && safe.some((s) => s.endsWith("/") && p.startsWith(s)));
     const safeBelow = (d) => safe.some((s) => s.startsWith(d) && s !== d);   // d ends with /
 
     if (!repoTop) { walk("", "no-git"); return; }
-    if (repoTop === abs && dotGit && dotGit.isDirectory()) {   // a main checkout; a worktree's history is the main repo's
-      if (gitOut(abs, "log", "--branches", "--not", "--remotes", "--format=%h", "-1")) emit("keep", "unpushed", here("./"));
+    if (own) {   // HEAD too: a submodule's commits are on no branch
+      if (gitOut(abs, "log", "--branches", "HEAD", "--not", "--remotes", "--format=%h", "-1")) emit("keep", "unpushed", here("./"));
       if (gitOut(abs, "stash", "list")) emit("keep", "stash", here("./"));
     }
+    // A submodule checked out under <abs> is a repo inside it (git's paths here are <abs>'s own).
+    const ls = gitZ(abs, "ls-files", "-s", "-z", "--", ".");
+    if (ls === null) throw new Error("git ls-files failed");
+    const subs = new Set();
+    for (const l of ls) {
+      const t = l.indexOf("\t"), p = l.slice(t + 1), s = lst(path.join(abs, p));
+      if (l.startsWith("160000 ") && s && s.isDirectory() && isRepoDir(path.join(abs, p))) subs.add(p);
+    }
+    for (const p of subs) repo(p);
     // Uncommitted: git status, whose paths are the repo's; only those under <abs> count (a shared
-    // cabinet/ inside a project: never the project's other work).
+    // cabinet/ inside a project: never the project's other work). The options win over the person's
+    // config, which could hide untracked files or a submodule's changes.
     const under = repoTop === abs ? "" : path.relative(repoTop, abs) + "/";
-    const st = gitZ(abs, "status", "--porcelain=v1", "-z", "--", ".");
+    const st = gitZ(abs, "status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none", "--", ".");
     if (st === null) throw new Error("git status failed");
     for (let i = 0; i < st.length; i++) {
       const code = st[i].slice(0, 2), p = st[i].slice(3);
       if (code[0] === "R" || code[0] === "C") i++;   // the next field is the old name
-      if (p.startsWith(under)) emit("keep", "uncommitted", here(p.slice(under.length) || "./"));
+      if (p.startsWith(under)) { if (!subs.has(p.slice(under.length))) emit("keep", "uncommitted", here(p.slice(under.length) || "./")); }
       else if (under.startsWith(p)) emit("keep", "uncommitted", here("./"));   // <abs> is inside an untracked folder
+    }
+    // A file marked skip-worktree or assume-unchanged hides its edits from status: kept while it is there.
+    const tags = gitZ(abs, "ls-files", "-v", "-z", "--", ".");
+    if (tags === null) throw new Error("git ls-files failed");
+    for (const l of tags) {
+      const p = l.slice(2);
+      if ((l[0] === "S" || /[a-z]/.test(l[0])) && !subs.has(p) && lst(path.join(abs, p))) emit("keep", "uncommitted", here(p));
     }
     // Ignored: git's collapsed list, each entry walked (lstat only) for repos, .env files and safe entries.
     const ig = gitZ(abs, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z");

@@ -6317,6 +6317,39 @@ ss st1; [[ -z "$(L delete-plan folder "$SS/st1" 2>/dev/null)" ]] || fail "criter
 se st1; ((st == 0)) || fail "criterion 18: session end st1: $(cat "$ef")"; ended st1
 git -C "$DA" stash drop -q
 
+# What git config can hide (Rules 1, 8 and 9; H-20261109-42): an untracked file with
+# status.showUntrackedFiles = no, an edit to a skip-worktree file, a folder entry naming a file.
+git -C "$DA" config status.showUntrackedFiles no
+ss u1; echo n > "$SS/u1/n.txt"; refuse u1 $'keep\tuncommitted\tn.txt'
+git -C "$DA" config --unset status.showUntrackedFiles
+ss k1; git -C "$SS/k1" update-index --skip-worktree AGENTS.md; echo x >> "$SS/k1/AGENTS.md"; refuse k1 $'keep\tuncommitted\tAGENTS.md'
+safe .env/
+ss x1; echo S=1 > "$SS/x1/.env"; refuse x1 $'keep\tignored\t.env'
+# A found repo's own config runs nothing: core.fsmonitor set to a program that leaves a marker.
+safe
+printf '#!/bin/sh\ntouch "%s"\n' "$T/dr-mark" > "$T/dr-fsm"; chmod +x "$T/dr-fsm"
+ss f1; nested "$SS/f1/vendor/lib"; git -C "$SS/f1/vendor/lib" config core.fsmonitor "$T/dr-fsm"
+git -C "$SS/f1/vendor/lib" status >/dev/null 2>&1; [[ -e "$T/dr-mark" ]] || fail "this git does not run core.fsmonitor, so the test proves nothing"
+rm -f "$T/dr-mark"
+refuse f1 $'keep\tunpushed\tvendor/lib/'
+L delete-plan folder "$SS/f1" --dry-run >/dev/null 2>&1 || true
+[[ ! -e "$T/dr-mark" ]] || fail "delete-plan ran a found repo's core.fsmonitor"
+# A submodule's checkout is a repo inside the session, with or without submodule.<name>.ignore = all.
+nested "$T/dr-sm"
+git -C "$DA" -c protocol.file.allow=always submodule add -q "$T/dr-sm" sm >/dev/null 2>&1 || fail "submodule add"
+git -C "$DA" commit -qm sm; rmt "$DA"
+ss m1; git -C "$SS/m1" -c protocol.file.allow=always submodule update -q --init >/dev/null 2>&1 || fail "submodule update"
+refuse m1 $'keep\tignored\tsm/'
+echo K=v > "$SS/m1/sm/.env"; git -C "$SS/m1/sm" commit -q --allow-empty -m local
+refuse m1 $'keep\tunpushed\tsm/'
+git -C "$DA" config submodule.sm.ignore all
+refuse m1 $'keep\tunpushed\tsm/'
+o="$(in_tty_typed yes "$sf" "$F" -C "$DW" session end m1 --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 0 ]] && grep -qF 'sm/' <<<"$o" || fail "submodule: --force with yes did not list sm/: $(cat "$sf" 2>/dev/null), $o"
+ended m1
+git -C "$DA" config --unset submodule.sm.ignore
+rm -f "$T/dr-fsm"
+
 # 17: the helper's shape (criterion 17).
 b4="$(dsnap "$DW")"
 st=0; L delete-plan >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 17: no source exits $st"
