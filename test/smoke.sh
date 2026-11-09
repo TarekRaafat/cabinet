@@ -5160,21 +5160,45 @@ grep -qxF "Updates: npm update, then npx cabinet update (in $PW)." <<<"$o" || fa
 mkdir -p "$PP"; git -C "$PP" init -q; printf '{"name": "p", "devDependencies": {"@tarekraafat/cabinet": "^0.0.9"}}\n' > "$PP/package.json"
 (cd "$PP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the pinned copy"
 PP="$(cd "$PP" && pwd -P)"; git -C "$PP" add -A && git -C "$PP" commit -qm "workspace"; plant "$PP" 0.0.9
+V="$(j -r '$.version' "$KIT/package.json")"
 for w in "$PW" "$PP/cabinet"; do
   at="$PW"; [[ "$w" == "$PW" ]] || at="$PP"
   # From inside the workspace (where the hand-off looked), and from outside with -C.
   for d in "$w" "$T"; do
     st=0; o="$(cd "$d" && "$F" -C "$w" status 2>&1)" || st=$?
     ((st == 0)) && grep -qxF "pinned: cabinet 0.0.9 in $at; npx cabinet runs it" <<<"$o" || fail "status in $w: exit $st: $o"
+    # A pin older than this kit: npx would run it again, so the message moves the pin to this kit (H-20261109-06).
     st=0; o="$(cd "$d" && "$F" -C "$w" update 2>&1)" || st=$?
-    ((st == 1)) && grep -qF "pins Cabinet 0.0.9" <<<"$o" && grep -qF "npx cabinet update (in $at)" <<<"$o" || fail "update in $w: exit $st: $o"
+    ((st == 1)) && [[ "$o" == "cabinet: nothing changed: this workspace pins Cabinet 0.0.9, and the copy you ran is $V.
+npx cabinet update would run 0.0.9 again: npm keeps the pinned copy inside the range in package.json (a ^0.x range never takes the next minor).
+Move the pin first: npm install @tarekraafat/cabinet@$V && npx cabinet update (in $at)" ]] || fail "update in $w: exit $st: $o"
     st=0; o="$(cd "$d" && "$F" -C "$w" config --writing short 2>&1)" || st=$?
-    ((st == 1)) && grep -qF "npx cabinet config (in $at)" <<<"$o" || fail "config in $w: exit $st: $o"
+    ((st == 1)) && [[ "$o" == "cabinet: nothing changed: this workspace pins Cabinet 0.0.9, and the copy you ran is $V.
+To change settings with the pinned copy: npx cabinet config, with the same options (in $at)
+To move the pin to $V first: npm install @tarekraafat/cabinet@$V && npx cabinet update (in $at)" ]] || fail "config in $w: exit $st: $o"
   done
   [[ ! -e "$MK" ]] || fail "a command ran the pinned copy in $w"
   [[ -z "$(git -C "$at" status --porcelain)" ]] || fail "update or config changed $w: $(git -C "$at" status --porcelain)"
 done
-V="$(j -r '$.version' "$KIT/package.json")"
+# A pin newer than this kit: run the pinned copy; a pin that does not compare: today's line. Each exits 1 and
+# changes nothing but the planted version (H-20261109-06).
+for d in 99.0.0 0.0.9-beta.1; do
+  sedi "s/\"version\": \"[^\"]*\"/\"version\": \"$d\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
+  at="$(git -C "$PW" status --porcelain; git -C "$PW" rev-parse HEAD)"
+  for w in update config; do
+    st=0; o="$("$F" -C "$PW" $w $([[ $w == config ]] && echo --writing short) 2>&1)" || st=$?
+    if [[ "$d" == 99.0.0 ]]; then
+      [[ "$o" == "cabinet: nothing changed: this workspace pins Cabinet 99.0.0, newer than the copy you ran ($V).
+Run the pinned copy: npx cabinet $w (in $PW)" ]] || fail "$w with a newer pin: $o"
+    else
+      [[ "$o" == "cabinet: this workspace pins Cabinet $d, and the copy you ran is $V, so nothing changed. Run the pinned copy: npx cabinet $w (in $PW)" ]] || fail "$w with a pin that does not compare: $o"
+    fi
+    ((st == 1)) || fail "$w with pin $d: exit $st"
+    [[ "$(git -C "$PW" status --porcelain; git -C "$PW" rev-parse HEAD)" == "$at" ]] || fail "$w with pin $d changed the workspace"
+  done
+done
+[[ ! -e "$MK" ]] || fail "a command ran a newer or unknown pinned copy"
+sedi "s/\"version\": \"[^\"]*\"/\"version\": \"0.0.9\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
 # A pin behind this kit, with the registry on this kit's version: npx cabinet update would run the pin and change
 # nothing, so outdated and next name the npm install in the pin's folder, from the pin's version (H-20261102-14).
 mkdir -p "$T/pc-npm"; printf '#!/bin/sh\necho %s\n' "$V" > "$T/pc-npm/npm"; chmod +x "$T/pc-npm/npm"

@@ -2341,10 +2341,28 @@ pin_other() {
 # npx cabinet update runs the pin, so a pin behind this kit needs the npm install, not only npx.
 pin_kit() { local r; r="$(pin_other "$1")"; [[ -n "$r" ]] && printf '%s\n' "${r%%$'\t'*}" || printf '%s\n' "$VERSION"; }
 # pin_stop <workspace> <command>: update and config stop before changing anything when the workspace pins
-# another version, and print the command that runs the pinned copy. This kit never runs it.
+# another version, and say what to run. A pin older than this kit: npx would run it again, so the npm install
+# moves the pin to $VERSION (never to the pin's text, which comes from the clone and is only compared and
+# printed through term_say); newer: run the pinned copy; versions that do not compare: run the pinned copy.
+# This kit never runs the pinned copy.
 pin_stop() {
-  local r; r="$(pin_other "$1")"; [[ -n "$r" ]] || return 0
-  echo "$ERR_TAG this workspace pins Cabinet $(term_say "${r%%$'\t'*}"), and this is $VERSION, so nothing changed. Run the pinned copy: npx cabinet $2 (in $(term_say "${r#*$'\t'}"))" >&2
+  local r p v d; r="$(pin_other "$1")"; [[ -n "$r" ]] || return 0
+  p="${r%%$'\t'*}"; v="$(term_say "$p")"; d="$(term_say "${r#*$'\t'}")"
+  if node "$LIBJS" version-newer "$VERSION" "$p"; then
+    echo "$ERR_TAG nothing changed: this workspace pins Cabinet $v, and the copy you ran is $VERSION."
+    if [[ "$2" == update ]]; then
+      echo "npx cabinet update would run $v again: npm keeps the pinned copy inside the range in package.json (a ^0.x range never takes the next minor)."
+      echo "Move the pin first: npm install @tarekraafat/cabinet@$VERSION && npx cabinet update (in $d)"
+    else
+      echo "To change settings with the pinned copy: npx cabinet config, with the same options (in $d)"
+      echo "To move the pin to $VERSION first: npm install @tarekraafat/cabinet@$VERSION && npx cabinet update (in $d)"
+    fi
+  elif node "$LIBJS" version-newer "$p" "$VERSION"; then
+    echo "$ERR_TAG nothing changed: this workspace pins Cabinet $v, newer than the copy you ran ($VERSION)."
+    echo "Run the pinned copy: npx cabinet $2 (in $d)"
+  else
+    echo "$ERR_TAG this workspace pins Cabinet $v, and the copy you ran is $VERSION, so nothing changed. Run the pinned copy: npx cabinet $2 (in $d)"
+  fi >&2
   exit 1
 }
 # update_notice <workspace>: a newer Cabinet on the registry than the installed kit: say so, with the command
