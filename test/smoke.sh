@@ -1909,6 +1909,13 @@ fk qwen 'No auth type is selected.'; sedi 's/^CABINET_RUNNER=.*/CABINET_RUNNER="
 PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1; grep -qx 'No auth type is selected.' "$HOME/$LOGS/spend/brief.log" || fail "output that is not JSON was lost"
 (cd "$S" && "$F" config --yes --runner custom --runner-cmd 'true') >/dev/null
 "$S/bin/doctor.sh" --json | j -e '$.results.findLast((r) => r.id == "spend.unreported")?.message.includes("does not report what a run costs")' >/dev/null || fail "a custom runner's budget not noted"
+# A negative or junk dollar amount from the tool never reaches the ledger.
+(cd "$S" && "$F" config --yes --runner claude) >/dev/null
+for v in -5 '"7abc"'; do
+  fk claude "{\"type\":\"result\",\"result\":\"brief written\",\"total_cost_usd\":$v}"; n="$(wc -l < "$HOME/$LOGS/spend/spend.tsv")"
+  PATH="$T/fakes:$PATH" "$S/bin/job.sh" run brief >/dev/null 2>&1
+  [[ "$(wc -l < "$HOME/$LOGS/spend/spend.tsv")" == "$n" ]] || { tail -1 "$HOME/$LOGS/spend/spend.tsv"; fail "a run reporting \$$v was written to the ledger"; }
+done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -2344,6 +2351,12 @@ grep -q "^- $m: $m is ready to push" "$PW/PIPELINE.md" && grep -q '^- specs/logi
 grep -qF -- "- $y: skipped, stopped on $(date +%F) for you: qa has blocked it 3 times on" "$PW/PIPELINE.md" || fail "a scheduled run did not skip work past the loop breaker: $(cat "$PW/PIPELINE.md")"
 # A spent week, or the runner off: nothing runs.
 cfgp --budget 0.01 >/dev/null; sched; grep -q "budget (\$0.01) is spent, so nothing ran" "$PW/PIPELINE.md" || fail "the runner past the week's budget: $(cat "$PW/PIPELINE.md")"
+# A negative or junk dollar row in the ledger is not counted, so the sum never falls below the real
+# spend and a spent budget stays spent.
+printf '1\tx\tclaude\t20\n1\tx\tclaude\t-50\n1\tx\tclaude\t7abc\n' > "$T/ledger.tsv"
+out="$(cd "$PW" && bash -c 'source bin/lib.sh && SPEND="$1" spend_since 0' _ "$T/ledger.tsv")" && [[ "$out" == 20.00 ]] || fail "a ledger of 20, -50 and junk sums to $out, not 20.00"
+t=$(( $(date +%s) - 1 )); printf '%s\tx\tclaude\t20\n%s\tx\tclaude\t-50\n' "$t" "$t" >> "$PL/spend.tsv"
+cfgp --budget 5 >/dev/null; sched; grep -q "budget (\$5) is spent, so nothing ran" "$PW/PIPELINE.md" || fail "a negative row opened the week's budget of 5: $(cat "$PW/PIPELINE.md")"
 cfgp --budget off --pipeline off >/dev/null; sched; grep -q 'The pipeline is off' "$PW/PIPELINE.md" && [[ -f "$PW/jobs/pipeline.job" ]] || fail "the runner off: $(cat "$PW/PIPELINE.md")"
 # spec run's work is only handoffs to one builder (builder in handoff list --json): a routing request
 # and a review, each filed --spec, are not run (ADR-006 A).

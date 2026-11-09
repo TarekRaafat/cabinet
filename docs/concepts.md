@@ -138,7 +138,7 @@ Each runner must pass the role on to the commands its agent runs. Whether each d
 
 ## What agent runs cost
 
-Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), from what the agent tool reports, in `spend.tsv` in the workspace's log folder (time, job, runner, dollars, then uncached input, cached input and output tokens), on this machine only. Each built-in runner prints JSON for this; the reply still goes to the job's log, and output that is not that JSON (an error, a different version) goes there as it is.
+Every agent run costs money, as API spend or against a subscription's limits. Cabinet counts what its own runs cost (scheduled jobs and `cabinet role draft`), from what the agent tool reports, in `spend.tsv` in the workspace's log folder (time, job, runner, dollars, then uncached input, cached input and output tokens), on this machine only. Each built-in runner prints JSON for this; the reply still goes to the job's log, and output that is not that JSON (an error, a different version) goes there as it is. A dollar amount that is not a number of zero or more (a negative, junk) is neither recorded nor counted, so the week's total never falls below what was really spent.
 
 | Runner | Reports | Seen on |
 |---|---|---|

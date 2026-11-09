@@ -78,6 +78,9 @@ CABINET_PRICE="${CABINET_PRICE:-}"   # US dollars per million tokens: "<input> <
 # The runners that report dollars, and those that report only tokens (dollars with CABINET_PRICE).
 SPEND_DOLLARS="claude grok opencode"
 SPEND_TOKENS="codex cursor qwen antigravity"
+# A dollar amount spend.tsv may hold: a number, zero or more (with an exponent, as JSON prints tiny ones).
+# spend_since has the same pattern written into its awk.
+SPEND_USD='^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$'
 # How the week's dollars were found, for messages.
 spend_source() { if has "$SPEND_DOLLARS" "$CABINET_RUNNER"; then echo "as $CABINET_RUNNER reports it"; else echo "priced from $CABINET_RUNNER's token counts"; fi; }
 spend_counts() { has "$SPEND_DOLLARS" "$CABINET_RUNNER" || { has "$SPEND_TOKENS" "$CABINET_RUNNER" && [[ -n "$CABINET_PRICE" ]]; }; }
@@ -117,7 +120,9 @@ spend_report() {
     usd="$(awk -v p="$CABINET_PRICE" -v i="${tin/-/0}" -v c="${tc/-/0}" -v o="${tout/-/0}" \
       'BEGIN { n = split(p, x, " "); if (n < 3) x[3] = x[1]; printf "%.6f", (i * x[1] + c * x[3] + o * x[2]) / 1000000 }')"
   fi
-  [[ "$usd" == - ]] && usd=""
+  # Dollars that are not a number of zero or more (a negative, junk) are not written: they could
+  # lower the week's sum and leave the budget open.
+  [[ "$usd" =~ $SPEND_USD ]] || usd=""
   [[ -z "$usd$tin$tout" || "$usd$tin$tout" == -- ]] && return 0
   mkdir -p -m 700 "$LOGDIR"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$usd" "${tin/-/}" "${tc/-/}" "${tout/-/}" >> "$SPEND"
@@ -150,7 +155,9 @@ run_over_limit() {
   awk -v s="$(spend_since "${CABINET_RUN_SINCE:-0}")" -v l="$CABINET_RUN_LIMIT" 'BEGIN { exit !(s + 0 >= l + 0) }'
 }
 # spend_since <seconds> [<label>]: dollars spent since then, by every run or one label's, as "1.25".
-spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
+# A row whose dollars are not such a number (written by hand or by an older kit) is not counted, so
+# the sum never falls below what was really spent.
+spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) && $4 ~ /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/ { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
 
 # The agent runs in its own process group, so a run past its limit is stopped with
 # everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
