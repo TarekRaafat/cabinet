@@ -184,7 +184,7 @@ O	digest	--write	<file>	Write the digest to this file instead of the screen.
 O	digest	--notify		Also show a desktop notification with the counts (with --write or --schedule).
 O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 10:00 AM), or at another time ("8 AM"), or on days and a time ("fri 10 AM", "sun,mon,tue,wed,thu 8 AM"); off stops it.
 O	digest	--file	<file>	With --schedule: where it is written (default: digest.md in the log folder, ~/Library/Logs/cabinet/ on macOS, ~/.local/state/cabinet/ on Linux).
-O	remove	--force		Remove even with uncommitted changes or commits on no remote.
+O	remove	--force		Remove even when that deletes what is not safe to delete (uncommitted changes, commits on no remote, ignored files), after listing it. Asks at a terminal; refused with no terminal and in a scheduled run.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
@@ -2115,8 +2115,9 @@ cmd_push_check() {
 }
 
 # Remove a workspace from this machine: its schedules, its log folder, its folder, and inside a
-# project what setup added there. Shows the plan first; the guardrails stay (other
-# workspaces use them); the backup key and archives stay unless --delete-key.
+# project what setup added there. Refuses first when deleting the folder loses work (lib.js delete-plan),
+# then shows the plan; the guardrails stay (other workspaces use them); the backup key and archives stay
+# unless --delete-key.
 cmd_remove() {
   local dir="" yes=0 dry=0 force=0 delkey=0 x
   for x in "$@"; do
@@ -2130,14 +2131,17 @@ cmd_remove() {
   [[ "$layout" == inside ]] && host="$(cd "$ws/.." && pwd -P)"
   logs="$LOGROOT/$slug"
 
-  # Work that exists only here is never deleted silently.
-  local git_ws="$ws" risk=""
-  [[ "$layout" == inside && "$vis" == shared ]] && git_ws=""
-  if [[ -n "$git_ws" && -e "$git_ws/.git" ]]; then
-    [[ -n "$(git -C "$git_ws" status --porcelain 2>/dev/null)" ]] && risk+="it has uncommitted changes; "
-    if git -C "$git_ws" rev-parse -q --verify HEAD >/dev/null 2>&1 && [[ -n "$(git -C "$git_ws" log --oneline --branches --not --remotes 2>/dev/null | head -1)" ]]; then
-      risk+="it has commits that exist on no remote (its history would be lost); "
-    fi
+  # Work found nowhere else is never deleted (lib.js delete-plan, kit rule 5): checked before anything is
+  # shown, the --force question included. Inside a project, only the workspace folder's own paths count.
+  local -a plan
+  plan=(--repos "$ws/repos.tsv"); ((force)) && plan+=(--force)
+  local rc=0
+  if ((dry)); then
+    echo "What the folder holds (ok: safe to delete; keep: found nowhere else):"
+    node "$LIBJS" delete-plan folder "$ws" "${plan[@]}" --dry-run || rc=$?
+  else
+    node "$LIBJS" delete-plan folder "$ws" "${plan[@]}" >/dev/null || rc=$?
+    ((rc == 0)) || die "the workspace $ws was not removed: it is as it was"
   fi
 
   echo "Removing the workspace $slug ($ws):"
@@ -2154,11 +2158,8 @@ cmd_remove() {
   fi
   echo "  - delete the folder $ws"
   echo "  The guardrails in your agent tools stay: other workspaces use them."
-  if [[ -n "$risk" ]]; then
-    echo "Not safe to delete: ${risk%; }."
-    ((force)) || die "push or copy that work first, or run again with --force to delete it anyway"
-  fi
-  ((dry)) && { echo "(dry run: nothing changed)"; return 0; }
+  # A dry run that found something kept fails, as the remove itself would.
+  ((dry)) && { echo "(dry run: nothing changed)"; ((rc == 0)) || exit 1; return 0; }
   if ((yes == 0)); then
     { exec 3<"${CABINET_TTY:-/dev/tty}"; } 2>/dev/null || die "cabinet remove asks for confirmation: run it in a terminal, or add --yes"
     local typed=""; read -r -u 3 -p "Type the slug ($slug) to remove it: " typed || true

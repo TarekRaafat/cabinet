@@ -321,6 +321,7 @@ One path per line, relative to the repo, written `` `<path>` ``. A path ending i
 - **A repo inside the folder** (a folder holding `.git`) is kept unless an entry names its path exactly, even when it is clean and every commit is pushed, since it can hold ignored files that exist nowhere else. Its line gives the first thing it holds, in the order `unpushed`, `stash`, `uncommitted`, else `ignored`.
 - **A session reads the list from the repo's main folder**, never from its own branch, so a session cannot widen its own list.
 - An entry inside a folder that is not safe still counts: with only `build/out/` named, `build/out/` goes and the rest of `build/` refuses.
+- On `cabinet remove`, a repo the workspace's `repos.tsv` lists, and each session of one, gets that repo's own check (`unpushed`, `stash`, `uncommitted`, its own ignored files) instead of being kept whole; `session end` makes no such exception.
 - In a workspace, the files the kit writes untracked there are safe without an entry: `BRIEF.md`, `PIPELINE.md`, `OPERATIONS.html`, `sessions/.gitignore`, `node_modules/` and `cabinet.local.env`.
 
 Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch, with the `cabinet session end <name>` command that shows how to merge it when the branch is `session/<name>` with a session name; any other branch you merge with git yourself.
@@ -429,7 +430,7 @@ Moves a workspace folder and updates what remembers its path: Claude Code's memo
 cabinet remove [--dry-run] [--yes] [--force] [--delete-key]
 ```
 
-Removes the workspace you are in from this machine (another one: `cabinet -C <dir> remove`). It first prints the plan:
+Removes the workspace you are in from this machine (another one: `cabinet -C <dir> remove`). First, before it shows or asks anything, it checks that deleting the folder loses nothing, with the same check as `session end`: it lists everything the folder holds that is found nowhere else, uncommitted and untracked files, commits on no remote, a stash, ignored files and repos inside it (sessions included), and refuses the whole command, naming each path and why (`uncommitted`, `unpushed`, `stash`, `ignored`, `no-git` in a folder with no git), unless the workspace's `AGENTS.md` names it in its [`## Safe to delete`](#safe-to-delete) section. A repo `repos.tsv` lists, and each of its sessions, gets that repo's own check, so a clean one with every commit on a remote never refuses. Inside a project, only the workspace folder's own paths count, never the project's other work. Nothing is removed on a refusal: the schedules, the log folder and the backup key stay too. Then it prints the plan:
 
 - stop and delete the workspace's own schedules (a schedule is its own when it runs this workspace's `bin/`; another workspace's are never touched);
 - delete its log folder (`~/Library/Logs/cabinet/<slug>/` on macOS, `~/.local/state/cabinet/<slug>/` on Linux), which frees the slug;
@@ -440,9 +441,9 @@ Removes the workspace you are in from this machine (another one: `cabinet -C <di
 
 | Option | Notes |
 |---|---|
-| `--dry-run` | Print the plan only. |
+| `--dry-run` | Print what the folder holds (`ok` lines: safe to delete; `keep` lines: found nowhere else), then the plan, and change nothing. Exit 1 when anything would be kept. |
 | `--yes`, `-y` | Do not ask. Without it you type the slug to confirm. |
-| `--force` | Go ahead even when the workspace has uncommitted changes or commits on no remote. Without it, those stop the removal (`Not safe to delete`). |
+| `--force` | Delete what is not safe to delete anyway, after listing it. It asks at the terminal, before the slug, and deletes only when you type `yes` (`--yes` never answers it); anything else changes nothing. With no terminal (how an agent's command or a script runs) it is refused, and so is a scheduled run (`CABINET_AGENT` or `CABINET_JOB` set) even at a terminal. With nothing on the list, it asks nothing. |
 | `--delete-key` | Also delete the backup passphrase `cabinet.<slug>.backup` from the keychain or secret store, and its passphrase file if there is one. |
 
 The guardrails in your agent tools stay, since other workspaces use them. Exit codes: 0, or 1 when refused or not confirmed.
@@ -638,7 +639,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CABINET_UPDATE_CHECK` | next, status, doctor, update | `off`: no release notice and no request ([the release notice](#the-release-notice)). Not read by scheduled jobs from a shell profile. |
 | `NO_UPDATE_NOTIFIER` | next, status, doctor, update | Set to anything but empty: the same as `CABINET_UPDATE_CHECK=off`. |
 | `CI` | next, status, doctor, update | Set to anything but empty: the same. |
-| `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). |
+| `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). Never the `--force` question, which reads only the terminal. |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
 | `NO_COLOR` | every command | Set to anything but empty: plain text with no color, bold or dim, even in a terminal ([output](#output-for-agents-and-scripts)). |
 | `TERM` | every command | `dumb`: the same as `NO_COLOR`. |

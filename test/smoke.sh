@@ -65,6 +65,9 @@ notty() {
     c.on("error", (e) => { process.stderr.write(String(e) + "\n"); process.exit(127); });
     c.on("close", (code) => process.exit(code === null ? 1 : code));' "$@"
 }
+# wsrm <ws>: remove a test workspace and the work in it (its commits are on no remote): remove --yes
+# --force at a terminal, yes typed, since --force is never taken without one. Its status is remove's.
+wsrm() { in_tty_typed yes "$T/wsrm-status" "$F" -C "$1" remove --yes --force >/dev/null; [[ "$(cat "$T/wsrm-status" 2>/dev/null)" == 0 ]]; }
 # dsnap <dir>: every path under it, links not followed, outside every .git: its type and mode, a file's
 # size and SHA-1, a link's target; then each repo's refs, stashes and worktrees. Equal output: unchanged.
 dsnap() {
@@ -1186,17 +1189,21 @@ s28() {
 "$F" new "$T/gone" --yes >/dev/null; G="$(cd "$T/gone" && pwd -P)"
 fake_sched "$HOME/$SD/ai.cabinet.gone.brief$SX" "$G/bin/job.sh"
 fake_sched "$HOME/$SD/ai.cabinet.gone.other$SX" /elsewhere/bin/job.sh
-"$F" -C "$G" remove --dry-run | grep -q 'schedule ai.cabinet.gone.brief$' && [[ -d "$G" ]] || fail "remove --dry-run"
+"$F" -C "$G" remove --dry-run 2>/dev/null | grep -q 'schedule ai.cabinet.gone.brief$' && [[ -d "$G" ]] || fail "remove --dry-run"
 "$F" -C "$G" remove --yes >/dev/null 2>&1 && fail "remove deleted commits that exist on no remote"
 [[ -d "$G" ]] || fail "a refused remove deleted the workspace"
-printf 'nope\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null 2>&1 && fail "remove went ahead with the wrong slug typed"
-printf 'gone\n' > "$T/typed"; CABINET_TTY="$T/typed" "$F" -C "$G" remove --force >/dev/null || fail "remove"
+# --force asks at the terminal (yes typed there); the slug comes from CABINET_TTY.
+printf 'nope\n' > "$T/typed"; CABINET_TTY="$T/typed" in_tty_typed yes "$T/rm-status" "$F" -C "$G" remove --force >/dev/null
+[[ "$(cat "$T/rm-status")" == 1 && -d "$G" ]] || fail "remove went ahead with the wrong slug typed"
+printf 'gone\n' > "$T/typed"; CABINET_TTY="$T/typed" in_tty_typed yes "$T/rm-status" "$F" -C "$G" remove --force >/dev/null
+[[ "$(cat "$T/rm-status")" == 0 ]] || fail "remove"
 [[ ! -e "$G" && ! -e "$HOME/$SD/ai.cabinet.gone.brief$SX" && -e "$HOME/$SD/ai.cabinet.gone.other$SX" ]] || fail "remove: folder, own schedule, or another's schedule"
 rm "$HOME/$SD/ai.cabinet.gone.other$SX"
 # Inside a project, private: the project is left exactly as it was before init.
 P="$T/rm-app"; mkrepo "$P"; echo '# rules' > "$P/AGENTS.md"; git -C "$P" add -A; git -C "$P" commit -qm rules
 (cd "$P" && "$F" init --yes --inside) >/dev/null
-(cd "$P/src" 2>/dev/null || cd "$P"; "$F" remove --yes --force) >/dev/null || fail "remove inside a project"
+(cd "$P/src" 2>/dev/null || cd "$P"; in_tty_typed yes "$T/rm-status" "$F" remove --yes --force) >/dev/null
+[[ "$(cat "$T/rm-status")" == 0 ]] || fail "remove inside a project"
 [[ ! -e "$P/cabinet" && ! -e "$P/CLAUDE.local.md" && ! -e "$P/QWEN.local.md" && ! -e "$P/.claude" ]] || { ls -a "$P"; fail "remove left setup's files in the project"; }
 [[ "$(cat "$P/AGENTS.md")" == '# rules' && -z "$(git -C "$P" status --porcelain --ignored)" ]] || { git -C "$P" status --porcelain --ignored; fail "remove left the project changed"; }
 ! grep -q cabinet "$P/.git/info/exclude" || fail "remove left exclude lines"
@@ -1319,7 +1326,7 @@ j="$(cd "$T/away" && "$F" list --json)"
 j -e '((w) => w.project == "Demo Co" && w.exists === true && typeof w.doctor_problems == "number" && typeof w.waiting_on_owner == "number")($.find((w) => w.slug == "demo-co"))' <<<"$j" >/dev/null || fail "list --json: a workspace"
 j -e '((g, o) => g.exists === false && g.doctor_problems == null && !!o.update_available)($.find((w) => w.slug == "listed-gone"), $.find((w) => w.slug == "listed-old"))' <<<"$j" >/dev/null || fail "list --json: gone and older"
 (cd "$T/away" && "$F" next) | grep -q 'cabinet list shows them' || fail "next outside a workspace does not point at list"
-rm -rf "$HOME/$LOGS/listed-gone"; "$F" -C "$T/listed-old" remove --yes --force >/dev/null
+rm -rf "$HOME/$LOGS/listed-gone"; wsrm "$T/listed-old"
 "$F" list --json | j -e '!$.some((w) => w.slug == "listed-old" || w.slug == "listed-gone")' >/dev/null || fail "a removed workspace is still listed"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
@@ -1373,7 +1380,7 @@ for bad in 25:00 "fun 08:00" "mon"; do "$F" digest --schedule "$bad" >/dev/null 
 "$F" digest --file x.md >/dev/null 2>&1 && fail "--file without --schedule was accepted"
 "$F" digest --schedule off | grep -q 'Stopped the scheduled digest' && [[ ! -f "$PL" ]] || fail "digest --schedule off"
 "$F" digest | grep -q '^Not scheduled' || fail "digest after the schedule stopped"
-for x in dg-a dg-b dg-c; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
+for x in dg-a dg-b dg-c; do wsrm "$T/$x"; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -2119,7 +2126,7 @@ git init -q "$T/cr-src" && git -C "$T/cr-src" commit -q --allow-empty -m init
 "$F" new "$T/cr-none" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-none/cabinet.env" || fail "a workspace with no repos got code-reviewer"
 "$F" new "$T/cr-chosen" --repo "$T/cr-src" --roles "qa security" --yes >/dev/null && ! grep -q 'code-reviewer' "$T/cr-chosen/cabinet.env" || fail "--roles did not win over the default"
 grep -q 'product repos with no code-reviewer on the team' "$KIT/core/rules/seats.md" || fail "the code-reviewer seat signal left seats.md"
-for x in cr-code cr-none cr-chosen; do "$F" -C "$T/$x" remove --yes --force >/dev/null; done
+for x in cr-code cr-none cr-chosen; do wsrm "$T/$x"; done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -2456,7 +2463,7 @@ out="$(run "$p" --dry-run)" || true; echo "$out" | grep -qE "^[a-z-]+: verifies 
 out="$(run "$p")" && echo "$out" | tail -1 | grep -q "^$p is ready to push: every reviewer passed $p1, $p2[,.]" || fail "run of a second review: $out"
 sed -i.bak 's/^status: ready/status: draft/' "$PW/specs/login.md" && rm "$PW/specs/login.md.bak" && git -C "$PW" commit -qam draft
 srun specs/login.md >/dev/null && fail "spec run took a draft spec"
-"$F" -C "$PW" remove --yes --force >/dev/null
+wsrm "$PW"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -2514,7 +2521,7 @@ ra qa-lead --reports-to qa-mobile >/dev/null || fail "role add for a loop"
 L sub "$SW/roles/qa-mobile.md" -- '/^- Reports to: nobody$/' '- Reports to: qa-lead'
 "$SW/bin/doctor.sh" 2>&1 | grep -q 'qa-mobile reports to itself through qa-lead' || fail "doctor: a loop"
 grep -q '^## Sub-teams$' "$KIT/core/rules/seats.md" && grep -q 'A lead can grow a sub-team' "$KIT/core/CABINET.md" || fail "the sub-team rules left seats.md or CABINET.md"
-"$F" -C "$SW" remove --yes --force >/dev/null
+wsrm "$SW"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -2598,7 +2605,7 @@ w2="$("$CW/bin/handoff.sh" add --from backend --to "qa, security" --changed x --
 rec "$w2" qa "$cb" >/dev/null || true; out="$(rec "$w2" security "$cb")" && fail "record ran a check outside tools/"
 echo "$out" | grep -q 'is not a command in tools/' && [[ ! -e "$CW/pwned" ]] || fail "a check outside tools/: $out"
 grep -q '^## Critical areas$' "$KIT/core/rules/reviews.md" && grep -q '^## Critical areas$' "$KIT/templates/workspace/AGENTS.md" || fail "the critical areas rules left reviews.md or the AGENTS.md template"
-"$F" -C "$CW" remove --yes --force >/dev/null
+wsrm "$CW"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -2635,7 +2642,7 @@ rc=0; "$MW/bin/manual.sh" build --check >/dev/null || rc=$?; [[ $rc == 1 ]] || f
   && grep -q '<a href="https://example.com/x">good</a>' "$h" && grep -q '<a href="docs/a.md">doc</a>' "$h" && grep -q '<strong>bold</strong>' "$h" \
   && grep -q '<em>slant</em>' "$h" && grep -q '<code>a&lt;b</code>' "$h" && grep -q '<th>b | c</th>' "$h" || fail "the page's escaping and markup: $(grep -n 'Page test' -A12 "$h")"
 grep -q '<h2 id="page-test">Page test</h2>' "$h" && "$MW/bin/doctor.sh" 2>&1 | grep -q 'ok    OPERATIONS.html matches OPERATIONS.md' || fail "the rebuilt page"
-"$F" -C "$MW" remove --yes --force >/dev/null
+wsrm "$MW"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -3522,7 +3529,7 @@ grep -q 'throw new Error("broken")' "$CB/scripts/lib.js" || fail "color test set
 fresh; o="$(tt bash -c '"$0" -C "$1" update; echo "exit=$?"' "$CB/bin/cabinet" "$U")"
 grep -qx 'exit=0' <<<"$o" && grep -q '^## 9.9.9 - 1 Jan 2030$' <<<"$o" && grep -qF "${E}32mCommitted in the workspace" <<<"$o" || fail "a failing renderer stopped update: $o"
 rm -rf "$CB"
-for x in "$CW" "$CO" "$T/color-nobrief" "$U" "$T/color-base"; do [[ -d "$x" ]] && "$F" -C "$x" remove --yes --force >/dev/null 2>&1; rm -rf "$x"; done
+for x in "$CW" "$CO" "$T/color-nobrief" "$U" "$T/color-base"; do [[ -d "$x" ]] && { wsrm "$x" || true; }; rm -rf "$x"; done
 rm -rf "$HOME/$LOGS/color" "$HOME/$LOGS/color-gone" "$CK"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
@@ -3594,7 +3601,7 @@ done
 (cd "$CT" && "$F" spec check 2>&1) | grep -qF "specs/x.md (dr${ESC}[2Jaft)" || fail "spec check piped changed the status"
 cp "$T/ctl-env" "$CT/cabinet.env"
 grep -q 'control characters from project text show as `?`' "$KIT/docs/commands.md" || fail "the commands page does not say control characters show as ?"
-"$F" -C "$CT" remove --yes --force >/dev/null 2>&1 || true; rm -rf "$CT"
+wsrm "$CT" || true; rm -rf "$CT"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -3762,8 +3769,8 @@ pcb; ends app "$a2 is on no handoff"; cl app "$a1" "app HANDOFFS.md" "no handoff
 # Criteria 6 and 7: the docs and the 0.4.0 changelog section say so.
 grep -q coordination "$KIT/docs/commands.md" && grep -qF 'specs/adr/' "$KIT/docs/commands.md" || fail "docs/commands.md does not describe push-check's coordination commits"
 awk '/^## 0\.4\.0 - / { on = 1; next } on && /^## / { exit } on' "$KIT/CHANGELOG.md" | grep -q coordination || fail "CHANGELOG.md's 0.4.0 section has no coordination line"
-"$F" -C "$PB" remove --yes --force >/dev/null 2>&1 || true
-"$F" -C "$PC" remove --yes --force >/dev/null 2>&1 || true
+wsrm "$PB" || true
+wsrm "$PC" || true
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -4005,7 +4012,7 @@ mkdir -p "$T/model-p"; echo x > "$T/model-p/f"; git -C "$T/model-p" init -q; bef
 mkdir -p "$T/model-p2"; echo x > "$T/model-p2/f"; git -C "$T/model-p2" init -q; rm -f "$ML.cwd"
 (cd "$T/model-p2" && m "$F" init --yes --runner codex --model m-1) >/dev/null 2>&1 || fail "init --model m-1"
 [[ -s "$ML.cwd" ]] && ! grep -q "^$(cd "$T/model-p2" && pwd -P)" "$ML.cwd" || fail "a model list ran in the project: $(cat "$ML.cwd" 2>/dev/null)"
-"$F" -C "$T/model-p2" remove --yes --force >/dev/null 2>&1 || true
+wsrm "$T/model-p2" || true
 # 15. The setup question, right after the runner's: Enter, a name, and a refused name then a good one.
 q() { printf '%s\n' "Mq" "$T/$1" "" "" "" "" "" "" "" "" "" "" "" "" claude "${@:2}" "" "" "" "" "" "" "" "" y n n > "$T/m-answers"; CABINET_TTY="$T/m-answers" m "$F" new 2>&1; }
 q model-q1 "" >/dev/null; grep -qx 'CABINET_MODEL=""' "$T/model-q1/cabinet.env" || fail "the model question: Enter"
@@ -4014,7 +4021,7 @@ out="$(q model-q3 'x;y' m-1)"; grep -qx 'CABINET_MODEL="m-1"' "$T/model-q3/cabin
 # 10. The docs.
 grep -q -- '--model' "$KIT/docs/commands.md" && grep -q 'MODEL=' "$KIT/docs/commands.md" && grep -q 'model\.exists' "$KIT/docs/troubleshooting.md" && grep -q 'model\.name' "$KIT/docs/troubleshooting.md" \
   && grep -q '^# MODEL:' "$KIT/templates/workspace/jobs/brief.job" && grep -q -- '--model' "$KIT/CHANGELOG.md" && grep -qF '| `codex` (Codex 0.165.0) | `--model` | `codex debug models`' "$KIT/docs/agent-setup.md" || fail "a model-choice doc is missing"
-for f in "$MW" "$T/model-n1" "$T/model-q1" "$T/model-q2" "$T/model-q3"; do "$F" -C "$f" remove --yes --force >/dev/null 2>&1 || true; done
+for f in "$MW" "$T/model-n1" "$T/model-q1" "$T/model-q2" "$T/model-q3"; do wsrm "$f" || true; done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -4219,7 +4226,7 @@ grep -q 'step `update`' "$KIT/docs/commands.md" && grep -q 'edited, latest}' "$K
   && grep -q '^| `NO_UPDATE_NOTIFIER` |' "$KIT/docs/commands.md" && grep -q '^| `CI` |' "$KIT/docs/commands.md" && grep -q 'your npm login' "$KIT/docs/commands.md" \
   && grep -q 'do not read your shell profile' "$KIT/docs/commands.md" && grep -q 'npm writes its own cache and logs' "$KIT/docs/commands.md" \
   && grep -q '`kit.newer`' "$KIT/docs/troubleshooting.md" && grep -q '`kit.newer`' "$KIT/roles/chief-of-staff.md" && grep -q 'npm install @tarekraafat/cabinet@latest && cabinet update' "$KIT/CHANGELOG.md" || fail "a release-notice doc is missing"
-"$F" -C "$RW" remove --yes --force >/dev/null 2>&1 || true; "$F" -C "$SP/cabinet" remove --yes --force >/dev/null 2>&1 || true
+wsrm "$RW" || true; wsrm "$SP/cabinet" || true
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="${PATH#"$NP:$KIT/bin:"}"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -4686,7 +4693,7 @@ grep -qx 'CABINET_MODEL_LIGHT="m-light"' "$T/lh1/p/cabinet.env" && grep -qx 'CAB
 ! grep -q -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh2/p/cabinet.env" || fail "setup with Enter wrote a light model line"
 [[ "$(grep -v -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh1/p/cabinet.env")" == "$(grep -v -e '^CABINET_MODEL_LIGHT=' -e '^CABINET_LIGHT_ROLES=' "$T/lh2/p/cabinet.env")" ]] \
   || fail "setup with and without a light model differ: $(diff "$T/lh1/p/cabinet.env" "$T/lh2/p/cabinet.env")"
-for x in lh1 lh2; do HOME="$T/$x" "$F" -C "$T/$x/p" remove --yes --force >/dev/null 2>&1 || true; done
+for x in lh1 lh2; do HOME="$T/$x" wsrm "$T/$x/p" || true; done
 # 5, 5a, 6, 8 (role files), in a workspace inside a project, so the project's .claude/agents/ is built too: the kit
 # roles, helper, x (its own model: line) and y (frontmatter, no model: line).
 mkdir -p "$LP"; git -C "$LP" init -q; echo x > "$LP/f"; git -C "$LP" add -A; git -C "$LP" commit -qm init
@@ -4747,7 +4754,7 @@ grep -qF -- '--model-light' "$KIT/docs/commands.md" && grep -qF -- '--light-role
   && grep -qF 'runs on the light model.' "$KIT/docs/commands.md" && grep -qF -- '`--model-light' "$KIT/docs/agent-setup.md" && grep -qF 'CABINET_MODEL_LIGHT' "$KIT/docs/agent-setup.md" \
   && awk '/^## /{on = /^## 0\.3\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_MODEL_LIGHT' && awk '/^## /{on = /^## 0\.3\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'CABINET_LIGHT_ROLES' \
   && grep -q 'model-light\.roles' "$KIT/docs/troubleshooting.md" && ! grep -qE 'model-light|light-roles' "$KIT/site/copy.js" || fail "a light model doc is missing"
-for x in "$LW" "$LI"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
+for x in "$LW" "$LI"; do wsrm "$x" || true; done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -5174,7 +5181,7 @@ for a in --yes -y --bad; do up "$UW" "$a"; ((st == 2)) && [[ ! -e "$NP/log" ]] |
 grep -q '^cabinet update$' "$KIT/docs/commands.md" && grep -qF 'It installs nothing and asks nothing.' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" \
   && grep -q '^| `NO_UPDATE_NOTIFIER` | next, status, doctor, update |' "$KIT/docs/commands.md" && grep -q '^| `CI` | next, status, doctor, update |' "$KIT/docs/commands.md" \
   && grep -q '^| `CABINET_TTY` | setup, config, remove |' "$KIT/docs/commands.md" && ! grep -qE 'update \[--yes\]|Run it now\?|ignore-scripts' "$KIT/docs/commands.md" || fail "the docs do not say what update does"
-for x in "$UW" "$PW" "$TW"; do "$F" -C "$x" remove --yes --force >/dev/null 2>&1 || true; done
+for x in "$UW" "$PW" "$TW"; do wsrm "$x" || true; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og" CABINET_UPDATE_CHECK=off PATH="$op"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -5282,7 +5289,7 @@ for d in pin nopin none; do
   o="$("$F" -C "$w" config --writing short 2>&1)" || fail "config stopped on the copy above a stand-alone workspace ($d): $o"
 done
 [[ ! -e "$MK" ]] || fail "a command ran the copy above a stand-alone workspace"
-for w in "$PW" "$PP" "$T/pc-alone/ws"; do "$F" -C "$w" remove --yes --force >/dev/null 2>&1 || true; done
+for w in "$PW" "$PP" "$T/pc-alone/ws"; do wsrm "$w" || true; done
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -5537,7 +5544,7 @@ local p; p="$(cd "$KIT" && npm pack --dry-run --json 2>/dev/null | j -r --each '
 [[ -n "$p" ]] && ! grep -qE '^(tools|test)/' <<<"$p" || fail "criterion 31: the package would ship tools/ or test/"
 o="$(awk '/^\/\/ Known limits/ { on = 1 } on && !/^\/\// { exit } on' "$KIT/tools/guardrail-probe.js")"
 for w in "rule groups" "has been denied" key unclear "Claude Code and Grok"; do [[ "$o" == *"$w"* ]] || fail "criterion 31: the probe's Known limits do not say: $w"; done
-"$F" -C "$PW" remove --yes --force >/dev/null 2>&1 || true
+wsrm "$PW" || true
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -5770,7 +5777,7 @@ j -e --arg f "$NW/sessions/app/s1" '$.some((s) => s.name == "s1" && s.folder == 
 [[ "$(git -C "$NW/sessions/app/s1" rev-parse --show-toplevel)" == "$NW/sessions/app/s1" ]] || fail "the session's folder no longer finds its repo"
 o="$(cd "$NW" && "$F" session end s1 2>&1)" && [[ ! -e "$NW/sessions/app/s1" ]] && git -C "$NW/app" rev-parse -q --verify session/s1 >/dev/null || fail "session end s1 after a move: $o"
 grep -q 'worktree repair' "$KIT/docs/commands.md" && grep -q 'leaves the workspace' "$KIT/docs/commands.md" || fail "docs/commands.md does not say what move refuses and repairs"
-"$F" -C "$NW" remove --yes --force >/dev/null 2>&1 || true
+wsrm "$NW" || true
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -6387,6 +6394,144 @@ o="$(awk -F'\t' 'NF != 3 || ($1 != "ok" && $1 != "keep") || ($1 == "keep" && $2 
 st=0; o="$(L delete-plan folder "$SS/c1" 2>/dev/null)" || st=$?
 ! grep -q '^ok' <<<"$o" || fail "criterion 17: an ok line without --dry-run: $o"
 rm -f "$hl" "$ef" "$sf" "$T/dr-yes" "$T/dr-env"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "delete rule 2: remove" "0"
+s95() {
+# Criteria 19 to 27, 3a's remove case and N2 of specs/delete-rule.md: remove deletes a workspace only when
+# the helper (delete-plan folder <ws> --repos <ws>/repos.tsv) keeps nothing, or --force is answered yes
+# at a terminal. F-ws: app at app/, listed in repos.tsv, every commit on a remote. Nothing is pushed.
+local RW A B C P st o b4 k x h slug hl="$T/r2-lines" ef="$T/r2-err" sf="$T/r2-status"
+local -a sch
+rmt() { git -C "$1" update-ref "refs/remotes/origin/$(git -C "$1" branch --show-current)" HEAD; }
+nested() { mkdir -p "$1"; git -C "$1" init -q -b main; echo l > "$1/l"; git -C "$1" add l; git -C "$1" commit -qm lib; }
+fws() {
+  "$F" new "$T/$1" --yes >/dev/null || fail "new $1"
+  RW="$(cd "$T/$1" && pwd -P)"
+  mkdir -p "$RW/app"; git -C "$RW/app" init -q -b main
+  printf '.env\nsecrets/\nconfig/master.key\ndb/*.sqlite3\nvendor/\nnode_modules/\nbuild/\nlink\n' > "$RW/app/.gitignore"
+  printf '# app\n' > "$RW/app/AGENTS.md"
+  git -C "$RW/app" add -A; git -C "$RW/app" commit -qm app; rmt "$RW/app"
+  printf 'app\t-\t-\tno\tapp\n' >> "$RW/repos.tsv"; git -C "$RW" commit -qam app; rmt "$RW"
+}
+# kp <ws>: the helper's keep lines, sorted, with the source remove uses; every line is kept in $hl.
+kp() { L delete-plan folder "$1" --repos "$1/repos.tsv" 2>/dev/null | tee -a "$hl" | grep '^keep' | LC_ALL=C sort || true; }
+want() { printf '%s\n' "$@" | LC_ALL=C sort; }
+# refuse <ws> <snapshot dir> <keep line>...: helper lines exactly those; remove --yes exits 1, its
+# stderr names each path, and S(<snapshot dir>) is unchanged.
+refuse() {
+  local w=$1 d=$2; shift 2
+  [[ "$(kp "$w")" == "$(want "$@")" ]] || fail "helper lines for $w: $(kp "$w")"
+  b4="$(dsnap "$d")"; st=0; "$F" -C "$w" remove --yes >/dev/null 2>"$ef" || st=$?
+  ((st == 1)) || fail "remove $w: exit $st, $(cat "$ef")"
+  for k in "$@"; do grep -qF -- "${k##*$'\t'}" "$ef" || fail "remove did not name ${k##*$'\t'}: $(cat "$ef")"; done
+  [[ "$(dsnap "$d")" == "$b4" ]] || fail "a refused remove changed $d"
+}
+: > "$hl"
+
+# 27: today's cases keep their meaning.
+fws r2-a; A="$RW"
+echo x >> "$A/HANDOFFS.md"; refuse "$A" "$A" $'keep\tuncommitted\tHANDOFFS.md'; git -C "$A" checkout -q -- HANDOFFS.md
+git -C "$A" commit -q --allow-empty -m extra; refuse "$A" "$A" $'keep\tunpushed\t./'; rmt "$A"
+
+# 21 and 24: ignored folders nobody named safe; the workspace's own safe list, with an entry not read.
+mkdir -p "$A/recovered" "$A/drafts"; echo r > "$A/recovered/r.txt"; echo d > "$A/drafts/d.md"
+refuse "$A" "$A" $'keep\tignored\trecovered/' $'keep\tignored\tdrafts/'
+b4="$(dsnap "$A")"; st=0; o="$("$F" -C "$A" remove --dry-run 2>/dev/null)" || st=$?
+((st == 1)) && grep -qF recovered/ <<<"$o" && grep -qF drafts/ <<<"$o" || fail "criterion 24: remove --dry-run exits $st: $o"
+[[ "$(dsnap "$A")" == "$b4" ]] || fail "criterion 24: remove --dry-run changed the workspace"
+printf '\n## Safe to delete\n\n- `drafts/`\n- `/tmp/x`\n' >> "$A/AGENTS.md"; git -C "$A" commit -qam "safe list"; rmt "$A"
+refuse "$A" "$A" $'keep\tignored\trecovered/'
+grep -qF '`/tmp/x`' "$ef" && grep -q 'not read' "$ef" || fail "criterion 21: /tmp/x not named as not read: $(cat "$ef")"
+rm -rf "$A/recovered" "$A/drafts"
+
+# 3a: a clean repo with every commit on a remote, not listed in repos.tsv, in a folder nobody named safe.
+nested "$A/lib2"; git -C "$A/lib2" remote add origin "$T/r2-lib2.git"; rmt "$A/lib2"
+refuse "$A" "$A" $'keep\tignored\tlib2/'; rm -rf "$A/lib2"
+
+# 20: a session of a listed repo gets the repo's own check.
+(cd "$A" && "$F" session start s1) >/dev/null || fail "session start s1"
+echo n > "$A/sessions/app/s1/n.txt"; refuse "$A" "$A" $'keep\tuncommitted\tsessions/app/s1/n.txt'; rm "$A/sessions/app/s1/n.txt"
+
+# 24: names from the folder reach no terminal raw, on a dry run at a terminal.
+(cd "$A" && "$F" session start n1) >/dev/null || fail "session start n1"
+printf 1 > "$A/sessions/app/n1/a"$'\t'"b"; printf 2 > "$A/sessions/app/n1/c"$'\n'"d"; printf 3 > "$A/sessions/app/n1/e"$'\e'"[31mf"
+b4="$(dsnap "$A")"; o="$(NO_COLOR=1 in_tty_typed "" "$sf" "$F" -C "$A" remove --dry-run)"
+[[ "$(cat "$sf" 2>/dev/null)" == 1 ]] || fail "criterion 24: remove --dry-run at a terminal: $(cat "$sf" 2>/dev/null), $o"
+[[ "$o" != *$'\e'* ]] || fail "criterion 24: a byte 0x1b reached the terminal"
+[[ "$o" == *'a\tb'* ]] || fail "criterion 24: the dry run does not name the session's file: $o"
+[[ "$(dsnap "$A")" == "$b4" ]] || fail "criterion 24: remove --dry-run at a terminal changed the workspace"
+wsrm "$A" || fail "remove --force of r2-a at a terminal"
+
+# 19 and 25: work found nowhere else in a listed repo; schedules, logs and the key stay on a refusal.
+fws r2-b; B="$RW"; slug="$(source "$B/cabinet.env" >/dev/null 2>&1; printf '%s' "$CABINET_SLUG")"
+[[ -f "$HOME/$LOGS/$slug/workspace" ]] || fail "criterion 19: no log folder for $slug"
+fake_sched "$HOME/$SD/ai.cabinet.$slug.extra$SX" "$B/bin/job.sh"
+mkdir -p "$HOME/.config/cabinet/passphrases"; (umask 077; echo p > "$HOME/.config/cabinet/passphrases/cabinet.$slug.backup")
+echo u > "$B/app/u.txt"; echo m >> "$B/app/AGENTS.md"; git -C "$B/app" commit -qam more
+sch=(); for x in "$HOME/$SD/ai.cabinet.$slug".*; do [[ -e "$x" ]] && sch+=("$x"); done
+((${#sch[@]})) || fail "criterion 19: no schedule files for $slug"
+there() { [[ -f "$HOME/$LOGS/$slug/workspace" && -f "$HOME/.config/cabinet/passphrases/cabinet.$slug.backup" ]] || fail "$1: the log folder or the key is gone"
+  for x in "${sch[@]}"; do [[ -e "$x" ]] || fail "$1: $x is gone"; done; }
+refuse "$B" "$B" $'keep\tuncommitted\tapp/u.txt' $'keep\tunpushed\tapp/'; there "criterion 19"
+b4="$(dsnap "$B")"
+in_tty_typed no "$sf" "$F" -C "$B" remove --yes --force >/dev/null
+[[ "$(cat "$sf" 2>/dev/null)" == 1 && "$(dsnap "$B")" == "$b4" ]] || fail "criterion 25: no typed: $(cat "$sf" 2>/dev/null)"; there "criterion 25, no typed"
+st=0; notty "$F" -C "$B" remove --yes --force >/dev/null 2>"$ef" || st=$?
+((st == 1)) && grep -qF -- --force "$ef" && grep -q terminal "$ef" && [[ "$(dsnap "$B")" == "$b4" ]] || fail "criterion 25: no terminal: $st, $(cat "$ef")"
+printf 'yes\n' > "$T/r2-yes"; st=0; CABINET_TTY="$T/r2-yes" notty "$F" -C "$B" remove --yes --force >/dev/null 2>&1 || st=$?
+((st == 1)) && [[ "$(dsnap "$B")" == "$b4" ]] || fail "criterion 25: CABINET_TTY with no terminal: $st"
+o="$(CABINET_AGENT=qa in_tty_typed yes "$sf" "$F" -C "$B" remove --yes --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 1 && "$o" == *'--force is never used in a scheduled run'* && "$(dsnap "$B")" == "$b4" ]] || fail "criterion 25: CABINET_AGENT: $(cat "$sf" 2>/dev/null), $o"
+there "criterion 25"
+o="$(in_tty_typed yes "$sf" "$F" -C "$B" remove --yes --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 0 && "$o" == *'app/u.txt'* ]] || fail "criterion 25: yes typed: $(cat "$sf" 2>/dev/null), $o"
+[[ ! -e "$B" && ! -e "$HOME/$LOGS/$slug" ]] || fail "criterion 25: the workspace or its log folder is still there"
+for x in "${sch[@]}"; do [[ ! -e "$x" ]] || fail "criterion 25: $x is still there"; done
+rm -f "$HOME/.config/cabinet/passphrases/cabinet.$slug.backup"
+
+# 23 and 24: the kit's own ignored files never refuse; the dry run names them.
+fws r2-c; C="$RW"
+for x in BRIEF.md PIPELINE.md OPERATIONS.html; do [[ -e "$C/$x" ]] || echo x > "$C/$x"; done
+mkdir -p "$C/sessions" "$C/node_modules"; [[ -e "$C/sessions/.gitignore" ]] || printf '*\n' > "$C/sessions/.gitignore"; echo '{}' > "$C/node_modules/.package-lock.json"
+for x in BRIEF.md PIPELINE.md OPERATIONS.html sessions/.gitignore node_modules/.package-lock.json; do git -C "$C" check-ignore -q "$x" || fail "criterion 23: $x is not ignored"; done
+b4="$(dsnap "$C")"; st=0; o="$("$F" -C "$C" remove --dry-run 2>&1)" || st=$?
+((st == 0)) && grep -qF BRIEF.md <<<"$o" && grep -qF '(dry run: nothing changed)' <<<"$o" && [[ "$(dsnap "$C")" == "$b4" ]] || fail "criterion 24: dry run of a safe workspace: $st, $o"
+st=0; "$F" -C "$C" remove --yes >/dev/null 2>"$ef" || st=$?
+((st == 0)) && [[ ! -e "$C" ]] || fail "criterion 23: $st, $(cat "$ef")"
+
+# 26: --force with nothing on the list asks nothing, with no terminal.
+fws r2-d; st=0; notty "$F" -C "$RW" remove --yes --force >/dev/null 2>"$ef" || st=$?
+((st == 0)) && [[ ! -e "$RW" ]] || fail "criterion 26: $st, $(cat "$ef")"
+# N2: app listed by its absolute path, clean and pushed.
+fws r2-e; awk -F'\t' -v OFS='\t' -v p="$RW/app" '$1 == "app" { $5 = p } 1' "$RW/repos.tsv" > "$T/r2-tsv" && cat "$T/r2-tsv" > "$RW/repos.tsv"
+git -C "$RW" commit -qam absolute; rmt "$RW"
+st=0; "$F" -C "$RW" remove --yes >/dev/null 2>"$ef" || st=$?
+((st == 0)) && [[ ! -e "$RW" ]] || fail "N2: app listed by its absolute path: $st, $(cat "$ef")"
+# A workspace folder with no git at all: its files are found nowhere else (no-git), so remove refuses; a
+# person at a terminal can still remove it with --force.
+fws r2-f; rm -rf "$RW/.git"
+b4="$(dsnap "$RW")"; st=0; "$F" -C "$RW" remove --yes >/dev/null 2>"$ef" || st=$?
+((st == 1)) && grep -qF 'HANDOFFS.md  (no-git)' "$ef" && [[ "$(dsnap "$RW")" == "$b4" ]] || fail "a workspace with no git: $st, $(cat "$ef")"
+wsrm "$RW" && [[ ! -e "$RW" ]] || fail "a workspace with no git, --force at a terminal"
+
+# 22: a shared workspace inside a project: only its own folder's paths count.
+P="$T/r2-p"; nested "$P"; P="$(cd "$P" && pwd -P)"
+(cd "$P" && "$F" init --yes --inside --shared) >/dev/null || fail "init shared"
+git -C "$P" add -A; git -C "$P" commit -qm "cabinet in"; mkdir -p "$P/src"; echo a > "$P/src/a.txt"
+echo e >> "$P/cabinet/HANDOFFS.md"
+refuse "$P/cabinet" "$P" $'keep\tuncommitted\tHANDOFFS.md'
+git -C "$P" checkout -q -- cabinet/HANDOFFS.md; h="$(git -C "$P" rev-parse HEAD)"
+st=0; "$F" -C "$P/cabinet" remove --yes >/dev/null 2>"$ef" || st=$?
+((st == 0)) && [[ ! -e "$P/cabinet" && -f "$P/src/a.txt" && "$(git -C "$P" rev-parse HEAD)" == "$h" ]] || fail "criterion 22: $st, $(cat "$ef")"
+
+# Every helper line has three fields: ok or keep, a word of the closed set on a keep line, the path.
+o="$(awk -F'\t' 'NF != 3 || ($1 != "ok" && $1 != "keep") || ($1 == "keep" && $2 !~ /^(uncommitted|unpushed|stash|ignored|no-git|edited|not-kit|differs|file-in-way|folder-in-way)$/) || ($1 == "ok" && $2 != "")' "$hl")"
+[[ -z "$o" && -s "$hl" ]] || fail "helper lines out of shape: $o"
+# The docs and the changelog say what changed.
+awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -q 'remove --yes --force' || fail "the CHANGELOG does not say what remove now refuses"
+rm -f "$hl" "$ef" "$sf" "$T/r2-yes" "$T/r2-tsv"
   return 0   # a last "check && fail" line must not end the run
 }
 
