@@ -563,7 +563,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.4.0).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.4.1).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -639,7 +639,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.4.0
+  ok    cabinet 0.4.1
 ...
 ```
 
@@ -2394,7 +2394,7 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.4.1 - Unreleased
+## 0.4.1 - 9 Nov 2026
 
 - Every command now reads `HANDOFFS.md` the same way. A status word other than `open`, `acknowledged`, `done` or `rejected` (such as `Done`, `closed`, `in-progress`, or no status line) is named by `cabinet doctor` as a FIX, with a new check ID, `handoffs.status`; `cabinet handoff run` stops on it, naming the line, instead of building the work again, and never counts a review handoff with such a word as closed; a scheduled run names it in `PIPELINE.md` and goes on; it still shows in `handoff list`, and `archive` keeps it. A handoff to `Owner` or `FOUNDER`, in any case, now reaches you in `handoff list owner`, `cabinet next`, `cabinet list` and `cabinet digest`, and `handoff add --to` writes `owner` and `founder` in lower case. IDs past 99 a day are put in order by number (`-100` after `-99`) in `handoff list`, the scheduled run and `cabinet spec run`. `cabinet handoff archive` keeps a `## ` section after the entries in `HANDOFFS.md`, where it was, and commits only `HANDOFFS.md` and the archive files it wrote, never someone's draft in `handoffs/`.
 - `cabinet handoff add`, `attach` and `record` never write without the handoff lock. When another writer held it for the whole 10-second wait, they went ahead anyway, exited 0 and then removed the other writer's lock; now they stop with exit 1, naming the lock, and change nothing. A lock is taken over only when its writer is gone (its process has ended, or a lock from an older kit is over a minute old), never from a writer still running (another user's or one outside the agent tool's sandbox included), and the lock now holds its writer's process ID, so the lock of a writer that was stopped is taken over at once instead of after a minute.
