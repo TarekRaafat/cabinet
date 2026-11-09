@@ -6349,6 +6349,33 @@ o="$(in_tty_typed yes "$sf" "$F" -C "$DW" session end m1 --force)"
 ended m1
 git -C "$DA" config --unset submodule.sm.ignore
 rm -f "$T/dr-fsm"
+# A repo whose HEAD is unborn (an orphan branch) still has its branches' commits checked.
+ss o1; nested "$SS/o1/vendor/lib"; git -C "$SS/o1/vendor/lib" checkout -q --orphan new; git -C "$SS/o1/vendor/lib" rm -rqf .
+refuse o1 $'keep\tunpushed\tvendor/lib/'
+st=0; o="$(L delete-plan folder "$SS/o1/vendor/lib" 2>/dev/null)" || st=$?
+((st == 3)) && [[ "$o" == $'keep\tunpushed\t./' ]] || fail "an unborn HEAD hid the unpushed commits: $st, $o"
+# A found repo's own clean or process filter never runs: git status there is skipped and the repo is
+# kept as uncommitted. filt <repo> <clean|process>: the filter, applied to every file, a tracked file
+# touched so status would rehash it; this git runs it there, or the test proves nothing.
+filt() {
+  local a; a="$(git -C "$1" rev-parse --path-format=absolute --git-path info/attributes)"; mkdir -p "${a%/*}"
+  git -C "$1" config "filter.x.$2" "$T/dr-flt"; echo '* filter=x' > "$a"
+  git -C "$1" status >/dev/null 2>&1; [[ -e "$T/dr-mark" ]] || fail "this git does not run a $2 filter, so the test proves nothing"
+  rm -f "$T/dr-mark"; touch "$1/l"
+}
+printf '#!/bin/sh\ntouch "%s"\ncat\n' "$T/dr-mark" > "$T/dr-flt"; chmod +x "$T/dr-flt"
+for k in clean process; do
+  ss "fl$k"; nested "$SS/fl$k/vendor/lib"; rmt "$SS/fl$k/vendor/lib"; filt "$SS/fl$k/vendor/lib" "$k"
+  refuse "fl$k" $'keep\tuncommitted\tvendor/lib/'
+  L delete-plan folder "$SS/fl$k" --dry-run >/dev/null 2>&1 || true
+  [[ ! -e "$T/dr-mark" ]] || fail "delete-plan ran a found repo's $k filter"
+done
+ss m2; git -C "$SS/m2" -c protocol.file.allow=always submodule update -q --init >/dev/null 2>&1 || fail "submodule update"
+filt "$SS/m2/sm" clean
+refuse m2 $'keep\tuncommitted\tsm/'
+L delete-plan folder "$SS/m2" --dry-run >/dev/null 2>&1 || true
+[[ ! -e "$T/dr-mark" ]] || fail "delete-plan ran a submodule's clean filter"
+rm -f "$T/dr-flt"
 
 # 17: the helper's shape (criterion 17).
 b4="$(dsnap "$DW")"

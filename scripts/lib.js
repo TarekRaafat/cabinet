@@ -1373,8 +1373,7 @@ function deletePlan(...argv) {
 // git in <dir>: its output, or null when git fails; gitZ splits -z output into fields. <dir> can be a
 // repo found inside the folder, whose own config anyone could have written: the -c options (which
 // reach every git it starts) stop that config running a program, and no optional lock writes its index.
-// ponytail: a clean or process filter from that repo's own config and .gitattributes can still run
-// when git rehashes a file whose stat changed; overriding it needs each driver's name.
+// Its own filters never run either: check() skips git status in such a repo (ownFilter).
 const gitRun = (dir, a) => spawnSync("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
   "-c", "core.hooksPath=/dev/null", "-C", dir, ...a], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
 const gitOut = (dir, ...a) => { const r = gitRun(dir, a); return r.status === 0 ? r.stdout.trim() : null; };
@@ -1409,8 +1408,20 @@ function folderPlan(root, reposTsv, lines, unread) {
   const emit = (verdict, why, rel) => lines.push([verdict, why, rel]);
   check(root, "", true);
 
-  // check <abs> <prefix> <isRoot>: the lines deleting <abs> loses, each path <prefix> + its path under <abs>.
-  function check(abs, prefix, isRoot) {
+  // Does the repo at <abs> define a filter in its own config (local or worktree, its includes too)? git
+  // status would run it on a file whose stat changed. Reading config runs nothing; a failed read is a yes.
+  function ownFilter(abs) {
+    const r = gitRun(abs, ["config", "--show-scope", "-z", "--get-regexp", "^filter\\."]);
+    if (r.status === 1 && !r.stderr) return false;   // no filter anywhere
+    if (r.status !== 0) return true;
+    const f = r.stdout.split("\0");
+    for (let i = 0; i + 1 < f.length; i += 2) if (f[i] === "local" || f[i] === "worktree") return true;
+    return false;
+  }
+
+  // check <abs> <prefix> <isRoot> <found>: the lines deleting <abs> loses, each path <prefix> + its path
+  // under <abs>. <found>: a repo found inside, neither the folder itself nor one repos.tsv lists.
+  function check(abs, prefix, isRoot, found) {
     const here = (p) => (p === "./" ? prefix || "./" : prefix + p);
     const toplevel = gitOut(abs, "rev-parse", "--show-toplevel");
     const repoTop = toplevel ? fs.realpathSync(toplevel) : "";
@@ -1436,7 +1447,7 @@ function folderPlan(root, reposTsv, lines, unread) {
 
     if (!repoTop) { walk("", "no-git"); return; }
     if (own) {   // HEAD too: a submodule's commits are on no branch
-      if (gitOut(abs, "log", "--branches", "HEAD", "--not", "--remotes", "--format=%h", "-1")) emit("keep", "unpushed", here("./"));
+      if (gitOut(abs, "log", "--ignore-missing", "--branches", "HEAD", "--not", "--remotes", "--format=%h", "-1")) emit("keep", "unpushed", here("./"));
       if (gitOut(abs, "stash", "list")) emit("keep", "stash", here("./"));
     }
     // A submodule checked out under <abs> is a repo inside it (git's paths here are <abs>'s own).
@@ -1450,9 +1461,13 @@ function folderPlan(root, reposTsv, lines, unread) {
     for (const p of subs) repo(p);
     // Uncommitted: git status, whose paths are the repo's; only those under <abs> count (a shared
     // cabinet/ inside a project: never the project's other work). The options win over the person's
-    // config, which could hide untracked files or a submodule's changes.
+    // config, which could hide untracked files or a submodule's new commit. A submodule's own changes are
+    // its repo() check's, so status never runs inside it (dirty). A found repo with its own filter is not
+    // asked at all: it is kept as uncommitted.
     const under = repoTop === abs ? "" : path.relative(repoTop, abs) + "/";
-    const st = gitZ(abs, "status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none", "--", ".");
+    const skip = found && ownFilter(abs);
+    if (skip) emit("keep", "uncommitted", here("./"));
+    const st = skip ? [] : gitZ(abs, "status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=dirty", "--", ".");
     if (st === null) throw new Error("git status failed");
     for (let i = 0; i < st.length; i++) {
       const code = st[i].slice(0, 2), p = st[i].slice(3);
@@ -1504,7 +1519,7 @@ function folderPlan(root, reposTsv, lines, unread) {
       if (exact(d)) return emit("ok", "", here(d));
       if (listed.size && isListed(real)) return check(real, here(d), false);
       const at = lines.length, un = unread.length;
-      check(real, here(d), false);
+      check(real, here(d), false, true);
       const sub = lines.splice(at);
       unread.splice(un);
       const w = ["unpushed", "stash", "uncommitted"].find((o) => sub.some((x) => x[0] === "keep" && x[1] === o)) || "ignored";
