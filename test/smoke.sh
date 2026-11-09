@@ -3120,10 +3120,13 @@ am CABINET_AMEND_AS=q -- --amend -m x; amno "HEAD is qa's commit" "no amend as q
 # With -c or -C, git gives the source commit, so it counts as an amend, as in v3.
 am CABINET_AMEND_AS=code-reviewer -- --allow-empty -C HEAD; amno "HEAD is qa's commit" "$MF"
 # A new commit whose -m mentions --amend or --amount commits, on Linux (/proc) and where ps joins the
-# arguments (macOS, from v8): only an amend option given as an argument of its own counts. A real amend whose
-# -m also mentions --amend, or holds only a letter of it, is still one.
+# arguments (macOS, from v8): only an amend option given as an argument of its own counts. On Linux the hook
+# reads /proc one argument per line, so an -m value that is exactly --amend is read as an amend and refused,
+# with the -F hint; where ps joins the arguments that commit is made. A real amend whose -m also mentions
+# --amend, or holds only a letter of it, is still one.
 am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix the --amend doc"; amok "fix the --amend doc"
-am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix --amount" -m "--amend"; amok $'fix --amount\n\n--amend'
+am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m "fix --amount" -m "--amend"
+if [[ -r /proc/self/cmdline ]]; then amno "HEAD is qa's commit" "$MF"; else amok $'fix --amount\n\n--amend'; fi
 am CABINET_AMEND_AS=code-reviewer -- --allow-empty -m $'two\n--amend lines'; amok $'two\n--amend lines'
 for m in "--amend" e "x --amend -m y"; do am CABINET_AMEND_AS=code-reviewer -- --amend -m "$m"; amno "HEAD is qa's commit"; done
 printf 'say --amend\n' > "$T/am-msg3"; am CABINET_AMEND_AS=code-reviewer -- --amend -F "$T/am-msg3"; amno "HEAD is qa's commit"
