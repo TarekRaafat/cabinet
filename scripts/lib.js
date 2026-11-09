@@ -385,6 +385,8 @@ function specTools(ws) {
   const fingerprint = (lines) => crypto.createHash("sha256").update(content(lines).join("\n"), "utf8").digest("hex").slice(0, 8);
   const list = (s) => { const m = (s || "").match(/^\[(.*)\]$/); return m ? m[1].split(",").map((x) => x.trim()).filter(Boolean) : null; };
   const repos = (fm) => (list(fm.repos) || []).map((r) => r.replace(/^['"]+|['"]+$/g, ""));
+  // Architect reviews the plan of a spec built in more than one repo or touching a critical area.
+  const needsArchitect = (fm) => repos(fm).length > 1 || (list(fm.areas || "[]") || []).length > 0;
   const decisions = (lines) => {
     const rows = lines.filter((l) => l.trim().startsWith("|")).map((l) => l.trim().replace(/^\|+|\|+$/g, "").split("|").map((c) => c.trim()));
     return rows.slice(1).filter((r) => r.some(Boolean) && !r.every((c) => /^:?-+:?$/.test(c)));
@@ -407,12 +409,12 @@ function specTools(ws) {
     return v;
   };
   const sec = (secs, k) => secs[k] || [];
-  // The repos, those with no plan yet, and the architect's review of the plan as it is now.
+  // The repos, those with no plan yet, whether the plan needs the architect, and its review as it is now.
   const planState = (text) => {
     const [fm, secs] = parse(text);
     const rs = repos(fm), parts = plan(sec(secs, "Plan")), a = verdicts(sec(secs, "Reviews")).architect;
     const review = !a ? "none" : a[0] !== "PASS" ? a[0] : a[1] === fingerprint(sec(secs, "Plan")) ? "PASS" : "changed";
-    return { repos: rs, missing_plans: rs.filter((r) => !(parts[r] && parts[r].length)), plan_review: review };
+    return { repos: rs, missing_plans: rs.filter((r) => !(parts[r] && parts[r].length)), plan_review_needed: needsArchitect(fm), plan_review: review };
   };
   const problems = (text) => {
     const [fm, secs] = parse(text);
@@ -446,14 +448,14 @@ function specTools(ws) {
       const parts = plan(sec(secs, "Plan"));
       const missing = rs.filter((r) => !(parts[r] && parts[r].length));
       if (missing.length) p.push("no plan for " + missing.join(", "));
-      if (rs.length > 1) p.push(review("architect"));
+      if (needsArchitect(fm)) p.push(review("architect"));
     }
     return [status, p.filter(Boolean)];
   };
   return { parse, fingerprint, planState, problems };
 }
 
-// spec-check <workspace> <spec>...: [{spec, status, problems, repos, missing_plans, plan_review}].
+// spec-check <workspace> <spec>...: [{spec, status, problems, repos, missing_plans, plan_review_needed, plan_review}].
 function specCheck(ws, ...specs) {
   const t = specTools(ws);
   const out = specs.map((f) => {

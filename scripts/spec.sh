@@ -6,7 +6,7 @@
 #       Rules, every decision answered, its repos (or workspace areas) named, and a qa PASS on the
 #       acceptance criteria as they are now; for one built in a repo a web or mobile builder owns, with
 #       design-lead on the team, also a "## Design" section with a design-lead PASS on it as it is now. building: also a plan for each repo ("### <repo>" under "## Plan"), and, for
-#       more than one repo, an architect PASS on the plan as it is now. draft, shipped and dropped
+#       more than one repo or any critical area in areas, an architect PASS on the plan as it is now. draft, shipped and dropped
 #       need nothing. Prints each spec with its problems; exit 1 when any has one.
 #       --json: [{spec, status, problems}].
 #   bin/spec.sh record <spec> --role qa|architect|design-lead <PASS|BLOCK> --note <file>
@@ -17,7 +17,7 @@
 #   bin/spec.sh run <spec> [--retries <n>] [--dry-run]
 #       Move a spec that is ready to build until all its work is ready to push, an agent run per step:
 #       chief-of-staff routes it (one handoff per builder, --spec), each builder writes its plan, and
-#       for more than one repo architect reviews the plan; then each of its handoffs to one builder is
+#       for more than one repo or any critical area architect reviews the plan; then each of its handoffs to one builder is
 #       run in order (bin/handoff.sh run, with --retries); a routing request or a review filed --spec
 #       is not its work. It stops at the first step that does not finish, as handoff run does, and
 #       says why. Logged as run-<spec>.log; routing, plans and review are recorded under the
@@ -153,11 +153,11 @@ while :; do
   x="$(json -r --each '$.missing_plans' <<<"$st" | head -1)"
   if [[ -n "$x" ]]; then
     o="$(owner_of "$x")"; [[ -n "$o" ]] || stop "$x has no owning role in the team table, so no one plans it"
-    agent "$o" "plans $x" "Write your plan for $x in $spec, under \"## Plan\" as \"### $x\" (.cabinet/rules/ready-to-build.md): the files you change, the tests you add, the order across repos, the risks. Commit the spec. Do not build yet."
+    agent "$o" "plans $x" "Write your plan for $x in $spec, under \"## Plan\" as \"### $x\" (.cabinet/rules/ready-to-build.md): the files you change, the tests you add, the order across repos, the risks, and name its design choices in one sentence. Commit the spec. Do not build yet."
     [[ "$(sc | json --arg x "$x" '$.missing_plans.includes($x)')" == false ]] || stop "$o wrote no plan for $x in $spec"
     continue
   fi
-  if [[ "$(json '$.repos.length' <<<"$st")" -gt 1 && "$(json -r '$.plan_review' <<<"$st")" != PASS ]]; then
+  if [[ "$(json '$.plan_review_needed' <<<"$st")" == true && "$(json -r '$.plan_review' <<<"$st")" != PASS ]]; then
     [[ "$(json -r '$.plan_review' <<<"$st")" != BLOCK ]] || stop "architect blocked the plan in $spec: the builders revise it (its note says why), then run again"
     agent architect "reviews the plan in $spec" "Review the plan in $spec as your role says, then record bin/spec.sh record $spec --role architect PASS|BLOCK --note specs/adr/<note>.md."
     [[ "$(sc | json -r '$.plan_review')" =~ ^(PASS|BLOCK)$ ]] || stop "architect recorded no review of the plan in $spec"

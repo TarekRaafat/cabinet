@@ -1983,7 +1983,7 @@ put '/(### api\n\n.*\n)/' $'$1\n### app\n\n- the login screen, after api\n'
 "$W/bin/doctor.sh" 2>&1 | grep -q 'every spec marked ready or building has what its status needs' || fail "doctor after the plan"
 "$F" -C "$W" spec check | grep -q '^specs/login.md (building): ok$' || fail "spec check text"
 grep -q '^## Ready to build' "$KIT/core/CABINET.md" && grep -q 'route nothing from the owner.s words' "$KIT/roles/chief-of-staff.md" && grep -q '^## Reviewing a spec' "$KIT/roles/qa.md" \
-  && grep -q 'Review the plan of every spec built in more than one repo' "$KIT/roles/architect.md" && grep -q 'your plan in a spec routed to you' "$KIT/roles/web.md" || fail "a ready-to-build rule left CABINET.md or a role"
+  && grep -q 'Review the plan of every spec built in more than one repo, or touching a critical area' "$KIT/roles/architect.md" && grep -q 'your plan in a spec routed to you' "$KIT/roles/web.md" || fail "a ready-to-build rule left CABINET.md or a role"
 # What people see is designed first: a spec built in a repo the web builder owns needs design-lead's design.
 printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"; L before "$W/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
 git -C "$W" commit -qam "app, built by web"
@@ -2317,6 +2317,7 @@ echo "$out" | grep -q '^chief-of-staff: routes specs/login.md$' && echo "$out" |
   && echo "$out" | tail -1 | grep -qE '^specs/login.md is ready to push: all its work \(H-[0-9]+-[0-9]+, H-[0-9]+-[0-9]+\) passed review, \$0\.11 in all\. Push it' || fail "spec run to ready: $out"
 [[ "$(echo "$out" | grep -n 'web: builds' | cut -d: -f1)" -lt "$(echo "$out" | grep -n 'backend: builds' | cut -d: -f1)" ]] || fail "spec run did not run the work in the order routing set"
 out="$(srun specs/login.md)" && echo "$out" | tail -1 | grep -q 'is ready to push' && ! echo "$out" | grep -q ': builds ' || fail "a second spec run started agents for work already ready: $out"
+grep -q '^Write your plan for app .* and name its design choices in one sentence\. ' "$FS/prompts" || fail "the plan prompt does not ask for the design choices"
 # The scheduled runner: off by default, never on without a cost limit it can hold, and it writes PIPELINE.md.
 cfgp() { "$F" -C "$PW" config --yes "$@" 2>&1; }
 sched() { FS="$FS" PATH="$T/pfakes:$PATH" "$PW/bin/job.sh" run pipeline >/dev/null 2>&1; }
@@ -5735,6 +5736,10 @@ if [[ -f "$HC.build" && "$agent" == backend && "$prompt" == "Pick up handoff"* ]
   echo "$id" >> api/a.txt; git -C api commit -qam "build $id"; git -C api rev-parse --short HEAD > "$HC.c-$id"
   bin/handoff.sh add --from backend --to qa --changed built --needed verify --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
   sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: done/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
+elif [[ -f "$HC.build" && "$agent" == architect ]]; then
+  s="$(printf '%s' "$prompt" | grep -oE 'specs/[a-z0-9-]+\.md' | head -1)"
+  mkdir -p specs/adr; echo ok > specs/adr/plan.md; git add specs/adr/plan.md; git commit -qm note -- specs/adr/plan.md >/dev/null 2>&1 || true
+  bin/spec.sh record "$s" --role architect PASS --note specs/adr/plan.md >/dev/null
 elif [[ -f "$HC.build" && "$agent" != backend ]]; then
   w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
   mkdir -p "specs/$agent"; echo checked > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
@@ -6004,6 +6009,42 @@ echo "draft" > "$HW/handoffs/draft.md"; echo "edited" >> "$HW/handoffs/archive-2
 x="$(git -C "$HW" status --porcelain)"
 grep -qx '?? handoffs/draft.md' <<<"$x" && grep -qx ' M handoffs/archive-2026-10.md' <<<"$x" || fail "archive took others' files: $x"
 rm -f "$HW/handoffs/draft.md"; git -C "$HW" checkout -q -- handoffs/archive-2026-10.md
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "spec: architect reviews the plan of a spec with a critical area" "77"
+s92() {
+local c out
+L sub "$HW/AGENTS.md" -- '/^\| none yet \|.*$/' '| setup | `api/setup/` | security | the setup diff | none |'
+git -C "$HW" commit -qm "a critical area" -- AGENTS.md
+# ar_spec <name> <status> <areas>: a one-repo spec with a plan and a qa PASS, committed.
+ar_spec() {
+  printf -- '---\nfeature: %s\nstatus: %s\nrepos: [api]\nareas: [%s]\n---\n\n# %s\n\n## Rules\n\nOne.\n\n## Acceptance criteria\n\n- It works.\n\n## Decisions\n\n| # | Question | Options | Recommendation | Owner answer (date) |\n|---|---|---|---|---|\n\n## Plan\n\n### api\n\n- the change, with tests\n\n## Reviews\n\n' "$1" "$2" "$3" "$1" > "$HW/specs/$1.md"
+  mkdir -p "$HW/specs/qa"; echo ok > "$HW/specs/qa/$1.md"
+  git -C "$HW" add "specs/$1.md" "specs/qa/$1.md" && git -C "$HW" commit -qm "$1 spec" -- "specs/$1.md" "specs/qa/$1.md"
+  "$HW/bin/spec.sh" record "specs/$1.md" --role qa PASS --note "specs/qa/$1.md" >/dev/null || fail "test setup: qa PASS on $1"
+}
+# Building with areas [setup] and no architect PASS fails the check.
+ar_spec arb building setup
+c="$("$HW/bin/spec.sh" check specs/arb.md --json | j -r '$[0].problems.join("; ")')"
+[[ "$c" == "no architect review of the plan" ]] || fail "a building spec with a critical area and no architect review: $c"
+"$HW/bin/spec.sh" check specs/arb.md --json | j -e '$[0].plan_review_needed === true' >/dev/null || fail "plan_review_needed for a critical area"
+# spec run on a ready one-repo spec with areas [setup]: architect runs before any build.
+ar_spec ara ready setup
+ar_w() { hr_ent H-20261109-01 "open (2026-11-09)" backend "- Depends on: none" "- Spec: specs/ara.md"; }
+hr_fix ara ar_w; touch "$HC.build"
+out="$(cd "$HW" && HC="$HC" PATH="$T/hrfakes:$PATH" bin/spec.sh run specs/ara.md 2>&1)" || fail "spec run with a critical area: $out"
+c="$(cut -c1-20 "$HC" | paste -sd '|' -)"
+[[ "$c" == "Review the plan in s|Pick up handoff H-20"* ]] || fail "spec run with a critical area did not ask architect before the build: $c"
+# areas [] and one repo: no architect run, and building passes without one.
+ar_spec arn ready ""
+ar_n() { hr_ent H-20261109-02 "open (2026-11-09)" backend "- Depends on: none" "- Spec: specs/arn.md"; }
+hr_fix arn ar_n; touch "$HC.build"
+out="$(cd "$HW" && HC="$HC" PATH="$T/hrfakes:$PATH" bin/spec.sh run specs/arn.md 2>&1)" || fail "spec run with no area: $out"
+grep -q '^Pick up handoff H-20261109-02' "$HC" && ! grep -q '^Review the plan' "$HC" || fail "spec run with no area: $(cat "$HC")"
+"$HW/bin/spec.sh" check specs/arn.md --json | j -e '$[0].plan_review_needed === false' >/dev/null || fail "plan_review_needed with no area"
+L sub "$HW/specs/arn.md" -- '/^status: ready/' 'status: building'; git -C "$HW" commit -qm arn -- specs/arn.md
+"$HW/bin/spec.sh" check specs/arn.md >/dev/null || fail "a one-repo building spec with no area needed an architect: $("$HW/bin/spec.sh" check specs/arn.md)"
   return 0   # a last "check && fail" line must not end the run
 }
 

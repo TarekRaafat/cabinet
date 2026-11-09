@@ -68,7 +68,7 @@ Nothing is built before it is defined. A small task (one repo, no contract chang
 
 - **draft** while it is written and its decisions wait on you.
 - **ready** once it has testable acceptance criteria, nothing `TBD` in its rules, every decision answered, and the repos that build it, and qa has passed the criteria as testable (`cabinet spec record`). For anything people see, the design lead first designs it in the spec (the flows, screens and states) and passes that design. Only a ready spec is routed to builders (`cabinet handoff add --spec`).
-- **building** once each builder has written its part of the plan (files, tests, order, risks) and, for work in more than one repo, the architect has passed the plan.
+- **building** once each builder has written its part of the plan (files, tests, order, risks) and, for work in more than one repo or in a critical area, the architect has passed the plan.
 - **shipped** or **dropped** at the end.
 
 Work that changes no repo (copy, research, a campaign) goes the same way with the checks that fit it: what done looks like, evidence of the result, and a verdict with no commits; the checks built on commits apply only to work that has them. A review counts only for what it reviewed: a change to the criteria or the plan after a PASS needs a new one. A builder given work that is not ready sends it back instead of guessing. The doctor flags a spec marked ready or building that lacks what its status needs (`specs.ready`).
