@@ -10,14 +10,17 @@
 #       Every session: repo, name, branch, folder, commits ahead of the repo's current branch, uncommitted
 #       files, whether it is merged into that branch, and the date it started. A folder that is gone shows
 #       with the command that prunes it.
-#   bin/session.sh end <name>
+#   bin/session.sh end <name> [--force]
 #       Its commits, the handoffs that name them, and the command for the owner to bring them into the
-#       repo's current branch. Removes the folder only when it has no uncommitted changes; keeps the branch.
+#       repo's current branch. Removes the folder only when deleting it loses nothing (node lib.js
+#       delete-plan: nothing uncommitted, and every ignored file named in the "## Safe to delete" section of
+#       the repo's AGENTS.md); else refuses, naming each path. --force deletes them anyway, after asking a
+#       person at the terminal. Keeps the branch.
 #
 # No command here merges, rebases or pushes: the owner does, or asks an agent in a session to.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-usage="usage: bin/session.sh start [name] [--repo <repo>] | list [--json] | end <name>"
+usage="usage: bin/session.sh start [name] [--repo <repo>] | list [--json] | end <name> [--force]"
 
 # A session name: 1 to 40 lower-case letters, digits and hyphens, starting with a letter or digit (never
 # with -, which git would read as an option). It becomes a branch and a folder name.
@@ -123,19 +126,26 @@ s_list() {
 }
 
 s_end() {
-  local name="${1:-}" row repo s f b d main ids dirty envs
-  (($# == 1)) || { echo "$usage" >&2; exit 2; }
+  local name="" row repo s f b d main ids a force=0 rc
+  local -a plan
+  for a in "$@"; do
+    case "$a" in
+      --force) force=1 ;;
+      -*) echo "unknown option $(shown "$a"). $usage" >&2; exit 2 ;;
+      *) [[ -z "$name" ]] || { echo "$usage" >&2; exit 2; }; name="$a" ;;
+    esac
+  done
+  [[ -n "$name" ]] || { echo "$usage" >&2; exit 2; }
   name_ok "$name" || { echo "'$(shown "$name")' is not a session name (cabinet session list)" >&2; exit 2; }
   row="$(all_sessions | awk -F'\t' -v s="$name" '$2 == s && !n++')"
   [[ -n "$row" ]] || { echo "no session named $name (cabinet session list)" >&2; exit 1; }
   IFS=$'\t' read -r repo s f b d <<<"$row"
-  # Refused first, before anything is shown: uncommitted work stays where it is.
+  # Refused first, before anything is shown: whatever deleting the folder would lose stays where it is
+  # (uncommitted work, ignored files the repo does not name as safe, repos inside it).
   if [[ -d "$f" ]]; then
-    dirty="$(git -C "$f" status --porcelain 2>/dev/null)"
-    [[ -z "$dirty" ]] || { echo "session $name has $(printf '%s\n' "$dirty" | wc -l | tr -d ' ') uncommitted change(s) in $f: commit them in the session (or ask for them to be dropped), then end it again. Nothing was removed." >&2; exit 1; }
-    # .env files are ignored by git, and git worktree remove would delete them with the folder.
-    envs="$(git -C "$f" ls-files -o -i --exclude-standard --directory 2>/dev/null | awk -F/ '{n = $NF == "" ? $(NF - 1) : $NF} n ~ /^\.env/ && n !~ /\.example$/' || true)"
-    [[ -z "$envs" ]] || { echo "session $name holds ignored files git would delete with the folder: $(printf '%s ' $envs)- copy what you need, then end it again. Nothing was removed." >&2; exit 1; }
+    plan=(); ((force)) && plan+=(--force)
+    rc=0; node "$LIBJS" delete-plan folder "$f" ${plan[@]+"${plan[@]}"} >/dev/null || rc=$?
+    ((rc == 0)) || { echo "session $name was not ended: its folder $f is as it was." >&2; exit 1; }
   fi
   main="$(current "$d")"
   echo "Session $name ($repo, $b):"
@@ -161,7 +171,8 @@ s_end() {
   echo "  git -C $(q "$d") merge --ff-only $(q "session/$name")"
   echo
   if [[ -d "$f" ]]; then
-    git -C "$d" worktree remove "$f" || { echo "git did not remove $f (see above); the session is as it was" >&2; exit 1; }
+    plan=(); ((force)) && plan+=(--force)   # what --force allowed, untracked files included
+    git -C "$d" worktree remove ${plan[@]+"${plan[@]}"} "$f" || { echo "git did not remove $f (see above); the session is as it was" >&2; exit 1; }
     rmdir "$SESSIONS/$repo" 2>/dev/null || true
     echo "Removed the folder $f. The branch session/$name stays; once it is merged: git -C $(q "$d") branch -d $(q "session/$name")"
   else

@@ -16,7 +16,8 @@ F="$KIT/bin/cabinet"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=test@example.com
 # Started from a Cabinet run, the suite would inherit the credit hook's variables: no commit it makes is a run's.
-unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS CABINET_AMEND_AS
+# Nor is it a job's run (CABINET_JOB, which --force reads as a scheduled run).
+unset CABINET_AGENT CABINET_CREDIT CABINET_CREDIT_ADDRESS CABINET_AMEND_AS CABINET_JOB
 # No section reaches the registry: the release notice is off everywhere but its own section, which fakes npm.
 export CABINET_UPDATE_CHECK=off
 # The real home folder, git config and agent tool settings are never read or written.
@@ -48,6 +49,41 @@ j() { L json "$@"; }
 in_tty() {
   if [[ "$(uname)" == Darwin ]]; then L run-limited 60 script -q /dev/null "$@" < <(sleep 60) || true
   else L run-limited 60 script -qfec "$(printf '%q ' "$@")" /dev/null < <(sleep 60) || true; fi
+}
+# in_tty_typed <answer> <status file> <command>...: in_tty, with <answer> and a newline typed at the
+# terminal (nothing typed when it is empty), the input then kept open as in_tty keeps it; the command's
+# exit status is written to <status file> from inside the terminal.
+in_tty_typed() {
+  local a=$1 sf=$2; shift 2; rm -f "$sf"
+  if [[ "$(uname)" == Darwin ]]; then L run-limited 60 script -q /dev/null bash -c '"$@"; echo $? > "$0"' "$sf" "$@" < <([[ -z "$a" ]] || printf '%s\n' "$a"; sleep 60) || true
+  else L run-limited 60 script -qfec "$(printf '%q ' bash -c '"$@"; echo $? > "$0"' "$sf" "$@")" /dev/null < <([[ -z "$a" ]] || printf '%s\n' "$a"; sleep 60) || true; fi
+}
+# notty <command>...: run it in a new session with its input from /dev/null, as gp starts a push, so it
+# has no terminal (/dev/tty cannot be opened): how an agent's command runs. Its exit status is notty's.
+notty() {
+  node -e 'const c = require("node:child_process").spawn(process.argv[1], process.argv.slice(2), { detached: true, stdio: ["ignore", "inherit", "inherit"] });
+    c.on("error", (e) => { process.stderr.write(String(e) + "\n"); process.exit(127); });
+    c.on("close", (code) => process.exit(code === null ? 1 : code));' "$@"
+}
+# dsnap <dir>: every path under it, links not followed, outside every .git: its type and mode, a file's
+# size and SHA-1, a link's target; then each repo's refs, stashes and worktrees. Equal output: unchanged.
+dsnap() {
+  node -e 'const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), crypto = require("node:crypto");
+    const root = process.argv[1], out = [], repos = [];
+    (function walk(d, rel) {
+      let names; try { names = fs.readdirSync(d).sort(); } catch (e) { out.push((rel || ".") + "\tmissing"); return; }
+      if (names.includes(".git")) repos.push(rel || ".");
+      for (const n of names) {
+        if (n === ".git") continue;
+        const p = path.join(d, n), r = rel ? rel + "/" + n : n, s = fs.lstatSync(p), m = (s.mode & 0o7777).toString(8);
+        if (s.isSymbolicLink()) out.push([r, "link", m, fs.readlinkSync(p)].join("\t"));
+        else if (s.isDirectory()) { out.push([r, "dir", m].join("\t")); walk(p, r); }
+        else out.push([r, "file", m, s.size, crypto.createHash("sha1").update(fs.readFileSync(p)).digest("hex")].join("\t"));
+      }
+    })(root, "");
+    for (const r of repos) for (const a of [["for-each-ref"], ["stash", "list"], ["worktree", "list", "--porcelain"]])
+      out.push(r + " " + a[0] + "\n" + cp.spawnSync("git", ["-C", path.join(root, r), ...a], { encoding: "utf8" }).stdout);
+    process.stdout.write(JSON.stringify(out) + "\n");' "$1"
 }
 # Where this machine keeps logs and schedules, under a HOME (bin/platform.sh): $H/$LOGS, $H/$SD/<label>$SX.
 pf() { bash -c 'source "$0/scripts/when.sh"; source "$0/scripts/platform.sh"; "$@"' "$KIT" "$@"; }
@@ -6120,6 +6156,177 @@ ex "one line" at --way-back-file "$d/nl2.txt"
 id="$("$W/bin/handoff.sh" add --from backend --to qa --changed a --changed b --needed y "Twice")" || fail "add with --changed twice: $id"
 ent "${id%% *}" | grep -qx -- '- Changed: b' || fail "--changed twice: $(ent "${id%% *}")"
 git -C "$W" reset -q --hard "$base"; rm -rf "$d"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "delete rule 1: the helper and session end" "0"
+s94() {
+# F-ws (specs/delete-rule.md): a workspace with app at app/, listed in repos.tsv, every commit on a
+# remote (a remote-tracking ref), and sessions of app. Nothing is pushed.
+local DW="$T/dr-ws" DA SS st o k b4 n hl="$T/dr-lines" ef="$T/dr-err" sf="$T/dr-status"
+"$F" new "$DW" --yes >/dev/null || fail "new"
+DW="$(cd "$DW" && pwd -P)"; DA="$DW/app"; SS="$DW/sessions/app"
+rmt() { git -C "$1" update-ref "refs/remotes/origin/$(git -C "$1" branch --show-current)" HEAD; }
+mkdir -p "$DA"; git -C "$DA" init -q -b main
+printf '.env\nsecrets/\nconfig/master.key\ndb/*.sqlite3\nvendor/\nnode_modules/\nbuild/\nlink\n' > "$DA/.gitignore"
+printf '# app\n' > "$DA/AGENTS.md"
+git -C "$DA" add -A; git -C "$DA" commit -qm app; rmt "$DA"
+printf 'app\t-\t-\tno\tapp\n' >> "$DW/repos.tsv"; git -C "$DW" commit -qam "app"; rmt "$DW"
+# safe <entry>...: app's "## Safe to delete" section, committed in its main checkout (none: no section).
+safe() {
+  { printf '# app\n'; (($#)) && { printf '\n## Safe to delete\n\n'; printf -- '- `%s`\n' "$@"; printf '\n## Other\n\n- `secrets/`\n'; }; } > "$DA/AGENTS.md"
+  git -C "$DA" commit -qam "safe list" 2>/dev/null || true; rmt "$DA"
+}
+ss() { (cd "$DW" && "$F" session start "$1") >/dev/null || fail "session start $1"; }
+nested() { mkdir -p "$1"; git -C "$1" init -q -b main; echo l > "$1/l"; git -C "$1" add l; git -C "$1" commit -qm lib; }
+# kp <helper args>...: the helper's keep lines, sorted; every line it prints is kept in $hl.
+kp() { L delete-plan "$@" 2>/dev/null | tee -a "$hl" | grep '^keep' | LC_ALL=C sort || true; }
+want() { printf '%s\n' "$@" | LC_ALL=C sort; }
+se() { st=0; (cd "$DW" && "$F" session end "$@") >/dev/null 2>"$ef" || st=$?; }
+# refuse <session> <keep line>...: helper lines exactly those; session end exits 1, its stderr names
+# each path, and S(<ws>) is unchanged.
+refuse() {
+  local n=$1; shift
+  [[ "$(kp folder "$SS/$n")" == "$(want "$@")" ]] || fail "helper lines for $n: $(kp folder "$SS/$n")"
+  b4="$(dsnap "$DW")"; se "$n"
+  ((st == 1)) || fail "session end $n: exit $st, $(cat "$ef")"
+  for k in "$@"; do grep -qF -- "${k##*$'\t'}" "$ef" || fail "session end $n did not name ${k##*$'\t'}: $(cat "$ef")"; done
+  [[ "$(dsnap "$DW")" == "$b4" ]] || fail "a refused session end $n changed the workspace"
+}
+ended() { [[ ! -e "$SS/$1" ]] && ! git -C "$DA" worktree list | grep -qF "$SS/$1" || fail "session $1 was not removed"; }
+: > "$hl"
+
+# 1 to 3: an ignored .env, ignored data, a nested repo with commits on no remote (criteria 1 to 3).
+ss e2; mkdir -p "$SS/e2/secrets"; echo K=v > "$SS/e2/secrets/.env"
+refuse e2 $'keep\tignored\tsecrets/'
+[[ -f "$SS/e2/secrets/.env" ]] && git -C "$DA" worktree list | grep -qF "$SS/e2" || fail "criterion 1: the .env or the session is gone"
+ss e3; mkdir -p "$SS/e3/config" "$SS/e3/db"; echo k > "$SS/e3/config/master.key"; echo d > "$SS/e3/db/development.sqlite3"
+refuse e3 $'keep\tignored\tconfig/master.key' $'keep\tignored\tdb/development.sqlite3'
+ss e4; nested "$SS/e4/vendor/lib"
+refuse e4 $'keep\tunpushed\tvendor/lib/'
+# 3a: a clean repo with every commit on a remote, in a folder nobody named safe (Decision 10 A).
+ss e5; nested "$SS/e5/vendor/lib"; git -C "$SS/e5/vendor/lib" remote add origin "$T/dr-lib.git"; rmt "$SS/e5/vendor/lib"
+refuse e5 $'keep\tignored\tvendor/lib/'
+ss e6; nested "$SS/e6/vendor/lib"; rmt "$SS/e6/vendor/lib"; echo u > "$SS/e6/vendor/lib/u.txt"
+echo m >> "$SS/e6/vendor/lib/l"; git -C "$SS/e6/vendor/lib" commit -qam more
+refuse e6 $'keep\tunpushed\tvendor/lib/'
+
+# 4: what the repo names as safe is deleted with the folder (criterion 4; 17's exit 0).
+ss ok1; mkdir -p "$SS/ok1/node_modules/x" "$SS/ok1/build/out"; echo i > "$SS/ok1/node_modules/x/index.js"; echo a > "$SS/ok1/build/out/a.js"
+refuse ok1 $'keep\tignored\tnode_modules/' $'keep\tignored\tbuild/'
+safe node_modules/ build/
+[[ "$(L delete-plan folder "$SS/ok1" --dry-run | tee -a "$hl" | LC_ALL=C sort)" == "$(want $'ok\t\tbuild/' $'ok\t\tnode_modules/')" ]] || fail "criterion 4: dry-run lines: $(L delete-plan folder "$SS/ok1" --dry-run)"
+st=0; L delete-plan folder "$SS/ok1" >>"$hl" || st=$?; ((st == 0)) || fail "criterion 17: delete-plan on a safe session exits $st"
+b="$(git -C "$DA" rev-parse session/ok1)"
+se ok1; ((st == 0)) || fail "criterion 4: session end ok1: $st, $(cat "$ef")"
+ended ok1; [[ "$(git -C "$DA" rev-parse session/ok1)" == "$b" ]] || fail "criterion 4: the branch moved"
+
+# 5: today's controls (criterion 5; 17's exit 3).
+safe
+ss c1; echo n > "$SS/c1/n.txt"; refuse c1 $'keep\tuncommitted\tn.txt'
+st=0; L delete-plan folder "$SS/c1" >>"$hl" 2>/dev/null || st=$?; ((st == 3)) || fail "criterion 17: delete-plan on a refused session exits $st"
+ss c2; echo x >> "$SS/c2/AGENTS.md"; refuse c2 $'keep\tuncommitted\tAGENTS.md'
+ss c3; echo S=1 > "$SS/c3/.env"; refuse c3 $'keep\tignored\t.env'
+
+# 6: entries not read (criterion 6).
+safe /tmp/x ../x 'build/*' 'b?ild/' '[b]uild/'
+ss w1; mkdir -p "$SS/w1/build"; echo a > "$SS/w1/build/a.js"
+refuse w1 $'keep\tignored\tbuild/'
+for k in /tmp/x ../x 'build/*' 'b?ild/' '[b]uild/'; do grep -qF -- "\`$k\`" "$ef" || fail "criterion 6: $k not named: $(cat "$ef")"; done
+grep -q 'not read' "$ef" || fail "criterion 6: no 'not read': $(cat "$ef")"
+safe /tmp/x ../x 'build/*' 'b?ild/' '[b]uild/' build/
+se w1; ((st == 0)) || fail "criterion 6: with build/ named: $st, $(cat "$ef")"; ended w1
+for k in /tmp/x ../x 'build/*' 'b?ild/' '[b]uild/'; do grep -qF -- "\`$k\`" "$ef" || fail "criterion 6: $k not named on exit 0: $(cat "$ef")"; done
+
+# 7: a safe entry inside an unsafe folder (criterion 7).
+safe build/out/
+ss b1; mkdir -p "$SS/b1/build/out"; echo a > "$SS/b1/build/out/a.js"; echo t > "$SS/b1/build/tmp.log"
+refuse b1 $'keep\tignored\tbuild/tmp.log'
+o="$(L delete-plan folder "$SS/b1" --dry-run 2>/dev/null | tee -a "$hl")"
+[[ "$(grep -c $'^ok\t\tbuild/out/$' <<<"$o")" == 1 && "$(grep '^keep' <<<"$o")" == $'keep\tignored\tbuild/tmp.log' ]] || fail "criterion 7: dry-run lines: $o"
+rm "$SS/b1/build/tmp.log"; se b1; ((st == 0)) || fail "criterion 7: $(cat "$ef")"; ended b1
+
+# 8 and 9: a .env and a repo in a safe folder are kept unless named exactly (Decisions 8 B, 9 B).
+safe vendor/
+ss v1; mkdir -p "$SS/v1/vendor/pkg"; for n in x.js pkg/.env pkg/.env.local pkg/.env.example; do echo v > "$SS/v1/vendor/$n"; done
+refuse v1 $'keep\tignored\tvendor/pkg/.env' $'keep\tignored\tvendor/pkg/.env.local'
+safe vendor/ vendor/pkg/.env vendor/pkg/.env.local
+se v1; ((st == 0)) || fail "criterion 8: $(cat "$ef")"; ended v1
+safe vendor/
+ss v2; nested "$SS/v2/vendor/lib"; refuse v2 $'keep\tunpushed\tvendor/lib/'
+safe vendor/ vendor/lib/
+se v2; ((st == 0)) || fail "criterion 9: $(cat "$ef")"; ended v2
+safe vendor/
+ss v3; nested "$SS/v3/vendor/lib"; git -C "$SS/v3/vendor/lib" remote add origin "$T/dr-lib.git"; rmt "$SS/v3/vendor/lib"
+refuse v3 $'keep\tignored\tvendor/lib/'
+
+# 10: a session cannot widen its own list (criterion 10).
+safe
+ss s10; mkdir -p "$SS/s10/secrets"; echo K=v > "$SS/s10/secrets/.env"
+printf '# app\n\n## Safe to delete\n\n- `secrets/`\n' > "$SS/s10/AGENTS.md"; git -C "$SS/s10" commit -qam widen
+refuse s10 $'keep\tignored\tsecrets/'
+
+# 11: a link is listed, never followed (criterion 11).
+echo h > "$HOME/h.txt"; n="$(shasum "$HOME/h.txt" 2>/dev/null || sha1sum "$HOME/h.txt")"
+ss l1; ln -s "$HOME" "$SS/l1/link"
+refuse l1 $'keep\tignored\tlink'
+! L delete-plan folder "$SS/l1" --dry-run 2>/dev/null | grep -q h.txt || fail "criterion 11: a line names h.txt"
+o="$(in_tty_typed yes "$sf" "$F" -C "$DW" session end l1 --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 0 ]] || fail "criterion 11: --force with yes: $(cat "$sf" 2>/dev/null), $o"
+ended l1; [[ "$(shasum "$HOME/h.txt" 2>/dev/null || sha1sum "$HOME/h.txt")" == "$n" ]] || fail "criterion 11: the link was followed"
+
+# 12: names reach no terminal raw (criterion 12).
+ss n1; printf 1 > "$SS/n1/a"$'\t'"b"; printf 2 > "$SS/n1/c"$'\n'"d"; printf 3 > "$SS/n1/e"$'\e'"[31mf"
+L delete-plan folder "$SS/n1" >/dev/null 2>&1 || true
+b4="$(dsnap "$DW")"
+o="$(NO_COLOR=1 in_tty_typed "" "$sf" "$F" -C "$DW" session end n1)"
+[[ "$(cat "$sf" 2>/dev/null)" == 1 && "$(dsnap "$DW")" == "$b4" ]] || fail "criterion 12: exit $(cat "$sf" 2>/dev/null): $o"
+! printf '%s' "$o" | LC_ALL=C grep -q $'\e' || fail "criterion 12: an escape byte reached the terminal"
+
+# 13 to 15: --force only from a person at a terminal (Decision 7 B), on criterion 1's session.
+b4="$(dsnap "$DW")"
+st=0; notty "$F" -C "$DW" session end e2 --force >/dev/null 2>"$ef" || st=$?
+((st == 1)) && grep -q -- '--force' "$ef" && grep -q terminal "$ef" && [[ "$(dsnap "$DW")" == "$b4" ]] || fail "criterion 14: no terminal: $st, $(cat "$ef")"
+echo yes > "$T/dr-yes"
+st=0; CABINET_TTY="$T/dr-yes" notty "$F" -C "$DW" session end e2 --force >/dev/null 2>&1 || st=$?
+((st == 1)) && [[ "$(dsnap "$DW")" == "$b4" ]] || fail "criterion 14: a file of answers was read: $st"
+for k in CABINET_AGENT=qa CABINET_JOB=brief; do
+  o="$(export "$k"; in_tty_typed yes "$sf" "$F" -C "$DW" session end e2 --force)"
+  [[ "$(cat "$sf" 2>/dev/null)" == 1 && "$(dsnap "$DW")" == "$b4" ]] && grep -qF -- '--force is never used in a scheduled run' <<<"$o" || fail "criterion 15: $k: $(cat "$sf" 2>/dev/null), $o"
+done
+o="$(in_tty_typed no "$sf" "$F" -C "$DW" session end e2 --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 1 && "$(dsnap "$DW")" == "$b4" ]] || fail "criterion 13: no typed: $(cat "$sf" 2>/dev/null), $o"
+o="$(in_tty_typed yes "$sf" "$F" -C "$DW" session end e2 --force)"
+[[ "$(cat "$sf" 2>/dev/null)" == 0 ]] && grep -qF 'secrets/' <<<"$o" || fail "criterion 13: yes typed: $(cat "$sf" 2>/dev/null), $o"
+ended e2; git -C "$DA" rev-parse -q --verify session/e2 >/dev/null || fail "criterion 13: the branch is gone"
+
+# 16: a job's runs are known (criterion 16).
+printf 'COMMAND="env > %q"\n' "$T/dr-env" > "$DW/jobs/envdump.job"
+"$DW/bin/job.sh" run envdump >/dev/null 2>&1 || fail "criterion 16: the job did not run"
+grep -qx 'CABINET_JOB=envdump' "$T/dr-env" || fail "criterion 16: no CABINET_JOB in the job's environment"
+rm "$DW/jobs/envdump.job"
+grep -q '^unset CABINET_AGENT CABINET_CREDIT .*CABINET_JOB' "$KIT/test/smoke.sh" || fail "criterion 16: the suite does not drop CABINET_JOB"
+
+# 18: a stash is work, in the main checkout only (criterion 18).
+# App clean and on its remote: session s10's commit (criterion 10) gets a remote-tracking ref too.
+git -C "$DA" update-ref refs/remotes/origin/session/s10 session/s10
+echo s >> "$DA/AGENTS.md"; git -C "$DA" stash -q
+st=0; L delete-plan folder "$DA" > "$T/dr-out" 2>/dev/null || st=$?; o="$(cat "$T/dr-out")"; cat "$T/dr-out" >> "$hl"; rm "$T/dr-out"
+((st == 3)) && [[ "$o" == $'keep\tstash\t./' ]] || fail "criterion 18: $st, $o"
+ss st1; [[ -z "$(L delete-plan folder "$SS/st1" 2>/dev/null)" ]] || fail "criterion 18: a session of a repo with a stash has lines"
+se st1; ((st == 0)) || fail "criterion 18: session end st1: $(cat "$ef")"; ended st1
+git -C "$DA" stash drop -q
+
+# 17: the helper's shape (criterion 17).
+b4="$(dsnap "$DW")"
+st=0; L delete-plan >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 17: no source exits $st"
+st=0; L delete-plan nosuch x >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 17: an unknown source exits $st"
+[[ "$(dsnap "$DW")" == "$b4" ]] || fail "criterion 17: a usage error changed the workspace"
+o="$(awk -F'\t' 'NF != 3 || ($1 != "ok" && $1 != "keep") || ($1 == "keep" && $2 !~ /^(uncommitted|unpushed|stash|ignored|no-git|edited|not-kit|differs|file-in-way|folder-in-way)$/) || ($1 == "ok" && $2 != "")' "$hl")"
+[[ -z "$o" && -s "$hl" ]] || fail "criterion 17: lines out of shape: $o"
+st=0; o="$(L delete-plan folder "$SS/c1" 2>/dev/null)" || st=$?
+! grep -q '^ok' <<<"$o" || fail "criterion 17: an ok line without --dry-run: $o"
+rm -f "$hl" "$ef" "$sf" "$T/dr-yes" "$T/dr-env"
   return 0   # a last "check && fail" line must not end the run
 }
 

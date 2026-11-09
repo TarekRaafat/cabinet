@@ -291,7 +291,7 @@ Exit 0; 1 for a repo that is not in `repos.tsv`, or a URL setup refuses; 2 for w
 ```sh
 cabinet session start [name] [--repo <repo>]
 cabinet session list [--json]
-cabinet session end <name>
+cabinet session end <name> [--force]
 ```
 
 A session is a git worktree of a repo: a folder of its own, on a branch of its own, so several sessions (yours, a teammate's, a role's) work in the same repo at once without seeing or sweeping each other's uncommitted changes ([sessions](concepts.md#sessions)). Sessions need git 2.17 or later.
@@ -300,7 +300,28 @@ A session is a git worktree of a repo: a folder of its own, on a branch of its o
 
 **`list`** shows each session: its repo, branch, folder, commits ahead of the repo's current branch, uncommitted files, whether it is merged into that branch, and the date it started. A session whose folder was deleted by hand shows as gone, with `git -C <repo> worktree prune`, which you run; the doctor notes it too (`sessions.gone`).
 
-**`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when it has no uncommitted or untracked changes and no ignored `.env` file (git would delete it with the folder), and keeps the branch.
+**`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when deleting it loses nothing, and keeps the branch. First it lists everything git would delete with the folder: uncommitted and untracked files, every ignored file (a `.env`, `config/master.key`, a database), repos inside it, and links (listed, never followed). What the repo names in its `## Safe to delete` section (below) can be rebuilt, so it goes; anything else refuses the whole command, naming each path and why (`uncommitted`, `unpushed`, `stash`, `ignored`), and nothing is removed. Copy or commit what you need, or name what can be rebuilt, then end it again.
+
+`--force` removes the folder anyway, after listing what it would delete. It asks at the terminal, and deletes only when you type `yes`; anything else changes nothing. It is for a person at a terminal: with no terminal (how an agent's command runs, in your own session or not) it is refused, and so is a scheduled run (`CABINET_AGENT` or `CABINET_JOB` set, which every job sets) even at a terminal, with "--force is never used in a scheduled run". With nothing on the list, `--force` asks nothing.
+
+### Safe to delete
+
+A repo names what can be rebuilt (dependencies, build output) in a `## Safe to delete` section of its own `AGENTS.md`, as it names its setup in `## Session setup`:
+
+```md
+## Safe to delete
+
+- `node_modules/`
+- `build/`
+```
+
+One path per line, relative to the repo, written `` `<path>` ``. A path ending in `/` covers its folder. No wildcards, so an entry names exactly what it deletes. An entry that is absolute, holds `..` or holds a wildcard (`*`, `?`, `[`) is not read, and the command says so, naming it. A repo with no such section names nothing safe.
+
+- **A `.env` file or a repo inside a safe folder** is covered only by an entry naming its own path exactly (`vendor/pkg/.env`, `vendor/lib/`), never by the folder's entry. A `.env` file is one whose name starts with `.env` and does not end in `.example`.
+- **A repo inside the folder** (a folder holding `.git`) is kept unless an entry names its path exactly, even when it is clean and every commit is pushed, since it can hold ignored files that exist nowhere else. Its line gives the first thing it holds, in the order `unpushed`, `stash`, `uncommitted`, else `ignored`.
+- **A session reads the list from the repo's main folder**, never from its own branch, so a session cannot widen its own list.
+- An entry inside a folder that is not safe still counts: with only `build/out/` named, `build/out/` goes and the rest of `build/` refuses.
+- In a workspace, the files the kit writes untracked there are safe without an entry: `BRIEF.md`, `PIPELINE.md`, `OPERATIONS.html`, `sessions/.gitignore`, `node_modules/` and `cabinet.local.env`.
 
 Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch, with the `cabinet session end <name>` command that shows how to merge it when the branch is `session/<name>` with a session name; any other branch you merge with git yourself.
 

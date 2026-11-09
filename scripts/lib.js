@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -1309,7 +1309,238 @@ function kitEdited(ws, manifest) {
   if (edited.length) process.stdout.write(edited.join(" ") + "\n");
 }
 
+// delete-plan <source> ... [--force] [--dry-run]: the one check before a command deletes or overwrites
+// (kit rule 5; ADR-009). It lists everything the command would lose, decides, and says why.
+//   folder <dir> [--repos <repos.tsv>]: what deleting <dir> loses (session end, remove). The helper
+//   never deletes here: the caller deletes the folder only on exit 0.
+// stdout: one line per path, "<verdict>\t<why>\t<path>", verdict ok or keep, the path relative to the
+// source's root (a folder with a trailing /, the root itself ./), escaped so no name can split a line;
+// ok lines only with --dry-run. For display and tests: no caller reads a path back. stderr: the one
+// message, every name escaped. Exit 0 go ahead, 3 refused (something kept, nothing changed), 1 could
+// not decide (or --force with no terminal, or in a scheduled run), 2 usage.
+// ponytail: names are read as UTF-8; a name that is not valid UTF-8 is kept (never deleted) but may
+// show changed, and a repo inside a folder so named is not found. Read names as buffers if that matters.
+// why, a closed set (stable; the tests use it): uncommitted, unpushed (commits on no remote), stash,
+// ignored, no-git (in no repo), edited, not-kit, differs, file-in-way, folder-in-way.
+// The files the kit writes untracked in a workspace, rebuildable there: manual.sh, session.sh, the
+// pin's install, and this machine's settings (bootstrap.sh, config --this-machine).
+const KIT_UNTRACKED = ["BRIEF.md", "PIPELINE.md", "OPERATIONS.html", "sessions/.gitignore", "node_modules/", "cabinet.local.env"];
+// A path as one field of one line: \\, \t, \n, \r and \xNN for every other control byte (C1 included).
+const escapePath = (s) => s.replace(/[\\\x00-\x1f\x7f\u0080-\u009f]/g, (c) =>
+  ({ "\\": "\\\\", "\t": "\\t", "\n": "\\n", "\r": "\\r" })[c] || "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0"));
+const isEnvName = (n) => n.startsWith(".env") && !n.endsWith(".example");
+const scheduled = () => !!(env("CABINET_AGENT") || env("CABINET_JOB"));
+
+// The "## Safe to delete" section of <file>: { paths, unread }. Read as session.sh reads "## Session
+// setup": from the heading to the next "## ". An entry is "- `<path>`"; one that is absolute, holds ..
+// or a wildcard is not read.
+function safeList(file) {
+  let text = "";
+  try { text = read(file); } catch (e) { return { paths: [], unread: [] }; }
+  const paths = [], unread = [];
+  let on = false;
+  for (const l of text.split("\n")) {
+    if (l.startsWith("## ")) { on = /^## Safe to delete\s*$/.test(l); continue; }
+    const m = on && /^\s*[-*]\s+`([^`]+)`\s*$/.exec(l);
+    if (!m) continue;
+    const p = m[1];
+    if (p.startsWith("/") || p.startsWith("~") || p.split("/").includes("..") || /[*?[]/.test(p)) unread.push(p);
+    else paths.push(p.replace(/^(\.\/)+/, ""));
+  }
+  return { paths, unread };
+}
+
+function deletePlan(...argv) {
+  const usage = "usage: node lib.js delete-plan folder <dir> [--repos <repos.tsv>] [--force] [--dry-run]";
+  const [source, ...rest] = argv;
+  let force = false, dry = false, reposTsv = "";
+  const pos = [];
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--force") force = true;
+    else if (rest[i] === "--dry-run") dry = true;
+    else if (rest[i] === "--repos" && i + 1 < rest.length) reposTsv = rest[++i];
+    else if (rest[i].startsWith("--")) die(usage, 2);
+    else pos.push(rest[i]);
+  }
+  if (source !== "folder" || pos.length !== 1) die(usage, 2);
+  let root;
+  try { root = fs.realpathSync(pos[0]); if (!fs.statSync(root).isDirectory()) throw new Error(); } catch (e) { die("delete-plan: not a folder: " + escapePath(pos[0]), 1); }
+  const lines = [], unread = [];
+  try { folderPlan(root, reposTsv, lines, unread); } catch (e) { die("delete-plan: could not check " + escapePath(root) + ": " + escapePath(String(e.message || e)) + "; nothing was changed", 1); }
+  decide(lines, unread, force, dry);
+}
+
+// git in <dir>: its output, or null when git fails; gitZ splits -z output into fields.
+const gitRun = (dir, a) => spawnSync("git", ["-C", dir, ...a], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
+const gitOut = (dir, ...a) => { const r = gitRun(dir, a); return r.status === 0 ? r.stdout.trim() : null; };
+const gitZ = (dir, ...a) => { const r = gitRun(dir, a); return r.status === 0 ? r.stdout.split("\0").filter((x) => x !== "") : null; };
+const lst = (p) => { try { return fs.lstatSync(p); } catch (e) { return null; } };
+const isRepoDir = (p) => !!lst(path.join(p, ".git"));
+
+// The folder source (ADR-009 section 2, with Decisions 8 B, 9 B and 10 A).
+function folderPlan(root, reposTsv, lines, unread) {
+  // Repos repos.tsv lists, resolved as bin/cabinet's hard_dirs does: column 5, else 1; / as is, ~/ under
+  // HOME, else under the workspace (the folder of repos.tsv). Only compared, never run.
+  const listed = new Set();
+  if (reposTsv) {
+    const ws = path.dirname(path.resolve(reposTsv));
+    let t = "";
+    try { t = read(reposTsv); } catch (e) { /* none */ }
+    for (const l of t.split("\n")) {
+      if (!l.trim() || l.startsWith("#")) continue;
+      const c = l.split("\t");
+      let p = c[4] || c[0];
+      if (p.startsWith("~/")) p = path.join(env("HOME"), p.slice(2));
+      try { listed.add(fs.realpathSync(path.resolve(ws, p))); } catch (e) { /* not on this machine */ }
+    }
+  }
+  // A listed repo, or a linked worktree (a session) of one: its common git folder is that repo's .git.
+  const isListed = (abs) => {
+    if (listed.has(abs)) return true;
+    const c = gitOut(abs, "rev-parse", "--git-common-dir");
+    if (!c) return false;
+    try { return listed.has(fs.realpathSync(path.dirname(path.resolve(abs, c)))); } catch (e) { return false; }
+  };
+  const emit = (verdict, why, rel) => lines.push([verdict, why, rel]);
+  check(root, "", true);
+
+  // check <abs> <prefix> <isRoot>: the lines deleting <abs> loses, each path <prefix> + its path under <abs>.
+  function check(abs, prefix, isRoot) {
+    const here = (p) => (p === "./" ? prefix || "./" : prefix + p);
+    const toplevel = gitOut(abs, "rev-parse", "--show-toplevel");
+    const repoTop = toplevel ? fs.realpathSync(toplevel) : "";
+    const dotGit = lst(path.join(abs, ".git"));
+    // Which AGENTS.md names what is safe: a linked worktree's main checkout's, so a session cannot
+    // widen its own list; else the folder's own.
+    let main = abs;
+    if (repoTop === abs && dotGit && dotGit.isFile()) {
+      const c = gitOut(abs, "rev-parse", "--git-common-dir");
+      if (c) main = path.dirname(path.resolve(abs, c));
+    }
+    const sl = safeList(path.join(main, "AGENTS.md"));
+    for (const u of sl.unread) unread.push([path.join(main, "AGENTS.md"), u]);
+    const safe = sl.paths.slice();
+    if (isRoot && lst(path.join(abs, ".cabinet", "version"))) safe.push(...KIT_UNTRACKED);   // a workspace
+    // An entry names <p> exactly, or a folder entry covers it (never a repo or a .env: Decision 8 B).
+    const exact = (p) => safe.some((s) => s === p || s === p + "/" || s + "/" === p);
+    const covered = (p, exactOnly) => exact(p) || (!exactOnly && safe.some((s) => s.endsWith("/") && p.startsWith(s)));
+    const safeBelow = (d) => safe.some((s) => s.startsWith(d) && s !== d);   // d ends with /
+
+    if (!repoTop) { walk("", "no-git"); return; }
+    if (repoTop === abs && dotGit && dotGit.isDirectory()) {   // a main checkout; a worktree's history is the main repo's
+      if (gitOut(abs, "log", "--branches", "--not", "--remotes", "--format=%h", "-1")) emit("keep", "unpushed", here("./"));
+      if (gitOut(abs, "stash", "list")) emit("keep", "stash", here("./"));
+    }
+    // Uncommitted: git status, whose paths are the repo's; only those under <abs> count (a shared
+    // cabinet/ inside a project: never the project's other work).
+    const under = repoTop === abs ? "" : path.relative(repoTop, abs) + "/";
+    const st = gitZ(abs, "status", "--porcelain=v1", "-z", "--", ".");
+    if (st === null) throw new Error("git status failed");
+    for (let i = 0; i < st.length; i++) {
+      const code = st[i].slice(0, 2), p = st[i].slice(3);
+      if (code[0] === "R" || code[0] === "C") i++;   // the next field is the old name
+      if (p.startsWith(under)) emit("keep", "uncommitted", here(p.slice(under.length) || "./"));
+      else if (under.startsWith(p)) emit("keep", "uncommitted", here("./"));   // <abs> is inside an untracked folder
+    }
+    // Ignored: git's collapsed list, each entry walked (lstat only) for repos, .env files and safe entries.
+    const ig = gitZ(abs, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z");
+    if (ig === null) throw new Error("git ls-files failed");
+    // With --directory, git also names a folder that is not ignored but holds only ignored files, beside
+    // those files (config/ and config/master.key): such a folder is left to its parts.
+    for (const p of ig) if (!(p.endsWith("/") && ig.some((q) => q !== p && q.startsWith(p)))) entry(p.replace(/\/$/, ""), "ignored");
+
+    // walk <rel> <why>: every entry of the folder <rel> ("" for <abs>), .git left out.
+    function walk(rel, why) {
+      let names = [];
+      try { names = fs.readdirSync(path.join(abs, rel)); } catch (e) { return; }
+      for (const n of names.sort()) if (n !== ".git") entry(rel ? rel + "/" + n : n, why);
+    }
+    // entry <rel> <why>: one path git does not track, and everything in it. A folder is named alone
+    // when nothing in it needs a line of its own: a repo, a safe entry below it, and in a safe folder a
+    // .env file (kept unless named exactly).
+    function entry(rel, why) {
+      const p = path.join(abs, rel);
+      if (path.relative(abs, p).split(path.sep)[0] === "..") throw new Error("a path outside the folder: " + rel);
+      const s = lst(p);
+      if (s && s.isDirectory()) {
+        if (isRepoDir(p)) return repo(rel);
+        const d = rel + "/";
+        if (covered(d)) { if (!hasInside(p, true)) return emit("ok", "", here(d)); }
+        else if (!safeBelow(d) && !hasInside(p, false)) return emit("keep", why, here(d));
+        return walk(rel, why);
+      }
+      emit(covered(rel, isEnvName(path.basename(rel))) ? "ok" : "keep", covered(rel, isEnvName(path.basename(rel))) ? "" : why, here(rel));
+    }
+    // A repo found inside: ok when an entry names it exactly; its own check when it is a repo
+    // repos.tsv lists or a session of one (remove only); else kept whole, with the first word its own
+    // check finds in the order unpushed, stash, uncommitted, else ignored (Decisions 8 B, 9 B, 10 A).
+    function repo(rel) {
+      const d = rel + "/", real = fs.realpathSync(path.join(abs, rel));
+      if (exact(d)) return emit("ok", "", here(d));
+      if (listed.size && isListed(real)) return check(real, here(d), false);
+      const at = lines.length, un = unread.length;
+      check(real, here(d), false);
+      const sub = lines.splice(at);
+      unread.splice(un);
+      const w = ["unpushed", "stash", "uncommitted"].find((o) => sub.some((x) => x[0] === "keep" && x[1] === o)) || "ignored";
+      emit("keep", w, here(d));
+    }
+  }
+}
+// Does the folder hold a repo (or, with envs, a .env file) anywhere under it? lstat only, links never followed.
+function hasInside(dir, envs) {
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (e) { return false; }
+  for (const n of names) {
+    const p = path.join(dir, n), s = lst(p);
+    if (!s) continue;
+    if (n === ".git" || (envs && isEnvName(n) && !s.isDirectory())) return true;
+    if (s.isDirectory() && hasInside(p, envs)) return true;
+  }
+  return false;
+}
+
+// The policy (ADR-009 section 1): print, then go ahead, refuse, or ask the one --force question.
+// Written with writeSync, since process.exit can cut an asynchronous pipe write short.
+function decide(lines, unread, force, dry) {
+  const put = (fd, s) => { try { fs.writeSync(fd, s); } catch (e) { /* a closed pipe */ } };
+  const err = (s) => put(2, s + "\n");
+  put(1, lines.filter((l) => dry || l[0] === "keep").map((l) => l[0] + "\t" + l[1] + "\t" + escapePath(l[2]) + "\n").join(""));
+  for (const [f, u] of unread) err("not read: `" + escapePath(u) + "` in the \"## Safe to delete\" section of " + escapePath(f) + " (an absolute path, .. or a wildcard): name each path exactly, relative to the repo");
+  const keep = lines.filter((l) => l[0] === "keep");
+  if (!keep.length) process.exit(0);
+  const list = keep.map((l) => "  " + escapePath(l[2]) + "  (" + l[1] + ")").join("\n");
+  if (dry || !force) {
+    err("Not safe to delete, so nothing was changed:\n" + list + "\nKeep what you need somewhere else, or name what can be rebuilt in a \"## Safe to delete\" section of the repo's AGENTS.md, then run it again. To delete them anyway, run it again yourself with --force, at a terminal.");
+    process.exit(3);
+  }
+  if (scheduled()) { err("--force is never used in a scheduled run, so nothing was changed. Not safe to delete:\n" + list); process.exit(1); }
+  let fd;
+  try { fd = fs.openSync("/dev/tty", "r+"); } catch (e) {
+    err("--force asks a person at a terminal, and there is no terminal here, so nothing was changed. Not safe to delete:\n" + list + "\nRun the command yourself, in a terminal.");
+    process.exit(1);
+  }
+  put(fd, "Not safe to delete, and found nowhere else:\n" + list + "\nType yes to delete them: ");
+  const buf = Buffer.alloc(256);
+  let answer = "";
+  for (;;) {
+    let n = 0;
+    try { n = fs.readSync(fd, buf, 0, buf.length, null); } catch (e) {
+      if (e.code === "EAGAIN") { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50); continue; }
+      break;
+    }
+    if (n <= 0) break;
+    answer += buf.toString("utf8", 0, n);
+    if (answer.includes("\n") || answer.length > 64) break;
+  }
+  fs.closeSync(fd);
+  if (answer.split("\n")[0].replace(/\r$/, "").trim() === "yes") process.exit(0);
+  err("Not yes, so nothing was changed.");
+  process.exit(3);
+}
+
 const COMMANDS = {
+  "delete-plan": deletePlan,
   "kit-edited": kitEdited,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "verdict-origin": verdictOrigin,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,

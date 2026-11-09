@@ -1172,7 +1172,7 @@ Exit 0; 1 for a repo that is not in `repos.tsv`, or a URL setup refuses; 2 for w
 ```sh
 cabinet session start [name] [--repo <repo>]
 cabinet session list [--json]
-cabinet session end <name>
+cabinet session end <name> [--force]
 ```
 
 A session is a git worktree of a repo: a folder of its own, on a branch of its own, so several sessions (yours, a teammate's, a role's) work in the same repo at once without seeing or sweeping each other's uncommitted changes ([sessions](concepts.md#sessions)). Sessions need git 2.17 or later.
@@ -1181,7 +1181,28 @@ A session is a git worktree of a repo: a folder of its own, on a branch of its o
 
 **`list`** shows each session: its repo, branch, folder, commits ahead of the repo's current branch, uncommitted files, whether it is merged into that branch, and the date it started. A session whose folder was deleted by hand shows as gone, with `git -C <repo> worktree prune`, which you run; the doctor notes it too (`sessions.gone`).
 
-**`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when it has no uncommitted or untracked changes and no ignored `.env` file (git would delete it with the folder), and keeps the branch.
+**`end`** shows the session's commits, the handoffs that name them, and the command that brings them into the repo's current branch: `git -C <repo> merge --ff-only session/<name>`, after a rebase or merge when that branch has moved on. You run it, or ask an agent in a session to run it; no Cabinet command merges, rebases or pushes. Then it removes the folder, only when deleting it loses nothing, and keeps the branch. First it lists everything git would delete with the folder: uncommitted and untracked files, every ignored file (a `.env`, `config/master.key`, a database), repos inside it, and links (listed, never followed). What the repo names in its `## Safe to delete` section (below) can be rebuilt, so it goes; anything else refuses the whole command, naming each path and why (`uncommitted`, `unpushed`, `stash`, `ignored`), and nothing is removed. Copy or commit what you need, or name what can be rebuilt, then end it again.
+
+`--force` removes the folder anyway, after listing what it would delete. It asks at the terminal, and deletes only when you type `yes`; anything else changes nothing. It is for a person at a terminal: with no terminal (how an agent's command runs, in your own session or not) it is refused, and so is a scheduled run (`CABINET_AGENT` or `CABINET_JOB` set, which every job sets) even at a terminal, with "--force is never used in a scheduled run". With nothing on the list, `--force` asks nothing.
+
+### Safe to delete
+
+A repo names what can be rebuilt (dependencies, build output) in a `## Safe to delete` section of its own `AGENTS.md`, as it names its setup in `## Session setup`:
+
+```md
+## Safe to delete
+
+- `node_modules/`
+- `build/`
+```
+
+One path per line, relative to the repo, written `` `<path>` ``. A path ending in `/` covers its folder. No wildcards, so an entry names exactly what it deletes. An entry that is absolute, holds `..` or holds a wildcard (`*`, `?`, `[`) is not read, and the command says so, naming it. A repo with no such section names nothing safe.
+
+- **A `.env` file or a repo inside a safe folder** is covered only by an entry naming its own path exactly (`vendor/pkg/.env`, `vendor/lib/`), never by the folder's entry. A `.env` file is one whose name starts with `.env` and does not end in `.example`.
+- **A repo inside the folder** (a folder holding `.git`) is kept unless an entry names its path exactly, even when it is clean and every commit is pushed, since it can hold ignored files that exist nowhere else. Its line gives the first thing it holds, in the order `unpushed`, `stash`, `uncommitted`, else `ignored`.
+- **A session reads the list from the repo's main folder**, never from its own branch, so a session cannot widen its own list.
+- An entry inside a folder that is not safe still counts: with only `build/out/` named, `build/out/` goes and the rest of `build/` refuses.
+- In a workspace, the files the kit writes untracked there are safe without an entry: `BRIEF.md`, `PIPELINE.md`, `OPERATIONS.html`, `sessions/.gitignore`, `node_modules/` and `cabinet.local.env`.
 
 Work is ready for you to push only when its commits are on the branch you push: `cabinet handoff list --ready` holds back a passed handoff whose commits are only on a session branch, and names the branch, with the `cabinet session end <name>` command that shows how to merge it when the branch is `session/<name>` with a session name; any other branch you merge with git yourself.
 
@@ -1753,9 +1774,9 @@ Dollars a tool reports are what it says the run cost; on a subscription, that is
 Two settings keep the cost down: a brief that skips its agent on [quiet days](commands.md#jobsltjobgtjob), and fewer scheduled jobs.
 ## Sessions
 
-Several sessions often work in the same repo at once: yours, a teammate's, the team's roles. In one folder they share one working tree and one index, so each sees the others' unfinished changes, and one careless git command can sweep them into its own commit. `cabinet session start [name]` gives a session a folder of its own: a git worktree of the repo at `sessions/<repo>/<name>/`, on a branch `session/<name>`, from the repo's current branch. Its commits, index, uncommitted changes and test runs are its own. Open your agent tool in that folder; run the repo's own setup there when it needs one per folder (installing dependencies), which `start` prints from a `## Session setup` section in the repo's `AGENTS.md`. Sessions are optional: with one session at a time, nothing changes.
+Several sessions often work in the same repo at once: yours, a teammate's, the team's roles. In one folder they share one working tree and one index, so each sees the others' unfinished changes, and one careless git command can sweep them into its own commit. `cabinet session start [name]` gives a session a folder of its own: a git worktree of the repo at `sessions/<repo>/<name>/`, on a branch `session/<name>`, from the repo's current branch. Its commits, index, uncommitted changes and test runs are its own. Open your agent tool in that folder; run the repo's own setup there when it needs one per folder (installing dependencies), which `start` prints from a `## Session setup` section in the repo's `AGENTS.md`. What a new folder makes that can be rebuilt (dependencies, build output) the repo names beside it, in a `## Safe to delete` section ([commands](commands.md#safe-to-delete)): `session end` removes the folder only when everything git would delete with it is named there, and otherwise refuses and names what would be lost. Sessions are optional: with one session at a time, nothing changes.
 
-Reviews work on session commits as on any other: every worktree shares the repo's history, so `cabinet handoff record` and the reviewers see the same commits from any folder. Work is ready for you to push only once its commits are on the branch you push. `cabinet session end <name>` shows the session's commits, the handoffs that name them and the command that brings them in (`git -C <repo> merge --ff-only session/<name>`), and removes its folder when nothing in it is uncommitted; it keeps the branch. No Cabinet command merges, rebases or pushes: you run the merge, or ask an agent in a session to. Until then the brief lists every session not merged under "Actions for the owner", and backups keep each session's uncommitted changes ([backups](backups.md)).
+Reviews work on session commits as on any other: every worktree shares the repo's history, so `cabinet handoff record` and the reviewers see the same commits from any folder. Work is ready for you to push only once its commits are on the branch you push. `cabinet session end <name>` shows the session's commits, the handoffs that name them and the command that brings them in (`git -C <repo> merge --ff-only session/<name>`), and removes its folder only when that loses nothing (nothing uncommitted, every ignored file named safe to delete); it keeps the branch. No Cabinet command merges, rebases or pushes: you run the merge, or ask an agent in a session to. Until then the brief lists every session not merged under "Actions for the owner", and backups keep each session's uncommitted changes ([backups](backups.md)).
 
 ## Git actions
 
@@ -2393,6 +2414,10 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.5.0 - Unreleased
+
+- `cabinet session end` removes a session's folder only when deleting it loses nothing. Before, it checked for uncommitted changes and an ignored `.env` by its last name only, so `git worktree remove` deleted a `.env` inside an ignored folder (`secrets/.env`), other ignored data (`config/master.key`, a database) and repos inside the folder with commits on no remote, with exit 0. It now lists everything git would delete with the folder and refuses, naming each path with a word that says why (`uncommitted`, `unpushed`, `stash`, `ignored`), unless the repo names it in a new `## Safe to delete` section of its `AGENTS.md`: one path per line, a path ending in `/` covering its folder, no wildcards (an entry that is absolute, holds `..` or a wildcard is not read, and is named). A `.env` file or a repo inside a safe folder needs an entry of its own, and a session reads the list from the repo's main folder. A session that ended before because its ignored files were all build output now refuses until the repo names them. New option `session end --force`: deletes what the list names after asking `yes` at the terminal; refused with no terminal and in a scheduled run. Jobs now set `CABINET_JOB` for every run, which `--force` reads as a scheduled run. The check is one helper for every command that deletes, `node scripts/lib.js delete-plan`.
 
 ## 0.4.1 - 9 Nov 2026
 

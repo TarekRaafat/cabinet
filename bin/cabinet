@@ -87,7 +87,7 @@ C	Work	repo list		Every repo: its owner, whether it is on this machine, where it
 C	Work	repo snapshot		Copy each repo's local-only files into local/.
 C	Work	session start	[name] [--repo <repo>]	Start a session: a git worktree of a repo on a branch of its own, so several sessions work in it at once without touching each other's changes.
 C	Work	session list		Every session: its repo, branch, folder, commits ahead, uncommitted files, whether it is merged, and when it started.
-C	Work	session end	<name>	A session's commits, the handoffs that name them and the command to merge them; removes its folder when nothing is uncommitted, keeps its branch.
+C	Work	session end	<name> [--force]	A session's commits, the handoffs that name them and the command to merge them; removes its folder only when that loses nothing, keeps its branch.
 C	Work	job run	<job>	Run a job from jobs/ now.
 C	Work	job list		Every job: its role, schedule and time limit.
 C	Safety	secret check		Look for keys, tokens and passwords in the workspace's files (file and line, never the value).
@@ -177,6 +177,7 @@ O	handoff run	--retries	<n>	Fix rounds after a BLOCK before it stops and asks yo
 O	spec run	--retries	<n>	Fix rounds after a BLOCK, for each of its handoffs, before it stops and asks you (default 2).
 O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
 O	session start	--repo	<repo>	The repo in repos.tsv to start it in (needed when the workspace has more than one).
+O	session end	--force		Remove the folder even when that deletes what is not safe to delete, after listing it. Asks at a terminal; refused with no terminal and in a scheduled run.
 O	secret check	--staged		Only the lines staged for the next commit (the workspace's pre-commit hook runs this).
 O	doctor	--fix		Then run the fixes it knows (bootstrap, roles, snapshot, installing missing tools), asking before each.
 O	digest	--write	<file>	Write the digest to this file instead of the screen.

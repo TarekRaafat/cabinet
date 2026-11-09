@@ -40,6 +40,8 @@ jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
 # MODEL too: one from the caller's environment never applies, nor is passed on.
 unset MODEL
+# Every run of a job is a scheduled run, a COMMAND job's too: --force never deletes in one (lib.js delete-plan).
+export CABINET_JOB="$job"
 AGENT="" PROMPT="" COMMAND="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS="" MODEL=""
 # shellcheck disable=SC1090
 source "$jf"
