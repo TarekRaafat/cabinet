@@ -6917,6 +6917,14 @@ echo '# mine' >> "$T/k5-out-bin/doctor.sh"; b4="$(dsnap "$T/k5-out-bin")"
 in_tty_typed yes "$sf" "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-tty"
 [[ "$(cat "$sf")" == 1 && "$(dsnap "$T/k5-out-bin")" == "$b4" && "$(cat "$W/.cabinet/version")" == 0.0.1 ]] && grep -qF 'under a linked folder, so never written' "$T/k5-tty" \
   || fail "--force under a linked bin: exit $(cat "$sf"), $(cat "$T/k5-tty")"
+# The doctor names what update refuses as not-kit: a kit file linked to other bytes, and bin linked out unchanged.
+x='kit files edited here (an update will refuse them; move the change to a project file or into the kit): '
+fold k5-dl; cp "$OK/scripts/gone2.sh" "$W/bin/gone2.sh"; echo other > "$T/k5-other"; rm "$W/bin/handoff.sh"; ln -s "$T/k5-other" "$W/bin/handoff.sh"; commit "linked file"
+o="$("$F" -C "$W" doctor --json || true)"
+j -e --arg m "${x}bin/handoff.sh" '((r) => r.level == "fix" && r.message == $m)($.results.find((r) => r.id == "kit.unedited"))' <<<"$o" >/dev/null || fail "the doctor and a linked kit file: $o"
+fold k5-db; cp "$OK/scripts/gone2.sh" "$W/bin/gone2.sh"; mv "$W/bin" "$T/k5-db-bin"; ln -s ../k5-db-bin "$W/bin"; commit "bin linked"
+o="$("$F" -C "$W" doctor --json || true)"
+j -e --arg m "$x" '((r) => r.level == "fix" && r.message.startsWith($m) && r.message.split(" ").includes("bin/doctor.sh"))($.results.find((r) => r.id == "kit.unedited"))' <<<"$o" >/dev/null || fail "the doctor and bin linked out: $o"
 rm -rf "$T"/k5-*
   return 0   # a last "check && fail" line must not end the run
 }

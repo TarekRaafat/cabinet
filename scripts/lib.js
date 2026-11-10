@@ -1311,7 +1311,8 @@ const kitMap = (kit) => put(1, kitList(kit).map((x) => x.join(" ") + "\n").join(
 // or --dry-run, each file is written to <path>.cabinet-new beside it and renamed over the old (a new inode,
 // so a running script keeps the one it opened), then the manifest the same way. A manifest path that is
 // absolute or holds .. is never acted on. kit "-": the doctor's form, the manifest only: each file there
-// that differs from its line (missing files are the doctor's own check), no format check.
+// that differs from its line, or is a link or under a linked folder (missing files are the doctor's own
+// check), no format check.
 const sha256 = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 function kitPlan(ws, kit, kitFormat, force, dry) {
   try { ws = fs.realpathSync(ws); if (!fs.statSync(ws).isDirectory()) throw new Error(); } catch (e) { die("delete-plan: not a folder: " + escapePath(ws), 1); }
@@ -1323,8 +1324,15 @@ function kitPlan(ws, kit, kitFormat, force, dry) {
     if (i > 0 && p && !p.startsWith("/") && !p.split("/").includes("..")) had.set(p, l.slice(0, i));
   }
   const hashOr = (p) => { try { return sha256(p); } catch (e) { return ""; } };   // unreadable: counts as edited
+  const linkedUp = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && s.isSymbolicLink()) return true; } return false; };
   if (kit === "-") {
-    for (const [p, h] of had) { const s = lst(path.join(ws, p)); if (s && s.isFile() && hashOr(path.join(ws, p)) !== h) lines.push(["keep", "edited", p]); }
+    // A link, or a path under a linked folder, is named as update would refuse it (not-kit); one that
+    // leads nowhere is left to the doctor's (missing) loop, so it is named once.
+    for (const [p, h] of had) {
+      const abs = path.join(ws, p), s = lst(abs);
+      if ((linkedUp(abs) || (s && s.isSymbolicLink())) && fs.existsSync(abs)) lines.push(["keep", "not-kit", p]);
+      else if (s && s.isFile() && !linkedUp(abs) && hashOr(abs) !== h) lines.push(["keep", "edited", p]);
+    }
     return decideKit(lines, [], [], [], force, true, false);
   }
   // The workspace's format (none is 0). Newer than the kit's: refused. Older: the steps from it to the
@@ -1337,7 +1345,6 @@ function kitPlan(ws, kit, kitFormat, force, dry) {
     if (!/^[0-9]{1,9}$/.test(f)) die("cabinet: " + escapePath(ff) + " is not a format number (one whole number), so nothing was changed: restore it (git -C \"" + escapePath(ws) + "\" checkout -- .cabinet/format), then run cabinet update again", 1);
     if (Number(f) > Number(kitFormat)) die("cabinet: this workspace was set up by a newer Cabinet (format " + Number(f) + "); update the kit first", 1);
   }
-  const linkedUp = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && s.isSymbolicLink()) return true; } return false; };
   const inWay = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && !s.isDirectory()) return p; } return ""; };
   const writes = [], removes = [], next = new Map(), notes = [];
   for (const [src, dst] of kitList(kit)) {
