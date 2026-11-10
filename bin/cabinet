@@ -265,6 +265,26 @@ managed() {
 # managed, it would name nothing, and update would take every kit file for one that left the kit.
 kit_list_ok() { [[ -s "$KIT/core/kit-files" ]] || die "the kit at $KIT has no core/kit-files (the list of the files it places): reinstall it"; }
 
+# .cabinet/version and .cabinet/format of <ws> may come from a folder someone else made (an unpacked
+# archive, a clone of a shared workspace): never read or written through a link. state_ok <ws> new:
+# neither is there in any form (setup); state_ok <ws>: the version is a plain file and the format is a
+# plain file or none (update). Either way .cabinet itself is a folder, not a link.
+state_ok() {
+  local f t
+  [[ -n "${2:-}" ]] && t="move it away, then run cabinet init again" || t="restore it (git -C <workspace> checkout -- .cabinet), then run cabinet update again"
+  [[ ! -L "$1/.cabinet" ]] || die "$(printf %s "$1/.cabinet" | term_text) is a link, so nothing was changed: $t"
+  for f in "$1/.cabinet/format" "$1/.cabinet/version"; do
+    if [[ -n "${2:-}" ]]; then
+      [[ ! -e "$f" && ! -L "$f" ]] || die "$(printf %s "$f" | term_text) is already there, so nothing was changed: $t"
+    elif [[ -L "$f" ]] || [[ -e "$f" && ! -f "$f" ]] || [[ "$f" == */version && ! -f "$f" ]]; then
+      die "$(printf %s "$f" | term_text) is a link or not a file, so nothing was changed: $t"
+    fi
+  done
+}
+# put_line <file> <text>: writes through <file>.cabinet-new and a rename, so a link at <file> is
+# replaced, never followed.
+put_line() { rm -f "$1.cabinet-new" && printf '%s\n' "$2" > "$1.cabinet-new" && mv -f "$1.cabinet-new" "$1"; }
+
 # Copy kit files into <ws>. Returns 1 when an edited file blocked the update.
 sync_kit() {
   local ws=$1 man="$1/.cabinet/manifest" next blocked=0 src dst live want had cur h p
@@ -655,6 +675,8 @@ setup() {
   [[ -n "$name" ]] || name="$(basename "$ws")"
   if [[ "$layout" != around ]]; then
     [[ ! -e "$ws" ]] || [[ -z "$(ls -A "$ws")" ]] || die "$ws exists and is not empty"
+  else
+    state_ok "$ws" new
   fi
   [[ "$layout" != inside ]] || has "private shared" "$visibility" || die "inside is private or shared, not '$visibility'"
   [[ "$model" == off ]] && model=""
@@ -878,8 +900,8 @@ setup() {
   "$ws/bin/role.sh" build
   [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "  OPERATIONS.html not built (bin/manual.sh build)"
   # Written last, the format just before: a workspace with a version is a finished one.
-  echo "$KIT_FORMAT" > "$ws/.cabinet/format"
-  echo "$VERSION" > "$ws/.cabinet/version"
+  put_line "$ws/.cabinet/format" "$KIT_FORMAT"
+  put_line "$ws/.cabinet/version" "$VERSION"
 
   # The workspace's own git, unless it already had one or lives in the project's (shared).
   # Only the files setup placed are staged: never something that was already in the folder.
@@ -2399,6 +2421,7 @@ cmd_update() {
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
   pin_stop "$ws" update
   kit_list_ok
+  state_ok "$ws"
   # The workspace's format is read before anything changes: no file is format 0 (every workspace
   # before 0.5.0). A newer one is refused; an older one runs the steps from it to KIT_FORMAT here
   # (0 to 1 needs none: the files that left the kit are removed by the sync, as before).
@@ -2409,7 +2432,7 @@ cmd_update() {
     ((10#$fmt <= KIT_FORMAT)) || die "this workspace was set up by a newer Cabinet (format $((10#$fmt))); update the kit first"
   fi
   update_notice "$ws"
-  local old; old="$(cat "$ws/.cabinet/version")"
+  local old oldt; old="$(head -c 64 "$ws/.cabinet/version" | head -1)"; oldt="$(printf %s "$old" | term_text)"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
   # of the owner's before (the pin in package.json and its lockfile, from npm update, go with it).
   local pth
@@ -2419,13 +2442,13 @@ cmd_update() {
   [[ "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
      -z "$(git -C "$ws" status --porcelain -- "${kit_paths[@]}" 2>/dev/null)" ]] && clean=1
   local hd="== "; [[ -z "$S_B" ]] || hd=""   # styled: headings bold, without "== "
-  echo "$hd${S_B}cabinet $old -> $VERSION in $ws${S_Z}"
+  echo "$hd${S_B}cabinet $oldt -> $VERSION in $ws${S_Z}"
   if sync_kit "$ws"; then
-    echo "$KIT_FORMAT" > "$ws/.cabinet/format"
-    echo "$VERSION" > "$ws/.cabinet/version"
+    put_line "$ws/.cabinet/format" "$KIT_FORMAT"
+    put_line "$ws/.cabinet/version" "$VERSION"
   else
     echo
-    echo "${S_R}Some kit files were edited here${S_Z} and were not replaced, so the version stays $old."
+    echo "${S_R}Some kit files were edited here${S_Z} and were not replaced, so the version stays $oldt."
     echo "Move each change into a project file (AGENTS.md, roles/, jobs/) or into the kit, restore the file"
     echo "(git -C \"$ws\" checkout -- <file>), then run cabinet update again."
     exit 1
@@ -2434,7 +2457,7 @@ cmd_update() {
   [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "OPERATIONS.html not built (bin/manual.sh build)"
   if [[ "$old" != "$VERSION" ]]; then
     echo
-    echo "$hd${S_B}What changed since $old${S_Z}"
+    echo "$hd${S_B}What changed since $oldt${S_Z}"
     changelog "$old" | changelog_show
   fi
   echo

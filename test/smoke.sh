@@ -6753,6 +6753,36 @@ fold k4-f0; git -C "$W" rm -q .cabinet/format; git -C "$W" commit -qm "format 0"
 for x in "$W" "$T/k4-new"; do
   [[ -s "$x/.cabinet/manifest" && -z "$(grep -vE '^([0-9a-f]{64}|-) [^ ]' "$x/.cabinet/manifest")" ]] || fail "43: a manifest line of $x: $(grep -vE '^([0-9a-f]{64}|-) [^ ]' "$x/.cabinet/manifest")"
 done
+# .cabinet/format and .cabinet/version are never written through a link a folder brings with it.
+# init around: a downloaded folder whose .cabinet/format (or version, or .cabinet) is a link out of it.
+CL="$W"   # the format 0 workspace, for the last check
+printf 'precious\n' > "$T/k4-target"
+for x in format version dir; do
+  rm -rf "$T/k4-around" "$T/k4-out-dir"; mkdir -p "$T/k4-around/.cabinet"; echo notes > "$T/k4-around/notes.md"
+  case $x in
+    dir) rmdir "$T/k4-around/.cabinet"; mkdir "$T/k4-out-dir"; ln -s ../k4-out-dir "$T/k4-around/.cabinet" ;;
+    *) ln -s ../../k4-target "$T/k4-around/.cabinet/$x" ;;
+  esac
+  b4="$(dsnap "$T/k4-around")"; st=0; "$F" init "$T/k4-around" --yes > "$T/k4-out" 2> "$T/k4-err" || st=$?
+  ((st == 1)) && grep -qE 'so nothing was changed|already has a cabinet workspace' "$T/k4-err" && [[ "$(dsnap "$T/k4-around")" == "$b4" && "$(cat "$T/k4-target")" == precious ]] \
+    && [[ ! -e "$T/k4-out-dir/version" ]] || fail "init around with a linked .cabinet $x: exit $st, $(cat "$T/k4-err"), target $(cat "$T/k4-target")"
+done
+# update: a cloned workspace whose .cabinet/version (or format, or .cabinet) is a link out of it.
+for x in version format dir; do
+  "$F" new "$T/k4-lnk" --yes >/dev/null || fail "new for the link case"
+  W="$(cd "$T/k4-lnk" && pwd -P)"
+  case $x in
+    dir) mv "$W/.cabinet" "$T/k4-out-dir2"; ln -s "$T/k4-out-dir2" "$W/.cabinet"; printf '0.0.1\n' > "$T/k4-target" ;;
+    version) printf '0.0.1\n' > "$T/k4-target"; rm "$W/.cabinet/version"; ln -s ../../k4-target "$W/.cabinet/version" ;;
+    format) printf '1\n' > "$T/k4-target"; rm "$W/.cabinet/format"; ln -s ../../k4-target "$W/.cabinet/format" ;;
+  esac
+  git -C "$W" add -A; git -C "$W" commit -qm "linked $x"
+  b4="$(dsnap "$W")"; o="$(cat "$T/k4-target")"; up
+  ((st == 1)) && grep -qF 'so nothing was changed' "$T/k4-err" && [[ "$(dsnap "$W")" == "$b4" && "$(cat "$T/k4-target")" == "$o" ]] \
+    || fail "update with a linked .cabinet $x: exit $st, $(cat "$T/k4-out" "$T/k4-err"), target $(cat "$T/k4-target")"
+  rm -rf "$T/k4-lnk" "$T/k4-out-dir2"
+done
+W="$CL"
 # The kit refuses to place or update anything without its list.
 rm "$KC/core/kit-files"; up
 ((st == 1)) && grep -qF 'has no core/kit-files' "$T/k4-err" || fail "update with no core/kit-files: exit $st"
