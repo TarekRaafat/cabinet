@@ -352,12 +352,12 @@ Looks for keys, tokens and passwords in the workspace's own files (tracked, and 
 ```sh
 cabinet backup create [folder]
 cabinet backup verify [folder] [--json]
-cabinet backup restore <archive> [dir]
+cabinet backup restore <archive> [dir] [--force]
 ```
 
-**`create`** writes one encrypted archive now ([backups](backups.md)); the default folder is `CABINET_BACKUP_DIR`, and the schedule runs the same. **`verify`** writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). **`restore`** rebuilds the workspace and its repos from an archive, never losing a file; outside any workspace it runs the installed kit's copy, since a new machine has no workspace yet. It starts by naming the backup's date.
+**`create`** writes one encrypted archive now ([backups](backups.md)); the default folder is `CABINET_BACKUP_DIR`, and the schedule runs the same. **`verify`** writes nothing there: it restores the newest archive into a temporary folder, checks each repo against the workspace, and deletes the copy ([backups](backups.md#checking-it)). **`restore`** rebuilds the workspace and its repos from an archive, never losing a file; outside any workspace it runs the installed kit's copy, since a new machine has no workspace yet. It starts by naming the backup's date. It reads the whole archive before it writes anything, then lists every path in the way in the folders it writes over (`differs`: a file with other content, or one the archive deletes; `file-in-way`: a file or link where a folder goes; `folder-in-way`: a folder or link where a file goes) and moves each to `recovered/<archive>/<repo>/` (`<repo>-2`, `-3`, ... when that exists, so a second run never writes over the first's), with the same check `remove` and `session end` use. **`--force`** deletes them instead, after listing them: it asks at the terminal (`/dev/tty`) and deletes only when you type `yes`; anything else, no terminal (how an agent's command runs) or a scheduled run (`CABINET_AGENT` or `CABINET_JOB` set) changes nothing and exits 1. An archive member with an absolute path or a `..` part is refused, naming it, before anything is written ([backups](backups.md#restoring)).
 
-Exit 0; 1 with no passphrase, no archive, or (for `verify`) a problem found; 2 for a missing, relative or inside folder, or a keep count under 1.
+Exit 0; 1 with no passphrase, no archive, (for `verify`) a problem found, or (for `restore`) a member outside its folder, uncommitted changes that do not apply, or `--force` not answered `yes`; 2 for a missing, relative or inside folder, or a keep count under 1.
 
 ## cabinet bootstrap
 

@@ -6539,6 +6539,153 @@ rm -f "$hl" "$ef" "$sf" "$T/r2-yes" "$T/r2-tsv"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "delete rule 3: restore" "3"
+s96() {
+# Criteria 28 to 39 of specs/delete-rule.md, and ADR-010 C4 and C5: restore reads the whole archive, then
+# one delete-plan incoming call moves aside (or, with --force answered yes at a terminal, deletes) every
+# path in the way, before anything is written. Each archive is made by backup create and checked by
+# backup verify first. Nothing is pushed; the passphrase is a test one.
+local W K K2 A A3 A32 A37 A38 A39 AX st o b4 bk x n=$RANDOM rt="$T/rr-out" sf="$T/rr-status" ef="$T/rr-err"
+"$F" new "$T/rr-ws" --yes >/dev/null || fail "new"
+W="$(cd "$T/rr-ws" && pwd -P)"
+echo x > "$W/specs/x.md"; echo y > "$W/notes/y.md"; git -C "$W" add specs/x.md notes/y.md; git -C "$W" commit -qm "x and y"
+# bk <name>: an archive of W now in $T/<name>, made by backup create and checked by backup verify; its path.
+bk() {
+  CABINET_BACKUP_PASSPHRASE=t "$W/bin/backup.sh" create "$T/$1" >/dev/null || fail "backup create $1"
+  CABINET_BACKUP_PASSPHRASE=t "$W/bin/backup.sh" verify "$T/$1" >/dev/null || fail "backup verify $1"
+  ls "$T/$1"/*.enc
+}
+# rs <archive> <folder> [--force]: cabinet backup restore from outside any workspace, as on a new machine.
+rs() { st=0; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$@") > "$rt" 2>&1 || st=$?; }
+rst() { in_tty_typed "$1" "$sf" env CABINET_BACKUP_PASSPHRASE=t "${@:2}"; st="$(cat "$sf" 2>/dev/null || echo none)"; }
+# keepd <archive> <folder>: K, the folder restore keeps the workspace's paths aside in.
+keepd() { local a="${1##*/}"; echo "$(cd "$2" && pwd -P)/recovered/${a%.tar.gz.enc}/workspace"; }
+# sig <path>: what S(<dir>) says of one path (type, mode, size and SHA-1 through cksum, or a link's target).
+sig() { if [[ -L "$1" ]]; then echo "link $(readlink "$1")"; elif [[ -d "$1" ]]; then echo "dir $(perm "$1") $(dsnap "$1")"; else echo "file $(perm "$1") $(cksum < "$1")"; fi; }
+fresh() { rm -rf "$T/$1"; mkdir -p "$T/$1"; }
+A="$(bk rr-a)"
+
+# 28. R1: a file specs where the archive has specs/x.md.
+fresh r28; printf mine > "$T/r28/specs"; b4="$(sig "$T/r28/specs")"
+rs "$A" "$T/r28"; K="$(keepd "$A" "$T/r28")"
+((st == 0)) && cmp -s "$T/r28/specs/x.md" "$W/specs/x.md" && [[ "$(sig "$K/specs")" == "$b4" ]] || fail "criterion 28: exit $st, $(cat "$rt")"
+# 29. R2: a folder README.md/ where the archive has the file README.md.
+fresh r29; mkdir "$T/r29/README.md"; echo inner > "$T/r29/README.md/inner"; b4="$(sig "$T/r29/README.md/inner")"
+rs "$A" "$T/r29"; K="$(keepd "$A" "$T/r29")"
+((st == 0)) && cmp -s "$T/r29/README.md" "$W/README.md" && [[ "$(sig "$K/README.md/inner")" == "$b4" ]] || fail "criterion 29: exit $st, $(cat "$rt")"
+# 31. Controls: another AGENTS.md is kept aside, the same HANDOFFS.md is not.
+fresh r31; echo other > "$T/r31/AGENTS.md"; cp "$W/HANDOFFS.md" "$T/r31/HANDOFFS.md"; b4="$(sig "$T/r31/AGENTS.md")"
+rs "$A" "$T/r31"; K="$(keepd "$A" "$T/r31")"
+((st == 0)) && cmp -s "$T/r31/AGENTS.md" "$W/AGENTS.md" && [[ "$(sig "$K/AGENTS.md")" == "$b4" && ! -e "$K/HANDOFFS.md" ]] || fail "criterion 31: exit $st, $(cat "$rt")"
+
+# 30. R3: the archive's untracked notes/drafts/idea.md; and 31's .env, left as is.
+mkdir -p "$W/notes/drafts"; echo idea > "$W/notes/drafts/idea.md"; printf old > "$W/.env"
+A3="$(bk rr-a3)"; rm -rf "$W/notes/drafts" "$W/.env"
+fresh r30; mkdir -p "$T/r30/notes"; printf mine > "$T/r30/notes/drafts"; b4="$(sig "$T/r30/notes/drafts")"
+rs "$A3" "$T/r30"; K="$(keepd "$A3" "$T/r30")"
+((st == 0)) && [[ "$(cat "$T/r30/notes/drafts/idea.md")" == idea && "$(sig "$K/notes/drafts")" == "$b4" ]] || fail "criterion 30: exit $st, $(cat "$rt")"
+fresh r30b; mkdir -p "$T/r30b/notes/drafts/idea.md"; echo inner > "$T/r30b/notes/drafts/idea.md/inner"; printf mine > "$T/r30b/.env"; b4="$(sig "$T/r30b/notes/drafts/idea.md/inner")"
+rs "$A3" "$T/r30b"; K="$(keepd "$A3" "$T/r30b")"
+((st == 0)) && [[ "$(cat "$T/r30b/notes/drafts/idea.md")" == idea && "$(sig "$K/notes/drafts/idea.md/inner")" == "$b4" ]] || fail "criterion 30, a folder: exit $st, $(cat "$rt")"
+[[ "$(cat "$T/r30b/.env")" == mine ]] && grep -qx '    .env exists, left as is' "$rt" || fail "criterion 31: the .env was replaced, or not said: $(cat "$rt")"
+
+# 37. A file the archive added without committing; 38. one it deleted without committing.
+echo new > "$W/added.md"; git -C "$W" add -f added.md; A37="$(bk rr-a37)"; git -C "$W" rm -q --cached added.md; rm "$W/added.md"
+echo gone > "$W/gone.md"; git -C "$W" add -f gone.md; git -C "$W" commit -qm gone; rm "$W/gone.md"; A38="$(bk rr-a38)"; git -C "$W" rm -q gone.md; git -C "$W" commit -qm "gone again"
+fresh r37; printf mine > "$T/r37/added.md"; b4="$(sig "$T/r37/added.md")"
+rs "$A37" "$T/r37"; K="$(keepd "$A37" "$T/r37")"
+((st == 0)) && [[ "$(cat "$T/r37/added.md")" == new && "$(sig "$K/added.md")" == "$b4" ]] || fail "criterion 37: exit $st, $(cat "$rt")"
+fresh r38; printf mine > "$T/r38/gone.md"; b4="$(sig "$T/r38/gone.md")"
+rs "$A38" "$T/r38"; K="$(keepd "$A38" "$T/r38")"
+((st == 0)) && [[ ! -e "$T/r38/gone.md" && "$(sig "$K/gone.md")" == "$b4" ]] || fail "criterion 38: exit $st, $(cat "$rt")"
+
+# 32. Names cannot steer a move: x<LF>y and y.
+printf 3 > "$W/x"$'\n'"y"; printf 2 > "$W/y"; git -C "$W" add -f -- "x"$'\n'"y" y; git -C "$W" commit -qm names; A32="$(bk rr-a32)"
+fresh r32; printf 1 > "$T/r32/x"$'\n'"y"; printf 2 > "$T/r32/y"
+rs "$A32" "$T/r32"; K="$(keepd "$A32" "$T/r32")"
+((st == 0)) && [[ "$(cat "$K/x"$'\n'"y")" == 1 && ! -e "$K/y" && "$(cat "$T/r32/y")" == 2 && "$(cat "$T/r32/x"$'\n'"y")" == 3 ]] || fail "criterion 32: exit $st, $(cat "$rt")"
+
+# 34. restore --force, on R1's fixture: yes deletes; no, no terminal and a scheduled run change nothing.
+fresh r34; printf mine > "$T/r34/specs"
+rst yes "$F" backup restore "$A" "$T/r34" --force >/dev/null
+[[ "$st" == 0 ]] && cmp -s "$T/r34/specs/x.md" "$W/specs/x.md" && [[ -z "$(find "$T/r34/recovered" -name specs 2>/dev/null)" ]] || fail "criterion 34, yes: exit $st"
+fresh r34; printf mine > "$T/r34/specs"; b4="$(dsnap "$T/r34")"
+rst no "$F" backup restore "$A" "$T/r34" --force >/dev/null
+[[ "$st" == 1 && "$(dsnap "$T/r34")" == "$b4" ]] || fail "criterion 34, no: exit $st"
+st=0; (cd "$T" && notty env CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$A" "$T/r34" --force) >/dev/null 2>"$ef" || st=$?
+((st == 1)) && grep -qF -- --force "$ef" && grep -qF terminal "$ef" && [[ "$(dsnap "$T/r34")" == "$b4" ]] || fail "criterion 34, no terminal: exit $st, $(cat "$ef")"
+o="$(rst yes env CABINET_AGENT=qa "$F" backup restore "$A" "$T/r34" --force)"
+[[ "$st" == 1 && "$(dsnap "$T/r34")" == "$b4" ]] && grep -qF -- '--force is never used in a scheduled run' <<<"$o" || fail "criterion 34, a scheduled run: exit $st, $o"
+
+# 33. A stopped restore finishes, and never writes over what it kept: git fails on its first read-tree in T.
+fresh r33; printf mine > "$T/r33/specs"
+mkdir -p "$T/rr-shim"
+printf '#!/bin/bash\nd=$PWD; a=("$@"); i=0; sub=""\nwhile ((i < ${#a[@]})); do case "${a[i]}" in -C) d="${a[i+1]}"; i=$((i + 2)) ;; -c) i=$((i + 2)) ;; -*) i=$((i + 1)) ;; *) sub="${a[i]}"; break ;; esac; done\nif [[ "$sub" == read-tree && ! -e "%s" && "$(cd "$d" 2>/dev/null && pwd -P)" == "%s" ]]; then : > "%s"; exit 1; fi\nexec "%s" "$@"\n' \
+  "$T/rr-shim-ran" "$(cd "$T/r33" && pwd -P)" "$T/rr-shim-ran" "$(command -v git)" > "$T/rr-shim/git"; chmod +x "$T/rr-shim/git"
+PATH="$T/rr-shim:$PATH" rs "$A" "$T/r33"; K="$(keepd "$A" "$T/r33")"
+((st != 0)) && [[ -f "$T/rr-shim-ran" && -e "$T/r33/.git/cabinet-restore" && "$(cat "$K/specs")" == mine ]] || fail "criterion 33, stopped: exit $st, $(cat "$rt")"
+printf mine-n > "$T/r33/notes"; b4="$(dsnap "$K")"
+rs "$A" "$T/r33"
+((st == 0)) && cmp -s "$T/r33/specs/x.md" "$W/specs/x.md" && cmp -s "$T/r33/notes/y.md" "$W/notes/y.md" && [[ ! -e "$T/r33/.git/cabinet-restore" ]] \
+  && [[ "$(cat "$K-2/notes")" == mine-n && "$(dsnap "$K")" == "$b4" ]] && grep -qF "$K-2" "$rt" || fail "criterion 33, run again: exit $st, $(cat "$rt")"
+
+# 35. Archive paths that leave the target: a member ../outside-<n>.txt, and one at an absolute path.
+for x in rel abs; do
+  bk="$T/rr-x-$x"; rm -rf "$bk"; mkdir -p "$bk/open" "$bk/m/a" "$bk/arch"
+  CABINET_BACKUP_PASSPHRASE=t openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:CABINET_BACKUP_PASSPHRASE < "$A" | tar -C "$bk/open" -xzf -
+  o="$(ls "$bk/open")"
+  if [[ "$x" == rel ]]; then printf o > "$bk/m/outside-$n.txt"; (cd "$bk/m/a" && tar -P -cf "$bk/open/$o/workspace/untracked.tar" "../outside-$n.txt"); rm "$bk/m/outside-$n.txt"
+  else printf a > "$T/abs-$n.txt"; tar -P -cf "$bk/open/$o/workspace/untracked.tar" "$T/abs-$n.txt"; rm "$T/abs-$n.txt"; fi
+  AX="$bk/arch/${A##*/}"
+  tar -C "$bk/open" -czf - "$o" | CABINET_BACKUP_PASSPHRASE=t openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:CABINET_BACKUP_PASSPHRASE > "$AX"
+  fresh r35; printf k > "$T/r35/keepme"; b4="$(dsnap "$T/r35")"
+  st=0; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$AX" "$T/r35") >/dev/null 2>"$ef" || st=$?
+  ((st == 1)) && [[ ! -e "$T/outside-$n.txt" && ! -e "$T/r35/../outside-$n.txt" && ! -e "$T/abs-$n.txt" && "$(dsnap "$T/r35")" == "$b4" ]] \
+    && grep -qF "$([[ "$x" == rel ]] && echo "../outside-$n.txt" || echo "$T/abs-$n.txt")" "$ef" || fail "criterion 35 ($x): exit $st, $(cat "$ef")"
+  # A missing folder stays missing (ADR-010 C6).
+  rm -rf "$T/r35"; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$AX" "$T/r35") >/dev/null 2>&1 && fail "criterion 35 ($x): restored into a missing folder"
+  [[ ! -e "$T/r35" ]] || fail "criterion 35 ($x): a refused restore made its folder"
+done
+
+# 36. The keep folder is never incoming.
+fresh r36; mkdir -p "$T/r36d/recovered/k" "$T/r36/recovered/k"; echo a > "$T/r36d/recovered/k/f"; echo b > "$T/r36/recovered/k/f"; b4="$(dsnap "$T/r36")"
+st=0; L delete-plan incoming "$T/r36" --from "$T/r36d" --keep "$T/r36/recovered/k" >/dev/null 2>&1 || st=$?
+((st == 1)) && [[ "$(dsnap "$T/r36")" == "$b4" ]] || fail "criterion 36: exit $st"
+
+# ADR-010 C4: by entry type. A submodule's folder is expected, never walked; a file holding a link's
+# target is not that link; a link to the same target is.
+x="$T/rr-c4"; rm -rf "$x"; git init -q "$x/g"; echo a > "$x/g/a"; ln -s a "$x/g/l"; ln -s a "$x/g/l2"; git -C "$x/g" add -A
+git -C "$x/g" update-index --add --cacheinfo "160000,$(git -C "$x/g" hash-object -w a),sub"; git -C "$x/g" commit -qm c4
+mkdir -p "$x/t/sub"; echo own > "$x/t/sub/f"; cp "$x/g/a" "$x/t/a"; printf a > "$x/t/l"; ln -s a "$x/t/l2"
+o="$(L delete-plan incoming "$x/t" --git "$x/g" HEAD HEAD --keep "$x/k" --dry-run 2>&1 || true)"
+[[ "$o" == $'keep\tdiffers\tl' ]] || fail "C4: by entry type: $o"
+
+# 39. A repo outside T, restored from the archived repos.tsv, changes only after the one question.
+x="$T/nc-$n"; mkdir -p "$x/docs"; git init -q "$x"; echo a > "$x/docs/a.md"
+printf 'nc\t-\t-\tno\t%s\n' "$x" >> "$W/repos.tsv"; git -C "$W" commit -qam nc; A39="$(bk rr-a39)"
+rm -rf "$x"; mkdir "$x"; printf mine > "$x/docs"
+fresh r39; b4="$(dsnap "$T/r39")"; bk="$(dsnap "$x")"
+o="$(rst no "$F" backup restore "$A39" "$T/r39" --force)"
+[[ "$st" == 1 && "$(dsnap "$T/r39")" == "$b4" && "$(dsnap "$x")" == "$bk" ]] && grep -q 'docs' <<<"${o%%Type yes*}" || fail "criterion 39, no: exit $st, $o"
+rst yes "$F" backup restore "$A39" "$T/r39" --force >/dev/null
+[[ "$st" == 0 && -d "$x/docs" && "$(cat "$x/docs/a.md")" == a && ! -e "$T/r39/nc" ]] || fail "criterion 39, yes: exit $st"
+
+# ADR-010 C5: a project around its workspace whose restore stopped is checked out in place on the next
+# run (the marker wins over the fetch-only branch).
+CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" create "$T/rr-bki" >/dev/null || fail "backup inside a project"
+CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" verify "$T/rr-bki" >/dev/null || fail "backup verify inside a project"
+rm -f "$T/rr-shim-ran"; mkdir -p "$T/rr-p"
+sedi "s#== \"$(cd "$T/r33" && pwd -P)\"#== \"$(cd "$T/rr-p" && pwd -P)\"#" "$T/rr-shim/git"
+st=0; (cd "$T" && PATH="$T/rr-shim:$PATH" CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$(ls "$T"/rr-bki/*.enc)" "$T/rr-p/cabinet") > "$rt" 2>&1 || st=$?
+((st != 0)) && [[ -f "$T/rr-shim-ran" && -e "$T/rr-p/.git/cabinet-restore" ]] || fail "C5, stopped: exit $st, $(cat "$rt")"
+rs "$(ls "$T"/rr-bki/*.enc)" "$T/rr-p/cabinet"
+((st == 0)) && [[ ! -e "$T/rr-p/.git/cabinet-restore" && "$(git -C "$T/rr-p" rev-parse HEAD)" == "$(git -C "$I" rev-parse HEAD)" && -z "$(git -C "$T/rr-p" ls-files --deleted)" ]] \
+  && ! grep -q 'acme-app exists' "$rt" || fail "C5, run again: exit $st, $(cat "$rt")"
+rm -rf "$T"/rr-* "$T"/r2[89] "$T"/r3[0-9] "$T"/r3[0-9]b "$T"/r30b "$T/nc-$n"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

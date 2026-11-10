@@ -1313,6 +1313,10 @@ function kitEdited(ws, manifest) {
 // (kit rule 5; ADR-009). It lists everything the command would lose, decides, and says why.
 //   folder <dir> [--repos <repos.tsv>]: what deleting <dir> loses (session end, remove). The helper
 //   never deletes here: the caller deletes the folder only on exit 0.
+//   incoming <target> [--git <repo> <base> <tree>] [--from <dir>] --keep <dir>, one group per folder,
+//   repeated in one call (restore): every path in <target> the restore would replace or delete. The
+//   helper acts here: it moves each to its --keep (restore picks a folder that does not exist), or with
+//   --force deletes it, before the caller writes anything.
 // stdout: one line per path, "<verdict>\t<why>\t<path>", verdict ok or keep, the path relative to the
 // source's root (a folder with a trailing /, the root itself ./), escaped so no name can split a line;
 // ok lines only with --dry-run. For display and tests: no caller reads a path back. stderr: the one
@@ -1351,16 +1355,27 @@ function safeList(file) {
 }
 
 function deletePlan(...argv) {
-  const usage = "usage: node lib.js delete-plan folder <dir> [--repos <repos.tsv>] [--force] [--dry-run]";
+  const usage = "usage: node lib.js delete-plan folder <dir> [--repos <repos.tsv>] [--force] [--dry-run]\n" +
+    "       node lib.js delete-plan incoming <target> [--git <repo> <base> <tree>] [--from <dir>] --keep <dir> [incoming ...] [--force] [--dry-run]";
   const [source, ...rest] = argv;
   let force = false, dry = false, reposTsv = "";
-  const pos = [];
+  const pos = [], groups = [];
+  if (source === "incoming") rest.unshift("incoming");
   for (let i = 0; i < rest.length; i++) {
+    const g = groups[groups.length - 1], more = (n) => { if (i + n >= rest.length) die(usage, 2); };
     if (rest[i] === "--force") force = true;
     else if (rest[i] === "--dry-run") dry = true;
-    else if (rest[i] === "--repos" && i + 1 < rest.length) reposTsv = rest[++i];
-    else if (rest[i].startsWith("--")) die(usage, 2);
+    else if (source === "folder" && rest[i] === "--repos" && i + 1 < rest.length) reposTsv = rest[++i];
+    else if (source === "incoming" && rest[i] === "incoming") { more(1); groups.push({ target: rest[++i], git: null, from: "", keep: "" }); }
+    else if (g && rest[i] === "--git") { more(3); g.git = rest.slice(i + 1, i + 4); i += 3; }
+    else if (g && rest[i] === "--from") { more(1); g.from = rest[++i]; }
+    else if (g && rest[i] === "--keep") { more(1); g.keep = rest[++i]; }
+    else if (rest[i].startsWith("--") || source !== "folder") die(usage, 2);
     else pos.push(rest[i]);
+  }
+  if (source === "incoming") {
+    if (!groups.every((g) => g.keep && (g.git || g.from))) die(usage, 2);
+    return incoming(groups, force, dry);
   }
   if (source !== "folder" || pos.length !== 1) die(usage, 2);
   let root;
@@ -1542,9 +1557,9 @@ function hasInside(dir, envs) {
 
 // The policy (ADR-009 section 1): print, then go ahead, refuse, or ask the one --force question.
 // Written with writeSync, since process.exit can cut an asynchronous pipe write short.
+const put = (fd, s) => { try { fs.writeSync(fd, s); } catch (e) { /* a closed pipe */ } };
+const err = (s) => put(2, s + "\n");
 function decide(lines, unread, force, dry) {
-  const put = (fd, s) => { try { fs.writeSync(fd, s); } catch (e) { /* a closed pipe */ } };
-  const err = (s) => put(2, s + "\n");
   put(1, lines.filter((l) => dry || l[0] === "keep").map((l) => l[0] + "\t" + l[1] + "\t" + escapePath(l[2]) + "\n").join(""));
   for (const [f, u] of unread) err("not read: `" + escapePath(u) + "` in the \"## Safe to delete\" section of " + escapePath(f) + " (an absolute path, .. or a wildcard): name each path exactly, relative to the repo");
   const keep = lines.filter((l) => l[0] === "keep");
@@ -1554,13 +1569,19 @@ function decide(lines, unread, force, dry) {
     err("Not safe to delete, so nothing was changed:\n" + list + "\nKeep what you need somewhere else, or name what can be rebuilt in a \"## Safe to delete\" section of the repo's AGENTS.md, then run it again. To delete them anyway, run it again yourself with --force, at a terminal.");
     process.exit(3);
   }
-  if (scheduled()) { err("--force is never used in a scheduled run, so nothing was changed. Not safe to delete:\n" + list); process.exit(1); }
+  process.exit(askForce(list, "Not safe to delete, and found nowhere else:"));
+}
+
+// The one --force question (Rule 9): asked of a person at /dev/tty only, never in a scheduled run.
+// 0 when yes is typed; 1 when it cannot be asked; 3 for any other answer. Nothing is changed here.
+function askForce(list, header) {
+  if (scheduled()) { err("--force is never used in a scheduled run, so nothing was changed. Not safe to delete:\n" + list); return 1; }
   let fd;
   try { fd = fs.openSync("/dev/tty", "r+"); } catch (e) {
     err("--force asks a person at a terminal, and there is no terminal here, so nothing was changed. Not safe to delete:\n" + list + "\nRun the command yourself, in a terminal.");
-    process.exit(1);
+    return 1;
   }
-  put(fd, "Not safe to delete, and found nowhere else:\n" + list + "\nType yes to delete them: ");
+  put(fd, header + "\n" + list + "\nType yes to delete them: ");
   const buf = Buffer.alloc(256);
   let answer = "";
   for (;;) {
@@ -1574,9 +1595,139 @@ function decide(lines, unread, force, dry) {
     if (answer.includes("\n") || answer.length > 64) break;
   }
   fs.closeSync(fd);
-  if (answer.split("\n")[0].replace(/\r$/, "").trim() === "yes") process.exit(0);
+  if (answer.split("\n")[0].replace(/\r$/, "").trim() === "yes") return 0;
   err("Not yes, so nothing was changed.");
-  process.exit(3);
+  return 3;
+}
+
+// The incoming source (ADR-009 section 3, ADR-010 C3 and C4): for each group, every path in <target> the
+// restore would replace or delete, all planned before the first move. Per incoming path p, parents first:
+// a parent that is a file or link in <target> is file-in-way; p a folder or link where a file goes is
+// folder-in-way; a file with other bytes, or a link to another target, differs (by git blob id with --git,
+// computed here, so nothing is checked out to compare). A submodule (mode 160000) expects a folder and is
+// never walked. With --git, each path <base> has and <tree> does not that exists in <target> differs too.
+// Anything inside a path already listed goes with it. Exit 1, nothing moved: an incoming path at or under
+// --keep, --keep under a listed path, a destination that exists, or a name that is absolute or holds ..
+function incoming(groups, force, dry) {
+  const lines = [], moves = [];
+  try {
+    for (const g of groups) planIncoming(g, groups[0], lines, moves);
+  } catch (e) { die("delete-plan: " + escapePath(String(e.message || e)) + "; nothing was changed", 1); }
+  put(1, lines.map((l) => l[0] + "\t" + l[1] + "\t" + escapePath(l[2]) + "\n").join(""));
+  if (!moves.length || dry) process.exit(0);
+  const list = moves.map((m) => "  " + escapePath(m.show) + "  (" + m.why + ")").join("\n");
+  if (force) {
+    const a = askForce(list, "The archive replaces or deletes these, and with --force they are not kept:");
+    if (a !== 0) process.exit(a);
+  }
+  const done = [];
+  try {
+    for (const m of moves) {
+      if (force) fs.rmSync(m.abs, { recursive: true, force: true });
+      else { fs.mkdirSync(path.dirname(m.dest), { recursive: true }); moveAside(m.abs, m.dest); }
+      done.push(m);
+    }
+  } catch (e) {
+    die("delete-plan: could not " + (force ? "delete " : "move aside ") + escapePath(String(e.message || e)) + "; done before it: " +
+      (done.map((m) => escapePath(m.show)).join(", ") || "nothing"), 1);
+  }
+  if (force) { err("Deleted, as you confirmed:\n" + list); process.exit(0); }
+  for (const g of groups) {
+    const mine = moves.filter((m) => m.g === g);
+    if (mine.length) err("  " + mine.length + " path(s) in the way of the archive, kept aside in " + escapePath(g.keep) + ":\n" +
+      mine.map((m) => "    " + escapePath(m.rel) + "  (" + m.why + ")").join("\n"));
+  }
+  process.exit(0);
+}
+
+// A folder that does not exist yet, as it will be: its deepest existing parent resolved, the rest as given.
+function resolveMissing(p) {
+  p = path.resolve(p);
+  const rest = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(p), ...rest.reverse()); } catch (e) {
+      if (path.dirname(p) === p) throw e;
+      rest.push(path.basename(p)); p = path.dirname(p);
+    }
+  }
+}
+
+function planIncoming(g, first, lines, moves) {
+  let target;
+  try { target = fs.realpathSync(g.target); if (!fs.statSync(target).isDirectory()) throw new Error(); } catch (e) { throw new Error("not a folder: " + g.target); }
+  g.keep = resolveMissing(g.keep);
+  const within = (a, b) => a === b || a.startsWith(b + path.sep);
+  const show = (abs) => within(abs, first.realTarget || (first.realTarget = target)) ? path.relative(first.realTarget, abs) || "./" : abs;
+  const ents = new Map(), add = (rel, e) => {
+    if (path.isAbsolute(rel) || rel.split("/").some((c) => c === ".." || c === "." || c === "")) throw new Error("a path outside its folder: " + rel);
+    if (!ents.has(rel)) ents.set(rel, []);
+    ents.get(rel).push(e);
+    const parts = rel.split("/");
+    for (let i = 1; i < parts.length; i++) { const d = parts.slice(0, i).join("/"); if (!ents.has(d)) ents.set(d, []); if (!ents.get(d).some((x) => x.kind === "dir")) ents.get(d).push({ kind: "dir" }); }
+  };
+  if (g.git) {
+    const [repo, base, tree] = g.git;
+    const ls = gitZ(repo, "ls-tree", "-r", "-z", "--full-tree", tree), del = gitZ(repo, "diff", "--no-renames", "--name-only", "--diff-filter=D", "-z", base, tree);
+    if (!ls || !del) throw new Error("could not read the archive's tree in " + repo);
+    for (const e of ls) {
+      const tab = e.indexOf("\t"), [mode, , sha] = e.slice(0, tab).split(" ");
+      add(e.slice(tab + 1), { kind: mode === "160000" ? "gitlink" : mode === "120000" ? "link" : "file", sha });
+    }
+    for (const rel of del) add(rel, { kind: "del" });
+  }
+  if (g.from) {
+    (function walk(d, rel) {
+      for (const n of fs.readdirSync(d).sort()) {
+        const p = path.join(d, n), r = rel ? rel + "/" + n : n, s = fs.lstatSync(p);
+        if (s.isSymbolicLink()) add(r, { kind: "link", to: fs.readlinkSync(p) });
+        else if (s.isDirectory()) { add(r, { kind: "dir" }); walk(p, r); }
+        else add(r, { kind: "file", src: p, size: s.size });
+      }
+    })(g.from, "");
+  }
+  const blob = (sha, bytes) => crypto.createHash(sha.length === 64 ? "sha256" : "sha1").update("blob " + bytes.length + "\0").update(bytes).digest("hex");
+  const listed = new Set();
+  const rels = [...ents.keys()].sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : 1));
+  for (const rel of rels) {
+    const abs = path.join(target, rel);
+    if (within(abs, g.keep)) throw new Error("an incoming path is inside the keep folder: " + abs);
+    const parts = rel.split("/");
+    if (parts.some((_, i) => listed.has(parts.slice(0, i).join("/")))) continue;   // goes aside with its parent
+    const st = lst(abs);
+    if (!st) continue;
+    let why = "";
+    for (const e of ents.get(rel)) {
+      if (why) break;
+      if (e.kind === "dir" || e.kind === "gitlink") { if (!st.isDirectory()) why = "file-in-way"; }
+      else if (e.kind === "link") {
+        const same = st.isSymbolicLink() && (e.sha ? blob(e.sha, Buffer.from(fs.readlinkSync(abs))) === e.sha : fs.readlinkSync(abs) === e.to);
+        if (!same) why = "differs";
+      } else if (st.isDirectory() || st.isSymbolicLink()) why = "folder-in-way";
+      else if (e.kind === "del") why = "differs";
+      else if (e.sha ? blob(e.sha, fs.readFileSync(abs)) !== e.sha : st.size !== e.size || !fs.readFileSync(abs).equals(fs.readFileSync(e.src))) why = "differs";
+    }
+    if (!why) continue;
+    listed.add(rel);
+    const dest = path.join(g.keep, rel);
+    if (within(g.keep, abs)) throw new Error("the keep folder is inside a path the archive replaces: " + abs);
+    if (lst(dest)) throw new Error("already exists, never written over: " + dest);
+    for (let d = path.dirname(dest); ; d = path.dirname(d)) { const s = lst(d); if (s) { if (!s.isDirectory()) throw new Error("not a folder: " + d); break; } }
+    const shown = show(abs) + (st.isDirectory() ? "/" : "");
+    lines.push(["keep", why, shown]);
+    moves.push({ g, abs, rel, dest, why, show: shown });
+  }
+}
+
+// Move a path aside: a rename, or across devices a copy (modes, links as links) and then a delete.
+function moveAside(from, to) {
+  try { fs.renameSync(from, to); return; } catch (e) { if (e.code !== "EXDEV") throw e; }
+  (function copy(a, b) {
+    const s = fs.lstatSync(a);
+    if (s.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(a), b);
+    else if (s.isDirectory()) { fs.mkdirSync(b); for (const n of fs.readdirSync(a)) copy(path.join(a, n), path.join(b, n)); fs.chmodSync(b, s.mode & 0o7777); }
+    else { fs.copyFileSync(a, b); fs.chmodSync(b, s.mode & 0o7777); fs.utimesSync(b, s.atime, s.mtime); }
+  })(from, to);
+  fs.rmSync(from, { recursive: true, force: true });
 }
 
 const COMMANDS = {

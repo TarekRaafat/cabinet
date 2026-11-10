@@ -7,7 +7,8 @@
 #   bin/backup.sh create [dest-dir]            one archive now (default: CABINET_BACKUP_DIR in cabinet.env)
 #   bin/backup.sh verify [dest-dir] [--json]   restore the newest archive into a temporary folder,
 #                                              check it against the workspace and its repos, delete it
-#   bin/backup.sh restore <archive> [dir]      rebuild a workspace and its repos from an archive
+#   bin/backup.sh restore <archive> [dir] [--force]
+#                                              rebuild a workspace and its repos from an archive
 #                                              (below; it runs before any workspace exists)
 #
 # Passphrase: $CABINET_BACKUP_PASSPHRASE, else the item cabinet.<slug>.backup in the login
@@ -19,28 +20,39 @@
 # a repo it would copy itself into every later archive and could be committed.
 # Reads repos; never changes them.
 set -euo pipefail
-usage="usage: bin/backup.sh create [dest-dir] | verify [dest-dir] [--json] | restore <archive> [dir]"
+usage="usage: bin/backup.sh create [dest-dir] | verify [dest-dir] [--json] | restore <archive> [dir] [--force]"
 
 # Restore from an archive written by bin/backup.sh. Never loses a file:
 # - a repo that already exists gets the archive's branches under refs/remotes/backup/
 #   to compare and merge by hand;
 # - a missing repo, or an empty folder, is restored with its uncommitted work;
 # - in the workspace folder itself, or a project folder that holds nothing but the
-#   workspace being restored, files are checked out in place, and any file the
-#   archive would replace with different content (tracked or untracked) is first
-#   copied to recovered/;
+#   workspace being restored, files are checked out in place, and any path the archive
+#   would replace or delete (a file with other content, tracked or untracked, a file
+#   where a folder goes, a folder where a file goes) is first moved to recovered/;
 # - any other folder that already holds files is left alone, and the repo is
 #   restored into recovered/<archive>/<name>/repo instead.
-# Stashes are left as patches.
+# Stashes are left as patches. It reads the whole archive, and moves aside (or with --force,
+# after yes at a terminal, deletes) what is in the way, before it writes anything (kit rule 5:
+# node lib.js delete-plan incoming). A restore stopped half way finishes when run again.
 #
-#   bin/backup.sh restore <archive.tar.gz.enc> [workspace-dir]
+#   bin/backup.sh restore <archive.tar.gz.enc> [workspace-dir] [--force]
 #
 # Passphrase as in backup.sh. Then run bin/bootstrap.sh and bin/doctor.sh.
 # Needs no cabinet.env: it may run before the workspace exists.
 b_restore() {
-source "$(dirname "$0")/platform.sh"   # pass_get, human_stamp
-archive="${1:-}"; [[ -n "$archive" ]] || { echo "usage: bin/backup.sh restore <archive> [workspace-dir]" >&2; exit 2; }
-target="${2:-$(cd "$(dirname "$0")/.." && pwd)}"
+source "$(dirname "$0")/platform.sh"   # pass_get, human_stamp, term_text
+local rusage="usage: bin/backup.sh restore <archive> [workspace-dir] [--force]" a
+archive="" target="" force=0
+for a in "$@"; do
+  case "$a" in
+    --force) force=1 ;;
+    -*) echo "$rusage" >&2; exit 2 ;;
+    *) if [[ -z "$archive" ]]; then archive=$a; elif [[ -z "$target" ]]; then target=$a; else echo "$rusage" >&2; exit 2; fi ;;
+  esac
+done
+[[ -n "$archive" ]] || { echo "$rusage" >&2; exit 2; }
+target="${target:-$(cd "$(dirname "$0")/.." && pwd)}"
 slug="$(basename "$archive")"; slug="${slug%.tar.gz.enc}"; slug="${slug%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*}"
 pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "cabinet.$slug.backup" || true)}"
 [[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or add cabinet.$slug.backup to the $PASS_STORE: $(pass_add_cmd "cabinet.$slug.backup")" >&2; exit 1; }
@@ -48,7 +60,23 @@ pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "cabinet.$slug.backup" || true)}"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass fd:3 3<<<"$pass" < "$archive" | tar -C "$tmp" -xzf -
 src="$(echo "$tmp"/"$slug"-*)"
-mkdir -p "$target"; target="$(cd "$target" && pwd -P)"
+# Nothing is created before the question: a folder is named as it will be (its deepest existing
+# parent resolved, the rest as given), and a missing one reads as empty.
+real() {
+  local p=$1 out=/ c
+  local parts
+  [[ "$p" == /* ]] || p="$PWD/$p"
+  IFS=/ read -r -a parts <<<"$p"
+  for c in "${parts[@]}"; do
+    case "$c" in
+      "" | .) ;;
+      ..) if [[ -d "$out" ]]; then out="$(cd "$out/.." && pwd -P)"; else out="${out%/*}"; out="${out:-/}"; fi ;;
+      *) if [[ -d "${out%/}/$c" ]]; then out="$(cd "${out%/}/$c" && pwd -P)"; else out="${out%/}/$c"; fi ;;
+    esac
+  done
+  printf '%s\n' "$out"
+}
+target="$(real "$target")"
 kept="$target/recovered/$(basename "$src")"
 stamp="${src##*/}"; stamp="${stamp#"$slug"-}"
 echo "Restoring $slug from the backup of $(human_stamp "$stamp") into $target"
@@ -65,81 +93,95 @@ branch_of() {
   echo "$b"
 }
 
-# Extract a tar of files into a folder, first copying any existing file it would change to <keep>.
-extract_keeping() {  # extract_keeping <tar> <folder> <keep-folder>
-  local t=$1 into=$2 keep=$3 x f n=0
-  x="$(mktemp -d)"; tar -C "$x" -xf "$t"
-  while IFS= read -r -d '' f; do
-    f="${f#./}"
-    # A folder or link where the archive has a file is moved aside whole, so extraction cannot fail on it.
-    if [[ -d "$into/$f" || -L "$into/$f" ]]; then mkdir -p "$keep/$(dirname "$f")"; mv "$into/$f" "$keep/$f"; n=$((n + 1))
-    elif [[ -e "$into/$f" ]] && ! cmp -s "$x/$f" "$into/$f"; then mkdir -p "$keep/$(dirname "$f")"; cp -p "$into/$f" "$keep/$f"; n=$((n + 1)); fi
-  done < <(cd "$x" && find . -type f -print0)
-  tar -C "$into" -xf "$t"; rm -rf "$x"
-  ((n == 0)) || echo "    $n existing file(s) differed from the archive; your copies are in $keep"
-}
-
 # Point HEAD at the archived branch, or at the archived commit when the repo was detached.
 set_head() {  # set_head <repo> <bundle> <branch-ref or empty>
   if [[ -n "$3" ]]; then git -C "$1" symbolic-ref HEAD "$3"
   else git -C "$1" fetch -q "$2" HEAD && git -C "$1" update-ref --no-deref HEAD FETCH_HEAD; fi
 }
 
+# Every member name of a tar the archive holds, checked on the names before anything relies on tar's
+# own handling (GNU tar and bsdtar differ): absolute, or with a .. part, and nothing is restored.
+check_tar() {  # check_tar <tar> <what it is>
+  local n m
+  [[ -f "$1" ]] || return 0
+  while IFS= read -r n; do
+    m="$n"; while [[ "$m" == ./* ]]; do m="${m#./}"; done
+    if [[ "$m" == /* || "/$m/" == */../* ]]; then
+      echo "the archive's $2 holds a path outside its folder, so nothing was restored: $(printf '%s\n' "$n" | term_text)" >&2; exit 1
+    fi
+  done < <(tar -tf "$1")
+}
+
+# In the temporary folder only: a repo's archived commit (base) and that commit with the archive's
+# uncommitted patch applied (tree), compared with what is in the folder; tree is empty when the patch
+# does not apply.
+prep() {  # prep <archived repo> <bare repo here>
+  local o=$1 g=$2 head
+  base="" tree=""
+  [[ -f "$o/repo.bundle" ]] || return 0
+  git init -q --bare "$g" && git -C "$g" fetch -q "$o/repo.bundle" '+refs/heads/*:refs/heads/*' 2>/dev/null || return 0
+  head="$(branch_of "$o")"
+  if [[ -n "$head" ]]; then base="$(git -C "$g" rev-parse -q --verify "$head^{commit}" || true)"
+  else base="$(git -C "$g" fetch -q "$o/repo.bundle" HEAD && git -C "$g" rev-parse FETCH_HEAD || true)"; fi
+  [[ -n "$base" ]] || return 0
+  GIT_INDEX_FILE="$g/restore-index" git -C "$g" read-tree "$base"
+  if [[ ! -s "$o/worktree.patch" ]] || GIT_INDEX_FILE="$g/restore-index" git -C "$g" apply --cached --binary "$o/worktree.patch" 2>/dev/null; then
+    tree="$(GIT_INDEX_FILE="$g/restore-index" git -C "$g" write-tree)"
+  fi
+}
+
 # Sessions (bin/session.sh) the archive holds for a repo. Restored as worktrees at sessions/<repo>/<name>/ on
 # their branch, with their changes, into a repo restored fresh where that folder is missing; else their
 # patch and files go to recovered/, and nothing that exists is changed.
-restore_sessions() {  # restore_sessions <name> <archived repo> <the repo when restored fresh, else empty>
-  local name=$1 o=$2 repo=$3 so s sb w
+restore_sessions() {  # restore_sessions <name> <archived repo> <the repo when restored fresh, else empty> <keep folder>
+  local name=$1 o=$2 repo=$3 keep=$4 so s sb w
   for so in "$o"/sessions/*/; do
     [[ -d "$so" ]] || continue
     s="$(basename "$so")" sb="$(cat "$so/branch" 2>/dev/null || true)" w="$target/sessions/$name/$(basename "$so")"
-    if [[ -n "$repo" && "$repo" != "$kept"/* && "$s" =~ ^[a-z0-9][a-z0-9-]{0,39}$ && "$sb" == "session/$s" && ! -e "$w" ]] \
+    if [[ -n "$repo" && "$repo" != "$keep"/* && "$s" =~ ^[a-z0-9][a-z0-9-]{0,39}$ && "$sb" == "session/$s" && ! -e "$w" ]] \
       && mkdir -p "$target/sessions/$name" && { [[ -e "$target/sessions/.gitignore" ]] || printf '*\n' > "$target/sessions/.gitignore"; } \
       && git -C "$repo" worktree add -q "$w" "$sb" 2>/dev/null; then
       { [[ ! -s "$so/worktree.patch" ]] || git -C "$w" apply --binary "$so/worktree.patch"; } && { [[ ! -f "$so/untracked.tar" ]] || tar -C "$w" -xf "$so/untracked.tar"; } \
         && echo "    session $s restored at $w, on $sb" || echo "    session $s: restored at $w on $sb, but its uncommitted changes did not apply (they are in the archive's repos/$name/sessions/$s/)"
     else
-      mkdir -p "$kept/$name/sessions/$s"; cp -p "$so"/* "$kept/$name/sessions/$s/" 2>/dev/null || true
-      echo "    session $s: its uncommitted changes and untracked files are in $kept/$name/sessions/$s"
+      mkdir -p "$keep/sessions/$s"; cp -p "$so"/* "$keep/sessions/$s/" 2>/dev/null || true
+      echo "    session $s: its uncommitted changes and untracked files are in $keep/sessions/$s"
     fi
   done
 }
 
-restore_one() {
-  local name=$1 o=$2 repo=$3 inplace=$4 head f n
+# The writes for one repo, after the one delete-plan call has moved aside what was in their way.
+restore_one() {  # restore_one <name> <archived repo> <folder> <in place: 0 or 1> <keep folder>
+  local name=$1 o=$2 repo=$3 inplace=$4 keep=$5 head f
   if [[ ! -f "$o/repo.bundle" ]]; then
     # A repo with no commits yet was archived as its files only.
-    if [[ -f "$o/untracked.tar" ]]; then mkdir -p "$repo"; extract_keeping "$o/untracked.tar" "$repo" "$kept/$name"; echo "  $name: files restored (it had no commits)"; fi
+    if [[ -f "$o/untracked.tar" ]]; then mkdir -p "$repo"; tar -C "$repo" -xf "$o/untracked.tar"; echo "  $name: files restored (it had no commits)"; fi
     return 0
   fi
-  if [[ -e "$repo/.git" ]]; then
+  if [[ -e "$repo/.git" && ! -e "$repo/.git/cabinet-restore" ]]; then
     git -C "$repo" fetch -q "$o/repo.bundle" '+refs/heads/*:refs/remotes/backup/*'
     echo "  $name exists: archive branches fetched to refs/remotes/backup/*; compare and merge by hand"
-    mkdir -p "$kept/$name"; cp -p "$o"/*.patch "$o"/untracked.tar "$kept/$name/" 2>/dev/null || true
-    restore_sessions "$name" "$o" ""
+    mkdir -p "$keep"; cp -p "$o"/*.patch "$o"/untracked.tar "$keep/" 2>/dev/null || true
+    restore_sessions "$name" "$o" "" "$keep"
     return 0
   fi
   head="$(branch_of "$o")"
   if [[ -n "$(ls -A "$repo" 2>/dev/null)" ]]; then
     if ((inplace == 0)); then
       # A folder that holds files of its own is never turned into a repo.
-      echo "  $name: $repo already holds files and is not a repo, so it is left alone; restored into $kept/$name/repo instead"
-      repo="$kept/$name/repo"; mkdir -p "$(dirname "$repo")"
+      echo "  $name: $repo already holds files and is not a repo, so it is left alone; restored into $keep/repo instead"
+      repo="$keep/repo"; mkdir -p "$(dirname "$repo")"
       git clone -q --no-checkout "$o/repo.bundle" "$repo"
       git -C "$repo" fetch -q --update-head-ok "$o/repo.bundle" '+refs/heads/*:refs/heads/*'
       set_head "$repo" "$o/repo.bundle" "$head"; git -C "$repo" reset -q --hard
     else
-      # Check out in place, after copying every file it would replace with different content.
+      # Check out in place: what was in the way is already moved aside. The marker makes a run stopped
+      # from here on take this branch again, and finish.
       git -C "$repo" init -q
+      : > "$repo/.git/cabinet-restore"
       git -C "$repo" fetch -q --update-head-ok "$o/repo.bundle" '+refs/heads/*:refs/heads/*'
       set_head "$repo" "$o/repo.bundle" "$head"
       git -C "$repo" read-tree HEAD
-      n=0
-      while IFS= read -r -d '' f; do
-        [[ -e "$repo/$f" ]] || continue
-        mkdir -p "$kept/$name/$(dirname "$f")"; cp -p "$repo/$f" "$kept/$name/$f"; n=$((n + 1))
-      done < <(git -C "$repo" diff --name-only -z)
-      ((n == 0)) || echo "  $name: $n existing file(s) differed from the archive; your copies are in $kept/$name"
       git -C "$repo" reset -q --hard
     fi
   else
@@ -152,33 +194,89 @@ restore_one() {
   git -C "$repo" remote remove origin 2>/dev/null || true
   [[ -s "$o/origin" ]] && git -C "$repo" remote add origin "$(cat "$o/origin")"
   [[ -s "$o/worktree.patch" ]] && git -C "$repo" apply --binary "$o/worktree.patch"
-  [[ -f "$o/untracked.tar" ]] && extract_keeping "$o/untracked.tar" "$repo" "$kept/$name"
+  [[ -f "$o/untracked.tar" ]] && tar -C "$repo" -xf "$o/untracked.tar"
+  rm -f "$repo/.git/cabinet-restore"
   echo "  $name: restored with its uncommitted work"
-  if ls "$o"/stash-*.patch >/dev/null 2>&1; then mkdir -p "$kept/$name"; cp -p "$o"/stash-*.patch "$kept/$name/"; echo "    stashes kept as patches in $kept/$name"; fi
-  restore_sessions "$name" "$o" "$repo"
+  if ls "$o"/stash-*.patch >/dev/null 2>&1; then mkdir -p "$keep"; cp -p "$o"/stash-*.patch "$keep/"; echo "    stashes kept as patches in $keep"; fi
+  restore_sessions "$name" "$o" "$repo" "$keep"
   if [[ -f "$o/env.tar" ]]; then
     while IFS= read -r f; do
-      if [[ -e "$repo/$f" ]]; then echo "    $f exists, left as is"; else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored $f"; fi
+      if [[ -e "$repo/$f" ]]; then echo "    ${f#./} exists, left as is"; else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored ${f#./}"; fi
     done < <(tar -tf "$o/env.tar")
   fi
 }
 
-restore_one workspace "$src/workspace" "$target" 1
-for o in "$src"/repos/*/; do
-  [[ -d "$o" ]] || continue
-  name="$(basename "$o")"
-  [[ "$name" =~ ^[A-Za-z0-9._-]+$ && "$name" != . && "$name" != .. ]] || { echo "  skipped an archived repo with an unusable name"; continue; }
-  # Where repos.tsv (restored first, with the workspace) says the repo lives; default <workspace>/<name>.
-  p="$(awk -F'\t' -v n="$name" '{ sub(/\r$/, "") } !/^#/ && $1 == n {print $5}' "$target/repos.tsv" 2>/dev/null)"; p="${p:-$name}"
-  case "$p" in /*) repo="$p" ;; "~/"*) repo="$HOME/${p#"~/"}" ;; *) repo="$target/$p" ;; esac
-  mkdir -p "$repo"; repo="$(cd "$repo" && pwd -P)"
-  # In place only when the folder holds nothing but the workspace just restored (the project around cabinet/).
-  inplace=0
-  others="$(ls -A "$repo" | { [[ "$target" == "$repo"/* ]] && grep -vxF "$(basename "$target")" || cat; } || true)"
-  [[ -z "$others" ]] && inplace=1
-  restore_one "$name" "${o%/}" "$repo" "$inplace"
+# 1. Read everything, in the temporary folder only: each repo's folder (from the archived repos.tsv,
+# never the target's, which is the one about to be replaced), its in-place choice on that folder as
+# it is now, its keep folder, and what it would write over.
+names=() outs=() dirs=() inplaces=() keeps=() plan=()
+i=0
+for o in "$src/workspace" "$src"/repos/*/; do
+  o="${o%/}"; [[ -d "$o" ]] || continue
+  if [[ "$o" == "$src/workspace" ]]; then name=workspace repo="$target" inplace=1
+  else
+    name="$(basename "$o")"
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ && "$name" != . && "$name" != .. ]] || { echo "  skipped an archived repo with an unusable name"; continue; }
+    # Where the archived repos.tsv says the repo lives; default <workspace>/<name>.
+    p="$(awk -F'\t' -v n="$name" '{ sub(/\r$/, "") } !/^#/ && $1 == n {print $5}' "$tmp/repos.tsv" 2>/dev/null)"; p="${p:-$name}"
+    case "$p" in /*) repo="$p" ;; "~/"*) repo="$HOME/${p#"~/"}" ;; *) repo="$target/$p" ;; esac
+    repo="$(real "$repo")"
+    # In place only when the folder holds nothing but the workspace just restored (the project around
+    # cabinet/), or a restore of it stopped half way.
+    inplace=0
+    others="$(ls -A "$repo" 2>/dev/null | { [[ "$target" == "$repo"/* ]] && grep -vxF "$(basename "$target")" || cat; } || true)"
+    [[ -z "$others" || -e "$repo/.git/cabinet-restore" ]] && inplace=1
+  fi
+  check_tar "$o/untracked.tar" "untracked files of $name"
+  check_tar "$o/env.tar" ".env files of $name"
+  for so in "$o"/sessions/*/; do [[ ! -d "$so" ]] || check_tar "$so/untracked.tar" "untracked files of a session of $name"; done
+  prep "$o" "$tmp/g/$i"
+  if [[ "$name" == workspace && "$o" == "$src/workspace" ]]; then
+    : > "$tmp/repos.tsv"
+    [[ -z "$base" ]] || git -C "$tmp/g/$i" show "${tree:-$base}:repos.tsv" > "$tmp/repos.tsv" 2>/dev/null || true
+    [[ -s "$tmp/repos.tsv" || ! -f "$o/untracked.tar" ]] || tar -xOf "$o/untracked.tar" repos.tsv > "$tmp/repos.tsv" 2>/dev/null || true
+  fi
+  # One keep folder per repo per run, never one that exists, so a second run never writes over the first's.
+  keep="$kept/$name" n=2
+  while [[ -e "$keep" || -L "$keep" ]]; do keep="$kept/$name-$n"; n=$((n + 1)); done
+  # A folder restore writes over: a no-commit repo's (its files extracted whatever it holds), or one
+  # checked out in place. Every other case writes into a new or empty folder, or into recovered/.
+  if [[ -d "$repo" && -n "$(ls -A "$repo" 2>/dev/null)" ]]; then
+    x="$tmp/x/$i"
+    if [[ -f "$o/untracked.tar" ]]; then mkdir -p "$x"; tar -C "$x" -xf "$o/untracked.tar"; fi
+    if [[ ! -f "$o/repo.bundle" ]]; then
+      [[ ! -d "$x" ]] || plan+=(incoming "$repo" --from "$x" --keep "$keep")
+    elif ((inplace)) && [[ ! -e "$repo/.git" || -e "$repo/.git/cabinet-restore" ]]; then
+      [[ -n "$tree" ]] || { echo "the archive's uncommitted changes of $name do not apply to its commit, so nothing was restored" >&2; exit 1; }
+      plan+=(incoming "$repo" --git "$tmp/g/$i" "$base" "$tree")
+      [[ ! -d "$x" ]] || plan+=(--from "$x")
+      plan+=(--keep "$keep")
+    fi
+  fi
+  names+=("$name") outs+=("$o") dirs+=("$repo") inplaces+=("$inplace") keeps+=("$keep")
+  i=$((i + 1))
 done
 
+# 2. One call for the whole restore: it lists every path in the way, asks the one --force question
+# when given, and only then moves each aside (or deletes it). A refusal or a no changes nothing.
+if ((${#plan[@]})); then
+  ((force)) && plan+=(--force)
+  node "$(dirname "$0")/lib.js" delete-plan "${plan[@]}" || exit 1
+fi
+
+# 3. Then the writes, repo by repo.
+mkdir -p "$target"
+for ((i = 0; i < ${#names[@]}; i++)); do
+  repo="${dirs[i]}" inplace="${inplaces[i]}"
+  if [[ "${names[i]}" != workspace || "${outs[i]}" != "$src/workspace" ]]; then
+    # Made in place again now: the project around the workspace holds the workspace just restored.
+    inplace=0
+    others="$(ls -A "$repo" 2>/dev/null | { [[ "$target" == "$repo"/* ]] && grep -vxF "$(basename "$target")" || cat; } || true)"
+    [[ -z "$others" || -e "$repo/.git/cabinet-restore" ]] && inplace=1
+    mkdir -p "$repo"
+  fi
+  restore_one "${names[i]}" "${outs[i]}" "$repo" "$inplace" "${keeps[i]}"
+done
 # Claude Code memory and settings, only where missing.
 if [[ -d "$src/claude" ]]; then
   cslug="$(node "$(dirname "$0")/lib.js" slug "$(cd "$target" && pwd)")"

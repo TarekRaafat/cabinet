@@ -31,20 +31,23 @@ Or set `CABINET_BACKUP_PASSPHRASE` in the environment. Never put it in `cabinet.
 ## Restoring
 
 ```sh
-bin/backup.sh restore <archive> [folder]     # folder: where the workspace goes (default: this workspace)
+bin/backup.sh restore <archive> [folder] [--force]   # folder: where the workspace goes (default: this workspace)
 bin/bootstrap.sh                      # then guardrails, links and schedules
 bin/doctor.sh
 ```
 
-On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file:
+On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file. It reads the whole archive before it writes anything: each repo's folder comes from the `repos.tsv` in the archive, never the one in the folder being restored over (a path there can be absolute or under `~`), and an archive member with an absolute path or a `..` part stops it, naming the member, with nothing written. Then:
 
 - **A repo that already exists** gets the archive's branches under `refs/remotes/backup/*`, to compare and merge by hand. Its patches are copied to `recovered/`.
 - **A missing repo, or an empty folder,** is restored with its uncommitted work, on the branch it was on (or detached, as it was).
-- **The workspace folder itself, or a project folder holding nothing but the workspace being restored** (the inside layout), is checked out in place. Any file the archive would replace with different content, tracked or untracked, is first copied to `recovered/<archive>/`.
+- **The workspace folder itself, or a project folder holding nothing but the workspace being restored** (the inside layout), is checked out in place. Every path in the way is first moved to `recovered/<archive>/<repo>/`, at the same path, and the restore goes on: a file with other content than the archive's, tracked or untracked; a file where the archive has a folder (a file `specs` where it has `specs/x.md`, or a file `notes/drafts` where its untracked files have `notes/drafts/idea.md`); a folder where it has a file (a folder `README.md/`); a file the archive added without committing it (`added.md` staged), or deleted without committing (`gone.md`), when the folder holds one of that name. A repo with no commits is archived as its files and restored into its folder whatever it holds, so what is in its way is moved aside the same way, even in a folder outside the workspace.
 - **Any other folder that already holds files of its own** is left alone, and the repo is restored into `recovered/<archive>/<name>/repo` instead. A folder such as your home folder is never turned into a repo.
 - **Sessions** come back as worktrees at `sessions/<repo>/<name>/`, on their branch, with their uncommitted changes and untracked files, when their repo is restored fresh and that folder is missing. Where the repo already exists, or the session's folder does, its patch and untracked files go to `recovered/<archive>/<repo>/sessions/<name>/`, and nothing that exists changes.
 - `.env` files are restored only where missing. Stashes are kept as patches in `recovered/`.
 - Claude Code memory and settings are restored only where missing.
+- **Run again, it never writes over what it kept:** each run keeps aside into a folder that does not exist yet (`recovered/<archive>/<repo>-2`, `-3`, ...), and names it.
+- **Stopped half way** (a full disk, a failed command), it finishes when run again: a folder it was checking out in place holds `.git/cabinet-restore` until the checkout and the untracked files are done, and the next run checks it out in place again instead of only fetching.
+- **`--force`** deletes what is in the way instead of keeping it, after listing it all at once, before anything is written, including in a repo's folder outside the workspace: it asks at the terminal and deletes only when you type `yes`. Anything else, no terminal (an agent's command), or a scheduled run, changes nothing.
 
 Inside a project with the private layout, the pointer files (`CLAUDE.local.md` and the others) are ignored by the project's git and so not in the archive: `bin/role.sh build`, run by bootstrap, rebuilds them.
 
