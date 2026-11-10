@@ -1085,6 +1085,17 @@ done
 qs='Text holding `$`, a backtick or a backslash goes in single quotes or a quoted here-document, never double quotes: the shell would run it first.'
 grep -qF "$qs" "$KIT/core/CABINET.md" && grep -qF "$qs" "$KIT/docs/commands.md" || fail "CABINET.md or docs/commands.md does not say to put handoff text in single quotes"
 sed -n '/^#   bin\/handoff.sh add /,/^#   bin\/handoff.sh attach /p' "$KIT/scripts/handoff.sh" | sed 's/^# *//' | tr '\n' ' ' | grep -qF "$qs" || fail "the usage of handoff add in scripts/handoff.sh does not say to put text in single quotes"
+# The delete rule: kit rule 5 points at the helper; the README line for each command that deletes says
+# it lists, keeps or refuses, and that --force asks at a terminal; help --json has each --force.
+grep -E '^5\. \*\*Never lose a user' "$KIT/AGENTS.md" | grep -qF '`delete-plan` in `scripts/lib.js`' || fail "AGENTS.md rule 5 does not name delete-plan in scripts/lib.js"
+for c in 'cabinet session end' 'cabinet remove' 'cabinet update' 'cabinet backup restore'; do
+  l="$(grep -F "\`$c\`" "$KIT/README.md" | grep -F 'lists' | grep -F '`--force`' | grep -F 'asking at a terminal' || true)"
+  [[ -n "$l" ]] && grep -qE 'refuses|keeping' <<<"$l" || fail "README has no line saying $c lists, keeps or refuses, and that --force asks at a terminal"
+done
+for c in "session end" update "backup restore"; do
+  "$F" help $c --json | j -e '$.commands[0].options.some((o) => o.name == "--force")' >/dev/null || fail "help $c --json does not list --force"
+done
+"$F" help remove --json | j -e '$.commands[0].options.some((o) => o.name == "--force" && /at a terminal/.test(o.text))' >/dev/null || fail "help remove --json: --force does not say it asks at a terminal"
   return 0   # a last "check && fail" line must not end the run
 }
 

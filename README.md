@@ -75,7 +75,7 @@ New to Cabinet? The [tutorial](docs/tutorial.md) walks through the first day. Th
 | Guide | A standing document the agents follow, such as a brand guide, style guide, policy or business document. It lives in `guides/`, with a row in `AGENTS.md`. |
 | Role | An agent's job description: what it owns, decides, escalates and may write. Kit roles live in `.cabinet/roles/`; a project adds notes in `roles/`. |
 | Spec | One file per feature in `specs/`: the problem, the rules, testable acceptance criteria, your decisions, and the builders' plan. Work bigger than a small task is built only from a spec that is ready. |
-| Session | A folder of its own for one agent session in a repo (a git worktree on a branch `session/<name>`), so several sessions work at once without touching each other's changes: `cabinet session start`. You merge its work. See [sessions](docs/concepts.md#sessions). |
+| Session | A folder of its own for one agent session in a repo (a git worktree on a branch `session/<name>`), so several sessions work at once without touching each other's changes: `cabinet session start`. You merge its work. `cabinet session end` lists what deleting its folder would lose and refuses work that exists nowhere else, changing nothing; `--force` deletes it after asking at a terminal. See [sessions](docs/concepts.md#sessions). |
 | Handoff | One entry in `HANDOFFS.md`: who it is for, what changed, what they need to do. The only channel between agents. |
 | Sign-off queue | The top of `BRIEF.md`: every decision waiting on you. |
 | Tiers | Who decides what: the agent (reversible, in its own files), its lead (reversible, across repos), or you (irreversible, public, or costs money). |
@@ -150,7 +150,7 @@ It asks, each with a default you keep by pressing Enter:
 - which roles to enable (chief-of-staff is always on: it writes the brief and routes work);
 - the agent tool that runs scheduled jobs, the brief time (`7 AM`, days and a time like `fri 4 PM`, or `off`), and the first day of the week;
 - whether a commit a role makes in a Cabinet run credits that role beside you, with one `Co-authored-by` line that shows the Cabinet Team avatar on GitHub (`on`, the default, or `off`; [credit roles](docs/concepts.md#credit-roles));
-- a folder for the encrypted daily backup, outside the workspace (or `off`);
+- a folder for the encrypted daily backup, outside the workspace (or `off`); `cabinet backup restore` brings one back, and first lists every file in its way, keeping each in `recovered/` (`--force` deletes them instead, after asking at a terminal);
 - the product repos, as git URLs.
 
 It shows a summary, creates and commits the workspace, then offers to pin the kit (`npm install`) and to set up the machine (`bin/bootstrap.sh`, shown as a dry run first).
@@ -205,11 +205,11 @@ npm update            # take a newer version
 cabinet update        # apply it: replace kit files, rebuild roles, print the changelog since your version
 ```
 
-`cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited in the workspace: it stops and names it. In a workspace with its own git it commits itself (`cabinet: update to <version>`); when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run. Without a global install, use `npx cabinet` in place of `cabinet`.
+`cabinet update` also says when a newer version is out, with the command that takes it; it installs nothing itself. An update never overwrites a kit file you edited in the workspace: `cabinet update` first lists each one and refuses, changing nothing; `--force` replaces them after asking at a terminal. In a workspace with its own git it commits itself (`cabinet: update to <version>`); when it cannot (a shared `cabinet/`, or uncommitted edits of yours in the files it rewrites), it ends with the commit to run. Without a global install, use `npx cabinet` in place of `cabinet`.
 
 ## Remove Cabinet
 
-- **A workspace:** `cabinet remove` (`--dry-run` shows the plan first). It stops the workspace's schedules, deletes its folder, and inside a project removes what setup added there. It refuses work that exists nowhere else unless `--force`. Details: [commands](docs/commands.md#cabinet-remove).
+- **A workspace:** `cabinet remove` (`--dry-run` shows the plan first). It stops the workspace's schedules, deletes its folder, and inside a project removes what setup added there. It first lists what deleting the folder would lose and refuses work that exists nowhere else, changing nothing; `--force` deletes it after asking at a terminal. Details: [commands](docs/commands.md#cabinet-remove).
 - **The guardrails:** they stay in your agent tools' settings, since other workspaces may rely on them. Bootstrap saved a `.bak` copy of every file it changed; see [guardrails](docs/guardrails.md#undoing-the-guardrails).
 - **The command:** `npm rm -g @tarekraafat/cabinet`.
 
