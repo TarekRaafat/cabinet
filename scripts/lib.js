@@ -1289,24 +1289,113 @@ function weekStart(first, now) {
   process.stdout.write(new Date(n.getFullYear(), n.getMonth(), n.getDate() - (n.getDay() - first + 7) % 7).getTime() / 1000 + "\n");
 }
 
-// kit-edited <workspace> <manifest>: the manifest's files (lines "<sha256> <path>") that differ from it, or
-// "<path> (missing)", on one line with spaces between; nothing when all match or there is no manifest.
-function kitEdited(ws, manifest) {
-  let lines = [];
-  try { lines = fs.readFileSync(manifest, "utf8").split("\n"); } catch (e) { return; }
-  const edited = [];
-  for (const l of lines) {
-    const m = l.match(/^\s*(\S+)\s+(.*\S)\s*$/);
-    if (!m) continue;
-    const f = path.join(ws, m[2]);
-    let isFile = false;
-    try { isFile = fs.statSync(f).isFile(); } catch (e) { /* gone */ }
-    if (!isFile) { edited.push(m[2] + " (missing)"); continue; }
-    let sum = "";
-    try { sum = crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex"); } catch (e) { /* unreadable: counts as edited */ }
-    if (sum !== m[1]) edited.push(m[2]);
+// kit-map <kit>: every kit file as "<kit path> <workspace path>", from core/kit-files, the one list of what
+// the kit ships (never globbed, so a stray file in the kit is never placed). The list itself is never placed.
+function kitList(kit) {
+  const out = [];
+  for (const p of read(path.join(kit, "core/kit-files")).split("\n")) {
+    const to = p === "core/CABINET.md" ? "CABINET.md" : p.startsWith("core/rules/") ? ".cabinet/rules/" + p.slice(11)
+      : p.startsWith("scripts/") ? "bin/" + p.slice(8) : p.startsWith("roles/") ? ".cabinet/roles/" + p.slice(6)
+      : p.startsWith("guardrails/") ? ".cabinet/guardrails/" + p.slice(11) : "";
+    if (to && to !== "bin/" && !to.endsWith("/")) out.push([p, to]);
   }
-  if (edited.length) process.stdout.write(edited.join(" ") + "\n");
+  return out;
+}
+const kitMap = (kit) => put(1, kitList(kit).map((x) => x.join(" ") + "\n").join(""));
+
+// The kit source (ADR-009 section 4, ADR-010 C7 and C8): every kit file update, setup or the doctor would
+// add, replace or remove in <ws>, classed before anything is written. ok: missing, the kit's bytes already,
+// or unedited since the manifest; keep: edited (differs from its manifest line), not-kit (there, but the
+// kit never placed it, or a link or under a linked folder), file-in-way, folder-in-way. A file that left the
+// kit is removed when unedited, else it stays and leaves the manifest (not a refusal). Then, unless refused
+// or --dry-run, each file is written to <path>.cabinet-new beside it and renamed over the old (a new inode,
+// so a running script keeps the one it opened), then the manifest the same way. A manifest path that is
+// absolute or holds .. is never acted on. kit "-": the doctor's form, the manifest only: each file there
+// that differs from its line (missing files are the doctor's own check), no format check.
+const sha256 = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+function kitPlan(ws, kit, kitFormat, force, dry) {
+  try { ws = fs.realpathSync(ws); if (!fs.statSync(ws).isDirectory()) throw new Error(); } catch (e) { die("delete-plan: not a folder: " + escapePath(ws), 1); }
+  const man = path.join(ws, ".cabinet/manifest"), had = new Map(), lines = [];
+  let text = "";
+  try { text = read(man); } catch (e) { if (e.code !== "ENOENT") die("delete-plan: could not read " + escapePath(man) + "; nothing was changed", 1); }
+  for (const l of text.split("\n")) {
+    const i = l.indexOf(" "), p = l.slice(i + 1);
+    if (i > 0 && p && !p.startsWith("/") && !p.split("/").includes("..")) had.set(p, l.slice(0, i));
+  }
+  const hashOr = (p) => { try { return sha256(p); } catch (e) { return ""; } };   // unreadable: counts as edited
+  if (kit === "-") {
+    for (const [p, h] of had) { const s = lst(path.join(ws, p)); if (s && s.isFile() && hashOr(path.join(ws, p)) !== h) lines.push(["keep", "edited", p]); }
+    return decideKit(lines, [], [], [], force, true, false);
+  }
+  // The workspace's format (none is 0). Newer than the kit's: refused. Older: the steps from it to the
+  // kit's run here, before any write; 0 to 1 needs none (files that left the kit go below, as before).
+  const ff = path.join(ws, ".cabinet/format");
+  if (lst(ff)) {
+    let f = null;
+    try { const b = Buffer.alloc(32), fd = fs.openSync(ff, "r"); f = b.toString("utf8", 0, fs.readSync(fd, b, 0, 32, 0)); fs.closeSync(fd); } catch (e) { /* unreadable */ }
+    f = f === null ? "" : f.replace(/\n+$/, "");
+    if (!/^[0-9]{1,9}$/.test(f)) die("cabinet: " + escapePath(ff) + " is not a format number (one whole number), so nothing was changed: restore it (git -C \"" + escapePath(ws) + "\" checkout -- .cabinet/format), then run cabinet update again", 1);
+    if (Number(f) > Number(kitFormat)) die("cabinet: this workspace was set up by a newer Cabinet (format " + Number(f) + "); update the kit first", 1);
+  }
+  const linkedUp = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && s.isSymbolicLink()) return true; } return false; };
+  const inWay = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && !s.isDirectory()) return p; } return ""; };
+  const writes = [], removes = [], next = new Map(), notes = [];
+  for (const [src, dst] of kitList(kit)) {
+    const abs = path.join(ws, dst), s = lst(abs), h = had.get(dst), want = sha256(path.join(kit, src));
+    const w = { src, dst, abs, want, rm: "", why: "", linked: false };
+    if (linkedUp(abs) || (s && s.isSymbolicLink())) { w.why = "not-kit"; w.linked = linkedUp(abs); }
+    else if (inWay(abs)) { w.why = "file-in-way"; w.rm = inWay(abs); }
+    else if (s && !s.isFile()) { w.why = "folder-in-way"; w.rm = abs; }
+    else if (s) {
+      const cur = hashOr(abs);
+      if (cur === want) { next.set(dst, want); lines.push(["ok", "", dst]); continue; }
+      if (cur !== h) w.why = !h || h === "-" ? "not-kit" : "edited";
+    }
+    lines.push([w.why ? "keep" : "ok", w.why, dst]);
+    next.set(dst, w.why ? h || "-" : want);
+    w.verb = s ? "updated" : "added";
+    writes.push(w);
+  }
+  for (const [p, h] of had) {
+    if (next.has(p)) continue;
+    const abs = path.join(ws, p), s = lst(abs);
+    if (linkedUp(abs) || (s && s.isSymbolicLink())) notes.push("  left the kit but a link here, left as is: " + escapePath(p));
+    else if (s && (!s.isFile() || hashOr(abs) !== h)) notes.push("  left the kit but edited here, left as is: " + escapePath(p));
+    else if (s) removes.push(p);
+  }
+  return decideKit(lines, writes, removes, notes, force, dry, text !== "", { ws, kit, man, next });
+}
+function decideKit(lines, writes, removes, notes, force, dry, hadManifest, w) {
+  put(1, lines.filter((l) => dry || l[0] === "keep").map((l) => l[0] + "\t" + l[1] + "\t" + escapePath(l[2]) + "\n").join(""));
+  const keep = lines.filter((l) => l[0] === "keep");
+  if (dry) process.exit(keep.length ? 3 : 0);
+  const list = keep.map((l) => "  " + escapePath(l[2]) + "  (" + l[1] + ")").join("\n");
+  if (keep.length && !force) { err("Kit files edited here, or not the kit's, so nothing was changed:\n" + list); process.exit(3); }
+  if (keep.length) {
+    // A path under a linked folder is never written, --force or not: the rename would land outside.
+    const out = writes.filter((x) => x.why && x.linked);
+    if (out.length) die("cabinet: under a linked folder, so never written, and nothing was changed:\n" + out.map((x) => "  " + escapePath(x.dst)).join("\n"), 1);
+    const a = askForce(list, "Kit files edited here, or not the kit's, and with --force they are replaced:");
+    if (a !== 0) process.exit(a);
+    for (const x of writes) if (x.why) w.next.set(x.dst, x.want);
+  }
+  const say = [];
+  const swap = (abs, fill, mode) => { const t = abs + ".cabinet-new"; fs.rmSync(t, { force: true, recursive: true }); fill(t); fs.chmodSync(t, mode); fs.renameSync(t, abs); };
+  try {
+    for (const x of writes) {
+      if (x.rm) fs.rmSync(x.rm, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(x.abs), { recursive: true });
+      const k = path.join(w.kit, x.src), m = fs.statSync(k).mode & 0o777;
+      swap(x.abs, (t) => fs.copyFileSync(k, t), m | (x.dst.startsWith("bin/") && x.dst.endsWith(".sh") ? 0o111 : 0));
+      if (x.verb === "updated" || hadManifest) say.push("  " + x.verb + " " + escapePath(x.dst));
+    }
+    for (const p of removes) { fs.rmSync(path.join(w.ws, p), { force: true }); say.push("  removed " + escapePath(p) + " (no longer in the kit)"); }
+    fs.mkdirSync(path.dirname(w.man), { recursive: true });
+    const body = [...w.next].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([p, h]) => h + " " + p + "\n").join("");
+    swap(w.man, (t) => fs.writeFileSync(t, body), 0o644);
+  } catch (e) { die("cabinet: could not write the kit files: " + escapePath(String(e.message || e)) + "; half updated: run cabinet update again", 1); }
+  for (const s of [...say, ...notes]) err(s);
+  process.exit(0);
 }
 
 // delete-plan <source> ... [--force] [--dry-run]: the one check before a command deletes or overwrites
@@ -1317,6 +1406,8 @@ function kitEdited(ws, manifest) {
 //   repeated in one call (restore): every path in <target> the restore would replace or delete. The
 //   helper acts here: it moves each to its --keep (restore picks a folder that does not exist), or with
 //   --force deletes it, before the caller writes anything.
+//   kit <ws> <kit> <format>: every kit file update or setup would add, replace or remove (kitPlan above).
+//   The helper acts here: it writes them, then the manifest. kit <ws> - --dry-run: the doctor's form.
 // stdout: one line per path, "<verdict>\t<why>\t<path>", verdict ok or keep, the path relative to the
 // source's root (a folder with a trailing /, the root itself ./), escaped so no name can split a line;
 // ok lines only with --dry-run. For display and tests: no caller reads a path back. stderr: the one
@@ -1356,7 +1447,8 @@ function safeList(file) {
 
 function deletePlan(...argv) {
   const usage = "usage: node lib.js delete-plan folder <dir> [--repos <repos.tsv>] [--force] [--dry-run]\n" +
-    "       node lib.js delete-plan incoming <target> [--git <repo> <base> <tree>] [--from <dir>] --keep <dir> [incoming ...] [--force] [--dry-run]";
+    "       node lib.js delete-plan incoming <target> [--git <repo> <base> <tree>] [--from <dir>] --keep <dir> [incoming ...] [--force] [--dry-run]\n" +
+    "       node lib.js delete-plan kit <ws> <kit> <format> [--force] [--dry-run] | kit <ws> - --dry-run";
   const [source, ...rest] = argv;
   let force = false, dry = false, reposTsv = "";
   const pos = [], groups = [];
@@ -1370,12 +1462,16 @@ function deletePlan(...argv) {
     else if (g && rest[i] === "--git") { more(3); g.git = rest.slice(i + 1, i + 4); i += 3; }
     else if (g && rest[i] === "--from") { more(1); g.from = rest[++i]; }
     else if (g && rest[i] === "--keep") { more(1); g.keep = rest[++i]; }
-    else if (rest[i].startsWith("--") || source !== "folder") die(usage, 2);
+    else if (rest[i].startsWith("--") || (source !== "folder" && source !== "kit")) die(usage, 2);
     else pos.push(rest[i]);
   }
   if (source === "incoming") {
     if (!groups.every((g) => g.keep && (g.git || g.from))) die(usage, 2);
     return incoming(groups, force, dry);
+  }
+  if (source === "kit") {
+    if (pos[1] === "-" ? pos.length !== 2 || !dry : pos.length !== 3 || !/^[0-9]+$/.test(pos[2])) die(usage, 2);
+    return kitPlan(pos[0], pos[1], pos[2], force, dry);
   }
   if (source !== "folder" || pos.length !== 1) die(usage, 2);
   let root;
@@ -1732,7 +1828,7 @@ function moveAside(from, to) {
 
 const COMMANDS = {
   "delete-plan": deletePlan,
-  "kit-edited": kitEdited,
+  "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "verdict-origin": verdictOrigin,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,

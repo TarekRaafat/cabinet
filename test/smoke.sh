@@ -992,13 +992,14 @@ s22() {
 out="$("$W/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    kit files unedited' || fail "doctor: kit files"
 # One node hashes the manifest: an edited file and a missing one are both named, in the manifest's order.
-# Each is also asserted through the doctor: kit-edited prints nothing it cannot read, so a wrong call looks clean.
+# Each is also asserted through the doctor: delete-plan kit names only edited files (the doctor finds the
+# missing ones itself), so a wrong call looks clean.
 KE='FIX   kit files edited here (an update will refuse them; move the change to a project file or into the kit):'
 cp "$W/bin/doctor.sh" "$T/d.keep"; cp "$W/bin/handoff.sh" "$T/h.keep"; echo '# edited' >> "$W/bin/doctor.sh"; rm "$W/bin/handoff.sh"
-o="$(L kit-edited "$W" "$W/.cabinet/manifest")"; [[ "$o" == "bin/doctor.sh bin/handoff.sh (missing)" ]] || fail "kit-edited: $o"
+st=0; o="$(L delete-plan kit "$W" - --dry-run)" || st=$?; ((st == 3)) && [[ "$o" == "$(printf 'keep\tedited\tbin/doctor.sh')" ]] || fail "delete-plan kit -: $o"
 o="$("$W/bin/doctor.sh" 2>&1 || true)"; echo "$o" | grep -qF "$KE bin/doctor.sh bin/handoff.sh (missing)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name the edited and the missing file"; }
 cp "$T/d.keep" "$W/bin/doctor.sh"; cp "$T/h.keep" "$W/bin/handoff.sh"
-[[ -z "$(L kit-edited "$W" "$W/.cabinet/manifest")$(L kit-edited "$W" "$T/no-manifest")" ]] || fail "kit-edited on unedited files, or with no manifest"
+[[ -z "$(L delete-plan kit "$W" - --dry-run)" ]] && L delete-plan kit "$W" - --dry-run && L delete-plan kit "$T" - --dry-run || fail "delete-plan kit - on unedited files, or with no manifest"
 # An unreadable file counts as edited; root reads it anyway.
 if [[ "$(id -u)" != 0 ]]; then
   chmod 000 "$W/CABINET.md"; o="$("$W/bin/doctor.sh" 2>&1 || true)"; chmod 644 "$W/CABINET.md"
@@ -5178,7 +5179,7 @@ for a in --yes -y --bad; do up "$UW" "$a"; ((st == 2)) && [[ ! -e "$NP/log" ]] |
 # 7. In all of the above, update never ran npm for anything but the request, and never ran cabinet again.
 [[ ! -e "$NP/ran" && ! -e "$NP/took" ]] || fail "update ran npm or cabinet: $(cat "$NP/ran" "$NP/took" 2>&1)"
 # 8. The docs.
-grep -q '^cabinet update$' "$KIT/docs/commands.md" && grep -qF 'It installs nothing and asks nothing.' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" \
+grep -q '^cabinet update \[--force\]$' "$KIT/docs/commands.md" && grep -qF 'It installs nothing and asks nothing.' "$KIT/docs/commands.md" && grep -q 'and one each time you run `cabinet update`' "$KIT/docs/commands.md" \
   && grep -q '^| `NO_UPDATE_NOTIFIER` | next, status, doctor, update |' "$KIT/docs/commands.md" && grep -q '^| `CI` | next, status, doctor, update |' "$KIT/docs/commands.md" \
   && grep -q '^| `CABINET_TTY` | setup, config, remove |' "$KIT/docs/commands.md" && ! grep -qE 'update \[--yes\]|Run it now\?|ignore-scripts' "$KIT/docs/commands.md" || fail "the docs do not say what update does"
 for x in "$UW" "$PW" "$TW"; do wsrm "$x" || true; done
@@ -6797,7 +6798,7 @@ for x in kit bindir; do
   esac
   git -C "$W" add -A; git -C "$W" commit -qm "linked $x"
   [[ $x == bindir ]] && b4="$(dsnap "$T/k4-out-bin")"; up
-  ((st == 1)) && grep -qF 'left as is: bin/lib.sh' "$T/k4-out" && grep -qF 'so the version stays' "$T/k4-out" && [[ ! -e "$T/k4-missing" ]] \
+  ((st == 1)) && grep -qF 'bin/lib.sh  (not-kit)' "$T/k4-err" && grep -qF 'so the version stays' "$T/k4-out" && [[ ! -e "$T/k4-missing" ]] \
     && { [[ $x != bindir ]] || [[ "$(dsnap "$T/k4-out-bin")" == "$b4" ]]; } \
     || fail "update with a linked $x: exit $st, $(cat "$T/k4-out" "$T/k4-err")"
   rm -rf "$T/k4-lnk" "$T/k4-out-bin"
@@ -6807,6 +6808,116 @@ W="$CL"
 rm "$KC/core/kit-files"; up
 ((st == 1)) && grep -qF 'has no core/kit-files' "$T/k4-err" || fail "update with no core/kit-files: exit $st"
 rm -rf "$T"/k4-*
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "delete rule 5: update" ""
+s98() {
+# Criteria 44 to 51 of specs/delete-rule.md: update plans every kit file before it writes any, writes each
+# through <path>.cabinet-new and a rename, then the manifest; --force asks at a terminal; the roles and the
+# manual are rebuilt before the format and the version, so a failure leaves the old version; the doctor and
+# setup's clash check read the same call (delete-plan kit).
+local KC="$T/k5-kit" K2="$T/k5-kit2" OK="$T/k5-oldkit" sf="$T/k5-status" W V st o b4 x i n j1 j2 jl jp
+V="$(j -r '$.version' "$KIT/package.json")"
+kcopy() { mkdir -p "$1"; (cd "$KIT" && tar --exclude .git --exclude node_modules -cf - .) | tar -C "$1" -xf -; }
+sha() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+ino() { ls -i "$1" | awk '{print $1}'; }
+# F-old and the kit copy, as section "delete rule 4" makes them.
+kcopy "$OK"; for x in scripts/lib.sh core/CABINET.md scripts/job.sh; do echo '# old kit' >> "$OK/$x"; done
+# The old job.sh is also shorter, as the version before it was (7495 bytes, the new one 7957, in the finding):
+# a running bash goes on reading past its old end, so a copy in place feeds it the rest of the new file.
+awk 'NR < 2 || NR > 12' "$KIT/scripts/job.sh" > "$OK/scripts/job.sh"; echo '# old kit' >> "$OK/scripts/job.sh"
+printf '#!/usr/bin/env bash\necho gone\n' > "$OK/scripts/gone.sh"; cp "$OK/scripts/gone.sh" "$OK/scripts/gone2.sh"
+printf 'scripts/gone.sh\nscripts/gone2.sh\n' >> "$OK/core/kit-files"
+kcopy "$KC"; printf '#!/usr/bin/env bash\necho added\n' > "$KC/scripts/added.sh"; echo scripts/added.sh >> "$KC/core/kit-files"
+fold() {
+  "$OK/bin/cabinet" new "$T/$1" --yes >/dev/null || fail "F-old $1"
+  W="$(cd "$T/$1" && pwd -P)"; echo 0.0.1 > "$W/.cabinet/version"; echo edited >> "$W/bin/gone2.sh"
+  git -C "$W" add -A; git -C "$W" commit -qm "F-old"
+}
+commit() { git -C "$W" add -A; git -C "$W" commit -qm "$1"; }
+up() { st=0; "${UK:-$KC}/bin/cabinet" -C "$W" update "$@" > "$T/k5-out" 2> "$T/k5-err" || st=$?; }
+# 44: an edited kit file and a hand-written one at a kit path: refused before anything is written.
+fold k5-44; echo '# mine' >> "$W/bin/doctor.sh"; printf 'echo mine\n' > "$W/bin/added.sh"; commit "edits"
+o="$(L delete-plan kit "$W" "$KC" 1 2>/dev/null | sort)"
+[[ "$o" == "$(printf 'keep\tedited\tbin/doctor.sh\nkeep\tnot-kit\tbin/added.sh\n' | sort)" ]] || fail "44: the helper lines: $o"
+b4="$(dsnap "$W")"; up
+((st == 1)) && grep -qF 'bin/doctor.sh  (edited)' "$T/k5-err" && grep -qF 'bin/added.sh  (not-kit)' "$T/k5-err" && grep -qF 'so the version stays 0.0.1' "$T/k5-out" \
+  && grep -qF 'cabinet update --force yourself, at a terminal' "$T/k5-out" && [[ "$(dsnap "$W")" == "$b4" ]] || fail "44: exit $st, $(cat "$T/k5-out" "$T/k5-err")"
+# 45: --force replaces the edited file only after yes at a terminal; never with no terminal or in a scheduled run.
+fold k5-45; echo '# mine' >> "$W/bin/doctor.sh"; commit "edit"
+b4="$(dsnap "$W")"; in_tty_typed no "$sf" "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-tty"
+[[ "$(cat "$sf")" == 1 && "$(dsnap "$W")" == "$b4" ]] && grep -qF 'Type yes to delete them' "$T/k5-tty" || fail "45: no typed: exit $(cat "$sf"), $(cat "$T/k5-tty")"
+st=0; notty "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-out" 2> "$T/k5-err" || st=$?
+((st == 1)) && grep -qF -- '--force' "$T/k5-err" && grep -qF 'terminal' "$T/k5-err" && [[ "$(dsnap "$W")" == "$b4" ]] || fail "45: no terminal: exit $st, $(cat "$T/k5-err")"
+in_tty_typed yes "$sf" env CABINET_AGENT=qa "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-tty"
+[[ "$(cat "$sf")" == 1 && "$(dsnap "$W")" == "$b4" ]] && grep -qF -- '--force is never used in a scheduled run' "$T/k5-tty" || fail "45: scheduled: exit $(cat "$sf"), $(cat "$T/k5-tty")"
+in_tty_typed yes "$sf" "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-tty"
+[[ "$(cat "$sf")" == 0 ]] && cmp -s "$KC/scripts/doctor.sh" "$W/bin/doctor.sh" && grep -qx "$(sha "$KC/scripts/doctor.sh") bin/doctor.sh" "$W/.cabinet/manifest" \
+  && [[ "$(cat "$W/.cabinet/version")" == "$V" ]] || fail "45: yes typed: exit $(cat "$sf"), $(cat "$T/k5-tty")"
+# With nothing on the list, --force asks nothing, also with no terminal.
+fold k5-45b; st=0; notty "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-out" 2> "$T/k5-err" || st=$?
+((st == 0)) && [[ "$(cat "$W/.cabinet/version")" == "$V" ]] || fail "45: --force with nothing on the list: exit $st, $(cat "$T/k5-err")"
+# 46: a job running during update is not broken: job.sh is replaced by a rename, so bash keeps reading the old one.
+for i in 1 2 3; do
+  fold "k5-46-$i"; printf 'COMMAND="sleep 5"\n' > "$W/jobs/slow.job"; commit "slow job"
+  jl="$HOME/$LOGS/k5-46-$i/slow.log"; j1=$SECONDS
+  ( st=0; "$W/bin/job.sh" run slow > "$T/k5-job" 2>&1 || st=$?; echo "$st" > "$T/k5-job-$i" ) & jp=$!
+  for ((n = 0; n < 50; n++)); do grep -q '^=== .*slow' "$jl" 2>/dev/null && break; sleep 0.2; done
+  grep -q '^=== .*slow' "$jl" || fail "46: run $i: the job did not start: $(cat "$T/k5-job")"
+  up; ((st == 0)) && cmp -s "$KC/scripts/job.sh" "$W/bin/job.sh" || fail "46: run $i: update exit $st, $(cat "$T/k5-err")"
+  wait "$jp"; j2=$SECONDS   # its own PID: a bare wait also waits for in_tty's input processes
+  [[ "$(cat "$T/k5-job-$i")" == 0 ]] && ((j2 - j1 <= 30)) || fail "46: run $i: the job exited $(cat "$T/k5-job-$i") after $((j2 - j1))s: $(cat "$T/k5-job")"
+done
+# 47 and 50: a file that left the kit goes when unedited and stays, unmanaged, when edited; every write is a
+# new file renamed into place (a new inode), an unchanged file keeps its inode, and no .cabinet-new is left.
+fold k5-47; cp "$W/bin/gone2.sh" "$T/k5-gone2"
+for x in bin/lib.sh CABINET.md bin/job.sh bin/doctor.sh; do eval "i_${x//[\/.]/_}=$(ino "$W/$x")"; done
+up
+((st == 0)) && [[ ! -e "$W/bin/gone.sh" ]] && cmp -s "$T/k5-gone2" "$W/bin/gone2.sh" && ! grep -q ' bin/gone2.sh$' "$W/.cabinet/manifest" \
+  && grep -qF 'left the kit but edited here, left as is: bin/gone2.sh' "$T/k5-err" || fail "47: exit $st, $(cat "$T/k5-out" "$T/k5-err")"
+[[ -z "$(find "$W" -name '*.cabinet-new')" ]] || fail "50: left behind: $(find "$W" -name '*.cabinet-new')"
+[[ "$(ino "$W/bin/lib.sh")" != "$i_bin_lib_sh" && "$(ino "$W/CABINET.md")" != "$i_CABINET_md" && "$(ino "$W/bin/job.sh")" != "$i_bin_job_sh" \
+  && "$(ino "$W/bin/doctor.sh")" == "$i_bin_doctor_sh" ]] || fail "50: inodes"
+# 48 and 49: the role or the manual build failing leaves the old version (and no format), and a second run finishes.
+for x in role manual; do
+  rm -rf "$K2"; kcopy "$K2"; cp "$KC/scripts/added.sh" "$K2/scripts/"; cp "$KC/core/kit-files" "$K2/core/"
+  awk 'NR == 2 { print "[ \"${1:-}\" = build ] && exit 1" } 1' "$KC/scripts/$x.sh" > "$K2/scripts/$x.sh"
+  fold "k5-48-$x"; [[ -f "$W/OPERATIONS.md" ]] || fail "49: F-old has no OPERATIONS.md"
+  git -C "$W" rm -q .cabinet/format; commit "format 0"
+  UK="$K2" up
+  ((st == 1)) && grep -qF 'half updated: run cabinet update again' "$T/k5-err" && [[ "$(cat "$W/.cabinet/version")" == 0.0.1 && ! -e "$W/.cabinet/format" ]] \
+    || fail "48/49: $x build failing: exit $st, $(cat "$T/k5-err"), version $(cat "$W/.cabinet/version")"
+  cp "$KC/scripts/$x.sh" "$K2/scripts/$x.sh"; UK="$K2" up
+  ((st == 0)) && [[ "$(cat "$W/.cabinet/version")" == "$V" && "$(cat "$W/.cabinet/format")" == 1 ]] || fail "48/49: $x restored, run again: exit $st, $(cat "$T/k5-err")"
+done
+# 51: the doctor and setup say what they said, through the same call. (F-old's gone2.sh, edited, is put
+# back first, so the doctor names only the file this case edits.)
+fold k5-51; cp "$OK/scripts/gone2.sh" "$W/bin/gone2.sh"; echo '# mine' >> "$W/bin/doctor.sh"; commit "edit"
+o="$("$F" -C "$W" doctor --json || true)"
+j -e '$.results.filter((r) => r.id == "kit.unedited").length == 1 && $.results.find((r) => r.id == "kit.unedited").level == "fix"
+  && $.results.find((r) => r.id == "kit.unedited").message == "kit files edited here (an update will refuse them; move the change to a project file or into the kit): bin/doctor.sh"' <<<"$o" >/dev/null \
+  || fail "51: the doctor: $(j -r '$.results.filter((r) => r.id == "kit.unedited").map((r) => r.level + " " + r.message).join("\n")' <<<"$o")"
+# ADR-010 C7: a kit file deleted here is still named (missing) by the doctor itself.
+rm "$W/bin/handoff.sh"; o="$("$F" -C "$W" doctor --json || true)"
+[[ "$(j -r '$.results.find((r) => r.id == "kit.unedited").message' <<<"$o")" == *": bin/doctor.sh bin/handoff.sh (missing)" ]] || fail "C7: a missing kit file: $o"
+mkdir -p "$T/k5-around/bin"; echo other > "$T/k5-around/bin/doctor.sh"; b4="$(dsnap "$T/k5-around")"
+st=0; "$F" init "$T/k5-around" --yes > "$T/k5-out" 2> "$T/k5-err" || st=$?
+((st == 1)) && grep -qF 'these files already exist at paths the kit uses: bin/doctor.sh. Rename or move them, then run cabinet init again.' "$T/k5-err" \
+  && [[ "$(dsnap "$T/k5-around")" == "$b4" ]] || fail "51: init around: exit $st, $(cat "$T/k5-err")"
+st=0; L kit-edited "$W" "$W/.cabinet/manifest" 2>/dev/null || st=$?
+((st == 2)) && ! grep -q 'kit-edited\|kitEdited' "$KIT/scripts/lib.js" && ! grep -q 'sync_kit' "$KIT/bin/cabinet" || fail "51: kit-edited or sync_kit is still there"
+# ADR-010 C8: a manifest path that leaves the workspace is never acted on, though it reads as unedited and gone from the kit.
+fold k5-c8; echo victim > "$T/k5-victim"; echo "$(sha "$T/k5-victim") ../k5-victim" >> "$W/.cabinet/manifest"
+echo "$(sha "$T/k5-victim") $T/k5-victim" >> "$W/.cabinet/manifest"; commit "manifest out"; up
+((st == 0)) && [[ "$(cat "$T/k5-victim")" == victim ]] && ! grep -q 'k5-victim' "$W/.cabinet/manifest" || fail "C8: exit $st, victim $(cat "$T/k5-victim" 2>&1)"
+# --force never writes under a linked folder: bin linked out of the workspace, yes typed, nothing written there.
+fold k5-lnk; mv "$W/bin" "$T/k5-out-bin"; ln -s ../k5-out-bin "$W/bin"; commit "bin linked"
+echo '# mine' >> "$T/k5-out-bin/doctor.sh"; b4="$(dsnap "$T/k5-out-bin")"
+in_tty_typed yes "$sf" "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-tty"
+[[ "$(cat "$sf")" == 1 && "$(dsnap "$T/k5-out-bin")" == "$b4" && "$(cat "$W/.cabinet/version")" == 0.0.1 ]] && grep -qF 'under a linked folder, so never written' "$T/k5-tty" \
+  || fail "--force under a linked bin: exit $(cat "$sf"), $(cat "$T/k5-tty")"
+rm -rf "$T"/k5-*
   return 0   # a last "check && fail" line must not end the run
 }
 

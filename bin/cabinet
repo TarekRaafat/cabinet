@@ -99,7 +99,7 @@ C	Setup	bootstrap		Set up this machine for the workspace: repos, builders, guard
 C	Setup	config	[options]	Change settings: the setup questions again, with the current answers as defaults.
 C	Setup	move	<new-path>	Move the workspace folder and update what remembers its path.
 C	Setup	remove		Remove this workspace from this machine after showing the plan: schedules, logs, folder, and what setup added to a project.
-C	Kit	update		Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and the command that takes it.
+C	Kit	update	[--force]	Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and the command that takes it.
 C	Kit	status		This workspace's kit version, the installed kit's, and every kit file edited here.
 C	Kit	outdated		Is a newer kit published? Compares this workspace, the installed kit and the npm registry.
 C	Kit	changelog	[from-version]	What changed since a version (all versions when left out).
@@ -186,6 +186,7 @@ O	digest	--write	<file>	Write the digest to this file instead of the screen.
 O	digest	--notify		Also show a desktop notification with the counts (with --write or --schedule).
 O	digest	--schedule	[<when>|off]	Write it on a schedule (default: every day at 10:00 AM), or at another time ("8 AM"), or on days and a time ("fri 10 AM", "sun,mon,tue,wed,thu 8 AM"); off stops it.
 O	digest	--file	<file>	With --schedule: where it is written (default: digest.md in the log folder, ~/Library/Logs/cabinet/ on macOS, ~/.local/state/cabinet/ on Linux).
+O	update	--force		Replace kit files edited here, or at kit paths but not the kit's, after listing them. Asks at a terminal; refused with no terminal and in a scheduled run.
 O	remove	--force		Remove even when that deletes what is not safe to delete (uncommitted changes, commits on no remote, ignored files), after listing it. Asks at a terminal; refused with no terminal and in a scheduled run.
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
@@ -247,20 +248,8 @@ changelog() {
   ' "$KIT/CHANGELOG.md"
 }
 
-# Every kit file as "<kit path> <workspace path>", from core/kit-files, the one list of what the kit
-# ships (never globbed, so a stray file in the kit is never placed). The list itself is never placed.
-managed() {
-  local p
-  while IFS= read -r p; do
-    case "$p" in
-      core/CABINET.md) echo "$p CABINET.md" ;;
-      core/rules/*) echo "$p .cabinet/rules/${p#core/rules/}" ;;
-      scripts/*) echo "$p bin/${p#scripts/}" ;;
-      roles/*) echo "$p .cabinet/roles/${p#roles/}" ;;
-      guardrails/*) echo "$p .cabinet/guardrails/${p#guardrails/}" ;;
-    esac
-  done < "$KIT/core/kit-files"
-}
+# Every kit file as "<kit path> <workspace path>", from core/kit-files (lib.js kit-map: the one mapping).
+managed() { node "$LIBJS" kit-map "$KIT"; }
 # Stop before any kit file is placed or removed when the list is missing or empty: read through
 # managed, it would name nothing, and update would take every kit file for one that left the kit.
 kit_list_ok() { [[ -s "$KIT/core/kit-files" ]] || die "the kit at $KIT has no core/kit-files (the list of the files it places): reinstall it"; }
@@ -285,57 +274,6 @@ state_ok() {
 # put_line <file> <text>: writes through <file>.cabinet-new and a rename, so a link at <file> is
 # replaced, never followed.
 put_line() { rm -f "$1.cabinet-new" && printf '%s\n' "$2" > "$1.cabinet-new" && mv -f "$1.cabinet-new" "$1"; }
-# linked <path> <ws>: <path>, or a folder between it and <ws>, is a link (the kit never writes through one).
-linked() { local p=$1; while [[ "$p" == "$2"/* ]]; do [[ -L "$p" ]] && return 0; p="${p%/*}"; done; return 1; }
-
-# Copy kit files into <ws>. Returns 1 when an edited file blocked the update.
-sync_kit() {
-  local ws=$1 man="$1/.cabinet/manifest" next blocked=0 src dst live want had cur h p
-  mkdir -p "$ws/.cabinet"; next="$(mktemp)"
-  [[ -e "$man" ]] || put_line "$man" ""
-  while read -r src dst; do
-    live="$ws/$dst" want="$(sha256 "$KIT/$src")"
-    had="$(awk -v p="$dst" '$2 == p {print $1}' "$man")"
-    # A link (or a path through a linked folder) is never copied onto: cp could follow it out of the workspace.
-    if linked "$live" "$ws"; then
-      echo "  already here and not the kit's, left as is: $dst"
-      blocked=1; echo "${had:--} $dst" >> "$next"; continue
-    fi
-    if [[ -f "$live" ]]; then
-      cur="$(sha256 "$live")"
-      if [[ "$cur" == "$want" ]]; then echo "$want $dst" >> "$next"; continue; fi
-      if [[ "$cur" != "$had" ]]; then
-        # A file the kit never placed (it was there before) is recorded as "-",
-        # so every later update and the doctor keep treating it as not the kit's.
-        if [[ -z "$had" || "$had" == - ]]; then echo "  already here and not the kit's, left as is: $dst"
-        else echo "  edited here, left as is: $dst"; fi
-        blocked=1; echo "${had:--} $dst" >> "$next"; continue
-      fi
-      echo "  updated $dst"
-    else
-      echo "  added $dst"
-    fi
-    mkdir -p "$(dirname "$live")"
-    cp "$KIT/$src" "$live"
-    [[ -x "$KIT/$src" || "$dst" == bin/*.sh ]] && chmod +x "$live"
-    echo "$want $dst" >> "$next"
-  done < <(managed)
-  # Kit files the kit no longer ships: removed when unedited.
-  while read -r h p; do
-    [[ -z "${p:-}" ]] && continue
-    # A manifest path outside the workspace is never acted on (a shared workspace's manifest is not trusted).
-    [[ "$p" == /* || "$p" == *..* ]] && continue
-    awk -v p="$p" '$2 == p {f=1} END {exit !f}' "$next" && continue
-    linked "$ws/$p" "$ws" && { echo "  left the kit but a link here, left as is: $p"; continue; }
-    if [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" != "$h" ]]; then
-      echo "  left the kit but edited here, left as is: $p"
-    else
-      rm -f "$ws/$p"; echo "  removed $p (no longer in the kit)"
-    fi
-  done < "$man"
-  rm -f "$man.cabinet-new"; sort -k2 "$next" > "$man.cabinet-new" && mv -f "$man.cabinet-new" "$man"; rm -f "$next"
-  return "$blocked"
-}
 
 RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs a command
 ROLES_ALL="chief-of-staff product-manager architect qa security design-lead finance"
@@ -742,11 +680,12 @@ setup() {
   check_backup_outside "${dd[@]}"
   # Around a folder, a file already at a kit path would be run as the kit's: refuse instead.
   if [[ "$layout" == around ]]; then
-    local clash=() src dst
-    while read -r src dst; do
-      if linked "$ws/$dst" "$ws" || { [[ -e "$ws/$dst" ]] && ! cmp -s "$KIT/$src" "$ws/$dst"; }; then clash+=("$dst"); fi
-    done < <(managed)
-    ((${#clash[@]} == 0)) || die "these files already exist at paths the kit uses: ${clash[*]}. Rename or move them, then run cabinet init again."
+    # One call lists every kit path holding something else (a link or a linked folder counts): nothing is written.
+    local clash st=0
+    clash="$(node "$LIBJS" delete-plan kit "$ws" "$KIT" "$KIT_FORMAT" --dry-run)" || st=$?
+    ((st == 0 || st == 3)) || exit 1
+    clash="$(printf '%s\n' "$clash" | awk -F '\t' '$1 == "keep" { printf "%s%s", s, $3; s = " " }')"
+    [[ -z "$clash" ]] || die "these files already exist at paths the kit uses: $clash. Rename or move them, then run cabinet init again."
   fi
 
   # --dry-run: everything this setup would write or change, then stop before touching anything.
@@ -887,7 +826,7 @@ setup() {
   ((${#kept[@]})) && echo "  kept your own (not replaced; merge by hand if you want the kit's): ${kept[*]}"
 
   echo "== Kit files"
-  sync_kit "$ws" | grep -v '^  added' || true
+  node "$LIBJS" delete-plan kit "$ws" "$KIT" "$KIT_FORMAT" >/dev/null || die "the kit files were not placed (see above)"
   [[ -e "$ws/CLAUDE.md" || -L "$ws/CLAUDE.md" ]] || ln -s AGENTS.md "$ws/CLAUDE.md"
 
   # Inside a project, agents start in the project, so its instructions point them at the team.
@@ -2427,21 +2366,13 @@ update_notice() {
 }
 
 cmd_update() {
-  [[ $# -eq 0 ]] || bad_usage "cabinet update takes no arguments (to name a workspace: cabinet -C <dir> update)"
+  local force=0 x
+  for x in "$@"; do case "$x" in --force) force=1 ;; *) bad_usage "unknown argument $x: cabinet update takes only --force (to name a workspace: cabinet -C <dir> update)" ;; esac; done
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
   pin_stop "$ws" update
   kit_list_ok
   state_ok "$ws"
-  # The workspace's format is read before anything changes: no file is format 0 (every workspace
-  # before 0.5.0). A newer one is refused; an older one runs the steps from it to KIT_FORMAT here
-  # (0 to 1 needs none: the files that left the kit are removed by the sync, as before).
-  local fmt=0
-  if [[ -e "$ws/.cabinet/format" || -L "$ws/.cabinet/format" ]]; then
-    fmt="$(head -c 32 "$ws/.cabinet/format" 2>/dev/null)" || fmt=""
-    [[ "$fmt" =~ ^[0-9]{1,9}$ ]] || die "$ws/.cabinet/format is not a format number (one whole number), so nothing was changed: restore it (git -C \"$ws\" checkout -- .cabinet/format), then run cabinet update again"
-    ((10#$fmt <= KIT_FORMAT)) || die "this workspace was set up by a newer Cabinet (format $((10#$fmt))); update the kit first"
-  fi
   update_notice "$ws"
   local old oldt; old="$(head -c 64 "$ws/.cabinet/version" | head -1)"; oldt="$(printf %s "$old" | term_text)"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
@@ -2454,18 +2385,28 @@ cmd_update() {
      -z "$(git -C "$ws" status --porcelain -- "${kit_paths[@]}" 2>/dev/null)" ]] && clean=1
   local hd="== "; [[ -z "$S_B" ]] || hd=""   # styled: headings bold, without "== "
   echo "$hd${S_B}cabinet $oldt -> $VERSION in $ws${S_Z}"
-  if sync_kit "$ws"; then
-    put_line "$ws/.cabinet/format" "$KIT_FORMAT"
-    put_line "$ws/.cabinet/version" "$VERSION"
-  else
+  # The order (ADR-009 section 4): one delete-plan call reads the workspace's format (a newer one is
+  # refused; an older one is brought up to KIT_FORMAT there), checks every kit file, and only then writes
+  # them, each through a new file and a rename, then the manifest; a refusal changes nothing. Then the
+  # roles and the manual are rebuilt, and the format and the version are written last, so a failure after
+  # the copy leaves the old version and a second run finishes it.
+  local fa=() st=0
+  ((force)) && fa+=(--force)
+  node "$LIBJS" delete-plan kit "$ws" "$KIT" "$KIT_FORMAT" ${fa[@]+"${fa[@]}"} >/dev/null || st=$?
+  if ((st == 3)) && ((force == 0)); then
     echo
     echo "${S_R}Some kit files were edited here${S_Z} and were not replaced, so the version stays $oldt."
     echo "Move each change into a project file (AGENTS.md, roles/, jobs/) or into the kit, restore the file"
-    echo "(git -C \"$ws\" checkout -- <file>), then run cabinet update again."
+    echo "(git -C \"$ws\" checkout -- <file>), then run cabinet update again. To replace them anyway, run"
+    echo "cabinet update --force yourself, at a terminal."
     exit 1
   fi
-  "$ws/bin/role.sh" build
-  [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "OPERATIONS.html not built (bin/manual.sh build)"
+  ((st == 0)) || exit 1
+  half() { echo "$ERR_TAG $1 failed, so the version stays $oldt: half updated: run cabinet update again" >&2; exit 1; }
+  "$ws/bin/role.sh" build || half "bin/role.sh build"
+  [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || half "bin/manual.sh build"
+  put_line "$ws/.cabinet/format" "$KIT_FORMAT" || half "writing .cabinet/format"
+  put_line "$ws/.cabinet/version" "$VERSION" || half "writing .cabinet/version"
   if [[ "$old" != "$VERSION" ]]; then
     echo
     echo "$hd${S_B}What changed since $oldt${S_Z}"

@@ -78,8 +78,16 @@ if latest="$(update_latest "$WS")" && [[ -n "$latest" ]]; then
   inw=""; [[ -z "$where" || "$where" == "$WS" ]] || inw=" (in $where)"
   [[ -z "$how" ]] || note kit.newer "cabinet $latest is out; this workspace runs $kv. Run$inw: $how"
 fi
-# One node hashes the whole manifest: a shasum for each file was the doctor's slowest check.
-edited="$(node "$LIBJS" kit-edited "$WS" "$K/manifest" 2>/dev/null)" || edited="(could not read them)"
+# One node hashes the whole manifest (delete-plan kit, the call update uses: a shasum for each file was
+# the doctor's slowest check), then the files the manifest names that are not here, in its order.
+edited="" st=0
+out="$(node "$LIBJS" delete-plan kit "$WS" - --dry-run 2>/dev/null)" || st=$?
+if ((st == 0 || st == 3)); then
+  edited="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "keep" { printf "%s%s", s, $3; s = " " }')"
+  while read -r _ p; do
+    [[ -n "${p:-}" && "$p" != /* && "/$p/" != */../* && ! -f "$WS/$p" ]] && edited+="${edited:+ }$p (missing)"
+  done < <(cat "$K/manifest" 2>/dev/null)
+else edited="(could not read them)"; fi
 [[ -f "$LIBJS" ]] || edited="bin/lib.js (missing)"   # the hashing lives in lib.js, so its own absence is named here
 [[ -n "$edited" ]] && bad kit.unedited "kit files edited here (an update will refuse them; move the change to a project file or into the kit): $edited" || ok kit.unedited "kit files unedited"
 [[ -L "$WS/CLAUDE.md" ]] && ok kit.claude-link "CLAUDE.md links to AGENTS.md" || bad kit.claude-link "workspace CLAUDE.md link missing (run bin/bootstrap.sh)"
