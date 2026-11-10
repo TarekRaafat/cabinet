@@ -6531,6 +6531,10 @@ o="$(awk -F'\t' 'NF != 3 || ($1 != "ok" && $1 != "keep") || ($1 == "keep" && $2 
 [[ -z "$o" && -s "$hl" ]] || fail "helper lines out of shape: $o"
 # The docs and the changelog say what changed.
 awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -q 'remove --yes --force' || fail "the CHANGELOG does not say what remove now refuses"
+grep -qF 'Not safe to delete: <' "$KIT/docs/troubleshooting.md" && fail "troubleshooting still names the old remove message"
+for x in 'Not safe to delete, so nothing was changed:' 'was not removed: it is as it was' '--force asks a person at a terminal, and there is no terminal here' '--force is never used in a scheduled run'; do
+  grep -qF -- "$x" "$KIT/scripts/lib.js" "$KIT/bin/cabinet" && grep -qF -- "$x" "$KIT/docs/troubleshooting.md" || fail "troubleshooting does not name: $x"
+done
 rm -f "$hl" "$ef" "$sf" "$T/r2-yes" "$T/r2-tsv"
   return 0   # a last "check && fail" line must not end the run
 }
