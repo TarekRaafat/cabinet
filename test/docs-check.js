@@ -141,6 +141,21 @@ for (const page of pages) {
     else if (anchor && target.endsWith(".md") && !anchors(target).has(anchor)) fail(`${page} links to a missing heading: ${link}#${anchor}`);
   }
 }
+// core/kit-files, the one list of what the kit places in a workspace, is exactly what git tracks in those
+// folders: a new script cannot be left out, and a stray file cannot ship. Needs the kit's git (a checkout).
+{
+  const tracked = (() => {
+    try {
+      return require("node:child_process").execFileSync("git", ["-c", "safe.directory=*", "-C", kit, "ls-files", "-z", "--",
+        "core/CABINET.md", "core/rules/", "scripts/", "roles/", "guardrails/"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split("\0").filter(Boolean);
+    } catch (e) { fail(`core/kit-files: git ls-files failed in ${kit} (this check runs in a checkout of the kit)`); return null; }
+  })();
+  if (tracked) {
+    const listed = exists("core/kit-files") ? read("core/kit-files").split("\n").filter(Boolean) : [];
+    for (const p of tracked.filter((p) => !listed.includes(p))) fail(`core/kit-files does not list ${p}, which git tracks`);
+    for (const p of listed.filter((p) => !tracked.includes(p))) fail(`core/kit-files lists ${p}, which git does not track`);
+  }
+}
 const files = JSON.parse(read("package.json")).files;
 for (const need of ["docs", "llms.txt", "llms-full.txt", "ROADMAP.md", "AGENTS.md", "CHANGELOG.md"])
   if (!files.includes(need)) fail(`package.json files does not ship ${need}`);

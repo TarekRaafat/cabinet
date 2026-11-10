@@ -14,6 +14,7 @@ set -euo pipefail
 KIT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 LIBJS="$KIT/scripts/lib.js"   # the kit's JavaScript, run with node (AGENTS.md, rule 3)
 VERSION="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$KIT/package.json")"   # read before node is checked (below)
+KIT_FORMAT=1   # the format of a workspace's kit-managed state this kit writes (.cabinet/format; none is 0)
 source "$KIT/scripts/when.sh"   # when_norm, when_calendar, when_human: the same parser the workspace scripts use
 source "$KIT/scripts/platform.sh"   # this machine: logs, dates, the passphrase, schedules
 
@@ -246,15 +247,23 @@ changelog() {
   ' "$KIT/CHANGELOG.md"
 }
 
-# Every kit file as "<kit path> <workspace path>".
+# Every kit file as "<kit path> <workspace path>", from core/kit-files, the one list of what the kit
+# ships (never globbed, so a stray file in the kit is never placed). The list itself is never placed.
 managed() {
-  echo "core/CABINET.md CABINET.md"
-  local f
-  for f in "$KIT"/core/rules/*.md; do echo "core/rules/${f##*/} .cabinet/rules/${f##*/}"; done
-  for f in "$KIT"/scripts/*; do echo "scripts/${f##*/} bin/${f##*/}"; done
-  for f in "$KIT"/roles/*.md; do echo "roles/${f##*/} .cabinet/roles/${f##*/}"; done
-  for f in "$KIT"/guardrails/*; do echo "guardrails/${f##*/} .cabinet/guardrails/${f##*/}"; done
+  local p
+  while IFS= read -r p; do
+    case "$p" in
+      core/CABINET.md) echo "$p CABINET.md" ;;
+      core/rules/*) echo "$p .cabinet/rules/${p#core/rules/}" ;;
+      scripts/*) echo "$p bin/${p#scripts/}" ;;
+      roles/*) echo "$p .cabinet/roles/${p#roles/}" ;;
+      guardrails/*) echo "$p .cabinet/guardrails/${p#guardrails/}" ;;
+    esac
+  done < "$KIT/core/kit-files"
 }
+# Stop before any kit file is placed or removed when the list is missing or empty: read through
+# managed, it would name nothing, and update would take every kit file for one that left the kit.
+kit_list_ok() { [[ -s "$KIT/core/kit-files" ]] || die "the kit at $KIT has no core/kit-files (the list of the files it places): reinstall it"; }
 
 # Copy kit files into <ws>. Returns 1 when an edited file blocked the update.
 sync_kit() {
@@ -516,6 +525,7 @@ setup() {
     esac
   done
 
+  kit_list_ok
   # Where we are: an existing project repo, an existing folder, or a new one.
   local layout=new host="" hostname="" top=""
   if [[ "$how" == init ]]; then
@@ -867,7 +877,8 @@ setup() {
   fi
   "$ws/bin/role.sh" build
   [[ ! -f "$ws/OPERATIONS.md" ]] || "$ws/bin/manual.sh" build >/dev/null || echo "  OPERATIONS.html not built (bin/manual.sh build)"
-  # Written last: a workspace with a version is a finished one.
+  # Written last, the format just before: a workspace with a version is a finished one.
+  echo "$KIT_FORMAT" > "$ws/.cabinet/format"
   echo "$VERSION" > "$ws/.cabinet/version"
 
   # The workspace's own git, unless it already had one or lives in the project's (shared).
@@ -2387,6 +2398,16 @@ cmd_update() {
   local ws; ws="$(find_ws "")"
   [[ -f "$ws/.cabinet/version" ]] || die "$ws is not a cabinet workspace (no .cabinet/version)"
   pin_stop "$ws" update
+  kit_list_ok
+  # The workspace's format is read before anything changes: no file is format 0 (every workspace
+  # before 0.5.0). A newer one is refused; an older one runs the steps from it to KIT_FORMAT here
+  # (0 to 1 needs none: the files that left the kit are removed by the sync, as before).
+  local fmt=0
+  if [[ -e "$ws/.cabinet/format" || -L "$ws/.cabinet/format" ]]; then
+    fmt="$(head -c 32 "$ws/.cabinet/format" 2>/dev/null)" || fmt=""
+    [[ "$fmt" =~ ^[0-9]{1,9}$ ]] || die "$ws/.cabinet/format is not a format number (one whole number), so nothing was changed: restore it (git -C \"$ws\" checkout -- .cabinet/format), then run cabinet update again"
+    ((10#$fmt <= KIT_FORMAT)) || die "this workspace was set up by a newer Cabinet (format $((10#$fmt))); update the kit first"
+  fi
   update_notice "$ws"
   local old; old="$(cat "$ws/.cabinet/version")"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
@@ -2400,6 +2421,7 @@ cmd_update() {
   local hd="== "; [[ -z "$S_B" ]] || hd=""   # styled: headings bold, without "== "
   echo "$hd${S_B}cabinet $old -> $VERSION in $ws${S_Z}"
   if sync_kit "$ws"; then
+    echo "$KIT_FORMAT" > "$ws/.cabinet/format"
     echo "$VERSION" > "$ws/.cabinet/version"
   else
     echo

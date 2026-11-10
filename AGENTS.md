@@ -11,6 +11,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `bin/cabinet` | The `cabinet` command: setup, settings, removal, updates, and every workspace script as a command run from anywhere inside the workspace | (runs from the installed package) |
 | `scripts/*.sh` | The workspace scripts; `lib.sh` is shared and sourced by the rest, `when.sh` is the one parser for schedule times, and `platform.sh` is the one place that knows macOS from Linux (log folder, dates, the passphrase store, launchd, systemd or cron); both are sourced by `lib.sh` and by `bin/cabinet` | `bin/*.sh` |
 | `core/CABINET.md` | How a workspace runs: handoffs, tiers, sign-off, seats, git rules | `CABINET.md` |
+| `core/kit-files` | The one list of the kit files placed in a workspace, one kit path per line (`core/CABINET.md`, `core/rules/`, `scripts/`, `roles/`, `guardrails/`); a new or removed file there changes it in the same commit, and `npm test` fails when it and `git ls-files` differ | (never placed) |
 | `core/rules/*.md` | The rules only some roles or tasks need, named from `CABINET.md` with when to read each; keep `CABINET.md` to what every agent needs on every session | `.cabinet/rules/` |
 | `roles/*.md` | The kit's roles | `.cabinet/roles/`, built into `agents/` and `.claude/agents/` |
 | `guardrails/` | Deny rules for each agent tool, the push gate, the credit and pre-rebase hooks, the hook pass-through stub | `.cabinet/guardrails/`, installed machine-wide by bootstrap |

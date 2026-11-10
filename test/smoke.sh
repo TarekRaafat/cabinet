@@ -6686,6 +6686,80 @@ rm -rf "$T"/rr-* "$T"/r2[89] "$T"/r3[0-9] "$T"/r3[0-9]b "$T"/r30b "$T/nc-$n"
 }
 
 
+section "delete rule 4: the shipped list and the format" ""
+s97() {
+# Criteria 40 to 43 of specs/delete-rule.md: what the kit places comes from core/kit-files, never a glob,
+# and the list matches git; .cabinet/format is read before update changes anything (none is 0, newer or
+# unreadable is refused) and written by setup and update just before the version.
+local KC="$T/k4-kit" OK="$T/k4-oldkit" CL W V st o b4 x
+V="$(j -r '$.version' "$KIT/package.json")"
+# kcopy <dir>: a copy of the kit under test, as cp -R makes it, without its git and node_modules.
+kcopy() { mkdir -p "$1"; (cd "$KIT" && tar --exclude .git --exclude node_modules -cf - .) | tar -C "$1" -xf -; }
+# 40: stray files in the kit's folders are never placed, recorded, committed or excluded.
+kcopy "$KC"; : > "$KC/scripts/x.sh.swp"; : > "$KC/scripts/.DS_Store"; : > "$KC/guardrails/tmp.orig"
+"$KC/bin/cabinet" new "$T/k4-ws" --yes >/dev/null || fail "40: new from a kit copy holding stray files"
+W="$(cd "$T/k4-ws" && pwd -P)"
+"$KC/bin/cabinet" -C "$W" update >/dev/null || fail "40: update from that copy"
+x='x\.sh\.swp|\.DS_Store|tmp\.orig|kit-files'
+[[ -z "$(find "$W" -name .git -prune -o -print | grep -E "$x")" ]] || fail "40: a stray file or kit-files is in the workspace: $(find "$W" -name .git -prune -o -print | grep -E "$x")"
+! grep -E "$x" "$W/.cabinet/manifest" && ! git -C "$W" log --all --name-only --format= | grep -E "$x" \
+  && ! grep -E "$x" "$W/.git/info/exclude" || fail "40: a stray file is recorded, committed or excluded"
+# The same kit copy shipped every listed file, under today's paths.
+[[ -f "$W/CABINET.md" && -x "$W/bin/lib.sh" && -f "$W/.cabinet/rules/builders.md" && -f "$W/.cabinet/roles/qa.md" && -f "$W/.cabinet/guardrails/pre-push" ]] \
+  && [[ "$(wc -l < "$W/.cabinet/manifest" | tr -d ' ')" == "$(wc -l < "$KIT/core/kit-files" | tr -d ' ')" ]] || fail "40: the listed kit files, at their workspace paths"
+# 41: the list cannot drift from git. It passes here; in a scratch clone, a file added and committed but
+# not listed is named, and so is a listed file deleted and committed.
+[[ -z "$(node "$KIT/test/docs-check.js" "$KIT" | grep 'core/kit-files')" ]] || fail "41: core/kit-files differs from git ls-files at the commit under test"
+CL="$T/k4-clone"; git -c safe.directory='*' clone -q "$KIT" "$CL" || fail "41: the scratch clone"
+echo 'echo new' > "$CL/scripts/new.sh"; git -C "$CL" add scripts/new.sh; git -C "$CL" commit -qm new
+o="$(node "$KIT/test/docs-check.js" "$CL")" && fail "41: the check passed a script the list leaves out"
+grep -qx 'FAIL: core/kit-files does not list scripts/new.sh, which git tracks' <<<"$o" || fail "41: the check did not name scripts/new.sh: $o"
+rm -rf "$CL"; git -c safe.directory='*' clone -q "$KIT" "$CL"; x="$(tail -1 "$CL/core/kit-files")"
+git -C "$CL" rm -q "$x"; git -C "$CL" commit -qm gone
+o="$(node "$KIT/test/docs-check.js" "$CL")" && fail "41: the check passed a listed file git no longer tracks"
+grep -qx "FAIL: core/kit-files lists $x, which git does not track" <<<"$o" || fail "41: the check did not name $x: $o"
+# F-old: a workspace made by an older kit (marker changes, gone.sh and gone2.sh, version 0.0.1), updated
+# from the kit copy (the kit under test with scripts/added.sh). fold <name>: makes it, into W.
+kcopy "$OK"; for x in scripts/lib.sh core/CABINET.md scripts/job.sh; do echo '# old kit' >> "$OK/$x"; done
+printf '#!/usr/bin/env bash\necho gone\n' > "$OK/scripts/gone.sh"; cp "$OK/scripts/gone.sh" "$OK/scripts/gone2.sh"
+printf 'scripts/gone.sh\nscripts/gone2.sh\n' >> "$OK/core/kit-files"
+rm -rf "$KC"; kcopy "$KC"; printf '#!/usr/bin/env bash\necho added\n' > "$KC/scripts/added.sh"; echo scripts/added.sh >> "$KC/core/kit-files"
+fold() {
+  "$OK/bin/cabinet" new "$T/$1" --yes >/dev/null || fail "F-old $1"
+  W="$(cd "$T/$1" && pwd -P)"; echo 0.0.1 > "$W/.cabinet/version"; echo edited >> "$W/bin/gone2.sh"
+  git -C "$W" add -A; git -C "$W" commit -qm "F-old"
+}
+up() { st=0; "$KC/bin/cabinet" -C "$W" update > "$T/k4-out" 2> "$T/k4-err" || st=$?; }
+# 42: a newer, unreadable or empty format is refused, with nothing changed.
+fold k4-f99; printf '99\n' > "$W/.cabinet/format"; git -C "$W" commit -qam "format 99"
+b4="$(dsnap "$W")"; up
+((st == 1)) && grep -qF 'this workspace was set up by a newer Cabinet (format 99); update the kit first' "$T/k4-err" && [[ "$(dsnap "$W")" == "$b4" ]] \
+  || fail "42: format 99: exit $st, $(cat "$T/k4-err")"
+for x in abc ''; do
+  printf '%s\n' "$x" > "$W/.cabinet/format"; git -C "$W" commit -qam "format '$x'"
+  b4="$(dsnap "$W")"; up
+  ((st == 1)) && grep -qF 'is not a format number' "$T/k4-err" && [[ "$(dsnap "$W")" == "$b4" ]] || fail "42: format '$x': exit $st, $(cat "$T/k4-err")"
+done
+: > "$W/.cabinet/format"; b4="$(dsnap "$W")"; up
+((st == 1)) && [[ "$(dsnap "$W")" == "$b4" ]] || fail "42: an empty format file: exit $st"
+# 43: no format (format 0, as every workspace from 0.4.1) updates to format 1, in the update's commit;
+# a new workspace starts at 1; the manifest keeps its "<sha or -> <path>" lines, no header.
+fold k4-f0; git -C "$W" rm -q .cabinet/format; git -C "$W" commit -qm "format 0"; up
+((st == 0)) && [[ "$(od -An -c "$W/.cabinet/format" | tr -d ' ')" == '1\n' && "$(cat "$W/.cabinet/version")" == "$V" ]] \
+  && git -C "$W" show --name-only --format=%s HEAD | grep -qx .cabinet/format && git -C "$W" log -1 --format=%s | grep -qx "cabinet: update to $V" \
+  || fail "43: format 0 to 1: exit $st, $(cat "$T/k4-out" "$T/k4-err")"
+"$F" new "$T/k4-new" --yes >/dev/null || fail "43: new"
+[[ "$(od -An -c "$T/k4-new/.cabinet/format" | tr -d ' ')" == '1\n' ]] && git -C "$T/k4-new" ls-files --error-unmatch .cabinet/format >/dev/null || fail "43: a new workspace's format"
+for x in "$W" "$T/k4-new"; do
+  [[ -s "$x/.cabinet/manifest" && -z "$(grep -vE '^([0-9a-f]{64}|-) [^ ]' "$x/.cabinet/manifest")" ]] || fail "43: a manifest line of $x: $(grep -vE '^([0-9a-f]{64}|-) [^ ]' "$x/.cabinet/manifest")"
+done
+# The kit refuses to place or update anything without its list.
+rm "$KC/core/kit-files"; up
+((st == 1)) && grep -qF 'has no core/kit-files' "$T/k4-err" || fail "update with no core/kit-files: exit $st"
+rm -rf "$T"/k4-*
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
