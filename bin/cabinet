@@ -265,18 +265,19 @@ managed() {
 # managed, it would name nothing, and update would take every kit file for one that left the kit.
 kit_list_ok() { [[ -s "$KIT/core/kit-files" ]] || die "the kit at $KIT has no core/kit-files (the list of the files it places): reinstall it"; }
 
-# .cabinet/version and .cabinet/format of <ws> may come from a folder someone else made (an unpacked
-# archive, a clone of a shared workspace): never read or written through a link. state_ok <ws> new:
-# neither is there in any form (setup); state_ok <ws>: the version is a plain file and the format is a
-# plain file or none (update). Either way .cabinet itself is a folder, not a link.
+# .cabinet/version, .cabinet/format and .cabinet/manifest of <ws> may come from a folder someone else
+# made (an unpacked archive, a clone of a shared workspace): never read or written through a link.
+# state_ok <ws> new: none is there in any form (setup); state_ok <ws>: the version and the manifest are
+# plain files and the format is a plain file or none (update). Either way .cabinet itself is a folder,
+# not a link.
 state_ok() {
   local f t
   [[ -n "${2:-}" ]] && t="move it away, then run cabinet init again" || t="restore it (git -C <workspace> checkout -- .cabinet), then run cabinet update again"
   [[ ! -L "$1/.cabinet" ]] || die "$(printf %s "$1/.cabinet" | term_text) is a link, so nothing was changed: $t"
-  for f in "$1/.cabinet/format" "$1/.cabinet/version"; do
+  for f in "$1/.cabinet/format" "$1/.cabinet/version" "$1/.cabinet/manifest"; do
     if [[ -n "${2:-}" ]]; then
       [[ ! -e "$f" && ! -L "$f" ]] || die "$(printf %s "$f" | term_text) is already there, so nothing was changed: $t"
-    elif [[ -L "$f" ]] || [[ -e "$f" && ! -f "$f" ]] || [[ "$f" == */version && ! -f "$f" ]]; then
+    elif [[ -L "$f" ]] || [[ -e "$f" && ! -f "$f" ]] || [[ "$f" != */format && ! -f "$f" ]]; then
       die "$(printf %s "$f" | term_text) is a link or not a file, so nothing was changed: $t"
     fi
   done
@@ -284,15 +285,22 @@ state_ok() {
 # put_line <file> <text>: writes through <file>.cabinet-new and a rename, so a link at <file> is
 # replaced, never followed.
 put_line() { rm -f "$1.cabinet-new" && printf '%s\n' "$2" > "$1.cabinet-new" && mv -f "$1.cabinet-new" "$1"; }
+# linked <path> <ws>: <path>, or a folder between it and <ws>, is a link (the kit never writes through one).
+linked() { local p=$1; while [[ "$p" == "$2"/* ]]; do [[ -L "$p" ]] && return 0; p="${p%/*}"; done; return 1; }
 
 # Copy kit files into <ws>. Returns 1 when an edited file blocked the update.
 sync_kit() {
   local ws=$1 man="$1/.cabinet/manifest" next blocked=0 src dst live want had cur h p
   mkdir -p "$ws/.cabinet"; next="$(mktemp)"
-  touch "$man"
+  [[ -e "$man" ]] || put_line "$man" ""
   while read -r src dst; do
     live="$ws/$dst" want="$(sha256 "$KIT/$src")"
     had="$(awk -v p="$dst" '$2 == p {print $1}' "$man")"
+    # A link (or a path through a linked folder) is never copied onto: cp could follow it out of the workspace.
+    if linked "$live" "$ws"; then
+      echo "  already here and not the kit's, left as is: $dst"
+      blocked=1; echo "${had:--} $dst" >> "$next"; continue
+    fi
     if [[ -f "$live" ]]; then
       cur="$(sha256 "$live")"
       if [[ "$cur" == "$want" ]]; then echo "$want $dst" >> "$next"; continue; fi
@@ -318,13 +326,14 @@ sync_kit() {
     # A manifest path outside the workspace is never acted on (a shared workspace's manifest is not trusted).
     [[ "$p" == /* || "$p" == *..* ]] && continue
     awk -v p="$p" '$2 == p {f=1} END {exit !f}' "$next" && continue
+    linked "$ws/$p" "$ws" && { echo "  left the kit but a link here, left as is: $p"; continue; }
     if [[ -f "$ws/$p" && "$(sha256 "$ws/$p")" != "$h" ]]; then
       echo "  left the kit but edited here, left as is: $p"
     else
       rm -f "$ws/$p"; echo "  removed $p (no longer in the kit)"
     fi
   done < "$man"
-  sort -k2 "$next" > "$man"; rm -f "$next"
+  rm -f "$man.cabinet-new"; sort -k2 "$next" > "$man.cabinet-new" && mv -f "$man.cabinet-new" "$man"; rm -f "$next"
   return "$blocked"
 }
 
@@ -734,7 +743,9 @@ setup() {
   # Around a folder, a file already at a kit path would be run as the kit's: refuse instead.
   if [[ "$layout" == around ]]; then
     local clash=() src dst
-    while read -r src dst; do [[ -e "$ws/$dst" ]] && ! cmp -s "$KIT/$src" "$ws/$dst" && clash+=("$dst"); done < <(managed)
+    while read -r src dst; do
+      if linked "$ws/$dst" "$ws" || { [[ -e "$ws/$dst" ]] && ! cmp -s "$KIT/$src" "$ws/$dst"; }; then clash+=("$dst"); fi
+    done < <(managed)
     ((${#clash[@]} == 0)) || die "these files already exist at paths the kit uses: ${clash[*]}. Rename or move them, then run cabinet init again."
   fi
 
