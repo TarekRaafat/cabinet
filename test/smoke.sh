@@ -6911,6 +6911,15 @@ st=0; L kit-edited "$W" "$W/.cabinet/manifest" 2>/dev/null || st=$?
 fold k5-c8; echo victim > "$T/k5-victim"; echo "$(sha "$T/k5-victim") ../k5-victim" >> "$W/.cabinet/manifest"
 echo "$(sha "$T/k5-victim") $T/k5-victim" >> "$W/.cabinet/manifest"; commit "manifest out"; up
 ((st == 0)) && [[ "$(cat "$T/k5-victim")" == victim ]] && ! grep -q 'k5-victim' "$W/.cabinet/manifest" || fail "C8: exit $st, victim $(cat "$T/k5-victim" 2>&1)"
+# A manifest path the kit never places (a project file, .git/HEAD, one missing) is never acted on or named,
+# though its hash matches (security finding 6 on H-20261110-10).
+fold k5-ns; mkdir -p "$W/app"; echo notes > "$W/app/notes.txt"; b4="$(cat "$W/.git/HEAD")"
+printf '%s app/notes.txt\n%s .git/HEAD\n%s app/gone.txt\n' "$(sha "$W/app/notes.txt")" "$(sha "$W/.git/HEAD")" "$(sha "$W/app/notes.txt")" >> "$W/.cabinet/manifest"; commit "manifest names project files"
+o="$("$F" -C "$W" doctor --json || true)"
+j -e '!/notes\.txt|HEAD|gone\.txt/.test(JSON.stringify($.results.find((r) => r.id == "kit.unedited")))' <<<"$o" >/dev/null || fail "finding 6: the doctor names a non-kit path: $o"
+up
+((st == 0)) && [[ "$(cat "$W/app/notes.txt")" == notes && "$(cat "$W/.git/HEAD")" == "$b4" ]] && ! grep -q 'notes\.txt\|HEAD\|gone\.txt' "$T/k5-err" \
+  || fail "finding 6: exit $st, notes $(cat "$W/app/notes.txt" 2>&1), HEAD $(cat "$W/.git/HEAD" 2>&1), $(cat "$T/k5-err")"
 # --force never writes under a linked folder: bin linked out of the workspace, yes typed, nothing written there.
 fold k5-lnk; mv "$W/bin" "$T/k5-out-bin"; ln -s ../k5-out-bin "$W/bin"; commit "bin linked"
 echo '# mine' >> "$T/k5-out-bin/doctor.sh"; b4="$(dsnap "$T/k5-out-bin")"

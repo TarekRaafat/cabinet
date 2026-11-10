@@ -1321,7 +1321,9 @@ function kitPlan(ws, kit, kitFormat, force, dry) {
   try { text = read(man); } catch (e) { if (e.code !== "ENOENT") die("delete-plan: could not read " + escapePath(man) + "; nothing was changed", 1); }
   for (const l of text.split("\n")) {
     const i = l.indexOf(" "), p = l.slice(i + 1);
-    if (i > 0 && p && !p.startsWith("/") && !p.split("/").includes("..")) had.set(p, l.slice(0, i));
+    // Only a path the kit could have placed (kitList's namespaces) is acted on, so a cloned manifest
+    // cannot name .git/HEAD or a project file for removal.
+    if (i > 0 && /^(CABINET\.md|(bin|\.cabinet\/(rules|roles|guardrails))\/[^/].*)$/.test(p) && !p.split("/").includes("..")) had.set(p, l.slice(0, i));
   }
   const hashOr = (p) => { try { return sha256(p); } catch (e) { return ""; } };   // unreadable: counts as edited
   const linkedUp = (abs) => { for (let p = path.dirname(abs); p.startsWith(ws + path.sep); p = path.dirname(p)) { const s = lst(p); if (s && s.isSymbolicLink()) return true; } return false; };

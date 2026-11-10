@@ -85,7 +85,8 @@ out="$(node "$LIBJS" delete-plan kit "$WS" - --dry-run 2>/dev/null)" || st=$?
 if ((st == 0 || st == 3)); then
   edited="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "keep" { printf "%s%s", s, $3; s = " " }')"
   while read -r _ p; do
-    [[ -n "${p:-}" && "$p" != /* && "/$p/" != */../* && ! -f "$WS/$p" ]] && edited+="${edited:+ }$p (missing)"
+    case "${p:-}" in CABINET.md|bin/?*|.cabinet/rules/?*|.cabinet/roles/?*|.cabinet/guardrails/?*) ;; *) continue ;; esac   # the kit's paths only, as delete-plan kit
+    [[ "/$p/" != */../* && ! -f "$WS/$p" ]] && edited+="${edited:+ }$p (missing)"
   done < <(cat "$K/manifest" 2>/dev/null)
 else edited="(could not read them)"; fi
 [[ -f "$LIBJS" ]] || edited="bin/lib.js (missing)"   # the hashing lives in lib.js, so its own absence is named here
