@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.5.1 - Unreleased
+## 0.5.1 - 11 Nov 2026
 
 - The doctor's `handoffs.unread-verdicts` no longer names an entry whose Changed or Needed line asks for a verdict ("record a PASS or a BLOCK"). It and `unread_verdicts` in `handoff list --json` now skip the title and the lines the sender wrote (From, Changed, Needed, Depends on, Way back, Evidence, Spec, Size), and still read the status line and any other line.
 - The workspace's secrets check now refuses a commit it cannot check: when `bin/secret.sh` is missing or not executable, a commit stops with `commit refused: bin/secret.sh is missing or not executable, so this commit cannot be checked for secrets (run bin/doctor.sh)`. Before, every release from 0.1.0 let such a commit through, silently. `cabinet update` does not change the hook: run `cabinet bootstrap` after updating, which replaces the earlier copy (and only that copy; a hook of your own is left as it is). The doctor's `secrets.none` now says the scanner cannot run, in place of "possible secrets".
