@@ -7250,8 +7250,8 @@ for s in "is not the kit's push gate" "without its helper cabinet-push-gate.js" 
 done
 ! grep -qF 'It still guards every push' "$TR" || fail "criterion 21: docs/troubleshooting.md still says It still guards every push"
 ! grep -qF 'and then asks before every push in every repo, as the doctor says' "$KIT/docs/guardrails.md" && grep -qF CODEX_HOME "$KIT/docs/guardrails.md" || fail "criterion 21: docs/guardrails.md"
-top="$(awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md")"
-grep -q '^## [0-9.]* - Unreleased$' <<<"$top" && grep -qF guardrails.codex-approval <<<"$top" && grep -qF 'commit refused: bin/secret.sh' <<<"$top" || fail "criterion 21: CHANGELOG.md's top Unreleased heading"
+top="$(awk '/^## /{on = /^## 0\.5\.1 /} on' "$KIT/CHANGELOG.md")"
+grep -qF guardrails.codex-approval <<<"$top" && grep -qF 'commit refused: bin/secret.sh' <<<"$top" || fail "criterion 21: CHANGELOG.md's 0.5.1 section"
 
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
