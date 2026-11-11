@@ -41,7 +41,20 @@ place() {
   fi
 }
 
-backup() { [[ -f "$1" ]] && run cp -p "$1" "$1.bak.$(date +%Y%m%d%H%M%S)"; return 0; }
+# A copy beside a config before it changes. A copy that fails leaves the file: backup says why (the words add_rules
+# uses), sets the run's failures and returns 1, and every caller then leaves that file as it is and goes on to the
+# next step. No file, nothing to copy.
+backup() {
+  local bak err
+  [[ -f "$1" ]] || return 0
+  bak="$1.bak.$(date +%Y%m%d%H%M%S)"
+  if ((DRY)); then echo "  would: cp -p $1 $bak"; return 0; fi
+  if ! err="$(cp -p "$1" "$bak" 2>&1)"; then
+    rm -f "$bak" 2>/dev/null
+    echo "  $1 was not changed: its backup could not be written beside it (${err:-cp failed}). Free the folder, then run cabinet bootstrap again"
+    failures=1; return 1
+  fi
+}
 
 # Write new content into an existing config in place, so its permissions, owner
 # and any symlink (dotfiles) stay as they were. The new content reaches the file
@@ -67,7 +80,7 @@ json_ok() { [[ ! -f "$1" ]] || json --exact -e '$' "$1" >/dev/null 2>&1; }
 
 # Union-merge a {permissions:{deny,ask}} snippet into a JSON settings file.
 merge_permissions() {
-  local snippet=$1 target=$2 missing
+  local snippet=$1 target=$2 missing made=0
   [[ -f "$snippet" ]] || return 0
   json_ok "$target" || { echo "  $target is not plain JSON, or a rewrite would change one of its values, left as is: add the rules in $snippet by hand"; failures=1; return 0; }
   missing="$(json -s '((a, b) => ["deny", "ask"].map((k) => list(b[k]).filter((x) => !list(a[k]).includes(x)).length).reduce((x, y) => x + y))
@@ -75,8 +88,8 @@ merge_permissions() {
     || missing="$(json 'list(obj($.permissions).deny).length + list(obj($.permissions).ask).length' "$snippet")"
   [[ "$missing" == "0" ]] && return 0
   if ((DRY)); then echo "  would add $missing permission rule(s) to $target"; return 0; fi
-  [[ -f "$target" ]] || { mkdir -p "$(dirname "$target")"; echo '{}' > "$target"; }
-  backup "$target"
+  [[ -f "$target" ]] || { mkdir -p "$(dirname "$target")"; echo '{}' > "$target"; made=1; }
+  ((made)) || backup "$target" || return 0
   write_into "$target" json json -s '((a, b) => ({...obj($[0]), permissions: {...a, ...Object.fromEntries(["deny", "ask"].map((k) =>
       [k, [...list(a[k]), ...list(b[k]).filter((x) => !list(a[k]).includes(x))]]))}}))(obj(obj($[0]).permissions), obj(obj($[1]).permissions))' \
     "$target" "$snippet" && echo "  added $missing permission rule(s) to $target"
@@ -302,8 +315,7 @@ if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
         on-request) ;;
         unset)
           if ((DRY)); then echo "  would add approval_policy = \"on-request\" to $cfg"
-          else backup "$cfg"
-            write_into "$cfg" text node "$LIBJS" toml-top --add "$cfg" && echo "  added approval_policy = \"on-request\" to $cfg (Codex asks before commands outside its sandbox)"
+          else backup "$cfg" && write_into "$cfg" text node "$LIBJS" toml-top --add "$cfg" && echo "  added approval_policy = \"on-request\" to $cfg (Codex asks before commands outside its sandbox)"
           fi ;;
         other$'\t'*)
           val="$(printf '%s' "${top#*$'\t'}" | term_text)"
@@ -336,7 +348,7 @@ if [[ -d "$HOME/.gemini" ]] || command -v gemini >/dev/null; then
     place "$G/gemini-context.json" "$g"
   elif [[ "$(json 'obj(obj($).context).fileName ?? undefined' "$g" 2>/dev/null)" == "" ]]; then
     # The kit's file merged in, an object inside an object key by key; anything else is replaced.
-    ((DRY)) && echo "  would set context.fileName in $g" || { backup "$g"; write_into "$g" json json -s '(function m(a, b) {
+    ((DRY)) && echo "  would set context.fileName in $g" || { backup "$g" && write_into "$g" json json -s '(function m(a, b) {
       const o = (x) => x !== null && typeof x == "object" && !Array.isArray(x);
       return o(a) && o(b) ? Object.keys(b).reduce((r, k) => ({...r, [k]: k in a ? m(a[k], b[k]) : b[k]}), a) : b;
     })(obj($[0]), $[1])' "$g" "$G/gemini-context.json" && echo "  set context.fileName in $g (Gemini reads AGENTS.md)"; }
@@ -370,7 +382,7 @@ echo "== opencode"
 # opencode.jsonc exists: opencode reads both (the .jsonc after), and a commented
 # file is never rewritten. bin/doctor.sh checks the order opencode resolves.
 merge_opencode() {
-  local snippet=$1 target=$2 rules missing
+  local snippet=$1 target=$2 rules missing made=0
   rules="$(json -c '((p) => Object.fromEntries([...list(p.deny).map((r) => [r, "deny"]), ...list(p.ask).map((r) => [r, "ask"])]
     .filter(([r]) => r.startsWith("Bash(")).map(([r, a]) => [r.replace(/^Bash\((.*)\)$/, "$1"), a])))(obj(obj($).permissions))' "$snippet")"
   if ! json_ok "$target"; then
@@ -378,14 +390,14 @@ merge_opencode() {
   fi
   if [[ ! -f "$target" ]]; then
     if ((DRY)); then echo "  would create $target with $(json 'Object.keys($).length' <<<"$rules") bash rule(s)"; return 0; fi
-    mkdir -p "$(dirname "$target")"; echo '{"$schema": "https://opencode.ai/config.json"}' > "$target"
+    mkdir -p "$(dirname "$target")"; echo '{"$schema": "https://opencode.ai/config.json"}' > "$target"; made=1
   fi
   # Missing: any kit rule absent, different, or not among the last entries.
   missing="$(json --argjson r "$rules" '((p, n) => ((b) => (b === null || typeof b != "object" || Array.isArray(b) ? n
     : ((tail) => Object.keys($r).filter((k) => tail[k] !== $r[k]).length)(Object.fromEntries(Object.entries(b).slice(-n)))))
     (p !== null && typeof p == "object" && !Array.isArray(p) ? p.bash : null))(obj($).permission, Object.keys($r).length)' "$target")"
   [[ "$missing" == 0 ]] && return 0
-  backup "$target"
+  ((made)) || backup "$target" || return 0
   if ((DRY)); then echo "  would add or reorder $missing bash rule(s) in $target"; return 0; fi
   # A rule set as one string ("permission": "ask") is the catch-all "*"; the kit's rules go last.
   write_into "$target" json json --argjson r "$rules" '((p) => ((b) => ({...obj($), permission: {

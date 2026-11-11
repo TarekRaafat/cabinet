@@ -7185,6 +7185,74 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "guardrail checks C: a refused backup" ""
+s101() {
+# specs/guardrail-checks.md, Part C, criteria 20 and 22. Its own HOME and global git config, restored at the end;
+# a PATH without the real agent tools, and a fake cp, first on PATH for one bootstrap run, refusing every .bak copy.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+CH="$T/gc-home"; mkdir -p "$CH" "$T/gc-tools" "$T/gc-fake"
+export HOME="$CH" GIT_CONFIG_GLOBAL="$CH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+ln -sf "$(command -v node)" "$T/gc-tools/node"; ln -sf "$(command -v git)" "$T/gc-tools/git"
+printf '#!/bin/sh\nfor a in "$@"; do last=$a; done\ncase "$last" in *.bak.*) echo "cp: fake refusal" >&2; exit 1 ;; esac\nexec /bin/cp "$@"\n' > "$T/gc-fake/cp"; chmod 755 "$T/gc-fake/cp"
+CP="$T/shim:$T/gc-tools:/usr/bin:/bin" FP="$T/gc-fake:$T/shim:$T/gc-tools:/usr/bin:/bin"
+CW="$T/gc-ws"; "$F" new "$CW" --yes >/dev/null
+CS="$CH/.claude/settings.json" CC="$CH/.codex/config.toml" GS2="$CH/.gemini/settings.json" OC="$CH/.config/opencode/opencode.json"
+GP="$CH/.gemini/policies/owner-control.toml" WH="$(git -C "$CW" rev-parse --path-format=absolute --git-common-dir)/hooks/pre-commit"
+cb() { CO="$(PATH="$1" "$CW/bin/bootstrap.sh" "${@:2}" 2>&1)" && CR=0 || CR=$?; }
+fixtures() {
+  rm -rf "$CH/.claude" "$CH/.codex" "$CH/.gemini" "$CH/.config/opencode"
+  mkdir -p "$CH/.claude" "$CH/.codex" "$CH/.gemini" "$CH/.config/opencode"
+  printf '{"env": {}}\n' > "$CS"; chmod 600 "$CS"
+  printf 'model = "x"\n\n[profiles.fast]\napproval_policy = "never"\n' > "$CC"
+  printf '{}\n' > "$GS2"; printf '{"$schema": "https://opencode.ai/config.json"}\n' > "$OC"
+}
+# kept <file>...: each is byte for byte as in $T/gc-keep, with its mode, and has no .bak copy.
+keep() { rm -rf "$T/gc-keep"; mkdir -p "$T/gc-keep"; local f; for f in "$@"; do cp -p "$f" "$T/gc-keep/$(basename "$(dirname "$f")")-$(basename "$f")"; done; }
+kept() {
+  local f k; for f in "$@"; do k="$T/gc-keep/$(basename "$(dirname "$f")")-$(basename "$f")"
+    cmp -s "$k" "$f" && [[ "$(ls -l "$k" | cut -c1-10)" == "$(ls -l "$f" | cut -c1-10)" ]] && ! ls "$f".bak.* >/dev/null 2>&1 || { echo "$f"; return 1; }; done
+}
+
+# Criterion 20 (a): every backup refused; each file left, the steps after it run, the run not completed.
+fixtures; keep "$CS" "$CC" "$GS2" "$OC"; cb "$FP"
+bad="$(kept "$CS" "$CC" "$GS2" "$OC")" || fail "criterion 20(a): changed or backed up: $bad"
+m='was not changed: its backup could not be written beside it (cp: fake refusal)'
+[[ "$(grep -cF "settings.json $m" <<<"$CO")" == 2 ]] && grep -qF "config.toml $m" <<<"$CO" && grep -qF "opencode.json $m" <<<"$CO" \
+  || fail "criterion 20(a): the refusals: $(grep -F 'was not changed' <<<"$CO")"
+cmp -s "$KIT/guardrails/gemini-owner-control.toml" "$GP" && grep -qF '== Schedules' <<<"$CO" || fail "criterion 20(a): the steps after a refusal did not run: $CO"
+grep -qF 'Some steps did not complete' <<<"$CO" && [[ "$CR" == 1 ]] || fail "criterion 20(a): exit $CR"
+cb "$CP"; ! grep -qF 'was not changed' <<<"$CO" && [[ "$CR" == 0 ]] || fail "criterion 20(a), the control: exit $CR, $CO"
+# (b) a file the run makes is not backed up.
+rm -f "$CS"; cb "$FP"
+[[ "$(j -s '$[1].permissions.deny.every((r) => list(obj($[0].permissions).deny).includes(r))' "$CS" "$KIT/guardrails/claude-permissions.json" 2>&1)" == true ]] \
+  || fail "criterion 20(b): the kit's deny rules are not in the new settings.json: $(cat "$CS" 2>&1)"
+! grep -qF "settings.json was not changed" <<<"$CO" || fail "criterion 20(b): a backup was tried on a file the run made: $CO"
+
+# Criterion 22: a dry run changes nothing.
+fixtures; cp "$KIT/test/fixtures/pre-commit-secrets-0.1.0" "$WH"; chmod 755 "$WH"; keep "$WH" "$CC" "$CS"; cb "$CP" --dry-run
+bad="$(kept "$WH" "$CC" "$CS")" || fail "criterion 22: a dry run changed $bad"
+grep -qF "would replace the kit's earlier secret hook at" <<<"$CO" && grep -qF 'would add approval_policy = "on-request" to' <<<"$CO" || fail "criterion 22: $CO"
+cp "$KIT/guardrails/pre-commit-secrets" "$WH"
+
+# Criterion 21: the docs and the changelog name every new or changed message.
+TR="$KIT/docs/troubleshooting.md"
+grep -qF '| `guardrails.codex-approval` |' "$TR" || fail "criterion 21: no row with the ID guardrails.codex-approval"
+for s in "is not the kit's push gate" "without its helper cabinet-push-gate.js" "is not executable, so git does not run it" "only the kit's push gate reads" \
+         "may not run under the global hooks path" "is the kit's earlier secret hook" "is not the kit's secret hook" "bin/secret.sh is missing or not executable" \
+         "sets no top-level approval_policy" "could not be read safely" "so Codex's approval_policy is not set" "selects the profile" "CODEX_HOME is" \
+         "its backup could not be written beside it"; do
+  grep -qF -- "$s" "$TR" || fail "criterion 21: docs/troubleshooting.md lacks: $s"
+done
+! grep -qF 'It still guards every push' "$TR" || fail "criterion 21: docs/troubleshooting.md still says It still guards every push"
+! grep -qF 'and then asks before every push in every repo, as the doctor says' "$KIT/docs/guardrails.md" && grep -qF CODEX_HOME "$KIT/docs/guardrails.md" || fail "criterion 21: docs/guardrails.md"
+top="$(awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md")"
+grep -q '^## [0-9.]* - Unreleased$' <<<"$top" && grep -qF guardrails.codex-approval <<<"$top" && grep -qF 'commit refused: bin/secret.sh' <<<"$top" || fail "criterion 21: CHANGELOG.md's top Unreleased heading"
+
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
