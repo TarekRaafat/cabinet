@@ -6543,7 +6543,7 @@ st=0; "$F" -C "$P/cabinet" remove --yes >/dev/null 2>"$ef" || st=$?
 o="$(awk -F'\t' 'NF != 3 || ($1 != "ok" && $1 != "keep") || ($1 == "keep" && $2 !~ /^(uncommitted|unpushed|stash|ignored|no-git|edited|not-kit|differs|file-in-way|folder-in-way)$/) || ($1 == "ok" && $2 != "")' "$hl")"
 [[ -z "$o" && -s "$hl" ]] || fail "helper lines out of shape: $o"
 # The docs and the changelog say what changed.
-awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | grep -q 'remove --yes --force' || fail "the CHANGELOG does not say what remove now refuses"
+awk '/^## /{on = /^## 0\.5\.0 /} on' "$KIT/CHANGELOG.md" | grep -q 'remove --yes --force' || fail "the CHANGELOG does not say what remove now refuses"
 grep -qF 'Not safe to delete: <' "$KIT/docs/troubleshooting.md" && fail "troubleshooting still names the old remove message"
 for x in 'Not safe to delete, so nothing was changed:' 'was not removed: it is as it was' '--force asks a person at a terminal, and there is no terminal here' '--force is never used in a scheduled run'; do
   grep -qF -- "$x" "$KIT/scripts/lib.js" "$KIT/bin/cabinet" && grep -qF -- "$x" "$KIT/docs/troubleshooting.md" || fail "troubleshooting does not name: $x"
