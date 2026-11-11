@@ -36,7 +36,7 @@ Its limits:
 | Qwen Code | yes | `~/.qwen/settings.json`, the same rule list | yes |
 | opencode | yes | `~/.config/opencode/opencode.json` `permission.bash`, placed last because its last matching rule wins. A commented `opencode.jsonc` is never rewritten; opencode reads it after the `.json`, so a rule there can still override | on opencode 1.x; on 2.x it cannot (its debug commands need a background service), so check by hand |
 | Gemini CLI | bootstrap sets `context.fileName` in `~/.gemini/settings.json` | `~/.gemini/policies/owner-control.toml` | yes, every kit rule |
-| Codex | yes | `~/.codex/rules/default.rules`; also `approval_policy = "on-request"` in `~/.codex/config.toml`, so Codex asks before anything its sandbox does not allow | yes, every kit rule, and `codex execpolicy check` |
+| Codex | yes | `~/.codex/rules/default.rules`; also `approval_policy = "on-request"` at the top level of `~/.codex/config.toml` (created when there is none), so Codex asks before anything its sandbox does not allow. A value of yours, a file bootstrap cannot read safely, or a top-level `profile` line is left as it is, and said | yes, every kit rule, and `codex execpolicy check`; and the top-level `approval_policy` in `~/.codex/config.toml` only, never a run started with a flag, a `--profile` file or a trusted project's `.codex/config.toml`. With `CODEX_HOME` set to another folder the check fails, since Codex reads its settings there |
 | Antigravity CLI | yes | its `settings.json` | yes, every kit deny rule |
 | Cursor CLI (`cursor-agent` / `agent`) | yes | `~/.cursor/cli-config.json` `permissions.deny` | yes (the file) |
 | Cursor editor | yes | none: its agent's command rules live in the editor's own settings, which the kit does not change. The push gate applies | noted |
@@ -104,5 +104,5 @@ The guardrails are shared by every workspace on the machine, so removing a works
 
 - **Rules in a tool's settings:** restore the `.bak.<timestamp>` copy bootstrap made next to the file, or delete the rules you no longer want (the kit's list is in each workspace's `.cabinet/guardrails/`).
 - **The push gate, its helper, the hook stubs, the credit hook and `pre-rebase`:** `git config --global --unset core.hooksPath`, then delete `~/.config/git/hooks/`.
-- **Codex:** remove `approval_policy` from `~/.codex/config.toml` and the kit's rules from `~/.codex/rules/default.rules` (rules bootstrap added later follow the line `# Added by cabinet bootstrap: rules from a newer Cabinet kit`).
+- **Codex:** remove `approval_policy` from `~/.codex/config.toml` (or delete the file when it holds only that line, as bootstrap creates it when there is none) and the kit's rules from `~/.codex/rules/default.rules` (rules bootstrap added later follow the line `# Added by cabinet bootstrap: rules from a newer Cabinet kit`).
 - **Gemini:** delete `~/.gemini/policies/owner-control.toml` and remove `context.fileName` from `~/.gemini/settings.json`.

@@ -271,18 +271,52 @@ echo "== Claude Code"
 merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
 
 echo "== Codex"
+# The rules file, then approval_policy = "on-request" at the top level of config.toml, so Codex asks before
+# running anything its sandbox does not allow. config.toml is read by one line scan (toml-top in lib.js) and
+# changed only when it sets no top-level approval_policy; a value of yours, a profile selected, or a file the
+# scan cannot read is left as is and said. No step here ends the run when it fails.
 if [[ -d "$HOME/.codex" ]] || command -v codex >/dev/null; then
-  if [[ -e "$HOME/.codex/rules/default.rules" ]]; then add_rules codex "$HOME/.codex/rules/default.rules" "$G/codex-default.rules"
-  else place "$G/codex-default.rules" "$HOME/.codex/rules/default.rules"; fi
-  cfg="$HOME/.codex/config.toml"
-  if [[ -f "$cfg" ]] && ! grep -q '^approval_policy' "$cfg"; then
-    backup "$cfg"
-    # Top-level keys must come before the first [table].
-    # Codex then asks before running anything its sandbox does not allow.
-    ((DRY)) && echo "  would add approval_policy = \"on-request\" to $cfg" || {
-      write_into "$cfg" text awk 'BEGIN{done=0} /^\[/ && !done {print "approval_policy = \"on-request\""; done=1} {print} END{if(!done) print "approval_policy = \"on-request\""}' "$cfg" &&
-      echo "  added approval_policy = \"on-request\" to $cfg (Codex asks before commands outside its sandbox)"
-    }
+  cdir="$HOME/.codex" cfg="$HOME/.codex/config.toml" cx=1
+  if [[ -e "$cdir" || -L "$cdir" ]]; then
+    [[ -d "$cdir" ]] || { echo "  $cdir is not a folder, left as is: Codex's rules and approval_policy were not placed"; failures=1; cx=0; }
+  elif ((DRY)); then echo "  would create $cdir"
+  elif ! mkdir -m 700 "$cdir" 2>/dev/null; then echo "  $cdir could not be created, so Codex's rules and approval_policy were not placed"; failures=1; cx=0; fi
+  if ((cx)); then
+    if [[ -e "$cdir/rules/default.rules" ]]; then add_rules codex "$cdir/rules/default.rules" "$G/codex-default.rules"
+    else place "$G/codex-default.rules" "$cdir/rules/default.rules"; fi
+    if [[ ! -e "$cfg" && ! -L "$cfg" ]]; then
+      # Made at 600 from the start, through a new name (never one left over), and linked in only while no
+      # config.toml is there: one that appeared meanwhile is never replaced.
+      if ((DRY)); then echo "  would create $cfg with approval_policy = \"on-request\""
+      else
+        rm -f "$cfg.cabinet-new"
+        if ( umask 077; set -C; printf 'approval_policy = "on-request"\n' > "$cfg.cabinet-new" ) 2>/dev/null && ln "$cfg.cabinet-new" "$cfg" 2>/dev/null; then
+          rm -f "$cfg.cabinet-new"; echo "  created $cfg with approval_policy = \"on-request\" (Codex asks before commands outside its sandbox)"
+        else rm -f "$cfg.cabinet-new"; echo "  $cfg could not be created: add approval_policy = \"on-request\" to it by hand"; failures=1; fi
+      fi
+    else
+      ans="$(node "$LIBJS" toml-top "$cfg" 2>/dev/null)" || ans=unreadable
+      top="${ans%%$'\n'*}" prof=""
+      if [[ "$ans" == *$'\n'profile$'\t'* ]]; then prof="${ans#*$'\n'profile$'\t'}"; prof="$(printf '%s' "${prof%%$'\n'*}" | term_text)"; fi
+      case "$top" in
+        on-request) ;;
+        unset)
+          if ((DRY)); then echo "  would add approval_policy = \"on-request\" to $cfg"
+          else backup "$cfg"
+            write_into "$cfg" text node "$LIBJS" toml-top --add "$cfg" && echo "  added approval_policy = \"on-request\" to $cfg (Codex asks before commands outside its sandbox)"
+          fi ;;
+        other$'\t'*)
+          val="$(printf '%s' "${top#*$'\t'}" | term_text)"
+          echo "  $cfg sets approval_policy = $val, left as is: the kit's guardrail is approval_policy = \"on-request\" (change it by hand)"; failures=1 ;;
+        *) echo "  $cfg could not be read safely, left as is: add approval_policy = \"on-request\" above its first [table] by hand"; failures=1 ;;
+      esac
+      if [[ -n "$prof" ]]; then
+        echo "  $cfg selects the profile $prof, whose approval_policy Codex before 0.134.0 uses in place of the top-level one: remove that line by hand (Codex 0.134.0 and later ignore it)"; failures=1
+      fi
+    fi
+  fi
+  if [[ -n "${CODEX_HOME:-}" ]] && ! [[ "$CODEX_HOME" -ef "$cdir" ]]; then
+    echo "  CODEX_HOME is $(printf '%s' "$CODEX_HOME" | term_text), so Codex reads its settings and rules there, not in $cdir where the kit placed them: unset CODEX_HOME, or copy them there by hand"; failures=1
   fi
 fi
 

@@ -193,6 +193,30 @@ if [[ -e ~/.codex/rules/default.rules ]] || command -v codex >/dev/null; then
     bad guardrails.codex "Codex push rule missing (run bin/bootstrap.sh)"
   else ok guardrails.codex "Codex holds the kit's rules and forbids git push"; fi
 fi
+# Codex's top-level approval_policy in ~/.codex/config.toml, read by toml-top (lib.js), the reader bootstrap uses.
+# Only "on-request" passes; a setting that may stand in for it (CODEX_HOME elsewhere, a profile selected) fails as
+# not checked. Values from the file are printed through term_text with the rest of the report.
+if [[ -d ~/.codex ]] || command -v codex >/dev/null; then
+  cfg="$HOME/.codex/config.toml"
+  if [[ -n "${CODEX_HOME:-}" ]] && ! [[ "$CODEX_HOME" -ef "$HOME/.codex" ]]; then
+    bad guardrails.codex-approval "CODEX_HOME is $CODEX_HOME, so Codex reads its settings there, not $cfg: the doctor did not check them (unset CODEX_HOME, then run cabinet bootstrap)"
+  elif [[ ! -e "$cfg" && ! -L "$cfg" ]]; then bad guardrails.codex-approval "there is no $cfg, so Codex's approval_policy is not set (run cabinet bootstrap)"
+  else
+    ans="$(node "$LIBJS" toml-top "$cfg" 2>/dev/null)" || ans=unreadable
+    top="${ans%%$'\n'*}" prof=""
+    if [[ "$ans" == *$'\n'profile$'\t'* ]]; then prof="${ans#*$'\n'profile$'\t'}"; prof="${prof%%$'\n'*}"; fi
+    val="${top#*$'\t'}"
+    case "$top" in
+      unset) bad guardrails.codex-approval "$cfg sets no top-level approval_policy (run cabinet bootstrap)" ;;
+      other$'\t'*) bad guardrails.codex-approval "$cfg sets approval_policy = $val, not \"on-request\" (bootstrap leaves a value of yours as it is: change it by hand)" ;;
+      on-request)
+        if [[ -n "$prof" ]]; then
+          bad guardrails.codex-approval "$cfg selects the profile $prof, whose approval_policy Codex before 0.134.0 uses in place of the top-level one: the doctor did not check it (remove that line; Codex 0.134.0 and later ignore it)"
+        else ok guardrails.codex-approval "$cfg sets approval_policy = \"on-request\", so Codex asks before commands outside its sandbox (a trusted project's .codex/config.toml, a --profile file or a flag can set another for the runs it applies to)"; fi ;;
+      *) bad guardrails.codex-approval "$cfg could not be read safely, so its approval_policy was not checked (add approval_policy = \"on-request\" above its first [table] by hand)" ;;
+    esac
+  fi
+fi
 if [[ -e ~/.gemini/antigravity-cli/settings.json ]] || command -v agy >/dev/null; then
   missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$K/guardrails/agy-permissions.json" 2>/dev/null || echo all)"
   [[ "$missing" == 0 ]] && ok guardrails.agy "agy denies push and publish" || bad guardrails.agy "agy is missing $missing deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)"

@@ -7051,6 +7051,140 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "guardrail checks B: Codex approval_policy" ""
+s100() {
+# specs/guardrail-checks.md, Part B, criteria 11 to 19 and 23. Its own HOME and global git config, restored at
+# the end; a PATH without the real tools (as section "guardrails scope" builds it), and a fake codex where a
+# criterion puts one first.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+BH="$T/gb-home"; mkdir -p "$BH" "$T/gb-tools" "$T/gb-fake"
+export HOME="$BH" GIT_CONFIG_GLOBAL="$BH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+ln -sf "$(command -v node)" "$T/gb-tools/node"; ln -sf "$(command -v git)" "$T/gb-tools/git"
+printf '#!/bin/sh\nexit 0\n' > "$T/gb-fake/codex"; chmod 755 "$T/gb-fake/codex"
+CP="$T/shim:$T/gb-tools:/usr/bin:/bin" FP="$T/gb-fake:$T/shim:$T/gb-tools:/usr/bin:/bin"
+! PATH="$CP" command -v codex >/dev/null || fail "codex is in /usr/bin or /bin: these tests need it off PATH"
+BW="$T/gb-ws"; "$F" new "$BW" --yes >/dev/null
+CX="$BH/.codex" CF="$BH/.codex/config.toml"
+unset CODEX_HOME
+# bb [--dry-run]: bootstrap with PATH $BP (no Codex unless FP); its output in BO, its exit status in BR.
+BP="$CP"
+bb() { BO="$(PATH="$BP" "$BW/bin/bootstrap.sh" "$@" 2>&1)" && BR=0 || BR=$?; }
+# dd: the doctor's JSON in DJ, its exit status in DR; gr <id>: "<level> <message>" per result with that ID.
+dd() { DJ="$(cd "$BW" && PATH="$BP" "$F" doctor --json 2>/dev/null)" && DR=0 || DR=$?; }
+gr() { j -r --arg i "$1" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$DJ"; }
+ca() { dd; gr guardrails.codex-approval; }
+# cfgw <printf format>: a fresh ~/.codex holding config.toml with those bytes; snap records a file for same.
+cfgw() { rm -rf "$CX"; mkdir -p "$CX"; printf -- "$1" > "$CF"; }
+snap() { cp -p "$1" "$T/gb-snap"; SM="$(ls -l "$1" | cut -c1-10)"; SB="$(ls "$1".bak.* 2>/dev/null | wc -l)"; }
+same() { cmp -s "$T/gb-snap" "$1" && [[ "$(ls -l "$1" | cut -c1-10)" == "$SM" && "$(ls "$1".bak.* 2>/dev/null | wc -l)" == "$SB" ]]; }
+# nc <message>: the step did not complete; ctl <message>: the control run, without it and exit 0.
+nc() { grep -qF -- "$1" <<<"$BO" && grep -qF 'Some steps did not complete' <<<"$BO" && [[ "$BR" == 1 ]]; }
+ctl() { ! grep -qF -- "$1" <<<"$BO" && [[ "$BR" == 0 ]]; }
+want() { printf -- "$1" > "$T/gb-want"; cmp -s "$T/gb-want" "$2"; }
+UNR='could not be read safely, left as is: add approval_policy = "on-request" above its first [table] by hand'
+P11='model = "x"\n\n[profiles.fast]\napproval_policy = "never"\n'
+A11='model = "x"\n\napproval_policy = "on-request"\n[profiles.fast]\napproval_policy = "never"\n'
+
+# The reader on its own: CRLF, a # inside a string, a quoted key with an escape.
+printf 'approval_policy = "on-request"\r\n[x]\r\n' > "$T/gb-r"; [[ "$(L toml-top "$T/gb-r")" == on-request ]] || fail "toml-top: CRLF"
+printf 'a = "x # y" # z\napproval_policy = "#"\n' > "$T/gb-r"; [[ "$(L toml-top "$T/gb-r")" == "other"$'\t''"#"' ]] || fail "toml-top: a # in a string: $(L toml-top "$T/gb-r")"
+printf '%s\n' '"approval\u005fpolicy" = "never"' > "$T/gb-r"; [[ "$(L toml-top "$T/gb-r")" == unreadable ]] || fail "toml-top: an escaped key"
+L toml-top --add "$T/gb-r" >/dev/null 2>&1 && fail "toml-top --add on an unreadable file"
+
+# Criterion 11: (a) a profile only; (b) through a link; (c) an indented header; (d) a profile selected.
+cfgw "$P11"; cp "$CF" "$T/gb-before"; bb
+want "$A11" "$CF" && cmp -s "$T/gb-before" "$(ls "$CF".bak.* | head -1)" || fail "criterion 11(a): $(cat "$CF")"
+ctl 'selects the profile' || fail "criterion 11(a), the control of (d): $BO"
+grep -q '^ok ' <<<"$(ca)" || fail "criterion 11(a): $(ca)"
+rm -rf "$CX" "$BH/dotfiles"; mkdir -p "$CX" "$BH/dotfiles"; printf -- "$P11" > "$BH/dotfiles/config.toml"; chmod 600 "$BH/dotfiles/config.toml"; ln -s "$BH/dotfiles/config.toml" "$CF"; bb
+[[ -L "$CF" ]] && want "$A11" "$BH/dotfiles/config.toml" && [[ "$(perm "$BH/dotfiles/config.toml")" == 600 ]] || fail "criterion 11(b): $(ls -l "$CF")"
+cfgw 'model = "x"\n  [x]\ny = 1\n'; bb; want 'model = "x"\napproval_policy = "on-request"\n  [x]\ny = 1\n' "$CF" || fail "criterion 11(c): $(cat "$CF")"
+cfgw "profile = \"fast\"\n$P11"; bb
+want "profile = \"fast\"\n$A11" "$CF" || fail "criterion 11(d): $(cat "$CF")"
+nc 'selects the profile "fast"' || fail "criterion 11(d): $BO"
+r="$(ca)"; grep -q '^fix ' <<<"$r" && grep -qF 'selects the profile "fast"' <<<"$r" && ! grep -q '^ok ' <<<"$r" || fail "criterion 11(d): $r"
+
+# Criteria 12 and 13: set already, in any of its forms: left as is, ok.
+for c in '  approval_policy = "on-request"\n[x]\ny = 1\n' "\"approval_policy\" = 'on-request' # kit\n" 'approval_policy = "on-request"\r\n[x]\r\n'; do
+  cfgw "$c"; snap "$CF"; bb
+  same "$CF" && [[ "$BR" == 0 ]] || fail "criteria 12 and 13: $c was changed, or bootstrap failed: $BO"
+  grep -q '^ok ' <<<"$(ca)" || fail "criteria 12 and 13: $c: $(ca)"
+done
+
+# Criterion 14: another value, left as is; (b) printed terminal-safe; (c) not a string.
+cfgw 'approval_policy = "never"\n[x]\n'; snap "$CF"; bb
+same "$CF" && nc 'sets approval_policy = "never", left as is' || fail "criterion 14(a): $BO"
+grep -qF "fix $CF sets approval_policy = \"never\", not \"on-request\"" <<<"$(ca)" || fail "criterion 14(a): $(ca)"
+cfgw 'approval_policy = "on-request"\n[x]\n'; bb; ctl 'sets approval_policy' || fail "criterion 14, the control: $BO"
+cfgw 'approval_policy = "\033[31mx"\n'
+for out in "$(in_tty env PATH="$CP" "$BW/bin/bootstrap.sh")" "$(cd "$BW" && in_tty env PATH="$CP" "$F" doctor)"; do
+  ! grep -q $'\033\\[31mx' <<<"$out" && grep -qF '?[31mx' <<<"$out" || fail "criterion 14(b): a control byte from the file was printed: $(grep -F '31mx' <<<"$out" | od -c | head -5)"
+done
+cfgw 'approval_policy = 1\n[x]\n'; snap "$CF"; bb
+same "$CF" && nc 'sets approval_policy = 1, left as is' || fail "criterion 14(c): $BO"
+grep -qF 'sets approval_policy = 1, not "on-request"' <<<"$(ca)" || fail "criterion 14(c): $(ca)"
+
+# Criteria 15 and 16: unreadable, left as is; the control is criterion 13 (a)'s file. (16e) a dotted key elsewhere.
+cfgw "\"approval_policy\" = 'on-request' # kit\n"; bb; ctl "$UNR" || fail "criteria 15 and 16, the control: $BO"
+for c in 'x = """\n[not a table]\n"""\n[real]\n' 'approval_policy = "on-request"\napproval_policy = "on-request"\n' 'notify = [\n  "a",\n]\n' \
+         '"approval\\u005fpolicy" = "never"\n' 'approval_policy.x = 1\n'; do
+  cfgw "$c"; snap "$CF"; bb
+  same "$CF" && nc "$UNR" || fail "criteria 15 and 16: $c: $BO"
+  grep -q "^fix .*could not be read safely, so its approval_policy was not checked" <<<"$(ca)" || fail "criteria 15 and 16: $c: $(ca)"
+  [[ "$c" != *u005f* ]] || grep -qF 'approval\u005fpolicy' "$CF" || fail "criterion 16(c): the backslash is not in the file"
+done
+cfgw 'features.x = true\n[x]\n'; bb; want 'features.x = true\napproval_policy = "on-request"\n[x]\n' "$CF" || fail "criterion 16(e): $(cat "$CF")"
+
+# Criterion 17: no table and no last newline.
+cfgw 'model = "x"'; bb; want 'model = "x"\napproval_policy = "on-request"\n' "$CF" || fail "criterion 17: $(od -c "$CF")"
+
+# Criterion 18: no file. (a) created at 600, the folder's mode kept.
+rm -rf "$CX"; mkdir -p "$CX"; chmod 755 "$CX"; bb
+[[ "$(perm "$CX")" == 755 && "$(perm "$CF")" == 600 ]] && want 'approval_policy = "on-request"\n' "$CF" && ! ls "$CF".bak.* >/dev/null 2>&1 \
+  && grep -qF "created $CF with approval_policy = \"on-request\"" <<<"$BO" && [[ "$BR" == 0 ]] || fail "criterion 18(a): $BO"
+dd; grep -q '^ok ' <<<"$(gr guardrails.codex-approval)" || fail "criterion 18(a): $(gr guardrails.codex-approval)"
+fixes() { j -r '$.results.filter((r) => r.level == "fix").map((r) => r.id).join("\n")' <<<"$DJ" | sort -u; }
+fa="$(fixes)"
+# (b) the file removed: one fix, the only new one, and the doctor exits 1.
+rm -f "$CF"; dd; r="$(gr guardrails.codex-approval)"
+[[ "$(grep -c . <<<"$r")" == 1 ]] && grep -q '^fix .*there is no' <<<"$r" && [[ "$DR" == 1 ]] && [[ "$(comm -13 <(echo "$fa") <(fixes))" == guardrails.codex-approval ]] \
+  || fail "criterion 18(b): exit $DR, $r, new fixes: $(comm -13 <(echo "$fa") <(fixes))"
+# (c) no folder, Codex only on PATH: the folder at 700, then the file.
+rm -rf "$CX"; BP="$FP"; bb
+[[ -d "$CX" && "$(perm "$CX")" == 700 && "$(perm "$CF")" == 600 ]] && want 'approval_policy = "on-request"\n' "$CF" && [[ "$BR" == 0 ]] || fail "criterion 18(c): $BO"
+ctl '.codex is not a folder' || fail "criterion 18(f), the control: $BO"
+# (g) the same with --dry-run: nothing made.
+rm -rf "$CX"; bb --dry-run
+[[ ! -e "$CX" ]] && grep -qx "  would create $CX" <<<"$BO" || fail "criterion 18(g): $BO"
+# (f) ~/.codex a file: left as is.
+printf 'x\n' > "$CX"; snap "$CX"; bb
+same "$CX" && nc '.codex is not a folder' || fail "criterion 18(f): $BO"
+rm -f "$CX"; BP="$CP"
+# (d) --dry-run with the folder and no file.
+mkdir -p "$CX"; bb --dry-run
+[[ ! -e "$CF" ]] && grep -qF "would create $CF" <<<"$BO" || fail "criterion 18(d): $BO"
+# (e) a link to nothing: the target never made.
+ln -s "$BH/gone.toml" "$CF"; bb
+[[ ! -e "$BH/gone.toml" && "$(readlink "$CF")" == "$BH/gone.toml" && ! -e "$CF.cabinet-new" ]] && nc "$UNR" || fail "criterion 18(e): $BO"
+rm -f "$CF"; bb; ctl "$UNR" || fail "criterion 18(e), the control: $BO"
+
+# Criterion 23: CODEX_HOME elsewhere fails; CODEX_HOME at ~/.codex itself is as if unset.
+mkdir -p "$BH/elsewhere"
+export CODEX_HOME="$BH/elsewhere"; bb; r="$(ca)"
+[[ "$(grep -c . <<<"$r")" == 1 ]] && grep -q '^fix CODEX_HOME is' <<<"$r" && nc 'CODEX_HOME is' || fail "criterion 23(a): $r; $BO"
+export CODEX_HOME="$CX"; bb; ctl 'CODEX_HOME is' && grep -q '^ok ' <<<"$(ca)" || fail "criterion 23(b): $(ca); $BO"
+unset CODEX_HOME; bb; ctl 'CODEX_HOME is' || fail "criterion 23, the control: $BO"
+
+# Criterion 19: no Codex at all: no result, and nothing said about approval_policy.
+rm -rf "$CX"; bb
+! grep -qF approval_policy <<<"$BO" && [[ ! -e "$CX" ]] || fail "criterion 19: $BO"
+dd; [[ -z "$(gr guardrails.codex-approval)" ]] || fail "criterion 19: $(gr guardrails.codex-approval)"
+
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then

@@ -1225,6 +1225,99 @@ function rulesAdd(kind, live, kit) {
   process.stdout.write(Buffer.concat([Buffer.from(text, "latin1"), Buffer.from((text === "" || text.endsWith("\n") ? "" : "\n") + add.join("\n") + "\n")]));
 }
 
+// toml-top [--add] <file>: Codex's top-level approval_policy in a config.toml, by one line scan, not a TOML
+// parser (specs/guardrail-checks.md, Rule 9). The top-level part is the lines before the first one starting,
+// after spaces or tabs, with "[": in that part only a table header can. Each line there must be blank, a
+// comment, or <key> = <value> on one line: a bare, quoted or dotted key, and a value that opens no multi-line
+// string and leaves no [ or { open. Prints the answer on its first line: on-request, other<TAB><value as
+// written>, unset or unreadable; then profile<TAB><value as written> when the top level sets profile.
+// unreadable: a line it does not recognize, a quoted key holding a backslash, a dotted key under
+// approval_policy or profile, either defined twice, or a file it cannot read. --add prints the file with
+// approval_policy = "on-request" inserted before the first table header (or at the end), only when the answer
+// is unset, and exits 1 otherwise. Bytes are read and written as latin1, so no other byte changes.
+function tomlTopScan(text) {
+  const lines = text.split("\n"), found = {};
+  let header = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].endsWith("\r") ? lines[i].slice(0, -1) : lines[i];
+    if (/^[ \t]*\[/.test(l)) { header = i; break; }
+    const line = tomlTopLine(l);
+    if (!line) return { answer: "unreadable" };
+    if (!line.key) continue;
+    const [k, ...more] = line.key;
+    if (k.bad || ((k.name === "approval_policy" || k.name === "profile") && more.length)) return { answer: "unreadable" };
+    if (more.some((p) => p.bad)) return { answer: "unreadable" };
+    if (more.length || (k.name !== "approval_policy" && k.name !== "profile")) continue;
+    if (k.name in found) return { answer: "unreadable" };
+    found[k.name] = line.value;
+  }
+  const v = found.approval_policy;
+  return { header, profile: found.profile,
+    answer: v === undefined ? "unset" : v === '"on-request"' || v === "'on-request'" ? "on-request" : "other\t" + v };
+}
+// One top-level line: {} for a blank or comment line, {key: [{name, bad}], value} for a key, null when not recognized.
+function tomlTopLine(l) {
+  let i = 0;
+  const ws = () => { while (l[i] === " " || l[i] === "\t") i++; };
+  ws();
+  if (i === l.length || l[i] === "#") return {};
+  const key = [];
+  for (;;) {
+    ws();
+    if (l[i] === '"' || l[i] === "'") {
+      const q = l[i], end = l.indexOf(q, i + 1);
+      if (end < 0) return null;
+      const name = l.slice(i + 1, end);
+      key.push({ name, bad: name.includes("\\") });
+      i = end + 1;
+    } else {
+      const m = /^[A-Za-z0-9_-]+/.exec(l.slice(i));
+      if (!m) return null;
+      key.push({ name: m[0], bad: false });
+      i += m[0].length;
+    }
+    ws();
+    if (l[i] === ".") { i++; continue; }
+    break;
+  }
+  if (l[i] !== "=") return null;
+  i++; ws();
+  // The value, up to a comment outside quotes: no multi-line string, every [ and { closed.
+  const start = i;
+  let depth = 0, end = l.length;
+  while (i < l.length) {
+    const c = l[i];
+    if (c === "#") { end = i; break; }
+    if (c === '"' || c === "'") {
+      if (l[i + 1] === c && l[i + 2] === c) return null;
+      i++;
+      while (i < l.length && l[i] !== c) i += c === '"' && l[i] === "\\" ? 2 : 1;
+      if (i >= l.length) return null;
+    } else if (c === "[" || c === "{") depth++;
+    else if (c === "]" || c === "}") depth--;
+    i++;
+  }
+  const value = l.slice(start, end).replace(/[ \t]+$/, "");
+  if (depth !== 0 || value === "") return null;
+  return { key, value };
+}
+function tomlTop(a, b) {
+  const add = a === "--add", file = add ? b : a;
+  let text;
+  try { text = fs.readFileSync(file, "latin1"); } catch (e) { text = null; }
+  const r = text === null ? { answer: "unreadable" } : tomlTopScan(text);
+  if (!add) {
+    process.stdout.write(Buffer.from(r.answer + "\n" + (r.answer !== "unreadable" && r.profile !== undefined ? "profile\t" + r.profile + "\n" : ""), "latin1"));
+    return;
+  }
+  if (r.answer !== "unset") die("", 1);
+  const lines = text.split("\n"), eol = text.includes("\r\n") ? "\r\n" : "\n", ins = 'approval_policy = "on-request"' + eol;
+  const out = r.header < lines.length
+    ? lines.slice(0, r.header).map((l) => l + "\n").join("") + ins + lines.slice(r.header).join("\n")
+    : text + (text === "" || text.endsWith("\n") ? "" : eol) + ins;
+  process.stdout.write(Buffer.from(out, "latin1"));
+}
+
 // verdict-origin <workspace>: each verdict line not added by a commit of bin/handoff.sh record or bin/spec.sh
 // record, by one git blame --porcelain per file that holds one: in HANDOFFS.md, a "- Verdict:" line (not in a
 // fenced example) whose commit's summary is not "handoffs: <its entry's ID> <role> <VERDICT>"; in a spec, a
@@ -1838,7 +1931,7 @@ function moveAside(from, to) {
 const COMMANDS = {
   "delete-plan": deletePlan,
   "kit-map": kitMap,
-  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "verdict-origin": verdictOrigin,
+  "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
