@@ -258,6 +258,13 @@ secrets_hook() {
   [[ "$top" == "$WS" ]] || { echo none; return 0; }
   echo "$(git -C "$WS" rev-parse --path-format=absolute --git-common-dir)/hooks/pre-commit"
 }
+# The hooks bootstrap gives the pass-through stub in the global hooks folder, and the doctor checks:
+# one list for both. Not push-to-checkout or fsmonitor-watchman: git changes its behavior when those merely exist.
+PASSTHROUGH_HOOKS="applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg post-commit post-checkout post-merge post-rewrite pre-auto-gc reference-transaction post-index-change sendemail-validate"
+# The SHA-256 of each released copy of guardrails/pre-commit-secrets that is not the current one: bootstrap
+# replaces them, the doctor names them. 0.1.0 to 0.5.0 shipped one copy, which let a commit through when
+# bin/secret.sh could not run. Add the current one's here when the hook changes in a release.
+SECRETS_HOOK_RELEASED="9753cbfdb7be731658233a293c990627c970b911654d542b591ce3f3e0c54024"
 repo_dir() { case "$1" in /*) echo "$1" ;; "~/"*) echo "$HOME/${1#"~/"}" ;; *) echo "$WS/$1" ;; esac; }
 
 # Sessions (bin/session.sh): each is a git worktree of a repo at $SESSIONS/<repo>/<name>/, on the branch

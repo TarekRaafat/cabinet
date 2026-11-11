@@ -127,12 +127,16 @@ out="$("$WS/bin/role.sh" build --check 2>&1)" && ok kit.roles "roles built: $(te
 
 section "Push guardrails"
 hooks="$(git config --global core.hooksPath || true)"
-if [[ -n "$hooks" && -x "$hooks/pre-push" ]] && grep -q 'dev/tty' "$hooks/pre-push"; then ok guardrails.push-gate "git push gate at $hooks"
-else bad guardrails.push-gate "git push gate not installed (run bin/bootstrap.sh)"; fi
-# The kit's gate asks only in Cabinet's repos; any other (an edited copy, one of yours, its helper missing) asks in every repo.
-if [[ -n "$hooks" && -x "$hooks/pre-push" ]] && ! { cmp -s "$K/guardrails/pre-push" "$hooks/pre-push" && cmp -s "$K/guardrails/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js"; }; then
-  note guardrails.push-gate "the push gate at $hooks/pre-push is not the kit's, so it asks before every push in every repo, not only Cabinet's (to take the kit's: move or delete that file, then run cabinet bootstrap)"
-fi
+# One result. Only the kit's copy (byte for byte, executable) is vouched for: the doctor reads a hook, never runs it.
+# The kit's gate asks only in Cabinet's repos; without its helper it asks in every repo.
+gate_kit=0
+if [[ -z "$hooks" || ! -e "$hooks/pre-push" ]]; then bad guardrails.push-gate "git push gate not installed (run bin/bootstrap.sh)"
+elif [[ ! -x "$hooks/pre-push" ]]; then bad guardrails.push-gate "the push gate at $hooks/pre-push is not executable, so git does not run it (run bin/bootstrap.sh)"
+elif ! cmp -s "$K/guardrails/pre-push" "$hooks/pre-push"; then
+  bad guardrails.push-gate "$hooks/pre-push is not the kit's push gate, so the doctor cannot check that it asks before a push (to use the kit's: move that hook into each repo's own .git/hooks, where the kit's gate runs it, remove it from $hooks, then run cabinet bootstrap)"
+elif ! cmp -s "$K/guardrails/cabinet-push-gate.js" "$hooks/cabinet-push-gate.js"; then gate_kit=1
+  note guardrails.push-gate "the kit's push gate at $hooks is without its helper cabinet-push-gate.js, so it asks before every push in every repo, not only Cabinet's (run cabinet bootstrap)"
+else gate_kit=1; ok guardrails.push-gate "the kit's push gate at $hooks, which asks in Cabinet's repos"; fi
 # A claim whose workspace is gone makes the gate ask in every repo: it cannot read that workspace's repos (cabinet-push-gate.js).
 for claim in "$LOGROOT"/*/workspace; do
   [[ -f "$claim" ]] || continue
@@ -144,14 +148,21 @@ done
 # The gate knows this workspace only from a claim naming it (bootstrap writes it; cabinet-push-gate.js reads it).
 cw="$(head -1 "$LOGDIR/workspace" 2>/dev/null || true)"
 cl="$LOGROOT_SHOWN/$CABINET_SLUG"
-if [[ -n "$cw" && -d "$cw" && "$(cd "$cw" && pwd -P)" == "$WS" ]]; then ok guardrails.claim "this workspace holds its claim in $cl, so the push gate asks in its repos"
+if [[ -n "$cw" && -d "$cw" && "$(cd "$cw" && pwd -P)" == "$WS" ]]; then
+  if ((gate_kit)); then ok guardrails.claim "this workspace holds its claim in $cl, so the push gate asks in its repos"
+  else ok guardrails.claim "this workspace holds its claim in $cl, which only the kit's push gate reads (see guardrails.push-gate)"; fi
 elif [[ -n "$cw" && -d "$cw" ]] && grep -qxF "$WS" "$LOGDIR/shared" 2>/dev/null; then
   bad guardrails.claim "the slug '$CABINET_SLUG' is held by the workspace at $cw: the push gate still asks in this workspace's repos, but its schedules and log folder are that workspace's (give this one its own slug: cabinet config --slug <name>)"
 elif [[ -n "$cw" && -d "$cw" ]]; then
   bad guardrails.claim "the slug '$CABINET_SLUG' is held by the workspace at $cw and no claim in $cl names this one, so the push gate does not ask in its repos (run bin/bootstrap.sh, then give this one its own slug: cabinet config --slug <name>)"
 else bad guardrails.claim "no claim in $cl names this workspace, so the push gate does not ask in its repos (run bin/bootstrap.sh)"; fi
-[[ -n "$hooks" && -x "$hooks/pre-commit" ]] && ok guardrails.hook-passthrough "repos' own hooks still run (pass-through stubs)" \
-  || note guardrails.hook-passthrough "repos' own git hooks (pre-commit and others) do not run under the global hooks path: run bin/bootstrap.sh"
+# Every name bootstrap gives the stub (PASSTHROUGH_HOOKS in lib.sh) must hold the kit's stub, executable.
+pt=""
+for h in $PASSTHROUGH_HOOKS; do
+  [[ -n "$hooks" && -x "$hooks/$h" ]] && cmp -s "$K/guardrails/hook-passthrough" "$hooks/$h" || pt+="${pt:+, }$h"
+done
+[[ -z "$pt" ]] && ok guardrails.hook-passthrough "repos' own hooks still run (the kit's pass-through stubs in $hooks)" \
+  || note guardrails.hook-passthrough "repos' own git hooks may not run under the global hooks path: in ${hooks:-the global hooks folder}, $pt are missing or not the kit's pass-through stub (run bin/bootstrap.sh; a hook of your own there must run the repo's own hook itself)"
 # The hooks folder git really uses in each of Cabinet's folders (every scope: system, global, local, worktree,
 # included files), against the global one. Folders that are not Cabinet's are never read.
 gh_path="$(git config --global --type=path core.hooksPath 2>/dev/null || true)"
@@ -476,13 +487,27 @@ fi
 section "Secrets"
 # Keys, tokens and passwords in the workspace's files (bin/secret.sh names the file and line,
 # never the value), and the pre-commit hook that refuses new ones.
-if out="$("$WS/bin/secret.sh" check 2>&1)"; then ok secrets.none "no likely secret in the workspace's files"
+if [[ ! -x "$WS/bin/secret.sh" ]]; then
+  bad secrets.none "bin/secret.sh is missing or not executable, so neither the doctor nor the commit hook can check for secrets (chmod +x bin/secret.sh; if it is missing, kit.unedited names it)"
+elif out="$("$WS/bin/secret.sh" check 2>&1)"; then ok secrets.none "no likely secret in the workspace's files"
 else found="$(grep '^  ' <<<"$out" | sed 's/^  //')"
   bad secrets.none "possible secrets in the workspace's files (remove each and rotate any real key; a false alarm: add not-a-secret to its line): $found"; fi
 sh_hook="$(secrets_hook)"
 if [[ "$sh_hook" == none ]]; then ok secrets.hook "the workspace is committed with the project, whose own hooks run"
-elif [[ -x "$sh_hook" ]] && grep -q 'bin/secret.sh' "$sh_hook"; then ok secrets.hook "commits are checked for secrets"
-else note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secret.sh (run bin/bootstrap.sh; a hook of your own can call bin/secret.sh check --staged)"; fi
+else
+  # The hook git runs for a commit here: the hooks folder git uses in the workspace (every scope, a relative
+  # one read from the top folder, as git does), through the kit's pass-through stub to the workspace's own.
+  rh="$sh_hook" hp="$(git -C "$WS" config --type=path --get core.hooksPath 2>/dev/null || true)"
+  if [[ -n "$hp" ]]; then
+    [[ "$hp" == /* ]] || hp="$WS/$hp"
+    [[ -x "$hp/pre-commit" ]] && cmp -s "$K/guardrails/hook-passthrough" "$hp/pre-commit" || rh="$hp/pre-commit"
+  fi
+  if [[ -x "$rh" ]] && cmp -s "$K/guardrails/pre-commit-secrets" "$rh"; then ok secrets.hook "commits are checked for secrets (the kit's hook at $rh)"
+  elif [[ ! -x "$rh" || -d "$rh" ]]; then note secrets.hook "commits are not checked for secrets: the workspace has no pre-commit hook running bin/secret.sh (run bin/bootstrap.sh; a hook of your own can call bin/secret.sh check --staged)"
+  elif has "$SECRETS_HOOK_RELEASED" "$(sha256 "$rh" 2>/dev/null || true)"; then
+    note secrets.hook "commits are not checked for secrets when bin/secret.sh cannot run: $rh is the kit's earlier secret hook, which lets such a commit through (run bin/bootstrap.sh)"
+  else note secrets.hook "$rh is not the kit's secret hook, so the doctor cannot check that commits are checked for secrets (a hook of your own should run bin/secret.sh check --staged and stop the commit when it fails)"; fi
+fi
 
 section "Team"
 # Sub-teams: each lead is on the team, no role leads itself round a loop, and a role covers builders

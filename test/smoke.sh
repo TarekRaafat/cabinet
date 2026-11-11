@@ -4971,7 +4971,8 @@ sed 's/push cancelled/push canceled/' "$KIT/test/fixtures/30017c9/pre-push" > "$
 out="$(boot)"; cmp -s "$GS/gate-mine" "$GK/pre-push" || fail "criterion 7: a changed gate was replaced"
 grep -qF "differs, left as is: $GK/pre-push" <<<"$out" || fail "criterion 7: bootstrap did not say it left the gate: $(grep -F pre-push <<<"$out")"
 out="$(dj "$GW")"
-res "$out" guardrails.push-gate | grep -q '^ok ' && res "$out" guardrails.push-gate | grep '^note ' | grep -F 'asks before every push in every repo' | grep -qF 'move or delete that file, then run cabinet bootstrap' \
+# A gate that is not the kit's is a FIX the doctor cannot check (specs/guardrail-checks.md, Decision 1 A), one result.
+[[ "$(res "$out" guardrails.push-gate | grep -c .)" == 1 ]] && res "$out" guardrails.push-gate | grep '^fix ' | grep -F "is not the kit's push gate, so the doctor cannot check" | grep -qF 'move that hook into each repo' \
   || fail "criterion 7: the doctor on a changed gate: $(res "$out" guardrails.push-gate)"
 rm -f "$GK/pre-push"; boot >/dev/null; out="$(dj "$GW")"
 cmp -s "$KIT/guardrails/pre-push" "$GK/pre-push" && res "$out" guardrails.push-gate | grep -q '^ok ' && ! res "$out" guardrails.push-gate | grep -q '^note ' \
@@ -6946,6 +6947,107 @@ fold k5-db; cp "$OK/scripts/gone2.sh" "$W/bin/gone2.sh"; mv "$W/bin" "$T/k5-db-b
 o="$("$F" -C "$W" doctor --json || true)"
 j -e --arg m "$x" '((r) => r.level == "fix" && r.message.startsWith($m) && r.message.split(" ").includes("bin/doctor.sh"))($.results.find((r) => r.id == "kit.unedited"))' <<<"$o" >/dev/null || fail "the doctor and bin linked out: $o"
 rm -rf "$T"/k5-*
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "guardrail checks A: the hooks" ""
+s99() {
+# specs/guardrail-checks.md, Part A, criteria 1 to 10. Its own HOME and global git config, restored at the end.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL"
+AH="$T/ga-home"; mkdir -p "$AH"
+export HOME="$AH" GIT_CONFIG_GLOBAL="$AH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+AW="$T/ga-ws"; "$F" new "$AW" --yes >/dev/null; "$AW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+RW="$(cd "$AW" && pwd -P)" AK="$AH/.config/git/hooks" KG="$KIT/guardrails"
+WH="$RW/.git/hooks/pre-commit" REL="$KIT/test/fixtures/pre-commit-secrets-0.1.0"
+[[ "$(pf sha256 "$REL")" == 9753cbfdb7be731658233a293c990627c970b911654d542b591ce3f3e0c54024 ]] \
+  || fail "the released secret hook fixture is not the released bytes"
+ad() { (cd "$AW" && "$F" doctor --json 2>/dev/null) || true; }
+# gr <doctor json> <id>: "<level> <message>" for each result with that ID; one1: exactly one such line.
+gr() { j -r --arg i "$2" '$.results.filter((r) => r.id == $i).map((r) => r.level + " " + r.message).join("\n")' <<<"$1"; }
+one1() { [[ "$(grep -c . <<<"$1")" == 1 ]]; }
+gate() { cp "$KG/pre-push" "$AK/pre-push"; chmod 755 "$AK/pre-push"; cp "$KG/cabinet-push-gate.js" "$AK/cabinet-push-gate.js"; }
+stub0() { printf '#!/bin/sh\nexit 0\n' > "$1"; chmod 755 "$1"; }
+cmp -s "$KG/pre-push" "$AK/pre-push" && cmp -s "$KG/pre-commit-secrets" "$WH" || fail "bootstrap did not place the gate and the secret hook"
+
+# Criterion 1: a stub gate that names dev/tty is a FIX, and nothing claims it asks before every push.
+printf '#!/bin/sh\n# dev/tty\nexit 0\n' > "$AK/pre-push"; chmod 755 "$AK/pre-push"
+out="$(ad)"; r="$(gr "$out" guardrails.push-gate)"
+one1 "$r" && grep -qF "fix $AK/pre-push is not the kit's push gate, so the doctor cannot check that it asks before a push" <<<"$r" || fail "criterion 1: $r"
+! j -e '$.results.some((r) => r.message.includes("asks before every push"))' <<<"$out" >/dev/null || fail "criterion 1: a result says the stub asks before every push"
+# Criterion 5, with the stub: the claim does not vouch for it.
+r="$(gr "$out" guardrails.claim)"
+grep -q '^ok ' <<<"$r" && ! grep -qF 'push gate asks' <<<"$r" && grep -qF "which only the kit's push gate reads" <<<"$r" || fail "criterion 5 (stub): $r"
+# Criterion 2: the kit's gate and helper; (b) a link to the kit's gate.
+gate; out="$(ad)"; r="$(gr "$out" guardrails.push-gate)"
+one1 "$r" && grep -qxF "ok the kit's push gate at $AK, which asks in Cabinet's repos" <<<"$r" || fail "criterion 2: $r"
+grep -qF 'so the push gate asks in its repos' <<<"$(gr "$out" guardrails.claim)" || fail "criterion 5 (kit's gate): $(gr "$out" guardrails.claim)"
+rm -f "$AK/pre-push"; ln -s "$KG/pre-push" "$AK/pre-push"; r="$(gr "$(ad)" guardrails.push-gate)"
+one1 "$r" && grep -qxF "ok the kit's push gate at $AK, which asks in Cabinet's repos" <<<"$r" || fail "criterion 2(b): $r"
+rm -f "$AK/pre-push"; gate
+# Criterion 3: the kit's gate without its helper.
+rm -f "$AK/cabinet-push-gate.js"; r="$(gr "$(ad)" guardrails.push-gate)"
+one1 "$r" && grep -q '^note ' <<<"$r" && grep -qF 'without its helper cabinet-push-gate.js, so it asks before every push in every repo' <<<"$r" || fail "criterion 3: $r"
+gate
+# Criterion 4: the kit's gate, not executable.
+chmod 644 "$AK/pre-push"; r="$(gr "$(ad)" guardrails.push-gate)"
+one1 "$r" && grep -q '^fix ' <<<"$r" && grep -qF 'is not executable, so git does not run it' <<<"$r" || fail "criterion 4: $r"
+gate
+
+# Criterion 6: every pass-through stub is read.
+r="$(gr "$(ad)" guardrails.hook-passthrough)"; grep -q '^ok ' <<<"$r" || fail "criterion 6(a): $r"
+stub0 "$AK/pre-commit"; r="$(gr "$(ad)" guardrails.hook-passthrough)"
+grep -q '^note ' <<<"$r" && grep -qF 'pre-commit' <<<"$r" || fail "criterion 6(b): $r"
+cp "$KG/hook-passthrough" "$AK/pre-commit"; chmod 755 "$AK/pre-commit"; rm -f "$AK/commit-msg"; r="$(gr "$(ad)" guardrails.hook-passthrough)"
+grep -q '^note ' <<<"$r" && grep -qF 'commit-msg' <<<"$r" && ! grep -qF 'pre-commit' <<<"$r" || fail "criterion 6(c): $r"
+cp "$KG/hook-passthrough" "$AK/commit-msg"; chmod 755 "$AK/commit-msg"
+
+# Criterion 7: the secret hook refuses a commit it cannot check.
+key="gh""p_""$(printf 'a%.0s' {1..36})"
+printf 'token %s\n' "$key" > "$AW/notes/x.md"; git -C "$AW" add notes/x.md
+refused() {  # refused <what>: the commit exits non-zero, HEAD stays, stderr names why
+  local h err; h="$(git -C "$AW" rev-parse HEAD)"
+  err="$(git -C "$AW" commit -qm t 2>&1 >/dev/null)" && fail "$1: the commit went through"
+  [[ "$(git -C "$AW" rev-parse HEAD)" == "$h" ]] && grep -qF 'commit refused: bin/secret.sh is missing or not executable' <<<"$err" || fail "$1: $err"
+}
+chmod 644 "$AW/bin/secret.sh"; refused "criterion 7(a)"; chmod 755 "$AW/bin/secret.sh"
+mv "$AW/bin/secret.sh" "$T/ga-secret.sh"; refused "criterion 7(b)"; mv "$T/ga-secret.sh" "$AW/bin/secret.sh"
+echo 'plain text' > "$AW/notes/x.md"; git -C "$AW" add notes/x.md
+git -C "$AW" commit -qm t >/dev/null 2>&1 || fail "criterion 7(c): a plain commit was refused"
+mkdir -p "$T/ga-nogit"; err="$(cd "$T/ga-nogit" && env -u GIT_DIR "$WH" 2>&1 >/dev/null)" && fail "criterion 7(d): the hook passed outside a repository"
+grep -qF 'commit refused: bin/secret.sh is missing or not executable' <<<"$err" || fail "criterion 7(d): $err"
+
+# Criterion 8: bootstrap replaces the released copy only.
+cp "$REL" "$WH"; chmod 755 "$WH"; out="$("$AW/bin/bootstrap.sh" 2>&1 || true)"
+cmp -s "$KG/pre-commit-secrets" "$WH" && [[ -x "$WH" ]] && grep -qF "replaced the kit's earlier secret hook at" <<<"$out" || fail "criterion 8(a): $(grep -F pre-commit <<<"$out")"
+printf '#!/bin/sh\nexec bin/secret.sh check --staged # mine\n' > "$WH"; chmod 755 "$WH"; cp "$WH" "$T/ga-mine"
+"$AW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+cmp -s "$T/ga-mine" "$WH" && [[ "$(perm "$WH")" == 755 ]] || fail "criterion 8(b): a hook of the owner's was changed"
+
+# Criterion 9: the doctor follows the hook git runs.
+sh1() { local r; r="$(gr "$(ad)" secrets.hook)"; one1 "$r" || { echo "not one: $r"; return 1; }; printf '%s\n' "$r"; }
+cp "$KG/pre-commit-secrets" "$WH"; chmod 755 "$WH"
+r="$(sh1)"; grep -q '^ok ' <<<"$r" && grep -qF "the kit's hook at" <<<"$r" && grep -qF "$WH" <<<"$r" || fail "criterion 9(a): $r"
+cp "$REL" "$WH"; r="$(sh1)"; grep -q '^note ' <<<"$r" && grep -qF "is the kit's earlier secret hook" <<<"$r" || fail "criterion 9(b): $r"
+cp "$KG/pre-commit-secrets" "$WH"; stub0 "$AK/pre-commit"
+r="$(sh1)"; grep -q '^note ' <<<"$r" && grep -qF "$AK/pre-commit is not the kit's secret hook" <<<"$r" || fail "criterion 9(c): $r"
+cp "$KG/hook-passthrough" "$AK/pre-commit"; chmod 755 "$AK/pre-commit"
+cp "$T/ga-mine" "$WH"; r="$(sh1)"; grep -q '^note ' <<<"$r" && grep -qF "is not the kit's secret hook" <<<"$r" || fail "criterion 9(d): $r"
+cp "$KG/pre-commit-secrets" "$WH"; chmod 644 "$WH"
+r="$(sh1)"; grep -q '^note ' <<<"$r" && grep -qF 'commits are not checked for secrets' <<<"$r" && ! grep -qF 'earlier secret hook' <<<"$r" || fail "criterion 9(e): $r"
+chmod 755 "$WH"; git config --global --unset core.hooksPath
+r="$(sh1)"; grep -q '^ok ' <<<"$r" && grep -qF "$WH" <<<"$r" || fail "criterion 9(f): $r"
+git config --global core.hooksPath "$AK"
+git -C "$AW" config core.hooksPath .githooks; mkdir -p "$AW/.githooks"; stub0 "$AW/.githooks/pre-commit"
+r="$(sh1)"; grep -q '^note ' <<<"$r" && grep -qF ".githooks/pre-commit is not the kit's secret hook" <<<"$r" || fail "criterion 9(g): $r"
+git -C "$AW" config --unset core.hooksPath; rm -rf "$AW/.githooks"
+
+# Criterion 10: the scanner cannot run.
+s10() { local r; r="$(gr "$(ad)" secrets.none)"; grep -q '^fix ' <<<"$r" && grep -qF 'bin/secret.sh is missing or not executable' <<<"$r" && ! grep -qF 'possible secrets' <<<"$r" || fail "$1: $r"; }
+chmod 644 "$AW/bin/secret.sh"; s10 "criterion 10(a)"; chmod 755 "$AW/bin/secret.sh"
+mv "$AW/bin/secret.sh" "$T/ga-secret.sh"; s10 "criterion 10(b)"; mv "$T/ga-secret.sh" "$AW/bin/secret.sh"
+
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 

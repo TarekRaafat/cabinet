@@ -182,11 +182,9 @@ echo "== Git push gate"
 # A global core.hooksPath makes git skip every repo's own .git/hooks, so every other
 # hook gets a stub that passes the call on to the repo's own hook (pre-commit
 # secret scanners keep working). pre-push is the gate itself, and passes on too.
-# Not push-to-checkout or fsmonitor-watchman: git changes its behavior when those merely exist.
+# The names are PASSTHROUGH_HOOKS in lib.sh, which the doctor reads too.
 hooks="$HOME/.config/git/hooks"
-for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg \
-         post-commit post-checkout post-merge post-rewrite pre-auto-gc reference-transaction \
-         post-index-change sendemail-validate; do
+for h in $PASSTHROUGH_HOOKS; do
   place "$G/hook-passthrough" "$hooks/$h"
 done
 # Three hooks are the kit's own, and pass the call on too: pre-push is the push gate, prepare-commit-msg
@@ -197,7 +195,6 @@ done
 # copy was edited: it is kept first as <hook>.cabinet-v<N>, where git never runs it, and when that name
 # holds something else, the hook is left as it is. Anything else is yours, and left as it is.
 hook_v() { sed -En "2s/^# cabinet $2 v(0|[1-9][0-9]*)\$/\\1/p" "$1" 2>/dev/null; }
-sha256() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" 2>/dev/null; }
 kit_hook() {  # kit_hook <hook> <what> <what is lost when it is left as is> [<SHA-256 of a released kit copy>...]
   local h="$hooks/$1" src="$G/$1" what="$2" lost="$3" old="" kit=0 keep="" taken="" sum s
   shift 3
@@ -255,12 +252,18 @@ echo "  The strongest guardrail is a key that asks you on every push: see \"A ha
 echo "== Secrets check"
 # The workspace's own pre-commit hook refuses a commit that adds a likely secret. Only in a
 # workspace with its own git: a shared cabinet/ is committed with the project, whose hooks
-# are the project's. An existing hook is left as is (place never overwrites).
+# are the project's. An existing hook is left as is (place never overwrites), unless it is a released
+# copy of the kit's that is not the current one (SECRETS_HOOK_RELEASED in lib.sh): that one is replaced,
+# the way kit_hook replaces a hook. A link is left as is, as kit_hook leaves one.
 if [[ "$(secrets_hook)" == none ]]; then
   echo "  the workspace is committed with the project, whose own hooks run; bin/doctor.sh still checks"
 else
   sh_hook="$(secrets_hook)"
-  place "$G/pre-commit-secrets" "$sh_hook"
+  if [[ -f "$sh_hook" && ! -L "$sh_hook" ]] && has "$SECRETS_HOOK_RELEASED" "$(sha256 "$sh_hook" 2>/dev/null || true)"; then
+    if ((DRY)); then echo "  would replace the kit's earlier secret hook at $sh_hook"
+    else cp "$G/pre-commit-secrets" "$sh_hook.cabinet-new" && chmod +x "$sh_hook.cabinet-new" && mv -f "$sh_hook.cabinet-new" "$sh_hook" &&
+      echo "  replaced the kit's earlier secret hook at $sh_hook (it let a commit through when bin/secret.sh could not run)"; fi
+  else place "$G/pre-commit-secrets" "$sh_hook"; fi
   [[ -f "$sh_hook" && ! -x "$sh_hook" ]] && cmp -s "$G/pre-commit-secrets" "$sh_hook" && run chmod +x "$sh_hook"
 fi
 
