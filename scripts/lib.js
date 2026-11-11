@@ -245,6 +245,8 @@ function readiness(spend, ...files) {
     }
   } catch (e) { /* no spend file yet */ }
   const team = new Set(words(env("TEAM"))), builds = new Set(words(env("BUILDS"))), ui = new Set(words(env("UI")));
+  // The lines the sender wrote (asking for a verdict is not one); Status and any other line are read.
+  const SENDER = /^- (From|Changed|Needed|Depends on|Way back|Evidence|Spec|Size):/;
   const VER = /^- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$/;
   const names = (s) => s.replace(/\([^)]*\)/g, "").split(" and ").join(",").split("&").join(",").split("`").join("")
     .split(",").map((n) => n.trim()).filter(Boolean).map((n) => n.toLowerCase());
@@ -296,7 +298,7 @@ function readiness(spend, ...files) {
       if (m && !frm) { frm = m[1].trim().toLowerCase(); to = m[2]; }
       const v = l.trim().match(VER);
       if (v) vs.push({ role: v[1], verdict: v[2], date: v[3], commits: v[4] === "none" ? [] : v[4].split(","), note: v[5] });
-      else if (/\b(PASS|BLOCK|CHANGES)\b/.test(l)) unread.push(l.trim());
+      else if (!SENDER.test(l) && /\b(PASS|BLOCK|CHANGES)\b/.test(l)) unread.push(l.trim());
     }
     let needs = [];
     for (const n of names(to)) if (team.has(n) && !builds.has(n) && n !== "chief-of-staff" && !needs.includes(n)) needs.push(n);

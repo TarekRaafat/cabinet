@@ -43,7 +43,8 @@
 #       age_days, from, to, title; with a name, each entry's full text too), with its readiness:
 #       verdicts, needs (the reviewers it needs), missing, blocking, stale (a PASS that does not
 #       cover every commit a verdict names), ready (true, false, or null when it needs no review),
-#       builder (the one addressee that builds, else null) and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read).
+#       builder (the one addressee that builds, else null) and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read;
+#       the title and the sender's lines (From, Changed, Needed, Depends on, Way back, Evidence, Spec, Size) are not read, so a line asking for a verdict is not one).
 #       --ready: only the entries ready for the owner to push.
 #   bin/handoff.sh run <ID> [--retries <n>] [--dry-run]
 #       Move one piece of work (a handoff to one builder, filed --small or --spec) through the steps

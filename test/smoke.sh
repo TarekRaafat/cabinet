@@ -482,6 +482,10 @@ for x in qa security design-lead; do "$W/bin/handoff.sh" record "$r" --role "$x"
 sedi "/^### $r:/,/^### /s/^\(- Status: open ([0-9-]*)\)\$/\1 qa PASS, looks fine/" "$W/HANDOFFS.md"
 [[ "$(rj "$r" '$.unread_verdicts.length')" == 1 ]] && "$W/bin/doctor.sh" 2>&1 | grep -q "written outside a Verdict line, so not counted: $r" || fail "a verdict in prose was not reported: $(rj "$r" '$.unread_verdicts')"
 git -C "$W" checkout -q -- HANDOFFS.md
+# The sender's lines ask for a verdict; they are not one.
+sedi "/^### $r:/,/^### /{s/^- Changed: .*/- Changed: Ready, record a PASS or a BLOCK/;s/^- Needed: .*/- Needed: Record a PASS or a BLOCK, or CHANGES/;}" "$W/HANDOFFS.md"
+grep -q '^- Needed: Record a PASS or a BLOCK' "$W/HANDOFFS.md" && [[ "$(rj "$r" '$.unread_verdicts')" == '[]' ]] && "$W/bin/doctor.sh" 2>&1 | grep -q "no verdict is written outside a Verdict line" || fail "a Needed or Changed line asking for a verdict was read as one: $(rj "$r" '$.unread_verdicts')"
+git -C "$W" checkout -q -- HANDOFFS.md
 o="$("$W/bin/handoff.sh" add --from chief-of-staff --to owner --changed x --needed "Decide" "Pricing")"; o="${o%% *}"
 [[ "$(rj "$o" '[$.needs, $.ready]')" == '[[],null]' ]] || fail "a decision for the owner needs a review: $(rj "$o" '$')"
 rc=0; "$W/bin/handoff.sh" list qa --ready >/dev/null 2>&1 || rc=$?; [[ $rc == 2 ]] || fail "list --ready with a name, in text, was not refused"
