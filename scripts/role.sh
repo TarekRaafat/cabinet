@@ -193,6 +193,11 @@ for d in "${dirs[@]}"; do
 done
 org_page "$WS/ORG.md" "$tmp"
 echo "roles: $(team_roles)"
+# A word in CABINET_ROLES or the team table that is not a role name was skipped above (team_roles): no file
+# was written or removed for it. Said here, each through shown, and the build fails so it is fixed.
+skipped=0
+while IFS= read -r w; do echo "$(shown "$w") is not a role name (lowercase letters, digits and -), skipped" >&2; skipped=1; done < <(bad_roles)
+((skipped == 0)) || exit 1
 }
 
 r_draft() {

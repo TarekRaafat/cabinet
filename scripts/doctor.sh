@@ -34,13 +34,37 @@ else h="$(deps_hint "$miss")"; bad deps.required "cabinet needs ${miss// /, }, n
 if v="$(node_old)"; then bad deps.node "cabinet needs Node.js $NODE_MIN or newer; this is $v ($(node_hint))"
 elif [[ " $miss " != *" node "* ]]; then ok deps.node "Node.js is $NODE_MIN or newer"; fi
 
+section "Settings and job files"
+# Read as text (lib.sh): an unreadable cabinet.env stopped the doctor already. What is left: keys cabinet
+# does not read, unreadable or badly named job files, and commands not approved on this machine.
+for m in ${SET_UNKNOWN[@]+"${SET_UNKNOWN[@]}"}; do note settings.unknown "$m"; done
+for m in ${JOB_BAD_M[@]+"${JOB_BAD_M[@]}"}; do bad settings.literal "$m (write the value out, or fix the line)"; done
+for m in ${JOB_BADNAME[@]+"${JOB_BADNAME[@]}"}; do n="$(shown "$m")"; bad jobs.name "jobs/$n is not a job name (letters, digits and . _ -, not starting with -), so it is never listed or scheduled: rename it"; done
+tracked=0
+git -C "$WS" ls-files --error-unmatch cabinet.local.env >/dev/null 2>&1 && { tracked=1; bad settings.local-tracked "cabinet.local.env is tracked by git, so no approval in it counts: git rm --cached cabinet.local.env, then approve again"; }
+if [[ "$CABINET_RUNNER" == custom && -n "$CABINET_RUNNER_CMD" ]] && ! approved cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD" 2>/dev/null; then
+  m="$(not_approved cabinet.env CABINET_RUNNER_CMD)"; bad commands.approved "$m"
+fi
+for jf in "$WS"/jobs/*.job; do
+  j="$(basename "$jf" .job)"
+  [[ -f "$jf" ]] && job_name_ok "$j" && ! job_bad "$j" >/dev/null || continue
+  for k in COMMAND AFTER; do
+    v="$(job_get "$j" "$k")"
+    [[ -z "$v" ]] || approved "jobs/$j.job" "$k" "$v" 2>/dev/null || { m="$(not_approved "jobs/$j.job" "$k")"; bad commands.approved "$m"; }
+  done
+done
+[[ ${#SET_UNKNOWN[@]} -gt 0 || ${#JOB_BAD_M[@]} -gt 0 || ${#JOB_BADNAME[@]} -gt 0 || $tracked == 1 ]] || ok settings.literal "cabinet.env and the job files hold literal values only"
+
 section "Product repos"
 before=$problems
+# Each local-only entry that is not a plain path inside its repo is skipped by every reader (repos in lib.sh).
+while IFS= read -r m; do [[ "$m" == *"skipped the local-only file"* ]] && bad repos.local-path "$m: list it as a path inside the repo"; done < <(repos 2>&1 >/dev/null)
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
   [[ -e "$repo/.git" ]] || { bad repos.present "$name: no repo at $repo (run bin/bootstrap.sh)"; continue; }
   if [[ "${files:--}" != "-" ]]; then
-    for f in $files; do
+    set -f; fl=($files); set +f
+    for f in "${fl[@]}"; do
       live="$repo/$f" snap="$WS/local/$name/$f"
       if [[ ! -f "$live" ]]; then bad repos.local-file "$name/$f missing"
       elif [[ ! -f "$snap" ]]; then bad repos.snapshot "$name/$f not in snapshot (run bin/repo.sh snapshot)"
@@ -123,6 +147,7 @@ done
   || note roles.writes "project roles that may write another role's area: $clash (narrow the role's \"What you may write\", or change the team table)"
 [[ -z "$behind" ]] && ok roles.workflow "every drafted project role follows the workflow its job touches" \
   || note roles.workflow "project roles behind the workflow: $behind (redraft each: cabinet role draft <role>, which keeps what you confirmed)"
+while IFS= read -r w; do w="$(shown "$w")"; bad roles.name "$w is not a role name (lowercase letters, digits and -), skipped: fix CABINET_ROLES in cabinet.env, or the team table in AGENTS.md"; done < <(bad_roles)
 out="$("$WS/bin/role.sh" build --check 2>&1)" && ok kit.roles "roles built: $(team_roles)" || bad kit.roles "$out (run bin/role.sh build)"
 
 section "Push guardrails"
@@ -308,7 +333,7 @@ mods=() mfrom=() mid=() good=() gfrom=() gid=()
 [[ -z "$CABINET_MODEL_LIGHT" ]] || { mods+=("$CABINET_MODEL_LIGHT"); mfrom+=(cabinet.env); mid+=(model-light); }
 for jf in "$WS"/jobs/*.job; do
   [[ -f "$jf" ]] || continue
-  m="$(MODEL=""; source "$jf" >/dev/null 2>&1; printf '%s' "$MODEL")"
+  m="$(job_get "$(basename "$jf" .job)" MODEL)"
   [[ -z "$m" ]] || { mods+=("$m"); mfrom+=("jobs/${jf##*/}"); mid+=(model); }
 done
 for ((i = 0; i < ${#mods[@]}; i++)); do
@@ -372,15 +397,16 @@ elif [[ "$hooks" == "$HOME/.config/git/hooks" && -f "$pcm" && ! -L "$pcm" ]] && 
 else note credit.hook "credit not installed: $pcm is not the kit's credit hook, and bootstrap leaves it as it is (to credit roles, move your hook into each repo's own .git/hooks and remove it from $hooks, then run bin/bootstrap.sh)"; fi
 
 section "Skills and plugins"
-for s in ${CABINET_SKILLS:-}; do [[ -e ~/.claude/skills/$s ]] || note skills.skill "skill '$s' not installed"; done
-for p in ${CABINET_PLUGINS:-}; do grep -q "\"$p@" ~/.claude/plugins/installed_plugins.json 2>/dev/null || note skills.plugin "plugin '$p' not installed"; done
+set -f; sk=(${CABINET_SKILLS:-}) pg=(${CABINET_PLUGINS:-}); set +f   # split, never matched against files
+for s in ${sk[@]+"${sk[@]}"}; do [[ -e ~/.claude/skills/$s ]] || note skills.skill "skill '$s' not installed"; done
+for p in ${pg[@]+"${pg[@]}"}; do grep -q "\"$p@" ~/.claude/plugins/installed_plugins.json 2>/dev/null || note skills.plugin "plugin '$p' not installed"; done
 ok skills.checked "skills and plugins checked"
 
 section "Operations manual"
 # The manual must name every script (the kit's and the project's tools/), job and role, or it has fallen behind.
 missing=()
 for f in "$WS"/bin/*.sh; do case "$(basename "$f")" in lib.sh|when.sh|platform.sh) continue ;; esac; grep -qF "bin/$(basename "$f")" "$WS/OPERATIONS.md" || missing+=("bin/$(basename "$f")"); done
-for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
+for f in "$WS"/jobs/*.job; do [[ -f "$f" ]] && job_name_ok "$(basename "$f" .job)" || continue; grep -qF "$(basename "$f" .job)" "$WS/OPERATIONS.md" || missing+=("job $(basename "$f" .job)"); done
 for f in "$WS"/tools/*; do [[ -f "$f" && "${f##*/}" != README.md ]] || continue; grep -qF "tools/${f##*/}" "$WS/OPERATIONS.md" || missing+=("tools/${f##*/}"); done
 for r in $(team_roles); do grep -qF "$r" "$WS/OPERATIONS.md" || missing+=("role $r"); done
 # The manual as a page (bin/manual.sh): untracked, rebuilt after each brief; say when it is behind.
@@ -596,7 +622,8 @@ else
   for jf in "$WS"/jobs/*.job; do
     [[ -f "$jf" && "$CABINET_SCHEDULES" != off ]] || continue
     j="$(basename "$jf" .job)"
-    WHEN="$(WHEN=""; source "$jf"; echo "$WHEN")"
+    job_name_ok "$j" && ! job_bad "$j" >/dev/null || continue   # named under Settings and job files
+    WHEN="$(job_get "$j" WHEN)"
     [[ -z "$WHEN" ]] && continue
     pl="$(sched_file "$LABEL.$j")"
     if ! when_norm "$WHEN" >/dev/null; then
@@ -689,6 +716,11 @@ grep -q $'^fix\t.*run bin/role.sh build' "$REC" && actions+=" roles"
 grep -q $'^fix\t.*run bin/repo.sh snapshot' "$REC" && actions+=" snapshot"
 grep -qE $'^fix\t[^\t]*\tdeps\.' "$REC" && actions+=" deps"
 actions="${actions# }"
+# The record cabinet list reads, on this machine only (outside the workspace, so no git sees it): the
+# number of problems, when, and for which workspace. Written whole, then renamed.
+if mkdir -p -m 700 "$LOGDIR" 2>/dev/null; then
+  printf '%s\t%s\t%s\n' "$problems" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$WS" > "$LOGDIR/doctor.tsv.$$" 2>/dev/null && mv -f "$LOGDIR/doctor.tsv.$$" "$LOGDIR/doctor.tsv" 2>/dev/null || rm -f "$LOGDIR/doctor.tsv.$$"
+fi
 
 if ((JSON)); then
   json -R --arg ws "$WS" --arg fixes "$actions" '((r) => ({workspace: $ws, problems: r.filter((x) => x.level == "fix").length,

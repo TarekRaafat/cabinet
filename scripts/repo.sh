@@ -59,7 +59,8 @@ while IFS=$'\t' read -r name url files link path; do
   [[ -e "$repo/.git" ]] || { echo "skip $name: not at $repo"; continue; }
   dest="$WS/local/$name"
   if [[ "${files:--}" != "-" ]]; then
-    for f in $files; do copy_if "$repo/$f" "$dest/$f"; done
+    set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files
+    for f in "${fl[@]}"; do copy_if "$repo/$f" "$dest/$f"; done
   fi
   ex="$repo/.git/info/exclude"
   if [[ -f "$ex" ]] && grep -qvE '^#|^$' "$ex"; then

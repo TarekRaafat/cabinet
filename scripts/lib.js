@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -109,10 +109,11 @@ function idOrder(a, b) {
 }
 // handoff-rows <HANDOFFS.md>: every entry as JSON, in file order: id, title, section, status_line (the
 // text after "- Status: "), status (its word), known, status_said, from, to, owner, text (in full).
-function handoffRows(file) {
+function handoffRows(file) { process.stdout.write(JSON.stringify(handoffRowsOf(file)) + "\n"); }
+function handoffRowsOf(file) {
   // CRLF line ends end lines; a lone \r stays in its line, so a terminal shows it as ? (term_text).
   const lines = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n").split("\n");
-  const rows = handoffEntries(lines).map((e) => {
+  return handoffEntries(lines).map((e) => {
     const s = statusOf(e.lines);
     const fl = e.lines.find((l) => l.startsWith("- From:")) || "";
     const m = fl.match(/^- From: ?(.*?) -> To: (.*)$/);
@@ -121,7 +122,6 @@ function handoffRows(file) {
     return { id: e.id, title: e.title, section: e.section, status_line: s.rest, status: s.word, known: s.known, status_said: s.said,
       from, to, owner: ownerIn(to), text };
   });
-  process.stdout.write(JSON.stringify(rows) + "\n");
 }
 
 // handoff-entry <HANDOFFS.md> <ID> info|evidence <links>|verdict <role> <line>|wayback <text>: read or
@@ -1930,7 +1930,199 @@ function moveAside(from, to) {
   fs.rmSync(from, { recursive: true, force: true });
 }
 
+// ---- Settings and job files, read as text ---------------------------------------------------------
+// cabinet.env and jobs/*.job are data: read here, never sourced, so no text in them ever runs
+// (docs/commands.md, "cabinet.env and job files"). A line is blank, a comment, or KEY=value with a
+// value that is unquoted (A-Z a-z 0-9 . _ : / @ % + , = -), single-quoted (as written), or
+// double-quoted (\" \\ \$ \` give the second character, a backslash before a line break joins the
+// lines, any other backslash stays; an unescaped $ or ` is refused). In cabinet.env a value is one
+// line. Anything else is not a literal value, and the whole file is refused at that line.
+const SETTING_KEYS = ["CABINET_PROJECT", "CABINET_SLUG", "CABINET_ROLES", "CABINET_RUNNER", "CABINET_RUNNER_CMD", "CABINET_MODEL",
+  "CABINET_MODEL_LIGHT", "CABINET_LIGHT_ROLES", "CABINET_LAYOUT", "CABINET_VISIBILITY", "CABINET_BACKUP_DIR", "CABINET_BACKUP_TIME",
+  "CABINET_BACKUP_KEEP", "CABINET_JOB_TIMEOUT", "CABINET_BUDGET", "CABINET_PRICE", "CABINET_PIPELINE", "CABINET_PIPELINE_LIMIT",
+  "CABINET_CREDIT_ROLES", "CABINET_CREDIT_EMAIL", "CABINET_SKILLS", "CABINET_PLUGINS", "CABINET_UPDATE_CHECK"];
+const JOB_KEYS = ["AGENT", "PROMPT", "COMMAND", "WHEN", "MINUTES", "RESULT", "AFTER", "TIMEOUT", "QUIET_DAYS", "MODEL"];
+// The keys whose values are shell commands by design: run only once approved on this machine.
+const COMMAND_KEYS = ["CABINET_RUNNER_CMD", "COMMAND", "AFTER"];
+const LITERAL = ": not a literal value; cabinet reads this file as text and runs nothing in it";
+// A job's name: name_ok, and not starting with -, which a tool would read as an option.
+const jobNameOk = (n) => /^[A-Za-z0-9._-]+$/.test(n) && n !== "." && n !== ".." && !n.startsWith("-");
+
+// parseSettings <text, one character per byte> <one line>: {vals: [{key, value, line}], bad: the line
+// where the first unreadable key or text starts, or 0}.
+function parseSettings(s, oneLine) {
+  s = s.replace(/\r(?=\n|$)/g, "");   // one carriage return before a line end, or at the end, is dropped
+  const vals = [], n = s.length, KEY = /[A-Z_][A-Z0-9_]*=/y, BARE = /[A-Za-z0-9._:\/@%+,=-]*/y;
+  const nul = s.indexOf("\0");
+  if (nul >= 0) return { vals, bad: s.slice(0, nul).split("\n").length };
+  let i = 0, line = 1;
+  while (i < n) {
+    const start = line;
+    while (i < n && (s[i] === " " || s[i] === "\t")) i++;
+    if (i >= n) break;
+    if (s[i] === "\n") { i++; line++; continue; }
+    if (s[i] === "#") { while (i < n && s[i] !== "\n") i++; continue; }
+    KEY.lastIndex = i;
+    const m = KEY.exec(s);
+    if (!m) return { vals, bad: start };
+    const key = m[0].slice(0, -1);
+    i = KEY.lastIndex;
+    let v = "";
+    if (s[i] === "'") {
+      const e = s.indexOf("'", i + 1);
+      if (e < 0) return { vals, bad: start };
+      v = s.slice(i + 1, e);
+      if (oneLine && v.includes("\n")) return { vals, bad: start };
+      line += v.split("\n").length - 1; i = e + 1;
+    } else if (s[i] === '"') {
+      let closed = false;
+      for (i++; i < n; ) {
+        const c = s[i];
+        if (c === '"') { closed = true; i++; break; }
+        if (c === "$" || c === "`") return { vals, bad: start };
+        if (c === "\\") {
+          const d = s[i + 1];
+          if (d === undefined) break;
+          if (d === "\n") { if (oneLine) return { vals, bad: start }; line++; i += 2; continue; }
+          if ('"\\$`'.includes(d)) { v += d; i += 2; continue; }
+          v += c; i++; continue;
+        }
+        if (c === "\n") { if (oneLine) return { vals, bad: start }; line++; }
+        v += c; i++;
+      }
+      if (!closed) return { vals, bad: start };
+    } else { BARE.lastIndex = i; v = BARE.exec(s)[0]; i = BARE.lastIndex; }
+    // Then only blanks, and a comment after at least one blank (bash reads a # right after a value as part of it).
+    let j = i;
+    while (j < n && (s[j] === " " || s[j] === "\t")) j++;
+    if (j < n && s[j] === "#" && j > i) while (j < n && s[j] !== "\n") j++;
+    if (j < n && s[j] !== "\n") return { vals, bad: start };
+    i = j;
+    vals.push({ key, value: v, line: start });
+  }
+  return { vals, bad: 0 };
+}
+// readSettings <file> <job>: {known: [{key, value, line}] (last of each), unknown, bad}.
+function readSettings(file, job) {
+  const r = parseSettings(fs.readFileSync(file, "latin1"), !job), keys = job ? JOB_KEYS : SETTING_KEYS, last = new Map(), unknown = [];
+  for (const x of r.vals) { if (keys.includes(x.key)) { last.delete(x.key); last.set(x.key, x); } else unknown.push(x); }
+  return { known: [...last.values()], unknown, bad: r.bad };
+}
+const approvalKey = (keyFile) => { try { return fs.readFileSync(keyFile); } catch (e) { return null; } };
+const approvalHash = (key, file, k, text) =>
+  crypto.createHmac("sha256", key).update(Buffer.from(file + "\n" + k + "\n", "latin1")).update(Buffer.from(text, "latin1")).digest("hex");
+
+// settings <workspace or file> [<approval key file>]: every key it accepted, as NUL-ended fields:
+//   E KEY value line   a cabinet.env key (the last of each)       J job KEY value   a job file's key
+//   B job message      an unreadable job file, not read further   N file            a jobs/ file whose name is not a job name
+//   U message          a key cabinet does not read (ignored)      A file KEY hash   a command key's approval ID
+//   .                  the end: printed only after a full read
+// An unreadable or missing cabinet.env prints nothing on stdout and exits 1 with the message.
+function settings(p, keyFile) {
+  const out = [], key = keyFile ? approvalKey(keyFile) : null;
+  const rec = (...f) => out.push(...f.map(String));
+  const one = (file, label, job) => {
+    const r = readSettings(file, !!job);
+    if (r.bad) return label + ":" + r.bad + LITERAL;
+    for (const x of r.known) {
+      if (job) rec("J", job, x.key, x.value); else rec("E", x.key, x.value, x.line);
+      if (key && COMMAND_KEYS.includes(x.key)) rec("A", label, x.key, approvalHash(key, label, x.key, x.value));
+    }
+    for (const x of r.unknown) rec("U", label + ":" + x.line + ": " + x.key + " is not a setting cabinet reads; ignored");
+    return "";
+  };
+  let st = null;
+  try { st = fs.statSync(p); } catch (e) { /* missing */ }
+  if (st && st.isDirectory()) {
+    const ef = path.join(p, "cabinet.env");
+    if (!fs.existsSync(ef)) die("no cabinet.env in " + p);
+    const m = one(ef, "cabinet.env", "");
+    if (m) die(m);
+    let names = [];
+    try { names = fs.readdirSync(path.join(p, "jobs")).filter((x) => x.endsWith(".job")).sort(); } catch (e) { /* no jobs/ */ }
+    for (const f of names) {
+      const job = f.slice(0, -4), jf = path.join(p, "jobs", f);
+      if (!jobNameOk(job)) { rec("N", f); continue; }
+      if (!fs.statSync(jf).isFile()) continue;
+      const m2 = one(jf, "jobs/" + f, job);
+      if (m2) rec("B", job, m2);
+    }
+  } else {
+    if (!st) die("no such file: " + p);
+    const base = path.basename(p), job = base.endsWith(".job") ? base.slice(0, -4) : "";
+    const m = one(p, job ? "jobs/" + base : base, job);
+    if (m) die(m);
+  }
+  rec(".");
+  put(1, Buffer.from(out.map((f) => f + "\0").join(""), "latin1"));
+}
+// approval-id <key file> <file> <KEY>: the approval ID of the command on stdin (its bytes as they are), for
+// that key in that file, keyed with this machine's secret; the key file is made on first use (folder 700, file 600).
+function approvalId(keyFile, file, k) {
+  let key = approvalKey(keyFile);
+  if (!key) {
+    fs.mkdirSync(path.dirname(keyFile), { recursive: true, mode: 0o700 });
+    try { fs.writeFileSync(keyFile, crypto.randomBytes(32), { flag: "wx", mode: 0o600 }); } catch (e) { if (e.code !== "EEXIST") throw e; }
+    key = fs.readFileSync(keyFile);
+  }
+  put(1, approvalHash(key, file, k, fs.readFileSync(0).toString("latin1")) + "\n");
+}
+// show-command: the command on stdin as a person must see it before approving it: printable ASCII, tab and
+// line break as they are, every other character as an escape (\x1b, \u{202E}), then how many lines it has;
+// past 20 lines only the first and last 10, with the count left out between them.
+function showCommand() {
+  const text = fs.readFileSync(0).toString("utf8");
+  let shown = "";
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    shown += (c >= 0x20 && c < 0x7f) || c === 9 || c === 10 ? ch : c < 0x80 ? "\\x" + c.toString(16).padStart(2, "0") : "\\u{" + c.toString(16).toUpperCase() + "}";
+  }
+  let ls = shown.split("\n");
+  const count = ls.length;
+  if (count > 20) ls = [...ls.slice(0, 10), "    ... " + (count - 20) + " more lines not shown ...", ...ls.slice(-10)];
+  put(1, ls.map((l) => "    " + l).join("\n") + "\n  (" + count + " line" + (count === 1 ? "" : "s") + ")\n");
+}
+
+// ws-facts <workspace> <log folder> <dollar runners> <token runners>: what cabinet list and digest show for
+// another workspace, read as text with this kit's code (nothing of the workspace runs): its project and
+// budget (cabinet.env, through the reader; unreadable: empty), the open entries for the owner (as handoff
+// list owner counts them), the week's spend (from its log folder, as spend_since counts it) and the
+// doctor's last record there. JSON.
+function wsFacts(ws, logdir, dollars, tokens) {
+  let set = {};
+  try { const r = readSettings(path.join(ws, "cabinet.env"), false); if (!r.bad) for (const x of r.known) set[x.key] = Buffer.from(x.value, "latin1").toString("utf8"); } catch (e) { /* none */ }
+  let waiting = null;
+  try { waiting = handoffRowsOf(path.join(ws, "HANDOFFS.md")).filter((e) => e.owner && !(e.known && statusClosed(e.status))).length; } catch (e) { waiting = 0; }
+  const runner = set.CABINET_RUNNER || "claude", price = set.CABINET_PRICE || "";
+  let spent = null;
+  if (words(dollars).includes(runner) || (words(tokens).includes(runner) && price)) {
+    let first = "sun";
+    try { first = (/^- \*\*Week starts on:\*\* ([A-Za-z]*)\./m.exec(read(path.join(ws, "AGENTS.md"))) || [])[1]?.toLowerCase().slice(0, 3) || "sun"; } catch (e) { /* default */ }
+    const d = Math.max(0, ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(first)), now = new Date();
+    const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() - d + 7) % 7).getTime() / 1000;
+    let t = 0;
+    try {
+      for (const l of read(path.join(logdir, "spend.tsv")).split("\n")) {
+        const f = l.split("\t");
+        if (f.length > 3 && Number(f[0]) >= since && /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/.test(f[3])) t += Number(f[3]);
+      }
+    } catch (e) { /* none yet */ }
+    spent = t.toFixed(2);
+  }
+  // The doctor's record: whole, and written for this workspace, or none.
+  let problems = null, checked = null;
+  try {
+    const f = read(path.join(logdir, "doctor.tsv")).split("\n")[0].split("\t");
+    if (/^(0|[1-9][0-9]{0,8})$/.test(f[0]) && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(f[1] || "") && f[2] === ws) { problems = Number(f[0]); checked = f[1]; }
+  } catch (e) { /* not run yet */ }
+  // The time as people read it (10 Oct 2026, 2:30 PM), local.
+  const t = checked && new Date(checked), M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const shown = t ? t.getDate() + " " + M[t.getMonth()] + " " + t.getFullYear() + ", " + ((t.getHours() + 11) % 12 + 1) + ":" + String(t.getMinutes()).padStart(2, "0") + " " + (t.getHours() < 12 ? "AM" : "PM") : "";
+  put(1, JSON.stringify({ project: set.CABINET_PROJECT || "", budget: set.CABINET_BUDGET || "", waiting, spent, doctor_problems: problems, doctor_checked: checked, doctor_shown: shown }) + "\n");
+}
+
 const COMMANDS = {
+  settings, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,

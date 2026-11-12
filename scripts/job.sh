@@ -21,9 +21,14 @@ j_list() {
   local json=0 a jf ws reported=0
   for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/job.sh list [--json]" >&2; exit 2 ;; esac; done
   ws="$(week_start)"; spend_counts && reported=1
+  # Each job as the reader read it (lib.sh): a file whose name is not a job name is left out, and an
+  # unreadable one is said on stderr, by its message, while the others are listed.
   for jf in "$WS"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
-    ( AGENT="" COMMAND="" WHEN="" TIMEOUT=""; source "$jf"; j="$(basename "$jf" .job)"
+    j="$(basename "$jf" .job)"
+    job_name_ok "$j" || continue
+    if m="$(job_bad "$j")"; then shown "$m" >&2; echo >&2; continue; fi
+    ( AGENT="$(job_get "$j" AGENT)" COMMAND="$(job_get "$j" COMMAND)" WHEN="$(job_get "$j" WHEN)" TIMEOUT="$(job_get "$j" TIMEOUT)"
       printf '%s\t%s\t%s\t%s\t%s\n' "$j" "${AGENT:-${COMMAND:+command}}" "$([[ -n "$WHEN" ]] && when_human "$WHEN" || echo "by hand only")" "${TIMEOUT:-$CABINET_JOB_TIMEOUT}" \
         "$( ((reported)) && spend_since "$ws" "$j")" )
   done | if ((json)); then json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], role: r[1], when: r[2], timeout_minutes: num(r[3]), cost_this_week_usd: num(r[4])}))'
@@ -36,21 +41,28 @@ j_list() {
 
 j_run() {
 job="${1:-}"; [[ -n "$job" ]] || { echo "usage: bin/job.sh run <job> (one of: $(cd "$WS/jobs" 2>/dev/null && ls *.job 2>/dev/null | sed 's/\.job$//' | tr '\n' ' '))" >&2; exit 2; }
+# The name becomes a file path and a log's name: checked before either is built.
+job_name_ok "$job" || { echo "not a job name: $(shown "$job")" >&2; exit 2; }
 jf="$WS/jobs/$job.job"
 [[ -f "$jf" ]] || { echo "unknown job: $job (no jobs/$job.job)" >&2; exit 2; }
 # MODEL too: one from the caller's environment never applies, nor is passed on.
 unset MODEL
 # Every run of a job is a scheduled run, a COMMAND job's too: --force never deletes in one (lib.js delete-plan).
 export CABINET_JOB="$job"
+# Read as text (lib.sh): an unreadable job file runs nothing.
+if m="$(job_bad "$job")"; then shown "$m" >&2; echo >&2; exit 2; fi
 AGENT="" PROMPT="" COMMAND="" MINUTES="a few" RESULT="the log" AFTER="" TIMEOUT="" QUIET_DAYS="" MODEL=""
-# shellcheck disable=SC1090
-source "$jf"
+job_set "$job"
+[[ -z "$AGENT" ]] || role_ok "$AGENT" || { echo "jobs/$job.job: AGENT \"$(shown "$AGENT")\" is not a role name" >&2; exit 2; }
 [[ -n "$AGENT" && -n "$PROMPT" ]] || [[ -n "$COMMAND" ]] || { echo "jobs/$job.job needs AGENT and PROMPT, or COMMAND" >&2; exit 2; }
 [[ -z "$COMMAND" || -z "$MODEL" ]] || { echo "jobs/$job.job sets MODEL, but it runs COMMAND, whose agent runs use CABINET_MODEL: remove the MODEL line, or set the model with cabinet config --model" >&2; exit 2; }
 limit="${TIMEOUT:-$CABINET_JOB_TIMEOUT}"
 [[ "$limit" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "TIMEOUT in jobs/$job.job (or CABINET_JOB_TIMEOUT) must be whole minutes, or 0 for no limit, not '$limit'" >&2; exit 2; }
 QUIET_DAYS="${QUIET_DAYS:-0}"
 [[ "$QUIET_DAYS" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "QUIET_DAYS in jobs/$job.job must be whole days, or 0 to run every time, not '$QUIET_DAYS'" >&2; exit 2; }
+# A command from the files runs only once approved on this machine; nothing runs when one is not.
+[[ -z "$COMMAND" ]] || approved "jobs/$job.job" COMMAND "$COMMAND" || { not_approved "jobs/$job.job" COMMAND >&2; exit 1; }
+[[ -n "$COMMAND" || "$CABINET_RUNNER" != custom ]] || approved cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD" || { not_approved cabinet.env CABINET_RUNNER_CMD >&2; exit 1; }
 
 limited() {
   if [[ -n "$COMMAND" ]]; then (cd "$WS" && bash -c "$COMMAND"); return; fi   # it limits its own agent runs
@@ -86,7 +98,11 @@ quiet() {
   s="$(quiet_state)" && [[ "$(printf '%s' "$s" | sha256 /dev/stdin)" == "$was" ]]
 }
 
-after() { [[ -z "$AFTER" ]] || (cd "$WS" && bash -c "$AFTER") >>"$log" 2>&1 || echo "after-step failed: see the lines above" >>"$log"; }
+after() {
+  [[ -n "$AFTER" ]] || return 0
+  approved "jobs/$job.job" AFTER "$AFTER" 2>>"$log" || { not_approved "jobs/$job.job" AFTER >>"$log"; return 0; }
+  (cd "$WS" && bash -c "$AFTER") >>"$log" 2>&1 || echo "after-step failed: see the lines above" >>"$log"
+}
 
 cd "$WS"
 mkdir -p -m 700 "$LOGDIR"

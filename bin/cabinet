@@ -312,6 +312,40 @@ role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
 # A model name (scripts/lib.sh checks the same before every run): never a leading -, which a tool would
 # read as an option of its own (C: A-Z is ASCII only).
 model_ok() { local LC_ALL=C re='^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$'; [[ "$1" =~ $re ]]; }
+# ws_load <ws>: a workspace's cabinet.env and job files, read as text with this kit's reader (lib.js settings),
+# as its own scripts read them: nothing in them runs. An unreadable cabinet.env, or a slug that is not a
+# slug, stops the command here (exit 1), before any path or name is built from them. Then envget <KEY> gives
+# a setting (else the environment's, as a sourced file left it), and jobget <job> <KEY> a job's value
+# (nothing for an unreadable job).
+WSL_K=() WSL_V=() WSL_JN=() WSL_JK=() WSL_JV=() WSL_BN=() WSL_BM=()
+ws_load() {
+  local t i=0 sline=""; local -a r; r=()
+  while IFS= read -r -d '' t; do r+=("$t"); done < <(node "$LIBJS" settings "$1" "$LOGROOT/approval.key")
+  [[ ${#r[@]} -gt 0 && "${r[${#r[@]} - 1]}" == . ]] || exit 1
+  WSL_K=() WSL_V=() WSL_JN=() WSL_JK=() WSL_JV=() WSL_BN=() WSL_BM=()
+  while ((i < ${#r[@]})); do
+    case "${r[i]}" in
+      E) WSL_K+=("${r[i + 1]}"); WSL_V+=("${r[i + 2]}"); [[ "${r[i + 1]}" == CABINET_SLUG ]] && sline="${r[i + 3]}"; i=$((i + 4)) ;;
+      J) WSL_JN+=("${r[i + 1]}"); WSL_JK+=("${r[i + 2]}"); WSL_JV+=("${r[i + 3]}"); i=$((i + 4)) ;;
+      A) i=$((i + 4)) ;;
+      B) WSL_BN+=("${r[i + 1]}"); WSL_BM+=("${r[i + 2]}"); i=$((i + 3)) ;;
+      N|U) i=$((i + 2)) ;;
+      *) i=$((i + 1)) ;;
+    esac
+  done
+  t="$(envget CABINET_SLUG)"
+  [[ -z "$t" ]] || slug_ok "$t" || { echo "cabinet.env${sline:+:$sline}: CABINET_SLUG \"$(printf '%s' "$t" | TERM_OUT=1 term_text)\" is not a slug (lowercase letters, digits and -)" >&2; exit 1; }
+}
+envget() { local i; for ((i = 0; i < ${#WSL_K[@]}; i++)); do [[ "${WSL_K[i]}" == "$1" ]] && { printf '%s' "${WSL_V[i]}"; return 0; }; done; printf '%s' "${!1:-}"; }
+jobbad() { local i; for ((i = 0; i < ${#WSL_BN[@]}; i++)); do [[ "${WSL_BN[i]}" == "$1" ]] && { printf '%s' "${WSL_BM[i]}"; return 0; }; done; return 1; }   # its message
+jobget() { local i; for ((i = 0; i < ${#WSL_JN[@]}; i++)); do [[ "${WSL_JN[i]}" == "$1" && "${WSL_JK[i]}" == "$2" ]] && { printf '%s' "${WSL_JV[i]}"; return 0; }; done; return 0; }
+slug_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
+# approve_cmd <ws> <file> <KEY> <text>: approve, on this machine, a command set here (cabinet new and config):
+# a CABINET_APPROVED line in the workspace's cabinet.local.env, which is never committed.
+approve_cmd() {
+  local h; h="$(printf '%s' "$4" | node "$LIBJS" approval-id "$LOGROOT/approval.key" "$2" "$3")" && [[ -n "$h" ]] || return 0
+  grep -qxF "CABINET_APPROVED=\"$h\"" "$1/cabinet.local.env" 2>/dev/null || printf 'CABINET_APPROVED="%s"\n' "$h" >> "$1/cabinet.local.env"
+}
 # term_say <text>: the text for an error message, with control characters shown as ? in a terminal.
 term_say() { if [[ -t 2 ]]; then printf '%s' "$1" | TERM_OUT=1 term_text; else printf '%s' "$1"; fi; }
 check_model() {   # the model about to be written, given now or carried over
@@ -780,6 +814,8 @@ setup() {
       '/^CABINET_LAYOUT=.*/' 'CABINET_LAYOUT="${L}"' '/^CABINET_VISIBILITY=.*/' 'CABINET_VISIBILITY="${V}"'
     CR="$credit" CE="$cemail" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_CREDIT_ROLES=.*/' 'CABINET_CREDIT_ROLES="${CR}"' '/^CABINET_CREDIT_EMAIL=.*/' 'CABINET_CREDIT_EMAIL="${CE}"'
     M="$model" node "$LIBJS" sub "$ws/cabinet.env" -- '/^CABINET_MODEL=.*/' 'CABINET_MODEL="${M}"'
+    # The runner command set here is approved on this machine (cabinet.local.env, never committed).
+    [[ -z "$runner_cmd" ]] || approve_cmd "$ws" cabinet.env CABINET_RUNNER_CMD "$runner_cmd"
     # A light model (asked, so a model name): it and the default list of its roles on the team; none, no line.
     if [[ -n "$mlight" ]]; then
       local lr="" r2
@@ -960,14 +996,15 @@ cmd_role() {
     [[ -z "$func" ]] || printf -- '- Function: %s\n' "$func"
   }
   has "backend web mobile infrastructure" "$name" && die "$name is a kit builder: it comes with the repos it owns in the team table of AGENTS.md (change a repo's row to change its builder)"
-  local cur runner; cur="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_ROLES:-}" ) )"
-  runner="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_RUNNER:-claude}" ) )"
+  ws_load "$ws"
+  local cur runner; cur="$(envget CABINET_ROLES)"
+  runner="$(envget CABINET_RUNNER)"; runner="${runner:-claude}"
   local dryflag=(); ((dry)) && dryflag=(--dry-run)
   light_say() {  # after a role is added, one line on its model: only when a light model is set (token cost)
     local ml lr
-    ml="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_MODEL_LIGHT:-}" ) )"
+    ml="$(envget CABINET_MODEL_LIGHT)"
     [[ -n "$ml" ]] || return 0
-    lr="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_LIGHT_ROLES:-}" ) | tr -s ' \t\n' '   ' | sed 's/^ //; s/ $//')"
+    lr="$(envget CABINET_LIGHT_ROLES | tr -s ' \t\n' '   ' | sed 's/^ //; s/ $//')"
     if has "$lr" "$name"; then echo "$name runs on the light model."; return 0; fi
     [[ -t 1 ]] && lr="$(printf '%s' "$lr" | TERM_OUT=1 term_text)"
     echo "$name runs on the main model. To put it on the light one: cabinet config --light-roles \"${lr:+$lr }$name\""
@@ -1197,8 +1234,8 @@ cmd_config() {
   [[ -f "$ws/.cabinet/version" && -f "$ws/cabinet.env" ]] || die "$ws is not a cabinet workspace"
   pin_stop "$ws" config
 
-  # Current answers, read from the files setup wrote.
-  envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
+  # Current answers, read from the files setup wrote (as text: ws_load).
+  ws_load "$ws"
   local o_name o_slug o_owner o_email o_roles o_runner o_cmd o_brief o_week o_backup o_btime o_budget o_price o_writing
   o_name="$(envget CABINET_PROJECT)"; o_slug="$(envget CABINET_SLUG)"
   o_roles="$(envget CABINET_ROLES)"; o_runner="$(envget CABINET_RUNNER)"; o_runner="${o_runner:-claude}"; o_cmd="$(envget CABINET_RUNNER_CMD)"
@@ -1208,7 +1245,11 @@ cmd_config() {
   o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
   o_week="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
   o_writing="$(sed -n 's/^- \*\*Writing to the owner:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
-  o_brief="$( [[ -f "$ws/jobs/brief.job" ]] && (WHEN=""; source "$ws/jobs/brief.job" >/dev/null 2>&1; printf '%s' "$WHEN") )"
+  # An unreadable brief or pipeline job has no time cabinet knows: only a change to that time is refused.
+  local jm
+  ! ((set_brief)) || ! jm="$(jobbad brief)" || die "$jm"
+  ! ((set_ptime)) || ! jm="$(jobbad pipeline)" || die "$jm"
+  o_brief="$(jobget brief WHEN)"
   [[ -z "$o_brief" ]] || o_brief="$(when_norm "$o_brief" || printf '%s' "$o_brief")"   # "daily 07:00" is "7:00 AM": no change
   ((set_name)) || name="$o_name"; ((set_slug)) || slug="$o_slug"; ((set_owner)) || owner="$o_owner"; ((set_email)) || email="$o_email"
   ((set_roles)) || roles="$o_roles"; ((set_runner)) || runner="$o_runner"; ((set_cmd)) || runner_cmd="$o_cmd"
@@ -1235,7 +1276,7 @@ cmd_config() {
   o_pipe="$(envget CABINET_PIPELINE)"; o_pipe="${o_pipe:-off}"; o_plimit="$(envget CABINET_PIPELINE_LIMIT)"
   o_ptime=""   # empty: no pipeline job yet; off: one that runs only by hand
   if [[ -f "$ws/jobs/pipeline.job" ]]; then
-    o_ptime="$(WHEN=""; source "$ws/jobs/pipeline.job" >/dev/null 2>&1; printf '%s' "$WHEN")"
+    o_ptime="$(jobget pipeline WHEN)"
     if [[ -n "$o_ptime" ]]; then o_ptime="$(when_norm "$o_ptime" || printf '%s' "$o_ptime")"; else o_ptime=off; fi
   fi
   ((set_pipe)) || pipe="$o_pipe"; ((set_plimit)) || plimit="$o_plimit"; ((set_ptime)) || ptime="${o_ptime:-10:00 PM}"
@@ -1435,6 +1476,8 @@ cmd_config() {
     { cut -f1 "$ws/repos.tsv" 2>/dev/null; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1; } | grep -qxF "$rn" && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
     newrows+=("$rn"$'\t'"$r"$'\t-\tyes'); changes+=("add repo: $rn ($r)")
   done
+  # A runner command given here is approved on this machine, even one cabinet.env already holds (a teammate's).
+  ((set_cmd)) && [[ -n "$runner_cmd" && "$runner_cmd" == "$o_cmd" ]] && changes+=("runner command: approved on this machine")
   if ((${#changes[@]} == 0)); then echo "Nothing to change."; return 0; fi
   echo; echo "Changes:"; printf '  - %s\n' "${changes[@]}"
   ((dry)) && { echo "(dry run: nothing written)"; return 0; }
@@ -1452,7 +1495,10 @@ cmd_config() {
     else printf '%s=%s%s%s\n' "$1" "$q" "$2" "$q" >> "$ws/cabinet.env"; fi
   }
   setenv CABINET_PROJECT "$name"; setenv CABINET_ROLES "$roles"; setenv CABINET_RUNNER "$runner"
-  setenv CABINET_RUNNER_CMD "$runner_cmd" single; setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
+  setenv CABINET_RUNNER_CMD "$runner_cmd" single
+  # A runner command set here, with an option or at the prompt, is approved on this machine (cabinet.local.env).
+  [[ -n "$runner_cmd" ]] && { ((set_cmd)) || [[ "$runner_cmd" != "$o_cmd" ]]; } && approve_cmd "$ws" cabinet.env CABINET_RUNNER_CMD "$runner_cmd"
+  setenv CABINET_BACKUP_DIR "$backup"; setenv CABINET_BACKUP_TIME "$backup_time"
   [[ "$budget" == "$o_budget" ]] || setenv CABINET_BUDGET "$budget"
   [[ "$model" == "$o_model" ]] || setenv CABINET_MODEL "$model"
   [[ "$mlight" == "$o_mlight" ]] || setenv CABINET_MODEL_LIGHT "$mlight"
@@ -1704,7 +1750,7 @@ cmd_next() {
   # The tools cabinet needs come before anything else.
   miss="$(deps_missing)"
   [[ -z "$miss" ]] || step deps "Install the tools cabinet needs: ${miss// /, } (sudo asks for your password on Linux)." "$(deps_cmd "$miss" || echo "")"
-  envget() { ( set +u; source "$env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
+  ws_load "$ws"
   # What the project says about itself: a TBD left to fill, not one quoted as code in the template's own
   # instructions (`TBD`).
   heads="$(awk '/^## / {h = substr($0, 4)} {l = $0; gsub(/`[^`]*`/, "", l)} l ~ /TBD/ && h != "" && !(h in seen) {seen[h] = 1; printf "%s%s", (n++ ? ", " : ""), h}' "$ws/AGENTS.md" 2>/dev/null)"
@@ -1732,7 +1778,7 @@ cmd_next() {
   # A machine set to schedule no jobs (cabinet.local.env) is not missing them.
   grep -qx 'CABINET_SCHEDULES="\{0,1\}off"\{0,1\}' "$ws/cabinet.local.env" 2>/dev/null || for jf in "$ws"/jobs/*.job; do
     [[ -f "$jf" ]] || continue
-    when="$(WHEN=""; source "$jf" >/dev/null 2>&1; printf '%s' "$WHEN")"
+    when="$(jobget "$(basename "$jf" .job)" WHEN)"
     [[ -n "$when" && "$SCHEDULER" != none && ! -f "$(sched_file "$label.$(basename "$jf" .job)")" ]] && missing=1
   done
   ((missing)) && step bootstrap "Set up this machine: guardrails and schedules (add --dry-run to see the changes first)." "cabinet bootstrap"
@@ -1755,7 +1801,7 @@ cmd_next() {
   ((waiting)) && step handoffs "$waiting handoff(s) wait on you." "cabinet handoff list owner"
   if [[ -f "$ws/BRIEF.md" ]]; then step brief "Read today's brief, BRIEF.md (written $(human_mtime "$ws/BRIEF.md")), and answer its sign-off queue." ""
   else
-    when="$( [[ -f "$ws/jobs/brief.job" ]] && (WHEN=""; source "$ws/jobs/brief.job" >/dev/null 2>&1; printf '%s' "$WHEN") )"
+    when="$(jobget brief WHEN)"
     if [[ -n "$when" ]]; then step brief "The first brief comes at $when (or write it now)." "cabinet brief"; else step brief "Write a brief now." "cabinet brief"; fi
   fi
   # Everything else the doctor knows.
@@ -1800,7 +1846,8 @@ known_workspaces() {
 
 # One morning read: the sign-off queue and the owner's actions from the latest brief of
 # every workspace on this machine, by the headings chief-of-staff writes. Answers still go to
-# each workspace's own agent. Reads only, except --write (its file) and --schedule.
+# each workspace's own agent. Reads only, except --write (its file) and --schedule, and runs nothing
+# of any workspace: each is read as text with this kit's code (ws_facts).
 DIGEST_LABEL="ai.cabinet-digest"   # outside ai.cabinet.<slug>.*: never a workspace's schedule
 DIGEST_FILE_DEFAULT="$LOGROOT/digest.md"
 DIGEST_WHEN_DEFAULT="10:00 AM"   # --schedule with no time: every day
@@ -1826,8 +1873,11 @@ cmd_digest() {
   while IFS=$'\t' read -r slug ws; do
     n=$((n + 1))
     [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$(printf %s "$ws" | tt)"$'\037'"gone"$'\037\037\037\037\037\037\037\n'; continue; }
-    project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) | tt)"
-    waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
+    # Read as text with this kit's code (ws_facts): nothing of that workspace runs.
+    local f_problems f_checked f_shown
+    project="" budget="" waiting="" spent=""
+    { IFS= read -r project; IFS= read -r budget; IFS= read -r waiting; IFS= read -r spent; IFS= read -r f_problems; IFS= read -r f_checked; IFS= read -r f_shown; } < <(ws_facts "$slug" "$ws") || true
+    project="$(printf '%s' "$project" | tt)" spent="$(printf '%s' "$spent" | tt)" budget="$(printf '%s' "$budget" | tt)"
     wsd="$(printf %s "$ws" | tt)"; brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
     if [[ -f "$brief" ]]; then
       written="$(human_mtime "$brief")"; iso="$(date -u -r "$brief" +%Y-%m-%dT%H:%M:%SZ)"
@@ -1838,7 +1888,6 @@ cmd_digest() {
       local rel='](specs/' to="]($wsd/specs/"
       queue="${queue//"$rel"/$to}" actions="${actions//"$rel"/$to}"
     fi
-    IFS='|' read -r spent budget <<<"$(ws_spend "$ws")" || true
     # One record per workspace; \002 stands for a line break inside a field.
     rows+="$slug"$'\037'"$project"$'\037'"$wsd"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\n'
   done < <(known_workspaces)
@@ -1894,12 +1943,6 @@ cmd_digest() {
   return 0
 }
 
-# ws_spend <workspace>: "<dollars this week>|<budget>", from the workspace's own scripts. Dollars are
-# empty when its runner does not report cost, or its kit predates spend tracking.
-ws_spend() {
-  bash -c 'source "$1/bin/lib.sh" && declare -F spend_counts >/dev/null || exit 0
-    spend_counts && printf %s "$(spend_since "$(week_start)")"; printf "|%s" "$CABINET_BUDGET"' _ "$1" 2>/dev/null || true
-}
 budget_pct() { awk -v w="$1" -v b="$2" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }'; }   # budget_pct <spent> <budget>
 
 digest_text() {  # digest_text <count> <rows>
@@ -1979,41 +2022,41 @@ digest_schedule() {
   else die "$SCHEDULER could not load the schedule (see above); nothing installed"; fi
 }
 
+# ws_facts <slug> <ws>: another workspace's facts, read as text with this kit's code (lib.js ws-facts), one
+# per line: project, budget, waiting on the owner, dollars this week, doctor problems, its time (ISO), and
+# that time as people read it. Nothing of that workspace runs: none of its bin/ scripts, lib.sh or
+# node_modules. The slug and log folder come from the claim, never from its cabinet.env.
+ws_facts() {
+  local d t; d="$(sed -n 's/^SPEND_DOLLARS="\(.*\)"$/\1/p' "$KIT/scripts/lib.sh")" t="$(sed -n 's/^SPEND_TOKENS="\(.*\)"$/\1/p' "$KIT/scripts/lib.sh")"
+  node "$LIBJS" ws-facts "$2" "$LOGROOT/$1" "$d" "$t" 2>/dev/null \
+    | json -r '[$.project, $.budget, $.waiting ?? "", $.spent ?? "", $.doctor_problems ?? "", $.doctor_checked ?? "", $.doctor_shown].map((x) => String(x).replace(/[\n\u001f]/g, " ")).join("\n")' 2>/dev/null
+}
 # Every workspace on this machine, from the slug claims in <logs>/<slug>/workspace
-# (written by setup and bootstrap): its version, what waits on the owner, the doctor's count
-# and the newest brief. The doctors run side by side, each with its workspace's own scripts.
+# (written by setup and bootstrap): its version, what waits on the owner, the count of its last
+# doctor run on this machine (with its time) and the newest brief. Read as text; nothing of it runs.
 cmd_list() {
   local json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown option $x (see: cabinet list --help)" ;; esac; done
   local slug ws n=0 tmp
   LIST_TMP="$(mktemp -d)"; tmp="$LIST_TMP"; trap 'rm -rf "$LIST_TMP"' EXIT   # list is the whole run: clean up when it ends
-  while IFS=$'\t' read -r slug ws; do
-    n=$((n + 1)); printf '%s\t%s\n' "$slug" "$ws" > "$tmp/$n.row"
-    if [[ -f "$ws/.cabinet/version" && -x "$ws/bin/doctor.sh" ]]; then
-      ( "$ws/bin/doctor.sh" --json 2>/dev/null || true ) > "$tmp/$n.doctor" &
-    fi
-  done < <(known_workspaces)
-  wait
-  local i row project version waiting problems brief brief_iso exists
+  local project version waiting problems checked shown brief brief_iso exists budget spent
   : > "$tmp/all"
-  for ((i = 1; i <= n; i++)); do
-    IFS=$'\t' read -r slug ws < "$tmp/$i.row"
-    project="" version="" waiting="" problems="" brief="" brief_iso="" exists=false
+  while IFS=$'\t' read -r slug ws; do
+    n=$((n + 1))
+    project="" version="" waiting="" problems="" checked="" shown="" brief="" brief_iso="" exists=false
     if [[ -f "$ws/.cabinet/version" ]]; then
-      exists=true; version="$(cat "$ws/.cabinet/version")"
-      project="$( ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${CABINET_PROJECT:-}" ) )"
-      waiting="$("$ws/bin/handoff.sh" list owner 2>/dev/null | grep -c '^### H-' || true)"
-      problems="$(json -r '$.problems ?? undefined' "$tmp/$i.doctor" 2>/dev/null || true)"
+      exists=true; version="$(head -1 "$ws/.cabinet/version")"
+      { IFS= read -r project; IFS= read -r budget; IFS= read -r waiting; IFS= read -r spent; IFS= read -r problems; IFS= read -r checked; IFS= read -r shown; } < <(ws_facts "$slug" "$ws") || true
       if [[ -f "$ws/BRIEF.md" ]]; then brief="$(human_mtime "$ws/BRIEF.md")"; brief_iso="$(date -u -r "$ws/BRIEF.md" +%Y-%m-%dT%H:%M:%SZ)"; fi
     fi
     # Unit separator, not tab: read keeps empty fields only with a separator that is not whitespace.
-    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$slug" "$project" "$ws" "$exists" "$version" "$waiting" "$problems" "$brief" "$brief_iso" >> "$tmp/all"
-  done
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$slug" "$project" "$ws" "$exists" "$version" "$waiting" "$problems" "$brief" "$brief_iso" "$checked" "$shown" >> "$tmp/all"
+  done < <(known_workspaces)
 
   if ((json)); then
     json -R --arg kit "$VERSION" '$.map((l) => l.split("\u001f")).map((r) => ({slug: r[0], project: r[1], path: r[2], exists: r[3] == "true",
       version: str(r[4]), update_available: r[4] != "" && r[4] != $kit,
-      waiting_on_owner: num(r[5]), doctor_problems: num(r[6]), brief_written: str(r[8])}))' "$tmp/all"
+      waiting_on_owner: num(r[5]), doctor_problems: num(r[6]), doctor_checked: str(r[9]), brief_written: str(r[8])}))' "$tmp/all"
     return 0
   fi
   if ((n == 0)); then
@@ -2025,13 +2068,13 @@ cmd_list() {
   # The table is built first, in this shell: a pipe would lose what the loop learns.
   {
     printf 'SLUG\tPROJECT\tKIT\tWAITING ON YOU\tDOCTOR\tLATEST BRIEF\tFOLDER\n'
-    while IFS=$'\037' read -r slug project ws exists version waiting problems brief brief_iso; do
+    while IFS=$'\037' read -r slug project ws exists version waiting problems brief brief_iso checked shown; do
       if [[ "$exists" != true ]]; then
         printf '%s\t-\t-\t-\tfolder gone\t-\t%s\n' "$slug" "${ws/#$HOME/$TILDE}"; gone+=" $slug"; continue
       fi
       v="$version"; [[ "$version" != "$VERSION" ]] && { v="$version*"; newer=1; }
       w="${waiting:-?}"; [[ "$w" == 0 ]] && w="nothing" || w="$w handoff(s)"
-      case "$problems" in 0) p="all good" ;; "") p="?" ;; *) p="$problems to fix" ;; esac
+      case "$problems" in 0) p="all good, $shown" ;; "") p="not run yet" ;; *) p="$problems to fix, $shown" ;; esac
       b="${brief:-none yet}"
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slug" "${project:--}" "$v" "$w" "$p" "$b" "${ws/#$HOME/$TILDE}"
     done < "$tmp/all"
@@ -2042,9 +2085,11 @@ cmd_list() {
   awk -F'\t' -v d="$S_D" -v y="$S_Y" -v g="$S_G" -v r="$S_R" -v z="$S_Z" '
     function st(row, i, v) { if (z == "" || row == 1) return ""
       if (i == 4) return (v != "nothing" && v != "-") ? y : ""
-      if (i == 5) return v == "all good" ? g : (v ~ / to fix$/ || v == "folder gone") ? r : ""
+      if (i == 5) return v ~ /^all good/ ? g : (v ~ / to fix/ || v == "folder gone") ? r : ""
       return i >= 6 ? d : "" }
-    function cell(row, i, v,   s) { s = st(row, i, v); return s == "" ? v : s v z }
+    function cell(row, i, v,   s, p) { s = st(row, i, v); if (s == "") return v
+      if (i == 5 && (p = index(v, ", ")) > 0) return s substr(v, 1, p - 1) z substr(v, p)   # the count colored, its time plain
+      return s v z }
     { for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n[NR] = NF }
     END { for (row = 1; row <= NR; row++) { l = "  "
       for (i = 1; i < n[row]; i++) l = l cell(row, i, c[row, i]) sprintf("%" (w[i] - length(c[row, i]) + 2) "s", "")
@@ -2109,7 +2154,7 @@ cmd_remove() {
   done
   local ws; ws="$(need_ws)" || exit 1
   [[ -f "$ws/.cabinet/version" && -f "$ws/cabinet.env" ]] || die "$ws is not a cabinet workspace"
-  envget() { ( set +u; source "$ws/cabinet.env" >/dev/null 2>&1; printf '%s' "${!1:-}" ); }
+  ws_load "$ws"
   local slug layout vis host="" logs
   slug="$(envget CABINET_SLUG)"; layout="$(envget CABINET_LAYOUT)"; vis="$(envget CABINET_VISIBILITY)"
   [[ "$layout" == inside ]] && host="$(cd "$ws/.." && pwd -P)"

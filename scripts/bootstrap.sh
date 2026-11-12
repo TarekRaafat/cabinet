@@ -142,7 +142,8 @@ while IFS=$'\t' read -r name url files link path; do
   fi
   [[ -d "$repo" ]] || continue
   if [[ "${files:--}" != "-" ]]; then
-    for f in $files; do place "$WS/local/$name/$f" "$repo/$f"; done
+    set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files
+    for f in "${fl[@]}"; do place "$WS/local/$name/$f" "$repo/$f"; done
   fi
   ex_src="$WS/local/$name/git-info-exclude"
   if [[ -f "$ex_src" && -d "$repo/.git" ]]; then
@@ -411,6 +412,37 @@ if [[ -d "$HOME/.config/opencode" ]] || command -v opencode >/dev/null; then
   merge_opencode "$G/claude-permissions.json" "$HOME/.config/opencode/opencode.json"
 fi
 
+echo "== Commands in the workspace's files"
+# CABINET_RUNNER_CMD and each job's COMMAND and AFTER run only once their exact text is approved on this
+# machine (lib.sh, approved). Only here, with a person at a terminal: each is shown in full, escaped, on the
+# terminal, then asked. Without one (an agent's shell, a schedule, a file of answers) nothing is approved.
+asking=0
+if ((DRY == 0)) && [[ -t 0 ]] && { exec 4<>/dev/tty; } 2>/dev/null; then asking=1; fi
+cmd_review() {  # cmd_review <file> <KEY> <text>
+  approved "$1" "$2" "$3" 2>/dev/null && return 0
+  if ((asking)); then
+    { echo "  $2 in $1 is this command, which would run on this machine:"; printf '%s' "$3" | node "$LIBJS" show-command; printf '  Approve it on this machine? [y/N]: '; } >&4
+    local ans="" h
+    read -r -u 4 ans || true
+    if [[ "$ans" == y || "$ans" == Y ]] && h="$(approval_id "$1" "$2" "$3")" && [[ -n "$h" ]]; then
+      printf 'CABINET_APPROVED="%s"\n' "$h" >> "$LOCAL_ENV"; echo "  approved $2 in $1 on this machine"; return 0
+    fi
+  fi
+  echo "  not approved: $2 in $1, so it does not run on this machine. Its text:"; printf '%s' "$3" | node "$LIBJS" show-command
+}
+reviewed=0
+[[ "$CABINET_RUNNER" != custom || -z "$CABINET_RUNNER_CMD" ]] || { cmd_review cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD"; reviewed=1; }
+for jf in "$WS"/jobs/*.job; do
+  j="$(basename "$jf" .job)"
+  [[ -f "$jf" ]] && job_name_ok "$j" && ! job_bad "$j" >/dev/null || continue
+  for k in COMMAND AFTER; do
+    v="$(job_get "$j" "$k")"
+    [[ -z "$v" ]] || { cmd_review "jobs/$j.job" "$k" "$v"; reviewed=1; }
+  done
+done
+((reviewed)) || echo "  none"
+((asking)) && exec 4>&-
+
 echo "== Schedules ($SCHEDULER)"
 # Remember the choice for this machine in cabinet.local.env (only the one line; other lines are kept).
 if [[ -n "$set_schedules" && "$set_schedules" != "$CABINET_SCHEDULES" ]]; then
@@ -472,8 +504,12 @@ else
   else
     for jf in "$WS"/jobs/*.job; do
       [[ -f "$jf" ]] || continue
-      WHEN="$(WHEN=""; source "$jf"; echo "$WHEN")"
-      [[ -z "$WHEN" ]] || schedule "$(basename "$jf" .job)" "$WS/bin/job.sh" run "$(basename "$jf" .job)" "$WHEN"
+      j="$(basename "$jf" .job)"
+      # A file whose name is not a job name is never scheduled; an unreadable job keeps the schedule it has.
+      job_name_ok "$j" || { echo "  jobs/$(shown "$j").job: not a job name (letters, digits and . _ -, not starting with -), not scheduled"; failures=1; continue; }
+      if m="$(job_bad "$j")"; then echo "  $(shown "$m"): not scheduled, and a schedule it has is kept"; wanted+="$j "; failures=1; continue; fi
+      WHEN="$(job_get "$j" WHEN)"
+      [[ -z "$WHEN" ]] || schedule "$j" "$WS/bin/job.sh" run "$j" "$WHEN"
     done
   fi
   [[ -z "$CABINET_BACKUP_DIR" ]] || schedule backup "$WS/bin/backup.sh" create "$CABINET_BACKUP_DIR" "$CABINET_BACKUP_TIME"

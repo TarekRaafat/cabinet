@@ -43,6 +43,23 @@ perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "
 # JSON (json: options for input and output, and a JavaScript expression).
 L() { node "$KIT/scripts/lib.js" "$@"; }
 j() { L json "$@"; }
+# rv <file> <KEY>: the value the settings reader (lib.js settings) gives the key in a cabinet.env or .job file.
+setting_of() {
+  L settings "$1" | node -e 'const f = require("node:fs").readFileSync(0, "latin1").split("\0"), n = { E: 4, J: 4, A: 4, B: 3, N: 2, U: 2 };
+    for (let i = 0; i < f.length; i += n[f[i]] || 1) {
+      if (f[i] === "E" && f[i + 1] === process.argv[1]) process.stdout.write(Buffer.from(f[i + 2], "latin1"));
+      if (f[i] === "J" && f[i + 2] === process.argv[1]) process.stdout.write(Buffer.from(f[i + 3], "latin1"));
+    }' "$2"
+}
+# approve <ws> <file> <KEY> [<text>]: approve a command on this machine, as bootstrap does after a person
+# answers y at a terminal (lib.js approval-id, keyed with this HOME's secret): for a section that writes
+# CABINET_RUNNER_CMD or a job's COMMAND or AFTER by hand to test something else. Without <text>, the
+# value the file holds. The criteria of shared-workspace-values never use it.
+approve() {
+  local t="${4-}" h
+  (($# >= 4)) || { t="$(setting_of "$1/$2" "$3"; echo .)"; t="${t%.}"; }
+  h="$(printf '%s' "$t" | L approval-id "$HOME/$LOGS/approval.key" "$2" "$3")" && printf 'CABINET_APPROVED="%s"\n' "$h" >> "$1/cabinet.local.env"
+}
 # in_tty <command>...: run it with its output on a terminal and print what it wrote, with script (in
 # macOS and in Linux's util-linux; their options differ), stopped after 60 seconds. script's input
 # never ends while the command runs: at its end, script would type ^D, which the terminal can echo.
@@ -51,7 +68,7 @@ in_tty() {
   else L run-limited 60 script -qfec "$(printf '%q ' "$@")" /dev/null < <(sleep 60) || true; fi
 }
 # in_tty_typed <answer> <status file> <command>...: in_tty, with <answer> and a newline typed at the
-# terminal (nothing typed when it is empty), the input then kept open as in_tty keeps it; the command's
+# terminal (several answers: one per line of <answer>, each read by its own question; nothing typed when it is empty), the input then kept open as in_tty keeps it; the command's
 # exit status is written to <status file> from inside the terminal.
 in_tty_typed() {
   local a=$1 sf=$2; shift 2; rm -f "$sf"
@@ -641,6 +658,7 @@ cat >> "$W/cabinet.env" <<'EOF'
 CABINET_RUNNER="custom"
 CABINET_RUNNER_CMD='printf "%s|%s" "$CABINET_AGENT" "$CABINET_PROMPT" > runner.out'
 EOF
+HOME="$H" approve "$W" cabinet.env CABINET_RUNNER_CMD
 HOME="$H" "$W/bin/job.sh" run brief >/dev/null 2>&1 || fail "custom runner failed"
 grep -q '^chief-of-staff|Act as the chief-of-staff role: read agents/chief-of-staff.md' "$W/runner.out" || fail "custom runner did not get the role and prompt"
 rm -f "$W/runner.out"
@@ -648,7 +666,7 @@ rm -f "$W/runner.out"
 # (CABINET_TEST_MINUTE makes a minute one second). A limit that is not a number never runs.
 # The agent sleeps for a time only this suite uses (its own PID in it), so another suite's sleep, like the
 # decoy below, is never taken for one this run left; a decoy plain sleep 323 stands in for one.
-SL="323.$$"; echo "CABINET_RUNNER_CMD='sleep $SL; :'" >> "$W/cabinet.env"
+SL="323.$$"; echo "CABINET_RUNNER_CMD='sleep $SL; :'" >> "$W/cabinet.env"; HOME="$H" approve "$W" cabinet.env CABINET_RUNNER_CMD
 left() { pgrep -f "sleep 323\.$$([^0-9]|\$)" >/dev/null; }
 sleep 323 & decoy=$!
 cp "$W/jobs/brief.job" "$T/brief.bak"; sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
@@ -667,7 +685,7 @@ cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 # A run that ends on its own is never reported as stopped, even when the clock passed its limit while
 # the machine slept: the watchdog's timer counts only time awake. A watchdog that never fires stands
 # in for a sleeping machine; the run then outlasts its limit on the clock, and finishes.
-printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='sleep 4; :'" >> "$W/cabinet.env"
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='sleep 4; :'" >> "$W/cabinet.env"; HOME="$H" approve "$W" cabinet.env CABINET_RUNNER_CMD
 sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
 HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!
 dog=""; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do dog="$(pgrep -f "lib.js watchdog 2 " | head -1)"; [[ -n "$dog" ]] && break; sleep 0.2; done
@@ -789,7 +807,9 @@ for k in CABINET_PROJECT CABINET_SLUG CABINET_ROLES CABINET_RUNNER CABINET_BACKU
   [[ "$k" == CABINET_ROLES ]] && printf -- '---\nname: x\ndescription: x\n---\n' > "$PW/roles/\$(touch pwned).md"
   cp "$PW/cabinet.env" "$T/pw.before"; st=0
   out="$(cd "$PW" && "$F" config --yes --week-start monday 2>&1)" || st=$?
-  ((st != 0)) && grep -qF "$k is '" <<<"$out" && grep -qF "$v', which cannot be written back" <<<"$out" || fail "config wrote back $k='$v' (exit $st): $out"
+  # A slug that is not a slug stops every command that reads cabinet.env, config too, before anything (shared-workspace-values Rule 15).
+  if [[ "$k" == CABINET_SLUG ]]; then ((st != 0)) && grep -qF "CABINET_SLUG \"$v\" is not a slug" <<<"$out" || fail "config took CABINET_SLUG='$v' (exit $st): $out"
+  else ((st != 0)) && grep -qF "$k is '" <<<"$out" && grep -qF "$v', which cannot be written back" <<<"$out" || fail "config wrote back $k='$v' (exit $st): $out"; fi
   cmp -s "$PW/cabinet.env" "$T/pw.before" || fail "a refused config changed cabinet.env ($k): $(diff "$T/pw.before" "$PW/cabinet.env")"
   (cd "$PW" && "$F" doctor >/dev/null 2>&1) || true
   [[ -z "$(find "$PW" "$HOME" -name pwned 2>/dev/null)" ]] || fail "a carried-over $k ran: $(find "$PW" "$HOME" -name pwned)"
@@ -1009,13 +1029,14 @@ if [[ "$(id -u)" != 0 ]]; then
   chmod 000 "$W/CABINET.md"; o="$("$W/bin/doctor.sh" 2>&1 || true)"; chmod 644 "$W/CABINET.md"
   echo "$o" | grep -qF "$KE CABINET.md" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name an unreadable kit file"; }
 fi
-# The hashing lives in lib.js: with it gone the doctor names it, and if it fails the doctor says so. Neither reads as ok.
+# The hashing and the settings reader live in lib.js (shared-workspace-values Rule 1): with it gone the doctor
+# stops, naming it, and if it fails the doctor stops. Neither reads as ok.
 cp "$W/bin/lib.js" "$T/lib.keep"; rm "$W/bin/lib.js"
-o="$("$W/bin/doctor.sh" 2>&1 || true)"
-echo "$o" | grep -qF "$KE bin/lib.js (missing)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not name a missing bin/lib.js"; }
-echo 'process.exit(1)' > "$W/bin/lib.js"; o="$("$W/bin/doctor.sh" 2>&1 || true)"
+st=0; o="$("$W/bin/doctor.sh" 2>&1)" || st=$?
+((st == 1)) && grep -qF "bin/lib.js is missing, so cabinet.env cannot be read" <<<"$o" && ! grep -qF "ok    kit files" <<<"$o" || fail "doctor did not name a missing bin/lib.js (exit $st): $o"
+echo 'process.exit(1)' > "$W/bin/lib.js"; st=0; o="$("$W/bin/doctor.sh" 2>&1)" || st=$?
 cp "$T/lib.keep" "$W/bin/lib.js"
-echo "$o" | grep -qF "$KE (could not read them)" || { echo "$o" | grep -i 'kit files'; fail "doctor did not report a failed check of the kit files"; }
+((st == 1)) && ! grep -qF "ok    kit files" <<<"$o" || fail "doctor did not stop on a failing bin/lib.js (exit $st): $o"
 echo "$out" | grep -q 'ok    roles built' || fail "doctor: roles"
 echo "$out" | grep -q 'ok    manual names every script, job and role' || { echo "$out" | grep OPERATIONS; fail "doctor: manual"; }
 echo "$out" | grep -q 'ok    every handoff ID is unique' || fail "doctor: handoff IDs"
@@ -1026,6 +1047,22 @@ section "docs match the code" ""
 s23() {
 node "$KIT/test/docs-check.js" "$KIT" || fail "the docs fell behind the code (see above)"
 node "$KIT/tools/build-llms-full.js" --check || fail "llms-full.txt is out of date (npm run docs)"
+# specs/shared-workspace-values.md, criterion 24: the format, the key lists, the local-only entries, each new
+# check ID and the guardrails paragraph are in the docs, and the changelog says what now stops.
+CD="$KIT/docs/commands.md"
+grep -qF "not a literal value" "$CD" && grep -qF "AGENT, PROMPT, COMMAND, WHEN, MINUTES, RESULT, AFTER, TIMEOUT, QUIET_DAYS, MODEL" "$CD" && grep -qF "skipped the local-only file" "$CD" \
+  || fail "criterion 24: docs/commands.md"
+sk="$(awk "/^const SETTING_KEYS/,/\\];/" "$KIT/scripts/lib.js" | grep -o "\"CABINET_[A-Z_]*\"" | tr -d "\"" | sort -u)"
+[[ "$(grep -c . <<<"$sk")" == 23 ]] || fail "criterion 24: SETTING_KEYS in scripts/lib.js is not the 23 keys: $sk"
+for k in $sk; do
+  grep -qF "$k" "$CD" || fail "criterion 24: docs/commands.md does not list the cabinet.env key $k"
+done
+for id in settings.literal settings.unknown roles.name jobs.name repos.local-path commands.approved settings.local-tracked; do
+  grep -qF "| \`$id\` |" "$KIT/docs/troubleshooting.md" || fail "criterion 24: docs/troubleshooting.md has no row for $id"
+done
+grep -qF "not approved on this machine" "$KIT/docs/guardrails.md" || fail "criterion 24: docs/guardrails.md"
+top="$(awk "/^## /{n++} n == 1" "$KIT/CHANGELOG.md")"
+head -1 <<<"$top" | grep -q "Unreleased" && grep -qF "cabinet.env" <<<"$top" && grep -qF "not a literal value" <<<"$top" || fail "criterion 24: the top Unreleased section of CHANGELOG.md"
 # What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
 # changed" with git or without, and the commands that commit themselves.
 grep -qF "In a terminal it prints the Cabinet mark with the version and the tagline beside it" "$KIT/docs/commands.md" || fail "docs/commands.md does not say cabinet version shows the tagline"
@@ -1334,6 +1371,7 @@ mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' >
 mkdir -p "$HOME/$LOGS/demo-co"; cp "$oh/$LOGS/demo-co/workspace" "$HOME/$LOGS/demo-co/workspace"
 "$F" new "$T/listed-old" --yes >/dev/null; echo 0.0.1 > "$T/listed-old/.cabinet/version"
 "$F" new "$T/listed-gone" --yes >/dev/null; rm -rf "$T/listed-gone"
+"$W/bin/doctor.sh" >/dev/null 2>&1 || true   # list shows the record of its last run on this machine (this HOME)
 mkdir -p "$T/away"; out="$(cd "$T/away" && "$F" list)"
 echo "$out" | grep -Eq '^  demo-co +Demo Co +[0-9.]+ ' || { echo "$out"; fail "list: the workspace row"; }
 echo "$out" | grep -Eq '^  listed-old +listed-old +0\.0\.1\* ' && echo "$out" | grep -q '^\* not the installed kit' || { echo "$out"; fail "list: an older kit"; }
@@ -1610,10 +1648,10 @@ echo "owner note" >> "$T/rolecommit/AGENTS.md"; before="$(git -C "$T/rolecommit"
 out="$(cd "$T/rolecommit" && "$F" role remove dba)" && echo "$out" | grep -q "Review with git -C" && [[ "$(git -C "$T/rolecommit" rev-parse HEAD)" == "$before" ]] && grep -qx "owner note" "$T/rolecommit/AGENTS.md" || fail "role remove committed over the owner's own edit: $out"
 # Drafting: the agent tool runs as chief-of-staff on the drafting method; a run that leaves it TBD fails.
 cp "$RW/cabinet.env" "$T/optroles-env.bak"
-printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='printf \"%s\" \"\$CABINET_PROMPT\" > prompt.out'" >> "$RW/cabinet.env"; approve "$RW" cabinet.env CABINET_RUNNER_CMD
 (cd "$RW" && "$F" role draft brand-strategist) >/dev/null 2>&1 && fail "a draft that left the role TBD passed"
 grep -q 'Act as the chief-of-staff role' "$RW/prompt.out" && grep -q 'as .cabinet/rules/seats.md, "Drafting a role", says' "$RW/prompt.out" && grep -q 'roles/brand-strategist.md' "$RW/prompt.out" || fail "the draft prompt: $(cat "$RW/prompt.out")"
-printf '%s\n' "CABINET_RUNNER_CMD='sed -i.bak \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md && rm roles/brand-strategist.md.bak'" >> "$RW/cabinet.env"
+printf '%s\n' "CABINET_RUNNER_CMD='sed -i.bak \"s/^description: TBD.*/description: Brand strategist. Positioning and naming./\" roles/brand-strategist.md && rm roles/brand-strategist.md.bak'" >> "$RW/cabinet.env"; approve "$RW" cabinet.env CABINET_RUNNER_CMD
 (cd "$RW" && "$F" role draft brand-strategist) | grep -q 'Drafted roles/brand-strategist.md' || fail "a finished draft was not reported"
 grep -q '^description: Brand strategist' "$RW/agents/brand-strategist.md" && ! "$RW/bin/doctor.sh" 2>&1 | grep -q 'brand-strategist role is not drafted' || fail "the drafted role was not rebuilt, or still noted"
 (cd "$RW" && "$F" role draft qa) >/dev/null 2>&1 && fail "role draft took a kit role"
@@ -1835,8 +1873,9 @@ echo "$out" | grep -q 'installing tools always asks' && [[ "$(installs)" == 0 ]]
 # JavaScript stops with the same message instead of a syntax error.
 out="$(CABINET_TEST_NODE_VERSION=12.22.9 "$F" new "$T/oldnode" --yes 2>&1)" && fail "setup went ahead with an old Node.js"
 echo "$out" | grep -q 'cabinet needs Node.js 18 or newer; this is 12.22.9' && [[ ! -e "$T/oldnode" ]] || { echo "$out"; fail "setup with an old Node.js"; }
-out="$(cd "$D" && CABINET_TEST_NODE_VERSION=12.22.9 "$D/bin/doctor.sh" 2>&1 || true)"
-echo "$out" | grep -q 'FIX.*cabinet needs Node.js 18 or newer; this is 12.22.9' || { echo "$out"; fail "doctor: an old Node.js"; }
+# The doctor reads cabinet.env with the same JavaScript, so it stops with that message too.
+st=0; out="$(cd "$D" && CABINET_TEST_NODE_VERSION=12.22.9 "$D/bin/doctor.sh" 2>&1)" || st=$?
+((st == 1)) && echo "$out" | grep -q 'cabinet needs Node.js 18 or newer; this is 12.22.9' || { echo "$out"; fail "doctor: an old Node.js"; }
 (cd "$D" && "$F" doctor --json) | j -e '$.results.find((r) => r.id == "deps.node")?.level == "ok"' >/dev/null || fail "doctor: a new enough Node.js"
 rc=0; out="$(CABINET_TEST_NODE_VERSION=16.20.2 L json -n 1 2>&1)" || rc=$?
 [[ $rc == 1 && "$out" == *"cabinet needs Node.js 18 or newer; this is 16.20.2"* ]] || fail "lib.js on an old Node.js: $out"
@@ -1849,7 +1888,7 @@ s45() {
 Q="$T/quiet"
 # The runner counts its runs and writes the brief from $T/qbrief.
 printf '# Brief\n\n## Sign-off queue\n\nNone.\n' > "$T/qbrief"
-printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='echo run >> \"$T/qruns\"; cp \"$T/qbrief\" BRIEF.md'" >> "$Q/cabinet.env"
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='echo run >> \"$T/qruns\"; cp \"$T/qbrief\" BRIEF.md'" >> "$Q/cabinet.env"; approve "$Q" cabinet.env CABINET_RUNNER_CMD
 qc() { git -C "$Q" add -A && git -C "$Q" commit -qm "$1"; }
 qc "custom runner"
 r() { "$Q/bin/job.sh" run brief 2>&1; }   # stdout is not a terminal: run as the scheduler runs it
@@ -2936,6 +2975,7 @@ cfg --credit-roles on --credit-email "$PM" >/dev/null || fail "on with an email"
 
 # Credit on commits (criteria 6 to 15).
 HOME="$CH" "$CW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+HOME="$CH" approve "$CW" cabinet.env CABINET_RUNNER_CMD "$T/credit-shim/codex"   # crun's custom runner, set in its environment
 cmp -s "$KH" "$HK/prepare-commit-msg" || fail "bootstrap did not place the credit hook where none was"
 for r in claude codex antigravity qwen grok opencode cursor custom; do
   h="$(git -C "$CR" rev-parse HEAD)"; crun "$CW" "$r" backend
@@ -3075,7 +3115,9 @@ sedi 's/^CABINET_CREDIT_ROLES=.*/CABINET_CREDIT_ROLES="on"/' "$CW/cabinet.env"
 for v in 'x@example.com' "$PM"$'\nCo-authored-by: x <x@x.com>'; do
   grep -v '^CABINET_CREDIT_EMAIL=' "$CW/cabinet.env" > "$T/credit-env"; printf 'CABINET_CREDIT_EMAIL="%s"\n' "$v" >> "$T/credit-env"; cp "$T/credit-env" "$CW/cabinet.env"
   crun "$CW" codex backend; [[ "$(cab)" == 0 ]] || fail "a bad CABINET_CREDIT_EMAIL credited a commit: $(msg)"
-  (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "fix" && r.message.includes("CABINET_CREDIT_EMAIL"))' >/dev/null || fail "the doctor did not report a bad CABINET_CREDIT_EMAIL"
+  if [[ "$v" == *$'\n'* ]]; then   # a value over two lines: cabinet.env is not read at all (shared-workspace-values Rule 2)
+    (cd "$CW" && "$F" doctor --json 2>&1 >/dev/null) | grep -qF "not a literal value" || fail "the doctor read a CABINET_CREDIT_EMAIL over two lines"
+  else (cd "$CW" && "$F" doctor --json) | j -e '$.results.some((r) => r.id == "credit.email" && r.level == "fix" && r.message.includes("CABINET_CREDIT_EMAIL"))' >/dev/null || fail "the doctor did not report a bad CABINET_CREDIT_EMAIL"; fi
 done
 grep -v '^CABINET_CREDIT_EMAIL=\|^Co-authored-by' "$CW/cabinet.env" > "$T/credit-env"; echo 'CABINET_CREDIT_EMAIL=""' >> "$T/credit-env"; cp "$T/credit-env" "$CW/cabinet.env"
 # Every Cabinet line any of these runs wrote carries the kit's email or a project's (criterion 8).
@@ -3372,7 +3414,9 @@ CC="$CK/bin/cabinet"
 "$F" new "$T/color-nobrief" --yes >/dev/null
 "$F" new "$T/color-gone" --yes >/dev/null; rm -rf "$T/color-gone"
 echo 0.0.1 > "$CO/.cabinet/version"; rm "$CO/agents/qa.md"
-printf '#!/bin/sh\necho "{\\"problems\\": 0}"\n' > "$T/color-nobrief/bin/doctor.sh"   # a doctor that finds nothing: list shows "all good"
+# list shows each doctor's last record on this machine: one run that found problems, and a record of none ("all good").
+"$CO/bin/doctor.sh" >/dev/null 2>&1 || true
+printf '0\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(cd "$T/color-nobrief" && pwd -P)" > "$HOME/$LOGS/color-nobrief/doctor.tsv"
 printf '# Brief\n\nOld.\n' > "$CO/BRIEF.md"; touch -t 202001010700 "$CO/BRIEF.md"
 printf '# Brief\n\n## Sign-off queue\n\n1. **Publish?** A. now. B. later. $(touch pwned)\n\n## Actions for the owner\n\n- Push api main.\n' > "$CW/BRIEF.md"
 cat >> "$CW/HANDOFFS.md" <<'EOF'
@@ -3915,7 +3959,7 @@ for r in claude codex antigravity qwen grok opencode cursor; do
     [[ "$(runs)" == "$(exp "$r" "$mm")" ]] || fail "$r with the model '$mm' got: $(runs) -- expected: $(exp "$r" "$mm")"
   done
 done
-envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='printf %s \"\$CABINET_MODEL\" > model.out'"
+envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='printf %s \"\$CABINET_MODEL\" > model.out'"; approve "$MW" cabinet.env CABINET_RUNNER_CMD
 m "$F" -C "$MW" job run brief >/dev/null 2>&1 && [[ "$(cat "$MW/model.out")" == m-1 ]] || fail "custom did not get CABINET_MODEL=m-1: $(cat "$MW/model.out" 2>/dev/null)"
 envline CABINET_RUNNER 'CABINET_RUNNER="claude"'; envline CABINET_RUNNER_CMD 'CABINET_RUNNER_CMD=""'
 # 5. A job's MODEL wins for that job only.
@@ -3999,7 +4043,7 @@ for v in --yolo 'x;y'; do
     grep -qF "the model '$v' in cabinet.env is not a model name" "$f" || fail "$f does not name cabinet.env and $v: $(tail -3 "$f")"
   done
   grep -qF "the model '$v' in cabinet.env is not a model name" <<<"$out" || fail "role draft does not name cabinet.env and $v: $out"
-  envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='touch marker'"
+  envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='touch marker'"; approve "$MW" cabinet.env CABINET_RUNNER_CMD
   m "$F" -C "$MW" job run brief >/dev/null 2>&1 && fail "custom took CABINET_MODEL=$v"
   [[ ! -e "$MW/marker" ]] || fail "custom ran with CABINET_MODEL=$v"
   envline CABINET_RUNNER 'CABINET_RUNNER="claude"'; envline CABINET_RUNNER_CMD 'CABINET_RUNNER_CMD=""'
@@ -4587,6 +4631,17 @@ seven_matrix() {
   cp -R "$LW" "$T/light"; LW="$T/light" LL="$T/light-calls.log"
   le "$LW" CABINET_RUNNER "CABINET_RUNNER=\"$r\""
   cp "$LW/bin/lib.sh" "$T/l-lib.sh"; cp "$FX/lib.sh" "$LW/bin/lib.sh"
+  # Today's job.sh calls helpers the baseline's lib.sh predates (shared-workspace-values): shims that read a job as
+  # that kit did, by sourcing it, and check nothing, so the run lines are the baseline's.
+  cat >> "$LW/bin/lib.sh" <<'SHIM'
+role_ok() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
+job_name_ok() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]]; }
+shown() { printf '%s' "$1"; }
+job_bad() { return 1; }
+job_set() { source "$WS/jobs/$1.job"; }
+approved() { return 0; }
+not_approved() { :; }
+SHIM
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
     seven > "$T/l7-$mm"; [[ "$(wc -l < "$T/l7-$mm" | tr -d ' ')" == 5 ]] || fail "the baseline with $r: $(cat "$T/l7-$mm")"
@@ -6325,7 +6380,7 @@ o="$(in_tty_typed yes "$sf" "$F" -C "$DW" session end e2 --force)"
 ended e2; git -C "$DA" rev-parse -q --verify session/e2 >/dev/null || fail "criterion 13: the branch is gone"
 
 # 16: a job's runs are known (criterion 16).
-printf 'COMMAND="env > %q"\n' "$T/dr-env" > "$DW/jobs/envdump.job"
+printf 'COMMAND="env > %q"\n' "$T/dr-env" > "$DW/jobs/envdump.job"; approve "$DW" jobs/envdump.job COMMAND
 "$DW/bin/job.sh" run envdump >/dev/null 2>&1 || fail "criterion 16: the job did not run"
 grep -qx 'CABINET_JOB=envdump' "$T/dr-env" || fail "criterion 16: no CABINET_JOB in the job's environment"
 rm "$DW/jobs/envdump.job"
@@ -6876,7 +6931,7 @@ fold k5-45b; st=0; notty "$KC/bin/cabinet" -C "$W" update --force > "$T/k5-out" 
 ((st == 0)) && [[ "$(cat "$W/.cabinet/version")" == "$V" ]] || fail "45: --force with nothing on the list: exit $st, $(cat "$T/k5-err")"
 # 46: a job running during update is not broken: job.sh is replaced by a rename, so bash keeps reading the old one.
 for i in 1 2 3; do
-  fold "k5-46-$i"; printf 'COMMAND="sleep 5"\n' > "$W/jobs/slow.job"; commit "slow job"
+  fold "k5-46-$i"; printf 'COMMAND="sleep 5"\n' > "$W/jobs/slow.job"; approve "$W" jobs/slow.job COMMAND; commit "slow job"
   jl="$HOME/$LOGS/k5-46-$i/slow.log"; j1=$SECONDS
   ( st=0; "$W/bin/job.sh" run slow > "$T/k5-job" 2>&1 || st=$?; echo "$st" > "$T/k5-job-$i" ) & jp=$!
   for ((n = 0; n < 50; n++)); do grep -q '^=== .*slow' "$jl" 2>/dev/null && break; sleep 0.2; done
@@ -7254,6 +7309,336 @@ top="$(awk '/^## /{on = /^## 0\.5\.1 /} on' "$KIT/CHANGELOG.md")"
 grep -qF guardrails.codex-approval <<<"$top" && grep -qF 'commit refused: bin/secret.sh' <<<"$top" || fail "criterion 21: CHANGELOG.md's 0.5.1 section"
 
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+# specs/shared-workspace-values.md: cabinet.env and job files are read as text, names and local-only paths are
+# checked, other workspaces are read without running them, and a command from the files runs only once
+# approved on this machine. Each section has its own HOME and global git config, restored at its end.
+# The marker: a command that would leave $T/pwned, written into files with printf '%s', so this shell never runs it.
+SVM='$(touch "'"$T"'/pwned")' SVB='`touch "'"$T"'/pwned"`'
+SVLIT='not a literal value; cabinet reads this file as text and runs nothing in it'
+svhome() {
+  SV_OH="$HOME" SV_OG="$GIT_CONFIG_GLOBAL"; mkdir -p "$T/$1"
+  export HOME="$T/$1" GIT_CONFIG_GLOBAL="$T/$1/.gitconfig"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+}
+svback() { export HOME="$SV_OH" GIT_CONFIG_GLOBAL="$SV_OG"; }
+# line5 <file> <line>...: the lines put in from line 5 on, the file's own line 5 and later after them.
+line5() { local f=$1; shift; { head -4 "$f"; printf '%s\n' "$@"; tail -n +5 "$f"; } > "$f.new" && mv "$f.new" "$f"; }
+# refused <code> <file:line> <command>...: it exits with the code, and its stderr names the file and line.
+sv_refused() {
+  local e rc=0; e="$("${@:3}" 2>&1 >/dev/null)" || rc=$?
+  [[ "$rc" == "$1" ]] && grep -qF "$2: $SVLIT" <<<"$e" || { echo "exit $rc: $e" >&2; return 1; }
+}
+# ran_not [<file>]: the marker (or the file) is not there, nor 2 seconds later.
+ran_not() { local m="${1:-$T/pwned}"; [[ ! -e "$m" ]] && sleep 2 && [[ ! -e "$m" ]]; }
+# dfix <ws> <level> <text>: the doctor's --json has a result at that level whose message contains the text.
+dfix() { "$1/bin/doctor.sh" --json 2>/dev/null | j -e --arg l "$2" --arg t "$3" '$.results.some((r) => r.level == $l && r.message.includes($t))' >/dev/null; }
+runs_of() { grep -c '^claude ' "$T/fake.log" 2>/dev/null || true; }   # the fake agent tool's runs so far
+schedf() { printf '%s/%s/ai.cabinet.%s.%s%s' "$HOME" "$SD" "$1" "$2" "$SX"; }   # schedf <slug> <job>
+
+section "shared values A: cabinet.env and job files are read as text" ""
+s102() {
+svhome sv-a-home
+SW="$T/sv-a"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"; cp "$SW/cabinet.env" "$T/sv-a.env"
+slug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$SW/cabinet.env")"
+fresh() { cp "$T/sv-a.env" "$SW/cabinet.env"; rm -f "$T/pwned"; }
+# Criterion 1: every command that reads cabinet.env refuses it at line 5, and nothing runs.
+c1() {
+  sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json || fail "criterion 1$1: doctor"
+  sv_refused 1 cabinet.env:5 "$F" -C "$SW" next || fail "criterion 1$1: cabinet next"
+  sv_refused 1 cabinet.env:5 "$SW/bin/job.sh" list || fail "criterion 1$1: job list"
+  sv_refused 1 cabinet.env:5 "$SW/bin/role.sh" list || fail "criterion 1$1: role list"
+  sv_refused 1 cabinet.env:5 "$SW/bin/handoff.sh" list || fail "criterion 1$1: handoff list"
+  sv_refused 1 cabinet.env:5 "$SW/bin/bootstrap.sh" --dry-run || fail "criterion 1$1: bootstrap --dry-run"
+  sv_refused 1 cabinet.env:5 "$F" -C "$SW" config --budget 5 --dry-run || fail "criterion 1$1: config --dry-run"
+  ran_not || fail "criterion 1$1: the marker ran"
+}
+fresh; line5 "$SW/cabinet.env" "CABINET_PROJECT=\"$SVM\""; c1 ""
+fresh; line5 "$SW/cabinet.env" "CABINET_PROJECT=\"$SVB\""; c1 "(b)"
+fresh; line5 "$SW/cabinet.env" "CABINET_PROJECT=$SVM"; c1 "(c)"
+fresh; line5 "$SW/cabinet.env" "touch \"$T/pwned\""; c1 "(d)"
+fresh
+
+# Criterion 2: an unreadable job stops that job only, and keeps the schedule it has.
+st_next=0; "$F" -C "$SW" next >/dev/null 2>&1 || st_next=$?
+st_cfg=0; "$F" -C "$SW" config --budget 5 --dry-run >/dev/null 2>&1 || st_cfg=$?
+printf '%s\n' "AGENT=chief-of-staff" 'PROMPT="hi"' "WHEN=\"$SVM\"" > "$SW/jobs/x.job"
+sv_refused 2 jobs/x.job:3 "$SW/bin/job.sh" run x || fail "criterion 2: job run x"
+out="$("$SW/bin/job.sh" list 2>&1)" || fail "criterion 2: job list failed: $out"
+grep -q '^brief ' <<<"$out" && grep -qF "jobs/x.job:3: $SVLIT" <<<"$out" || fail "criterion 2: job list: $out"
+dfix "$SW" fix "jobs/x.job:3: $SVLIT" || fail "criterion 2: no doctor fix"
+out="$("$SW/bin/bootstrap.sh" 2>&1)" || true
+[[ ! -e "$(schedf "$slug" x)" ]] && grep -qF 'jobs/x.job:3' <<<"$out" || fail "criterion 2: bootstrap: $(ls "$HOME/$SD" 2>&1) $out"
+st=0; "$F" -C "$SW" next >/dev/null 2>&1 || st=$?; [[ "$st" == "$st_next" ]] || fail "criterion 2: cabinet next exit $st, before $st_next"
+st=0; "$F" -C "$SW" config --budget 5 --dry-run >/dev/null 2>&1 || st=$?; [[ "$st" == "$st_cfg" ]] || fail "criterion 2: config exit $st, before $st_cfg"
+ran_not || fail "criterion 2: the marker ran"
+rm "$SW/jobs/x.job"
+# (b) A job that bootstrap scheduled keeps its schedule when its file becomes unreadable.
+cp "$SW/jobs/brief.job" "$SW/jobs/y.job"; "$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+[[ -f "$(schedf "$slug" y)" ]] || fail "criterion 2(b): y was not scheduled"
+cp "$(schedf "$slug" y)" "$T/sv-a-y"
+awk -v l="WHEN=\"$SVM\"" 'NR == 3 { print l; next } { print }' "$SW/jobs/brief.job" > "$SW/jobs/y.job"
+"$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+cmp -s "$T/sv-a-y" "$(schedf "$slug" y)" || fail "criterion 2(b): the schedule of y changed or went"
+ran_not || fail "criterion 2(b): the marker ran"
+rm "$SW/jobs/y.job"; "$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+
+# Criterion 3: the reader gives what source gave.
+mkdir -p "$T/jobs"; RF="$T/jobs/f.job"
+{ printf '%s\n' 'MINUTES=14' 'PROMPT="say \"hi\" \$5 \\ \`x\`"' "COMMAND='run \"\$CABINET_PROMPT\"'" 'RESULT="a # not a comment" # a comment' \
+    'AFTER="two' 'lines"' 'MODEL=x' 'MODEL=y' 'TIMEOUT='; printf 'QUIET_DAYS=z\r\n'; } > "$RF"
+for k in MINUTES PROMPT COMMAND RESULT AFTER MODEL TIMEOUT; do
+  [[ "$(setting_of "$RF" "$k"; echo .)" == "$(bash -c 'source "$1"; printf "%s" "${!2}"' _ "$RF" "$k"; echo .)" ]] || fail "criterion 3: $k is $(setting_of "$RF" "$k" | od -c | head -3)"
+done
+[[ "$(setting_of "$RF" QUIET_DAYS; echo .)" == "z." ]] || fail "criterion 3: QUIET_DAYS is $(setting_of "$RF" QUIET_DAYS | od -c | head -2)"
+
+# Criterion 4: every form the kit writes reads as source reads it.
+# config refuses the pipeline with a runner whose cost it cannot count, so the pipeline job is made first, then
+# the pipeline turned off (its job stays) and the custom runner set: the files then hold every form the kit writes.
+"$F" -C "$SW" config --pipeline small --pipeline-limit 5 --apply >/dev/null 2>&1 || true
+"$F" -C "$SW" config --pipeline off --runner custom --runner-cmd 'mytool --run "$CABINET_PROMPT"' --apply >/dev/null 2>&1 || true
+printf '%s\n' 'CABINET_MODEL_LIGHT="some-model"' 'CABINET_LIGHT_ROLES="qa"' >> "$SW/cabinet.env"
+for f in "$SW/cabinet.env" "$SW/jobs/brief.job" "$SW/jobs/pipeline.job"; do
+  [[ -f "$f" ]] && L settings "$f" >/dev/null || fail "criterion 4: $f is missing or unreadable"
+  for k in $(sed -n 's/^[[:space:]]*\([A-Z_][A-Z0-9_]*\)=.*/\1/p' "$f" | sort -u); do
+    [[ "$(setting_of "$f" "$k"; echo .)" == "$(bash -c 'set -f; source "$1" >/dev/null 2>&1; printf "%s" "${!2}"' _ "$f" "$k"; echo .)" ]] || fail "criterion 4: $k in $f"
+  done
+done
+! "$SW/bin/doctor.sh" --json 2>/dev/null | grep -qE 'not a literal value|is not a setting cabinet reads' || fail "criterion 4: the doctor named a kit-written line"
+fresh
+
+# Criterion 5: a key cabinet does not read is never set, so it cannot change PATH.
+mkdir -p "$T/evil"; for t in git node uname awk sed; do printf '#!/bin/sh\n/usr/bin/touch "%s/pwned"\nexit 1\n' "$T" > "$T/evil/$t"; chmod 755 "$T/evil/$t"; done
+printf '%s\n' "PATH=\"$T/evil\"" 'FOO=1' >> "$SW/cabinet.env"
+dfix "$SW" note 'PATH is not a setting cabinet reads; ignored' && dfix "$SW" note 'FOO is not a setting cabinet reads; ignored' || fail "criterion 5: the notes"
+ran_not || fail "criterion 5: a program from the PATH line ran"
+fresh
+SW5="$T/sv-a5"; "$F" new "$SW5" --yes >/dev/null
+cp "$SW5/jobs/brief.job" "$SW5/jobs/y.job"; echo 'FOO=1' >> "$SW5/jobs/y.job"; n=$(($(wc -l < "$SW5/jobs/brief.job") + 1))
+dfix "$SW5" note "jobs/y.job:$n: FOO is not a setting cabinet reads; ignored" || fail "criterion 5(b): no note for line $n"
+
+# Criterion 6: forms that are not literal values.
+for l in 'export CABINET_BUDGET=1' 'CABINET_BUDGET = 1' 'CABINET_PROJECT=a b' 'CABINET_PROJECT="a"; true'; do
+  fresh; line5 "$SW/cabinet.env" "$l"; sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json || fail "criterion 6: $l"
+done
+fresh; head -4 "$T/sv-a.env" > "$SW/cabinet.env"; echo 'CABINET_PROJECT="a' >> "$SW/cabinet.env"
+sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json || fail "criterion 6: an unterminated quote"
+fresh; rm "$SW/cabinet.env"; e="$("$SW/bin/doctor.sh" --json 2>&1 >/dev/null)" && fail "criterion 6(b): no cabinet.env passed"
+grep -qF "no cabinet.env in $SW" <<<"$e" || fail "criterion 6(b): $e"
+
+# Criterion 7: $ is refused, never expanded.
+fresh; line5 "$SW/cabinet.env" 'CABINET_BACKUP_DIR="$HOME/b"'; sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json || fail "criterion 7"
+fresh; line5 "$SW/cabinet.env" 'CABINET_BACKUP_DIR=${HOME}/b'; sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json || fail "criterion 7(b)"
+[[ ! -e "$HOME/b" ]] || fail "criterion 7: \$HOME/b was made"
+fresh; echo 'CABINET_BACKUP_DIR="\$HOME/b"' >> "$SW/cabinet.env"   # last, so it is the value that counts
+[[ "$(setting_of "$SW/cabinet.env" CABINET_BACKUP_DIR)" == '$HOME/b' ]] || fail "criterion 7(c): $(setting_of "$SW/cabinet.env" CABINET_BACKUP_DIR)"
+fresh
+
+# Criterion 8: a job's AGENT is a role name.
+printf '%s\n' 'AGENT="../x"' 'PROMPT="hi"' > "$SW/jobs/x.job"; r0="$(runs_of)"
+st=0; e="$("$SW/bin/job.sh" run x 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 2 ]] && grep -qF 'jobs/x.job: AGENT "../x" is not a role name' <<<"$e" && [[ "$(runs_of)" == "$r0" ]] || fail "criterion 8: exit $st, $e"
+rm "$SW/jobs/x.job"
+
+# Criterion 25: a cabinet.env value is one line, so no line of it reaches a schedule file.
+"$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true; sbefore="$(dsnap "$HOME/$SD")"
+for p in "CABINET_BACKUP_DIR='/b|ExecStartPre=/usr/bin/touch \"$T/pwned\"'" "CABINET_BACKUP_DIR=\"/b|ExecStartPre=/usr/bin/touch $T/pwned\"" 'CABINET_BACKUP_DIR="/b\|x"'; do
+  fresh; line5 "$SW/cabinet.env" "${p%%|*}" "${p#*|}"
+  sv_refused 1 cabinet.env:5 "$SW/bin/doctor.sh" --json && sv_refused 1 cabinet.env:5 "$SW/bin/bootstrap.sh" || fail "criterion 25: ${p%%|*}"
+  ran_not && [[ "$(dsnap "$HOME/$SD")" == "$sbefore" ]] || fail "criterion 25: ${p%%|*}: the marker ran, or a schedule changed"
+done
+fresh
+svback
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "shared values B: role and job names, and the slug" ""
+s103() {
+svhome sv-b-home
+mkdir -p "$T/sv-b"; SW="$T/sv-b/ws"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"; cp "$SW/cabinet.env" "$T/sv-b.env"
+slug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$SW/cabinet.env")"
+fresh() { cp "$T/sv-b.env" "$SW/cabinet.env"; rm -f "$T/pwned"; }
+# Criterion 9: a role word that is not a role name is skipped, never globbed or used as a path.
+fm=$'---\nname: x\ndescription: a role\n---\n\nA role.'
+printf '%s\n' "$fm" > "$SW/../evil.md"; cp "$SW/../evil.md" "$T/sv-b-evil"; : > "$SW/zz"; printf '%s\n' "$fm" > "$SW/roles/zz.md"
+L sub "$SW/cabinet.env" -- '/^CABINET_ROLES=.*/' 'CABINET_ROLES="chief-of-staff ../../evil *"'
+mkdir -p "$T/rt/a/b"; st=0; out="$(cd "$SW" && TMPDIR="$T/rt/a/b" bin/role.sh build 2>&1)" || st=$?
+[[ "$st" == 1 ]] && grep -qF '../../evil is not a role name (lowercase letters, digits and -), skipped' <<<"$out" && grep -qF '* is not a role name' <<<"$out" || fail "criterion 9: exit $st, $out"
+[[ -f "$SW/agents/chief-of-staff.md" && ! -e "$SW/agents/zz.md" && ! -e "$SW/agents/evil.md" ]] && cmp -s "$T/sv-b-evil" "$SW/../evil.md" || fail "criterion 9: the built files"
+[[ -z "$(find "$T/rt" -name evil.md)" ]] || fail "criterion 9: evil.md under the temp folder"
+dfix "$SW" fix '../../evil is not a role name' || fail "criterion 9: no doctor fix"
+fresh; rm -f "$SW/zz" "$SW/roles/zz.md"; (cd "$SW" && bin/role.sh build >/dev/null)
+# Criterion 10: a job name is checked before any path is built from it.
+printf 'COMMAND="touch %s/pwned"\n' "$T" > "$SW/x.job"; LD="$HOME/$LOGS/$slug"; mkdir -p "$LD"; lb="$(dsnap "$LD")"
+st=0; e="$("$SW/bin/job.sh" run ../x 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 2 ]] && grep -qF 'not a job name: ../x' <<<"$e" || fail "criterion 10: exit $st, $e"
+ran_not && [[ "$(dsnap "$LD")" == "$lb" && ! -e "$HOME/$LOGS/x.log" ]] || fail "criterion 10: something ran or was written"
+rm "$SW/x.job"
+# Criterion 11: a job file whose name is not a job name is never listed or scheduled.
+for n in "a b" "-x"; do
+  cp "$SW/jobs/brief.job" "$SW/jobs/$n.job"
+  ! "$SW/bin/job.sh" list 2>/dev/null | grep -q -- "^$n" || fail "criterion 11: $n is listed"
+  "$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+  [[ ! -e "$(schedf "$slug" "$n")" ]] || fail "criterion 11: $n is scheduled"
+  dfix "$SW" fix "$n.job" || fail "criterion 11: no doctor fix naming $n.job"
+  rm "$SW/jobs/$n.job"
+done
+# Criterion 26: the slug is checked where it is read, before any path is built from it.
+LR="$HOME/$LOGS"; mkdir -p "$LR"; pb="$(dsnap "$(dirname "$LR")")"
+fresh; N=$(($(wc -l < "$SW/cabinet.env") + 1)); echo 'CABINET_SLUG=../x' >> "$SW/cabinet.env"; r0="$(runs_of)"
+for c in "$SW/bin/doctor.sh --json" "$SW/bin/job.sh run brief" "$SW/bin/bootstrap.sh" "$F -C $SW next"; do
+  st=0; e="$($c 2>&1 >/dev/null)" || st=$?
+  [[ "$st" == 1 ]] && grep -qF "cabinet.env:$N: CABINET_SLUG \"../x\" is not a slug (lowercase letters, digits and -)" <<<"$e" || fail "criterion 26: $c: exit $st, $e"
+done
+[[ "$(runs_of)" == "$r0" && ! -e "$(dirname "$LR")/x" && "$(dsnap "$(dirname "$LR")")" == "$pb" ]] || fail "criterion 26: a run, or a write beside the log root"
+fresh; echo 'CABINET_SLUG="My Slug"' >> "$SW/cabinet.env"; e="$("$SW/bin/doctor.sh" --json 2>&1 >/dev/null)" && fail "criterion 26(b): passed"
+grep -qF "cabinet.env:$N: CABINET_SLUG \"My Slug\" is not a slug (lowercase letters, digits and -)" <<<"$e" || fail "criterion 26(b): $e"
+fresh; echo 'CABINET_SLUG=""' >> "$SW/cabinet.env"; e="$("$SW/bin/doctor.sh" --json 2>&1 >/dev/null)" && fail "criterion 26(d): passed"
+grep -qF 'set CABINET_SLUG in cabinet.env' <<<"$e" || fail "criterion 26(d): $e"
+fresh; printf 'CABINET_SLUG="a\033[31m"\n' >> "$SW/cabinet.env"; e="$("$SW/bin/doctor.sh" --json 2>&1 >/dev/null)" && fail "criterion 26(e): passed"
+grep -qF 'CABINET_SLUG "a?[31m" is not a slug' <<<"$e" && ! grep -q $'\033' <<<"$e" || fail "criterion 26(e): $(printf '%s' "$e" | od -c | head -3)"
+fresh
+svback
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "shared values C: local-only files stay inside their repo" ""
+s104() {
+svhome sv-c-home
+SW="$T/sv-c"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"
+git init -q -b main "$SW/app"; echo secret > "$SW/app/.env"; mkdir -p "$SW/app/config"; echo '{}' > "$SW/app/config/local.json"
+git -C "$SW/app" add -A && git -C "$SW/app" commit -qm init
+row() { printf 'app\t-\t%s\n' "$1" > "$SW/repos.tsv"; }
+# Criterion 12: snapshot never copies from outside the repo, nor over the workspace's own files.
+echo x > "$T/HANDOFFS.md"; cp "$SW/HANDOFFS.md" "$T/sv-c-h"
+row '../../HANDOFFS.md .env'; out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
+m='repos.tsv: app: skipped the local-only file "../../HANDOFFS.md" (not a plain path inside the repo)'
+cmp -s "$T/sv-c-h" "$SW/HANDOFFS.md" && cmp -s "$SW/app/.env" "$SW/local/app/.env" && grep -qF "$m" <<<"$out" || fail "criterion 12: $out"
+dfix "$SW" fix "$m" || fail "criterion 12: no doctor fix"
+# Criterion 13: bootstrap never copies a local-only file out of the repo.
+row '../outside.txt'; echo x > "$SW/local/outside.txt"; out="$("$SW/bin/bootstrap.sh" 2>&1)" || true
+[[ ! -e "$SW/outside.txt" ]] && grep -qF 'skipped the local-only file "../outside.txt"' <<<"$out" || fail "criterion 13: $out"
+rm -f "$SW/local/outside.txt"
+# Criterion 14: each form that is not a plain path inside the repo.
+for e in '/etc/hosts' '~/x' 'a/../b' 'a/./b' './a' 'a//b' '*.env' 'a\b' "a$(printf '\033')b"; do
+  rm -rf "$SW/local/app"; row "$e"; out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
+  grep -qF "skipped the local-only file \"$(printf '%s' "$e" | tr '\033' '?')\"" <<<"$out" || fail "criterion 14: $e: $out"
+  [[ -z "$(find "$SW/local/app" -type f ! -name git-info-exclude 2>/dev/null)" ]] || fail "criterion 14: $e copied $(find "$SW/local/app" -type f)"
+done
+rm -rf "$SW/local/app"; row 'config/local.json .env'; out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
+cmp -s "$SW/app/.env" "$SW/local/app/.env" && cmp -s "$SW/app/config/local.json" "$SW/local/app/config/local.json" && ! grep -q skipped <<<"$out" || fail "criterion 14(b): $out"
+svback
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "shared values D: other workspaces are read, never run" ""
+s105() {
+svhome sv-d-home
+SW="$T/sv-d"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"
+W2="$T/sv-d2"; "$F" new "$W2" --yes --name Two --budget 10 >/dev/null; W2="$(cd "$W2" && pwd -P)"
+s2="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$W2/cabinet.env")"
+grep -qx 'CABINET_PROJECT="Two"' "$W2/cabinet.env" && grep -qx 'CABINET_BUDGET="10"' "$W2/cabinet.env" && grep -qxF "$W2" "$HOME/$LOGS/$s2/workspace" || fail "the second workspace's setup"
+for i in 1 2; do "$W2/bin/handoff.sh" add --from qa --to owner --changed "c$i" --needed "n$i" "t$i" >/dev/null || fail "a handoff for the owner"; done
+printf '%s\tbrief\tclaude\t1.50\t\t\t\n' "$(date +%s)" >> "$HOME/$LOGS/$s2/spend.tsv"
+rm -f "$HOME/$LOGS/$s2/doctor.tsv"
+lw() { (cd "$T" && "$F" list --json) | j -c --arg p "$1" '$.find((x) => x.path == $p)'; }
+dw() { (cd "$T" && "$F" digest --json) | j -c --arg p "$1" '$.find((x) => x.path == $p)'; }
+# Criterion 16: the same facts as before.
+[[ "$(lw "$W2" | j -r '[$.project, $.version, $.waiting_on_owner].join(" ")')" == "Two $(j -r '$.version' "$KIT/package.json") 2" ]] || fail "criterion 16: list: $(lw "$W2")"
+[[ "$(dw "$W2" | j -r '[$.waiting_on_owner, $.spend_this_week_usd, $.budget_usd].join(" ")')" == "2 1.5 10" ]] || fail "criterion 16: digest: $(dw "$W2")"
+# Criterion 17: the doctor column is the record of its last run, never a run.
+[[ "$(lw "$W2" | j -r '$.doctor_problems')" == null ]] && (cd "$T" && "$F" list) | grep -F "$s2 " | grep -qF 'not run yet' || fail "criterion 17: before a run: $(lw "$W2")"
+gs="$(git -C "$W2" status --porcelain)"; t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; dj="$("$W2/bin/doctor.sh" --json 2>/dev/null || true)"; t1="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+r="$(lw "$W2")"; n="$(j -r '$.problems' <<<"$dj")"; c="$(j -r '$.doctor_checked' <<<"$r")"
+[[ "$(j -r '$.doctor_problems' <<<"$r")" == "$n" && ! "$c" < "$t0" && ! "$c" > "$t1" ]] || fail "criterion 17: $r, $n, $t0 to $t1"
+if [[ "$n" == 0 ]]; then cell="all good"; else cell="$n to fix"; fi
+(cd "$T" && "$F" list) | grep -F "$s2 " | grep -qF "$cell" && [[ "$(git -C "$W2" status --porcelain)" == "$gs" ]] || fail "criterion 17: the table or the git status"
+# Criterion 18: an unreadable workspace does not stop the list.
+rw="$(lw "$SW")"; cp "$W2/cabinet.env" "$T/sv-d2.env"
+line5 "$W2/cabinet.env" "CABINET_PROJECT=\"$SVM\""
+lw "$W2" >/dev/null && dw "$W2" >/dev/null || fail "criterion 18: list or digest failed"
+[[ "$(lw "$W2" | j -r '$.project')" == "" && "$(lw "$SW")" == "$rw" ]] && ran_not || fail "criterion 18: $(lw "$W2")"
+cp "$T/sv-d2.env" "$W2/cabinet.env"; L sub "$W2/cabinet.env" -- '/^CABINET_PROJECT=.*/' "CABINET_PROJECT=\"Two$(printf '\033')[31m\""
+out="$(cd "$T" && in_tty "$F" list)"
+grep -qF 'Two?[31m' <<<"$out" && ! grep -q "Two$(printf '\033')" <<<"$out" || fail "criterion 18(b): $(printf '%s' "$out" | grep -a Two | od -c | head -4)"
+cp "$T/sv-d2.env" "$W2/cabinet.env"
+# Criterion 26(c): list takes the slug from the claim, and does not stop on a bad one.
+echo 'CABINET_SLUG=../x' >> "$W2/cabinet.env"
+[[ "$(lw "$W2" | j -r '$.slug')" == "$s2" && ! -e "$(dirname "$HOME/$LOGS")/x" ]] || fail "criterion 26(c): $(lw "$W2")"
+cp "$T/sv-d2.env" "$W2/cabinet.env"
+# Criterion 15: none of another workspace's scripts runs.
+for s in doctor.sh handoff.sh lib.sh; do awk -v l="touch \"$T/pwned-$s\"" 'NR == 2 { print l } { print }' "$W2/bin/$s" > "$T/sv-s" && cat "$T/sv-s" > "$W2/bin/$s"; done
+mkdir -p "$W2/node_modules/.bin"; printf '#!/bin/sh\ntouch "%s/pwned-cabinet"\n' "$T" > "$W2/node_modules/.bin/cabinet"; chmod 755 "$W2/node_modules/.bin/cabinet"
+echo 0.5.1 > "$W2/.cabinet/version"
+for a in "list" "list --json" "digest" "digest --json" "digest --write $T/d.md"; do
+  (cd "$T" && "$F" $a >/dev/null 2>&1) || fail "criterion 15: cabinet $a failed"
+done
+sleep 2; [[ -z "$(ls "$T" | grep '^pwned-')" ]] || fail "criterion 15: ran $(ls "$T" | grep '^pwned-')"
+svback
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "shared values E: a command from the files runs only once approved here" ""
+s106() {
+svhome sv-e-home
+SW="$T/sv-e"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"
+unapp() { printf '%s in %s is not approved on this machine: run cabinet bootstrap at a terminal to see it and approve it' "$2" "$1"; }
+# Criterion 19: a pulled runner command is not run until this machine approves it.
+printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='touch \"$T/ran\"'" >> "$SW/cabinet.env"
+st=0; e="$(notty "$SW/bin/job.sh" run brief 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 ]] && grep -qF "$(unapp cabinet.env CABINET_RUNNER_CMD)" <<<"$e" && ran_not "$T/ran" || fail "criterion 19: exit $st, $e"
+dfix "$SW" fix 'CABINET_RUNNER_CMD in cabinet.env is not approved on this machine' || fail "criterion 19: no doctor fix"
+"$F" -C "$SW" config --runner custom --runner-cmd "touch \"$T/ran\"" --apply >/dev/null 2>&1 || true
+out="$(notty "$SW/bin/job.sh" run brief 2>&1)" || true; [[ -e "$T/ran" ]] || fail "criterion 19(b): an approved command did not run: $out"
+sedi "s#^CABINET_RUNNER_CMD='touch \"$T/ran\"'#CABINET_RUNNER_CMD='touch \"$T/ran2\"'#" "$SW/cabinet.env"; grep -qF "$T/ran2" "$SW/cabinet.env" || fail "criterion 19(c): the edit"
+st=0; e="$(notty "$SW/bin/job.sh" run brief 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 ]] && grep -qF "$(unapp cabinet.env CABINET_RUNNER_CMD)" <<<"$e" && ran_not "$T/ran2" || fail "criterion 19(c): exit $st, $e"
+rm -f "$T/ran"
+# Criterion 20: a job's COMMAND and AFTER from a pull.
+SW="$T/sv-e2"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"
+slug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$SW/cabinet.env")"
+printf 'COMMAND="touch %s/ran"\n' "$T" > "$SW/jobs/x.job"
+st=0; e="$(notty "$SW/bin/job.sh" run x 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 ]] && grep -qF 'COMMAND in jobs/x.job is not approved on this machine' <<<"$e" && ran_not "$T/ran" || fail "criterion 20: exit $st, $e"
+sedi "s#^AFTER=.*#AFTER=\"touch $T/after\"#" "$SW/jobs/brief.job"; r0="$(runs_of)"
+st=0; notty "$SW/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
+[[ "$st" == 0 && "$(runs_of)" == $((r0 + 1)) && ! -e "$T/after" ]] && grep -qF 'AFTER in jobs/brief.job is not approved on this machine' "$HOME/$LOGS/$slug/brief.log" || fail "criterion 20(b): exit $st"
+# Criterion 21: only a person at a terminal approves, after seeing each command.
+gs="$(git -C "$SW" status --porcelain)"; cp "$SW/cabinet.local.env" "$T/sv-e-local" 2>/dev/null || : > "$T/sv-e-local"
+out="$(notty "$SW/bin/bootstrap.sh" 2>&1)" || true
+grep -qF "touch $T/ran" <<<"$out" && grep -qF "touch $T/after" <<<"$out" && grep -qF 'not approved' <<<"$out" || fail "criterion 21: without a terminal: $out"
+st=0; notty "$SW/bin/job.sh" run x >/dev/null 2>&1 || st=$?; [[ "$st" == 1 && ! -e "$T/ran" ]] || fail "criterion 21: approved without a terminal"
+out="$(in_tty_typed "y
+y" "$T/sv-e-st" "$SW/bin/bootstrap.sh")"
+# Each question comes right after its command's full text: two questions, each two lines below a command.
+shownq="$(awk -v t="touch $T/" '{ l[NR] = $0 } /Approve it on this machine/ { n++; if (index(l[NR - 2], t)) ok++ } END { print n + 0, ok + 0 }' <<<"$out")"
+[[ "$shownq" == "2 2" ]] && grep -qF "touch $T/ran" <<<"$out" && grep -qF "touch $T/after" <<<"$out" || fail "criterion 21: at a terminal ($shownq): $out"
+notty "$SW/bin/job.sh" run x >/dev/null 2>&1 || true; notty "$SW/bin/job.sh" run brief >/dev/null 2>&1 || true
+[[ -e "$T/ran" && -e "$T/after" ]] || fail "criterion 21: the approved commands did not run"
+# Criterion 23: approvals stay on this machine.
+[[ "$(git -C "$SW" status --porcelain)" == "$gs" ]] && ! cmp -s "$T/sv-e-local" "$SW/cabinet.local.env" && git -C "$SW" check-ignore -q cabinet.local.env || fail "criterion 23"
+# An approval is this machine's: the same file under another HOME, or tracked by git, approves nothing (security S1).
+SW3="$T/sv-e3"; "$F" new "$SW3" --yes >/dev/null; cp "$SW/jobs/x.job" "$SW/jobs/brief.job" "$SW3/jobs/"; cp "$SW/cabinet.local.env" "$SW3/"
+rm -f "$T/ran"; mkdir -p "$T/sv-e-other"
+st=0; HOME="$T/sv-e-other" notty "$SW3/bin/job.sh" run x >/dev/null 2>&1 || st=$?; [[ "$st" == 1 ]] && ran_not "$T/ran" || fail "S1: an approval from another HOME counted"
+git -C "$SW" add -f cabinet.local.env; st=0; e="$(notty "$SW/bin/job.sh" run x 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 ]] && ran_not "$T/ran" && dfix "$SW" fix 'cabinet.local.env is tracked by git' || fail "S1: a tracked cabinet.local.env still approved: exit $st, $e"
+git -C "$SW" rm -q --cached cabinet.local.env
+# What the prompt shows: every character that is not plain ASCII as an escape (security S2).
+printf 'COMMAND="echo a\342\200\256b"\n' > "$SW/jobs/bidi.job"
+out="$(in_tty_typed n "$T/sv-e-st" "$SW/bin/bootstrap.sh")"
+grep -qF 'echo a\u{202E}b' <<<"$out" && ! grep -q "$(printf '\342\200\256')" <<<"$out" || fail "S2: $(printf '%s' "$out" | grep -a 'echo a' | od -c | head -3)"
+rm "$SW/jobs/bidi.job"
+# Criterion 22: the kit's own commands need no approval, in a workspace made before this change.
+SW="$T/sv-e4"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"; rm -f "$SW/cabinet.local.env" "$SW/OPERATIONS.html"
+slug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$SW/cabinet.env")"
+notty "$SW/bin/job.sh" run brief >/dev/null 2>&1 || true
+! grep -q 'not approved' "$HOME/$LOGS/$slug/brief.log" && [[ -f "$SW/OPERATIONS.html" ]] || fail "criterion 22: the brief's after-step: $(tail -5 "$HOME/$LOGS/$slug/brief.log")"
+"$F" -C "$SW" config --pipeline small --pipeline-limit 5 --apply >/dev/null 2>&1 || true   # config needs a limit for the pipeline
+out="$(notty "$SW/bin/job.sh" run pipeline 2>&1)" || true
+[[ -f "$SW/jobs/pipeline.job" ]] && ! grep -q 'not approved' <<<"$out" && ! grep -q 'not approved' "$HOME/$LOGS/$slug/pipeline.log" || fail "criterion 22: the pipeline: $out"
+svback
   return 0   # a last "check && fail" line must not end the run
 }
 

@@ -1,17 +1,62 @@
-# Shared by every bin/*.sh: the workspace path, its cabinet.env, and the names
-# every machine-wide thing is scoped by, so two projects (or two kits) never
+# Shared by every bin/*.sh: the workspace path, its cabinet.env and job files (read as text, never
+# run), and the names every machine-wide thing is scoped by, so two projects (or two kits) never
 # share a schedule, a log folder or a secret. Sourced, never run.
 
 # The real path, symlinks resolved, so the same workspace always has the same name.
 WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LIBJS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/lib.js"   # the scripts' JavaScript, run with node
-[[ -f "$WS/cabinet.env" ]] || { echo "no cabinet.env in $WS" >&2; exit 1; }
+# The workspace as the command was given it (qa N3), for the one message that names it.
+[[ -f "$WS/cabinet.env" ]] || { echo "no cabinet.env in $(dirname "$(dirname "${BASH_SOURCE[0]}")")" >&2; exit 1; }
 CABINET_UPDATE_ENV="${CABINET_UPDATE_CHECK-}"   # the environment's, before cabinet.env (platform.sh, update_on)
-# shellcheck disable=SC1091
-source "$WS/cabinet.env"
 source "$WS/bin/when.sh"   # when_norm, when_calendar, when_human: one parser for every schedule
 source "$WS/bin/platform.sh"   # this machine: logs, dates, the passphrase, schedules (launchd, systemd or cron)
+# cabinet.env and every jobs/*.job, read as text by one reader (lib.js settings) in one node start: a
+# key cabinet reads is set from its literal value, and nothing in either file ever runs. An unreadable
+# cabinet.env stops every command here, with the reader's message; an unreadable job stops that job only.
+# Kept for the scripts: JOB_N, JOB_K, JOB_V (each job's keys: job_get), JOB_BAD_N and JOB_BAD_M (an
+# unreadable job and its message: job_bad), JOB_BADNAME (a file in jobs/ whose name is not a job name),
+# SET_UNKNOWN (keys cabinet does not read) and APP_F, APP_K, APP_H (each command key's approval ID).
+JOB_N=() JOB_K=() JOB_V=() JOB_BAD_N=() JOB_BAD_M=() JOB_BADNAME=() SET_UNKNOWN=() APP_F=() APP_K=() APP_H=()
+SET_SLUG_LINE="" SET_RUNNER_CMD_FILE="" SET_RUNNER_CMD_SET=0
+APPROVAL_KEY="$LOGROOT/approval.key"   # this machine's secret for approvals (outside every workspace)
+# The reader is the kit's bin/lib.js: without it nothing can be read, so nothing runs.
+[[ -f "$LIBJS" ]] || { echo "bin/lib.js is missing, so cabinet.env cannot be read and nothing runs: restore the kit files with cabinet update" >&2; exit 1; }
+_r=()
+while IFS= read -r -d '' _t; do _r+=("$_t"); done < <(node "$LIBJS" settings "$WS" "$APPROVAL_KEY")
+# The last record is "." only after a full read: anything less is a stop, with the reader's message.
+[[ ${#_r[@]} -gt 0 && "${_r[${#_r[@]} - 1]}" == . ]] || exit 1
+_i=0
+while ((_i < ${#_r[@]})); do
+  case "${_r[_i]}" in
+    E) [[ "${_r[_i + 1]}" =~ ^CABINET_[A-Z_]+$ ]] || exit 1
+       printf -v "${_r[_i + 1]}" '%s' "${_r[_i + 2]}"
+       [[ "${_r[_i + 1]}" == CABINET_SLUG ]] && SET_SLUG_LINE="${_r[_i + 3]}"
+       [[ "${_r[_i + 1]}" == CABINET_RUNNER_CMD ]] && { SET_RUNNER_CMD_FILE="${_r[_i + 2]}"; SET_RUNNER_CMD_SET=1; }
+       _i=$((_i + 4)) ;;
+    J) JOB_N+=("${_r[_i + 1]}"); JOB_K+=("${_r[_i + 2]}"); JOB_V+=("${_r[_i + 3]}"); _i=$((_i + 4)) ;;
+    A) APP_F+=("${_r[_i + 1]}"); APP_K+=("${_r[_i + 2]}"); APP_H+=("${_r[_i + 3]}"); _i=$((_i + 4)) ;;
+    B) JOB_BAD_N+=("${_r[_i + 1]}"); JOB_BAD_M+=("${_r[_i + 2]}"); _i=$((_i + 3)) ;;
+    N) JOB_BADNAME+=("${_r[_i + 1]}"); _i=$((_i + 2)) ;;
+    U) SET_UNKNOWN+=("${_r[_i + 1]}"); _i=$((_i + 2)) ;;
+    *) _i=$((_i + 1)) ;;
+  esac
+done
+unset _r _t _i
+# job_get <job> <KEY>: the job's value, or nothing. job_bad <job>: its message when it is unreadable.
+job_get() { local i; for ((i = 0; i < ${#JOB_N[@]}; i++)); do [[ "${JOB_N[i]}" == "$1" && "${JOB_K[i]}" == "$2" ]] && { printf '%s' "${JOB_V[i]}"; return 0; }; done; return 0; }
+job_set() { local i; for ((i = 0; i < ${#JOB_N[@]}; i++)); do [[ "${JOB_N[i]}" == "$1" ]] && printf -v "${JOB_K[i]}" '%s' "${JOB_V[i]}"; done; return 0; }   # job_set <job>: its keys as variables
+job_bad() { local i; for ((i = 0; i < ${#JOB_BAD_N[@]}; i++)); do [[ "${JOB_BAD_N[i]}" == "$1" ]] && { printf '%s' "${JOB_BAD_M[i]}"; return 0; }; done; return 1; }
+# Names: a role (lowercase letters, digits and -), a file or folder name, and a job's (a name, not starting
+# with -, which a tool would read as an option). bin/cabinet has the same role_ok and name_ok.
+role_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
+name_ok() { local LC_ALL=C; [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != . && "$1" != .. ]]; }
+job_name_ok() { name_ok "$1" && [[ "$1" != -* ]]; }
+# shown <text>: the text with control characters as ?, wherever it is printed.
+shown() { printf '%s' "$1" | TERM_OUT=1 term_text; }
 : "${CABINET_SLUG:?set CABINET_SLUG in cabinet.env}"
+# The slug names logs, schedules, records and backups: checked before any of them is built from it.
+slug_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
+slug_ok "$CABINET_SLUG" || { echo "cabinet.env${SET_SLUG_LINE:+:$SET_SLUG_LINE}: CABINET_SLUG \"$(shown "$CABINET_SLUG")\" is not a slug (lowercase letters, digits and -)" >&2; exit 1; }
 CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
 CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
@@ -159,6 +204,28 @@ run_over_limit() {
 # the sum never falls below what was really spent.
 spend_since() { awk -F'\t' -v s="$1" -v l="${2:-}" '$1 >= s && (l == "" || $2 == l) && $4 ~ /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/ { t += $4 } END { printf "%.2f", t }' "$SPEND" 2>/dev/null || printf '0.00'; }
 
+# Approvals: the three keys that are shell commands by design (CABINET_RUNNER_CMD, a job's COMMAND and
+# AFTER) run only once their exact text is approved on this machine: a CABINET_APPROVED="<ID>" line in
+# cabinet.local.env (never committed), the ID keyed with this machine's secret (lib.js approval-id), so a
+# line from another machine never matches. The kit's own two need none.
+kit_command() { [[ "$1|$2|$3" == "jobs/brief.job|AFTER|bin/manual.sh build" || "$1|$2|$3" == "jobs/pipeline.job|COMMAND|bin/handoff.sh run --scheduled" ]]; }
+approval_id() { printf '%s' "$3" | node "$LIBJS" approval-id "$APPROVAL_KEY" "$1" "$2"; }   # approval_id <file> <KEY> <text>
+# approved <file> <KEY> <text>: true when the text may run here. A tracked cabinet.local.env approves nothing.
+approved() {
+  local h="" i
+  kit_command "$1" "$2" "$3" && return 0
+  if [[ "$1" == cabinet.env && ( $SET_RUNNER_CMD_SET == 0 || "$3" != "$SET_RUNNER_CMD_FILE" ) ]]; then
+    [[ -f "$APPROVAL_KEY" ]] && h="$(approval_id "$1" "$2" "$3")"   # a runner command from the environment
+  else
+    for ((i = 0; i < ${#APP_F[@]}; i++)); do [[ "${APP_F[i]}" == "$1" && "${APP_K[i]}" == "$2" ]] && h="${APP_H[i]}"; done
+  fi
+  [[ -n "$h" ]] && grep -qxF "CABINET_APPROVED=\"$h\"" "$LOCAL_ENV" 2>/dev/null || return 1
+  if git -C "$WS" ls-files --error-unmatch cabinet.local.env >/dev/null 2>&1; then
+    echo "cabinet.local.env is tracked by git, so no approval in it counts: git rm --cached cabinet.local.env, then approve again" >&2; return 1
+  fi
+}
+not_approved() { echo "$2 in $1 is not approved on this machine: run cabinet bootstrap at a terminal to see it and approve it"; }
+
 # The agent runs in its own process group, so a run past its limit is stopped with
 # everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
 # Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no
@@ -203,6 +270,7 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
   if [[ "$CABINET_RUNNER" == custom ]]; then
     [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
+    approved cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD" || { not_approved cabinet.env CABINET_RUNNER_CMD >&2; return 1; }
     CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" CABINET_MODEL="$model" bash -c "$CABINET_RUNNER_CMD"; return
   fi
   [[ "$CABINET_RUNNER" != gemini ]] || { echo "CABINET_RUNNER=gemini is no longer a runner (Gemini CLI users moved to Antigravity): cabinet config --runner antigravity" >&2; return 2; }
@@ -244,11 +312,23 @@ HOST=""; [[ "$CABINET_LAYOUT" == inside ]] && HOST="$(cd "$WS/.." && pwd -P)"
 # path is where the repo lives: absolute, ~/..., or relative to the workspace (default: its name).
 # Windows line endings are tolerated; a row without tabs is skipped, and so is a
 # name that is not a plain folder name (it becomes part of paths in local/ and backups).
+# The local-only files (third column, space separated) keep only plain paths inside the repo: not empty,
+# not starting with / or ~, parts joined by single /, none . or .., no * ? [ ] \ or control character.
+# Each other entry is skipped with a line on stderr, so snapshot and bootstrap never copy outside.
 repos() {
   [[ -f "$WS/repos.tsv" ]] || return 0
-  awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2 {
+  LC_ALL=C awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2 {
     # The name is shown with each control character as ?: the row is skipped, so the name is only quoted.
     if ($1 !~ /^[A-Za-z0-9._-]+$/ || $1 == "." || $1 == "..") { n = $1; gsub(/[[:cntrl:]]/, "?", n); print "repos.tsv: skipped the row named \"" n "\" (not a plain folder name)" > "/dev/stderr"; next }
+    if ($3 != "" && $3 != "-") {
+      k = split($3, e, " "); keep = ""
+      for (i = 1; i <= k; i++) {
+        ok = e[i] !~ /^[\/~]/ && e[i] !~ /[][*?\\[:cntrl:]]/ && e[i] !~ /\/\// && e[i] !~ /\/$/ && e[i] !~ /(^|\/)\.\.?(\/|$)/
+        if (ok) keep = keep (keep == "" ? "" : " ") e[i]
+        else { n = e[i]; gsub(/[[:cntrl:]]/, "?", n); print "repos.tsv: " $1 ": skipped the local-only file \"" n "\" (not a plain path inside the repo)" > "/dev/stderr" }
+      }
+      $3 = keep
+    }
     if ($3 == "") $3 = "-"; if ($4 == "") $4 = "no"; if ($5 == "") $5 = $1; print $1, $2, $3, $4, $5 }' "$WS/repos.tsv"
 }
 # Where the workspace's pre-commit hook goes, or "none" when the workspace has no git of its
@@ -308,7 +388,11 @@ builders() {
   awk -F'|' '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 && $2 ~ /`/ {o = $4; gsub(/^ +| +$/, "", o); print o}' "$WS/AGENTS.md" 2>/dev/null \
     | while IFS= read -r o; do has "$BUILDERS" "$o" && ! has "$CABINET_ROLES" "$o" && echo "$o"; done | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'
 }
-team_roles() { echo $CABINET_ROLES $(builders); }
+# The team's words, split with globbing off: a * or ../x from cabinet.env is never matched against files.
+# team_roles: those that are role names; bad_roles: the others, one per line, which everything skips.
+role_words() { ( set -f; for w in $CABINET_ROLES $(builders); do printf '%s\n' "$w"; done ) }
+team_roles() { local w out=""; while IFS= read -r w; do role_ok "$w" && out+="${out:+ }$w"; done < <(role_words); echo "$out"; }
+bad_roles() { local w; while IFS= read -r w; do role_ok "$w" || printf '%s\n' "$w"; done < <(role_words); return 0; }
 # team_rows: "<area>\t<owner>" for each row of the team table in AGENTS.md whose area is in backticks
 # (a repo or a path), without the backticks or a trailing /.
 team_rows() {
