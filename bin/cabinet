@@ -344,7 +344,9 @@ slug_ok() { local LC_ALL=C; [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
 # a CABINET_APPROVED line in the workspace's cabinet.local.env, which is never committed.
 approve_cmd() {
   local h; h="$(printf '%s' "$4" | node "$LIBJS" approval-id "$LOGROOT/approval.key" "$2" "$3")" && [[ -n "$h" ]] || return 0
-  grep -qxF "CABINET_APPROVED=\"$h\"" "$1/cabinet.local.env" 2>/dev/null || printf 'CABINET_APPROVED="%s"\n' "$h" >> "$1/cabinet.local.env"
+  grep -qxF "CABINET_APPROVED=\"$h\"" "$1/cabinet.local.env" 2>/dev/null && return 0
+  [[ -s "$1/cabinet.local.env" && -n "$(tail -c1 "$1/cabinet.local.env")" ]] && echo >> "$1/cabinet.local.env"   # a hand-edited last line kept whole
+  printf 'CABINET_APPROVED="%s"\n' "$h" >> "$1/cabinet.local.env"
 }
 # term_say <text>: the text for an error message, with control characters shown as ? in a terminal.
 term_say() { if [[ -t 2 ]]; then printf '%s' "$1" | TERM_OUT=1 term_text; else printf '%s' "$1"; fi; }

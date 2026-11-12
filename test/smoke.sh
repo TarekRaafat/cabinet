@@ -7383,6 +7383,26 @@ awk -v l="WHEN=\"$SVM\"" 'NR == 3 { print l; next } { print }' "$SW/jobs/brief.j
 cmp -s "$T/sv-a-y" "$(schedf "$slug" y)" || fail "criterion 2(b): the schedule of y changed or went"
 ran_not || fail "criterion 2(b): the marker ran"
 rm "$SW/jobs/y.job"; "$SW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+# Rule 5 (qa and code-reviewer, round 1): a job file that cannot be opened stops that job only, and an
+# unreadable cabinet.env stops with a plain message. A link to nothing; a file this user cannot read
+# (root reads it anyway, so only checked when it really cannot be read).
+ln -s missing "$SW/jobs/z.job"; printf '%s\n' AGENT=qa 'PROMPT="hi"' > "$SW/jobs/u.job"; chmod 000 "$SW/jobs/u.job"
+unread=0; [[ -r "$SW/jobs/u.job" ]] || unread=1
+out="$("$SW/bin/job.sh" list 2>&1)" || fail "rule 5: job list failed: $out"
+grep -q '^brief ' <<<"$out" && grep -qF 'jobs/z.job: cannot be read' <<<"$out" && ! grep -q 'node:' <<<"$out" || fail "rule 5: job list: $out"
+((unread == 0)) || grep -qF 'jobs/u.job: cannot be read' <<<"$out" || fail "rule 5: job list, mode 000: $out"
+r0="$(runs_of)"; "$SW/bin/job.sh" run brief >/dev/null 2>&1 && [[ "$(runs_of)" == $((r0 + 1)) ]] || fail "rule 5: job run brief did not run"
+dfix "$SW" fix 'jobs/z.job: cannot be read' || fail "rule 5: no doctor fix naming jobs/z.job"
+((unread == 0)) || dfix "$SW" fix 'jobs/u.job: cannot be read' || fail "rule 5: no doctor fix naming jobs/u.job"
+cp "$(schedf "$slug" brief)" "$T/sv-a-b"; out="$("$SW/bin/bootstrap.sh" 2>&1)" || true
+grep -qF 'jobs/z.job: cannot be read' <<<"$out" && cmp -s "$T/sv-a-b" "$(schedf "$slug" brief)" || fail "rule 5: bootstrap: $out"
+rm -f "$SW/jobs/z.job"; chmod 600 "$SW/jobs/u.job"; rm -f "$SW/jobs/u.job"
+chmod 000 "$SW/cabinet.env"
+if [[ ! -r "$SW/cabinet.env" ]]; then
+  st=0; e="$("$SW/bin/doctor.sh" --json 2>&1 >/dev/null)" || st=$?
+  [[ "$st" == 1 ]] && grep -qF 'cabinet.env: cannot be read' <<<"$e" && ! grep -q 'node:' <<<"$e" || fail "rule 4: an unreadable cabinet.env: exit $st, $e"
+fi
+chmod 644 "$SW/cabinet.env"
 
 # Criterion 3: the reader gives what source gave.
 mkdir -p "$T/jobs"; RF="$T/jobs/f.job"
@@ -7528,6 +7548,24 @@ for e in '/etc/hosts' '~/x' 'a/../b' 'a/./b' './a' 'a//b' '*.env' 'a\b' "a$(prin
 done
 rm -rf "$SW/local/app"; row 'config/local.json .env'; out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
 cmp -s "$SW/app/.env" "$SW/local/app/.env" && cmp -s "$SW/app/config/local.json" "$SW/local/app/config/local.json" && ! grep -q skipped <<<"$out" || fail "criterion 14(b): $out"
+# Security S1 (round 1): a symlinked folder on either side never takes a copy outside the repo or local/.
+mkdir -p "$T/sv-c-out"; echo mine > "$T/sv-c-out/keep"; echo key > "$T/sv-c-key"; od0="$(dsnap "$T/sv-c-out")"
+# (a) local/app a symlink to a folder outside: snapshot writes nothing there.
+rm -rf "$SW/local/app"; ln -s "$T/sv-c-out" "$SW/local/app"; row 'config/local.json .env'
+out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
+[[ "$(dsnap "$T/sv-c-out")" == "$od0" ]] && grep -qF 'skip app/.env: a symlink on the way' <<<"$out" || fail "S1(a): snapshot wrote through local/app: $out"
+dfix "$SW" fix 'app/.env: a symlink on the way' || fail "S1(a): no doctor fix"
+rm "$SW/local/app"
+# (b) a symlinked folder inside the repo: bootstrap places nothing through it.
+mkdir -p "$SW/local/app/cfg"; echo placed > "$SW/local/app/cfg/x"; ln -s "$T/sv-c-out" "$SW/app/cfg"; row 'cfg/x'
+out="$("$SW/bin/bootstrap.sh" 2>&1)" || true
+[[ "$(dsnap "$T/sv-c-out")" == "$od0" && ! -e "$T/sv-c-out/x" ]] && grep -qF 'skipped app/cfg/x: a symlink on the way' <<<"$out" || fail "S1(b): bootstrap placed through app/cfg: $out"
+rm "$SW/app/cfg"; rm -rf "$SW/local/app"
+# (c) a symlinked folder inside the repo pointing at a file outside: snapshot copies nothing into local/.
+mkdir -p "$T/sv-c-sec"; cp "$T/sv-c-key" "$T/sv-c-sec/id"; ln -s "$T/sv-c-sec" "$SW/app/sec"; row 'sec/id'
+out="$(cd "$SW" && bin/repo.sh snapshot 2>&1)"
+[[ ! -e "$SW/local/app/sec/id" ]] && grep -qF 'skip app/sec/id: a symlink on the way' <<<"$out" || fail "S1(c): snapshot copied through app/sec: $out"
+rm "$SW/app/sec"; rm -rf "$SW/local/app"
 svback
   return 0   # a last "check && fail" line must not end the run
 }
@@ -7624,12 +7662,21 @@ rm -f "$T/ran"; mkdir -p "$T/sv-e-other"
 st=0; HOME="$T/sv-e-other" notty "$SW3/bin/job.sh" run x >/dev/null 2>&1 || st=$?; [[ "$st" == 1 ]] && ran_not "$T/ran" || fail "S1: an approval from another HOME counted"
 git -C "$SW" add -f cabinet.local.env; st=0; e="$(notty "$SW/bin/job.sh" run x 2>&1 >/dev/null)" || st=$?
 [[ "$st" == 1 ]] && ran_not "$T/ran" && dfix "$SW" fix 'cabinet.local.env is tracked by git' || fail "S1: a tracked cabinet.local.env still approved: exit $st, $e"
+# A tracked cabinet.local.env has its own fix: it says nothing about literal values (code-reviewer 5).
+dfix "$SW" ok 'hold literal values only' || fail "code-reviewer 5: settings.literal held back by a tracked cabinet.local.env"
 git -C "$SW" rm -q --cached cabinet.local.env
 # What the prompt shows: every character that is not plain ASCII as an escape (security S2).
 printf 'COMMAND="echo a\342\200\256b"\n' > "$SW/jobs/bidi.job"
 out="$(in_tty_typed n "$T/sv-e-st" "$SW/bin/bootstrap.sh")"
 grep -qF 'echo a\u{202E}b' <<<"$out" && ! grep -q "$(printf '\342\200\256')" <<<"$out" || fail "S2: $(printf '%s' "$out" | grep -a 'echo a' | od -c | head -3)"
 rm "$SW/jobs/bidi.job"
+# A hand-edited last line with no line end stays whole when an approval is added (code-reviewer 3).
+printf 'MY_NOTE=1' >> "$SW/cabinet.local.env"
+"$F" -C "$SW" config --runner custom --runner-cmd 'touch "$T/hand"' --apply >/dev/null 2>&1 || true
+grep -qx 'MY_NOTE=1' "$SW/cabinet.local.env" && [[ "$(tail -1 "$SW/cabinet.local.env")" == CABINET_APPROVED=* ]] || fail "code-reviewer 3: $(cat "$SW/cabinet.local.env")"
+# A key file shorter than 32 bytes is no key: approval-id refuses it, so no approval is made with it (security N1).
+printf 'short' > "$T/sv-e-short.key"; st=0; e="$(printf x | L approval-id "$T/sv-e-short.key" cabinet.env CABINET_RUNNER_CMD 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 ]] && grep -qF 'is shorter than 32 bytes, so it approves nothing' <<<"$e" || fail "security N1: exit $st, $e"
 # Criterion 22: the kit's own commands need no approval, in a workspace made before this change.
 SW="$T/sv-e4"; "$F" new "$SW" --yes >/dev/null; SW="$(cd "$SW" && pwd -P)"; rm -f "$SW/cabinet.local.env" "$SW/OPERATIONS.html"
 slug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$SW/cabinet.env")"

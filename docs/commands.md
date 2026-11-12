@@ -610,7 +610,7 @@ After the value, only spaces, tabs and a `# comment` after at least one of them.
 <file>:<line>: not a literal value; cabinet reads this file as text and runs nothing in it
 ```
 
-where `<line>` is where the key or text starts. Fix the line (write the value out), then run the command again. Everything `cabinet` itself writes into these files reads this way.
+where `<line>` is where the key or text starts. Fix the line (write the value out), then run the command again. Everything `cabinet` itself writes into these files reads this way. A file that cannot be opened (a link to a file that is not there, or one this user cannot read) is treated the same way, with `<file>: cannot be read (<reason>): make it a file this user can read, or remove it`.
 
 ### jobs/&lt;job&gt;.job
 
@@ -652,7 +652,7 @@ Days are `sun`, `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, or their full names, i
 
 ### repos.tsv
 
-Tab separated, one row per repo: name, clone URL (`-` for none), local-only files (space separated, `-` for none), `CLAUDE.md` link (`yes` or `no`), and an optional path where the repo lives (absolute, `~/...`, or relative to the workspace; default `<workspace>/<name>`). Windows line endings are fine. A row whose name is not a plain folder name is skipped with a message. A local-only file is a plain path inside its repo: not starting with `/` or `~`, its parts joined by single `/`, none of them `.` or `..`, and none of the characters `* ? [ ] \` or a control character. Any other entry is skipped by everything that reads the column (`repo snapshot`, bootstrap, the doctor), which go on with the rest, with `repos.tsv: <repo>: skipped the local-only file "<entry>" (not a plain path inside the repo)`; the doctor gives the same words (`repos.local-path`).
+Tab separated, one row per repo: name, clone URL (`-` for none), local-only files (space separated, `-` for none), `CLAUDE.md` link (`yes` or `no`), and an optional path where the repo lives (absolute, `~/...`, or relative to the workspace; default `<workspace>/<name>`). Windows line endings are fine. A row whose name is not a plain folder name is skipped with a message. A local-only file is a plain path inside its repo: not starting with `/` or `~`, its parts joined by single `/`, none of them `.` or `..`, and none of the characters `* ? [ ] \` or a control character. Any other entry is skipped by everything that reads the column (`repo snapshot`, bootstrap, the doctor), which go on with the rest, with `repos.tsv: <repo>: skipped the local-only file "<entry>" (not a plain path inside the repo)`; the doctor gives the same words (`repos.local-path`). Nothing is copied, placed or compared through a symlink on the way: when a part of the path in the repo, or `local/`, `local/<repo>` or a part below it, is a symlink, snapshot and bootstrap skip that file with a line, and the doctor names it (`repos.local-path`).
 
 ## Environment variables
 

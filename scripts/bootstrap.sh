@@ -143,10 +143,14 @@ while IFS=$'\t' read -r name url files link path; do
   [[ -d "$repo" ]] || continue
   if [[ "${files:--}" != "-" ]]; then
     set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files
-    for f in "${fl[@]}"; do place "$WS/local/$name/$f" "$repo/$f"; done
+    for f in "${fl[@]}"; do
+      # Nothing is read or placed through a symlink on either side (linked in lib.sh): the doctor names it.
+      if linked "$WS" "local/$name/$f" || linked "$repo" "$f"; then echo "  skipped $name/$f: a symlink on the way, in local/ or in the repo"; continue; fi
+      place "$WS/local/$name/$f" "$repo/$f"
+    done
   fi
   ex_src="$WS/local/$name/git-info-exclude"
-  if [[ -f "$ex_src" && -d "$repo/.git" ]]; then
+  if [[ -f "$ex_src" && -d "$repo/.git" ]] && ! linked "$WS" "local/$name/git-info-exclude"; then
     while IFS= read -r line; do
       grep -qxF "$line" "$repo/.git/info/exclude" 2>/dev/null || {
         ((DRY)) && echo "  would exclude in $name: $line" || { echo "$line" >> "$repo/.git/info/exclude"; echo "  excluded in $name: $line"; }
@@ -425,6 +429,7 @@ cmd_review() {  # cmd_review <file> <KEY> <text>
     local ans="" h
     read -r -u 4 ans || true
     if [[ "$ans" == y || "$ans" == Y ]] && h="$(approval_id "$1" "$2" "$3")" && [[ -n "$h" ]]; then
+      [[ -s "$LOCAL_ENV" && -n "$(tail -c1 "$LOCAL_ENV")" ]] && echo >> "$LOCAL_ENV"   # a hand-edited last line kept whole
       printf 'CABINET_APPROVED="%s"\n' "$h" >> "$LOCAL_ENV"; echo "  approved $2 in $1 on this machine"; return 0
     fi
   fi
@@ -503,7 +508,7 @@ else
     echo "  jobs are not scheduled on this machine (another machine runs them; cabinet bootstrap --schedules turns them on). cabinet job run <job> still runs one by hand."
   else
     for jf in "$WS"/jobs/*.job; do
-      [[ -f "$jf" ]] || continue
+      [[ -f "$jf" ]] || job_bad "$(basename "$jf" .job)" >/dev/null || continue   # a link to nothing keeps its schedule too
       j="$(basename "$jf" .job)"
       # A file whose name is not a job name is never scheduled; an unreadable job keeps the schedule it has.
       job_name_ok "$j" || { echo "  jobs/$(shown "$j").job: not a job name (letters, digits and . _ -, not starting with -), not scheduled"; failures=1; continue; }

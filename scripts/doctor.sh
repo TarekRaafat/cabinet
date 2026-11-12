@@ -38,7 +38,7 @@ section "Settings and job files"
 # Read as text (lib.sh): an unreadable cabinet.env stopped the doctor already. What is left: keys cabinet
 # does not read, unreadable or badly named job files, and commands not approved on this machine.
 for m in ${SET_UNKNOWN[@]+"${SET_UNKNOWN[@]}"}; do note settings.unknown "$m"; done
-for m in ${JOB_BAD_M[@]+"${JOB_BAD_M[@]}"}; do bad settings.literal "$m (write the value out, or fix the line)"; done
+for m in ${JOB_BAD_M[@]+"${JOB_BAD_M[@]}"}; do [[ "$m" == *"not a literal value"* ]] && m+=" (write the value out, or fix the line)"; bad settings.literal "$m"; done
 for m in ${JOB_BADNAME[@]+"${JOB_BADNAME[@]}"}; do n="$(shown "$m")"; bad jobs.name "jobs/$n is not a job name (letters, digits and . _ -, not starting with -), so it is never listed or scheduled: rename it"; done
 tracked=0
 git -C "$WS" ls-files --error-unmatch cabinet.local.env >/dev/null 2>&1 && { tracked=1; bad settings.local-tracked "cabinet.local.env is tracked by git, so no approval in it counts: git rm --cached cabinet.local.env, then approve again"; }
@@ -53,7 +53,7 @@ for jf in "$WS"/jobs/*.job; do
     [[ -z "$v" ]] || approved "jobs/$j.job" "$k" "$v" 2>/dev/null || { m="$(not_approved "jobs/$j.job" "$k")"; bad commands.approved "$m"; }
   done
 done
-[[ ${#SET_UNKNOWN[@]} -gt 0 || ${#JOB_BAD_M[@]} -gt 0 || ${#JOB_BADNAME[@]} -gt 0 || $tracked == 1 ]] || ok settings.literal "cabinet.env and the job files hold literal values only"
+[[ ${#SET_UNKNOWN[@]} -gt 0 || ${#JOB_BAD_M[@]} -gt 0 || ${#JOB_BADNAME[@]} -gt 0 ]] || ok settings.literal "cabinet.env and the job files hold literal values only"
 
 section "Product repos"
 before=$problems
@@ -66,7 +66,9 @@ while IFS=$'\t' read -r name url files link path; do
     set -f; fl=($files); set +f
     for f in "${fl[@]}"; do
       live="$repo/$f" snap="$WS/local/$name/$f"
-      if [[ ! -f "$live" ]]; then bad repos.local-file "$name/$f missing"
+      if linked "$repo" "$f" || linked "$WS" "local/$name/$f"; then
+        bad repos.local-path "$name/$f: a symlink on the way, in the repo or in local/, so snapshot and bootstrap skip it: remove the link"
+      elif [[ ! -f "$live" ]]; then bad repos.local-file "$name/$f missing"
       elif [[ ! -f "$snap" ]]; then bad repos.snapshot "$name/$f not in snapshot (run bin/repo.sh snapshot)"
       elif ! cmp -s "$live" "$snap"; then note repos.snapshot "$name/$f changed since last snapshot"
       fi

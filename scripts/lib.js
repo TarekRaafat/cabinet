@@ -1379,10 +1379,8 @@ function verdictOrigin(ws) {
 // week-start <first day, 0 Sunday to 6 Saturday> [now, in seconds]: the local midnight this week began,
 // in seconds. Date keeps a day with a clock change whole, and a midnight the clock skips becomes the
 // first time that day has. "now" is for the tests.
-function weekStart(first, now) {
-  const n = now ? new Date(now * 1000) : new Date();
-  process.stdout.write(new Date(n.getFullYear(), n.getMonth(), n.getDate() - (n.getDay() - first + 7) % 7).getTime() / 1000 + "\n");
-}
+const weekStartOf = (first, n) => new Date(n.getFullYear(), n.getMonth(), n.getDate() - (n.getDay() - first + 7) % 7).getTime() / 1000;
+function weekStart(first, now) { process.stdout.write(weekStartOf(first, now ? new Date(now * 1000) : new Date()) + "\n"); }
 
 // kit-map <kit>: every kit file as "<kit path> <workspace path>", from core/kit-files, the one list of what
 // the kit ships (never globbed, so a stray file in the kit is never placed). The list itself is never placed.
@@ -2008,7 +2006,9 @@ function readSettings(file, job) {
   for (const x of r.vals) { if (keys.includes(x.key)) { last.delete(x.key); last.set(x.key, x); } else unknown.push(x); }
   return { known: [...last.values()], unknown, bad: r.bad };
 }
-const approvalKey = (keyFile) => { try { return fs.readFileSync(keyFile); } catch (e) { return null; } };
+// This machine's approval key, or none: a key shorter than the 32 bytes approval-id writes (a write cut short)
+// is no key, since an empty one would let anyone compute an approval.
+const approvalKey = (keyFile) => { try { const k = fs.readFileSync(keyFile); return k.length >= 32 ? k : null; } catch (e) { return null; } };
 const approvalHash = (key, file, k, text) =>
   crypto.createHmac("sha256", key).update(Buffer.from(file + "\n" + k + "\n", "latin1")).update(Buffer.from(text, "latin1")).digest("hex");
 
@@ -2022,7 +2022,8 @@ function settings(p, keyFile) {
   const out = [], key = keyFile ? approvalKey(keyFile) : null;
   const rec = (...f) => out.push(...f.map(String));
   const one = (file, label, job) => {
-    const r = readSettings(file, !!job);
+    let r;
+    try { r = readSettings(file, !!job); } catch (e) { return label + ": cannot be read (" + (e.code || "error") + "): make it a file this user can read, or remove it"; }
     if (r.bad) return label + ":" + r.bad + LITERAL;
     for (const x of r.known) {
       if (job) rec("J", job, x.key, x.value); else rec("E", x.key, x.value, x.line);
@@ -2043,7 +2044,9 @@ function settings(p, keyFile) {
     for (const f of names) {
       const job = f.slice(0, -4), jf = path.join(p, "jobs", f);
       if (!jobNameOk(job)) { rec("N", f); continue; }
-      if (!fs.statSync(jf).isFile()) continue;
+      let js = null;
+      try { js = fs.statSync(jf); } catch (e) { /* a link to nothing: the read below names it */ }
+      if (js && !js.isFile()) continue;
       const m2 = one(jf, "jobs/" + f, job);
       if (m2) rec("B", job, m2);
     }
@@ -2063,7 +2066,8 @@ function approvalId(keyFile, file, k) {
   if (!key) {
     fs.mkdirSync(path.dirname(keyFile), { recursive: true, mode: 0o700 });
     try { fs.writeFileSync(keyFile, crypto.randomBytes(32), { flag: "wx", mode: 0o600 }); } catch (e) { if (e.code !== "EEXIST") throw e; }
-    key = fs.readFileSync(keyFile);
+    key = approvalKey(keyFile);
+    if (!key) die(keyFile + " is shorter than 32 bytes, so it approves nothing: remove it, then approve again with cabinet bootstrap");
   }
   put(1, approvalHash(key, file, k, fs.readFileSync(0).toString("latin1")) + "\n");
 }
@@ -2098,8 +2102,7 @@ function wsFacts(ws, logdir, dollars, tokens) {
   if (words(dollars).includes(runner) || (words(tokens).includes(runner) && price)) {
     let first = "sun";
     try { first = (/^- \*\*Week starts on:\*\* ([A-Za-z]*)\./m.exec(read(path.join(ws, "AGENTS.md"))) || [])[1]?.toLowerCase().slice(0, 3) || "sun"; } catch (e) { /* default */ }
-    const d = Math.max(0, ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(first)), now = new Date();
-    const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (now.getDay() - d + 7) % 7).getTime() / 1000;
+    const since = weekStartOf(Math.max(0, ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(first)), new Date());
     let t = 0;
     try {
       for (const l of read(path.join(logdir, "spend.tsv")).split("\n")) {

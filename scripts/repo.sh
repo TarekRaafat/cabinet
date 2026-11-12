@@ -43,14 +43,18 @@ p_remove() {
 }
 
 p_snapshot() {
-# Copy a file if it exists, otherwise warn. Symlinks are skipped: bootstrap recreates them.
+# Copy a local-only file if it exists, otherwise warn. Symlinks are skipped: bootstrap recreates them. A
+# symlinked folder on either side (in the repo, or local/ and below it) could take the copy outside both, so
+# that file is skipped with a line, and the doctor names it (repos.local-path).
 copy_if() {
-  local src=$1 dst=$2
-  if [[ -f "$src" && ! -L "$src" ]]; then
-    mkdir -p "$(dirname "$dst")"
-    cp -p "$src" "$dst"
+  local name=$1 f=$2
+  if [[ ! -f "$repo/$f" || -L "$repo/$f" ]]; then
+    echo "warn: missing $repo/$f"
+  elif linked "$repo" "$f" || linked "$WS" "local/$name/$f"; then
+    echo "skip $name/$f: a symlink on the way, in the repo or in local/, could take the copy outside them"
   else
-    echo "warn: missing $src"
+    mkdir -p "$WS/local/$name/$(dirname "$f")"
+    cp -p "$repo/$f" "$WS/local/$name/$f"
   fi
 }
 
@@ -60,10 +64,10 @@ while IFS=$'\t' read -r name url files link path; do
   dest="$WS/local/$name"
   if [[ "${files:--}" != "-" ]]; then
     set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files
-    for f in "${fl[@]}"; do copy_if "$repo/$f" "$dest/$f"; done
+    for f in "${fl[@]}"; do copy_if "$name" "$f"; done
   fi
   ex="$repo/.git/info/exclude"
-  if [[ -f "$ex" ]] && grep -qvE '^#|^$' "$ex"; then
+  if [[ -f "$ex" ]] && ! linked "$repo" .git/info/exclude && ! linked "$WS" "local/$name/git-info-exclude" && grep -qvE '^#|^$' "$ex"; then
     mkdir -p "$dest"
     grep -vE '^#|^$' "$ex" > "$dest/git-info-exclude"
   fi

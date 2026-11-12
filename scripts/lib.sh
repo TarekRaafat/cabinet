@@ -121,6 +121,7 @@ KEYCHAIN_ITEM="cabinet.$CABINET_SLUG.backup"
 SPEND="$LOGDIR/spend.tsv"
 CABINET_PRICE="${CABINET_PRICE:-}"   # US dollars per million tokens: "<input> <output> [<cached input>]"
 # The runners that report dollars, and those that report only tokens (dollars with CABINET_PRICE).
+# bin/cabinet (ws_facts) reads these two lines with sed: keep each as NAME="words" on one line.
 SPEND_DOLLARS="claude grok opencode"
 SPEND_TOKENS="codex cursor qwen antigravity"
 # A dollar amount spend.tsv may hold: a number, zero or more (with an exponent, as JSON prints tiny ones).
@@ -346,6 +347,19 @@ PASSTHROUGH_HOOKS="applypatch-msg pre-applypatch post-applypatch pre-commit pre-
 # bin/secret.sh could not run. Add the current one's here when the hook changes in a release.
 SECRETS_HOOK_RELEASED="9753cbfdb7be731658233a293c990627c970b911654d542b591ce3f3e0c54024"
 repo_dir() { case "$1" in /*) echo "$1" ;; "~/"*) echo "$HOME/${1#"~/"}" ;; *) echo "$WS/$1" ;; esac; }
+# linked <root> <path inside it>: true when a part of the path that exists is a symlink, so a copy, a
+# placed file or a read there could leave the root. Snapshot, bootstrap and the doctor check both sides of
+# each local-only file with it (a path from repos, already plain). Folders made after it are real ones.
+linked() {
+  local p="$1" rest="$2"
+  while [[ -n "$rest" ]]; do
+    p="$p/${rest%%/*}"
+    [[ "$rest" == */* ]] && rest="${rest#*/}" || rest=""
+    [[ -L "$p" ]] && return 0
+    [[ -e "$p" ]] || return 1
+  done
+  return 1
+}
 
 # Sessions (bin/session.sh): each is a git worktree of a repo at $SESSIONS/<repo>/<name>/, on the branch
 # session/<name>. sessions_of <repo name> <repo folder>: "<name>\t<folder>\t<branch>" for each, one whose

@@ -24,7 +24,7 @@ j_list() {
   # Each job as the reader read it (lib.sh): a file whose name is not a job name is left out, and an
   # unreadable one is said on stderr, by its message, while the others are listed.
   for jf in "$WS"/jobs/*.job; do
-    [[ -f "$jf" ]] || continue
+    [[ -f "$jf" ]] || job_bad "$(basename "$jf" .job)" >/dev/null || continue   # a link to nothing is said by its message
     j="$(basename "$jf" .job)"
     job_name_ok "$j" || continue
     if m="$(job_bad "$j")"; then shown "$m" >&2; echo >&2; continue; fi
