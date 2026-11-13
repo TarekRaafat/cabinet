@@ -5810,7 +5810,7 @@ r5check "$c" attach "handoffs: $r5a evidence" "+- Evidence: [e.txt](specs/eviden
 [[ "$(git -C "$c" show --name-only --format= HEAD | sort | tr '\n' ' ')" == "HANDOFFS.md specs/evidence/$r5a/e.txt " ]] || fail "criterion 15: attach did not commit the copied file with its line"
 c="$T/sp-r5-add"; cp -R "$R5" "$c"
 r5a="$("$c/bin/handoff.sh" add --from backend --to qa --changed x --needed y t)" || fail "criterion 15: add exited non-zero"; r5a="${r5a%% *}"
-r5check "$c" add "handoffs: $r5a t" "$(printf '+\n+### %s: t\n+- From: backend -> To: qa\n+- Status: open (%s)\n+- Changed: x\n+- Needed: y\n+- Depends on: none' "$r5a" "$(date +%F)")"
+r5check "$c" add "handoffs: $r5a t" "$(printf '+\n+### %s: t\n+- From: backend -> To: qa\n+- Status: open (%s)\n+- Changed: x\n+- Needed: y\n+- Depends on: none\n+- Model: standard (default)' "$r5a" "$(date +%F)")"
 # Another commit made while record commits (a fake git makes it just before save_own's commit): through the real
 # index it is refused, as git refuses any commit while another runs, and goes in when run again, never undone;
 # through an index of its own (no index lock), record fails naming both commits.
