@@ -8357,6 +8357,11 @@ rc=0; out="$(srun specs/login.md)" || rc=$?
 fix notes "Plan fix one" >/dev/null; fix notes "Plan fix two" >/dev/null
 n="$(args)"; rc=0; out="$(srun specs/notes.md)" || rc=$?
 [[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: specs/notes.md has no work that names a commit, so nothing is ready to push" || fail "criterion 14: $out"
+# A dry run that stops prints no Log: line and leaves no stopped mark, so the scheduled pipeline does not skip the spec.
+[[ -f "$BL/run-spec-notes.stopped" ]] || fail "criterion 14: the run that stopped left no stopped mark"
+rm -f "$BL/run-spec-notes.stopped"; rc=0; out="$(srun specs/notes.md --dry-run)" || rc=$?
+[[ $rc == 1 && "$(tail -1 <<<"$out")" == "Stopped: specs/notes.md has no work that names a commit, so nothing is ready to push" && ! -e "$BL/run-spec-notes.stopped" ]] \
+  || fail "criterion 14, a dry run: a Log: line or a stopped mark: $out"
 # Criterion 15: passed over first in a dry run, which logs nothing.
 X="$(fix early "Early plan fix")"; b1="$(sb app early "Early screen")"; sb api early "Early endpoint" "$b1" >/dev/null
 h="$(git -C "$BW" rev-parse HEAD)"; x="$(ls -la "$BL")"
