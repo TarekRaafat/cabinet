@@ -565,7 +565,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.5.1).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.6.0).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -641,7 +641,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.5.1
+  ok    cabinet 0.6.0
 ...
 ```
 
@@ -2523,7 +2523,7 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.6.0 - Unreleased
+## 0.6.0 - 13 Nov 2026
 
 - `cabinet.env` and job files are read as text, never run as shell, so a teammate's commit to one can change settings but never run a program, in any command, read-only ones included (`cabinet doctor`, `next`, `job list`). A value written with `$(...)`, `$VAR` or `${VAR}` (`$HOME` too), a backtick, an unquoted space or `export`, a `cabinet.env` value over several lines, or a `CABINET_SLUG` that is not a slug, now stops with the file and line: `cabinet.env:<line>: not a literal value; cabinet reads this file as text and runs nothing in it` (for a job file, that job only does not run, and keeps its schedule; a job file that cannot be opened, such as a link to a missing file, is treated the same way, with `jobs/<job>.job: cannot be read`). If you relied on one, write the value out (the folder in full, not `$HOME/Backups`). Everything `cabinet` writes reads as before. A key cabinet does not read (`PATH=...`) is ignored and noted. The format is in docs/commands.md. New doctor checks: `settings.literal`, `settings.unknown`, `jobs.name`, `roles.name`, `repos.local-path`, `commands.approved`, `settings.local-tracked`.
 - A command from the workspace's files runs only once approved on this machine: `CABINET_RUNNER_CMD`, or a job's `COMMAND` or `AFTER`, that you did not set here with `cabinet new` or `cabinet config` (a teammate's, or one edited by hand) is refused with `<KEY> in <file> is not approved on this machine: run cabinet bootstrap at a terminal to see it and approve it` until `cabinet bootstrap`, at your terminal, shows it and you answer `y`. The kit's own (the brief's after-step and the scheduled runner) need nothing. After updating, a hand-written runner command or job command asks once: run `cabinet bootstrap` in a terminal.
