@@ -7978,6 +7978,12 @@ grep -q '^fix .*CABINET_TIER_STRONG.*--x' <<<"$out" || fail "criterion 13: a han
 mp_tiers; mpc config --runner codex >/dev/null 2>&1 || fail "config --runner codex"
 out="$(mpc doctor --json | j -r '$.results.filter((r) => r.id == "tier.exists").map((r) => r.level + " " + r.message).join("\n")')"
 [[ "$(grep -c '^fix ' <<<"$out")" == 2 ]] && grep -q '^fix .*m-light' <<<"$out" && grep -q '^fix .*m-strong' <<<"$out" && ! grep -q 'm-std' <<<"$out" || fail "criterion 13: tier models and codex's list: $out"
+# Rule 1, again at the run: a tier edited by hand to what is no model name starts no agent, and says its key.
+sedi 's/^CABINET_TIER_STANDARD=.*/CABINET_TIER_STANDARD="--x"/' "$MP/cabinet.env"; git -C "$MP" commit -qam "a bad tier"
+e="$(mp_work)"; : > "$T/claude.args"
+mph run "$e" >/dev/null 2>&1 && fail "a run took CABINET_TIER_STANDARD=--x"
+! grep -q '\[exec\]' "$T/claude.args" && grep -qF "the model '--x' in cabinet.env (CABINET_TIER_STANDARD) is not a model name" "$MLOG/run-$e.log" && grep -qF "cabinet config --tier standard off" "$MLOG/run-$e.log" \
+  || fail "a bad tier at the run: $(cat "$T/claude.args") / $(tail -3 "$MLOG/run-$e.log")"
 return 0
 }
 

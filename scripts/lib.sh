@@ -299,8 +299,9 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   # is the tool's default, never another setting's model.
   local model="${1:-}" from="${2:-}" setting=model effort=""
   if [[ -n "$RUN_TIER" ]]; then
-    model="$RUN_MODEL" effort="$RUN_EFFORT" from="cabinet.env ($RUN_KEY)"
-    case "$RUN_KEY" in CABINET_TIER_*) setting="tier $RUN_TIER" ;; CABINET_MODEL_LIGHT) setting=model-light ;; esac
+    # A tier filled from --model or --model-light refuses in the words it always did (Rule 2).
+    model="$RUN_MODEL" effort="$RUN_EFFORT" from=cabinet.env
+    case "$RUN_KEY" in CABINET_TIER_*) from="cabinet.env ($RUN_KEY)" setting="tier $RUN_TIER" ;; CABINET_MODEL_LIGHT) setting=model-light ;; esac
   else
     [[ -n "$model" ]] || { model="$CABINET_MODEL"; from=cabinet.env; }
     [[ -n "${1:-}" || -z "$CABINET_MODEL_LIGHT" ]] || ! has "$CABINET_LIGHT_ROLES" "$AGENT" || { model="$CABINET_MODEL_LIGHT" setting=model-light; }
