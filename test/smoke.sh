@@ -4324,7 +4324,7 @@ q="$(snap)"; "$F" -C "$RW" next >/dev/null; settle
 # 14. Outside a workspace: no notice.
 put 9.9.9; (cd "$T" && "$F" next) | grep -q 'is out' && fail "next outside a workspace showed the notice"
 # 15. The docs.
-grep -q 'step `update`' "$KIT/docs/commands.md" && grep -q 'edited, latest}' "$KIT/docs/commands.md" && grep -q 'update_available, command}' "$KIT/docs/commands.md" \
+grep -q 'step `update`' "$KIT/docs/commands.md" && grep -q 'edited, latest, runs}' "$KIT/docs/commands.md" && grep -q 'update_available, command}' "$KIT/docs/commands.md" \
   && grep -q -- '--update-check off|on' "$KIT/docs/commands.md" && grep -q '^| `CABINET_UPDATE_CHECK` | `off` turns' "$KIT/docs/commands.md" && grep -q '^| `CABINET_UPDATE_CHECK` | `off` or `on`: the release notice on this machine' "$KIT/docs/commands.md" \
   && grep -q '^| `NO_UPDATE_NOTIFIER` |' "$KIT/docs/commands.md" && grep -q '^| `CI` |' "$KIT/docs/commands.md" && grep -q 'your npm login' "$KIT/docs/commands.md" \
   && grep -q 'do not read your shell profile' "$KIT/docs/commands.md" && grep -q 'npm writes its own cache and logs' "$KIT/docs/commands.md" \
