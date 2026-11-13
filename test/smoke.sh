@@ -1065,6 +1065,8 @@ top="$(awk "/^## /{n++} n == 1" "$KIT/CHANGELOG.md")"
 head -1 <<<"$top" | grep -q "Unreleased" && grep -qF "cabinet.env" <<<"$top" && grep -qF "not a literal value" <<<"$top" || fail "criterion 24: the top Unreleased section of CHANGELOG.md"
 # specs/jobs-report-the-truth.md, criterion 11: the docs and the changelog say the new behavior.
 grep -qF "is already running" "$CD" && grep -qF "after-step failed" "$CD" || fail "jobs criterion 11: docs/commands.md"
+# A run stopped at its time limit exits 1 when scheduled and 124 by hand (set -o pipefail on the tee): the docs say both.
+grep -qF "the run exits 1 (124 when run by hand)" "$CD" && grep -qF "124 when a run by hand was stopped by its time limit" "$CD" || fail "jobs criterion 11: docs/commands.md does not give both exit codes for a run stopped at its time limit"
 ! grep -qF "starts and limits its own agent runs" "$KIT/scripts/job.sh" "$CD" || fail "jobs criterion 11: a COMMAND job still starts and limits its own agent runs"
 for w in "already running" after-step RESULT TIMEOUT apostrophe; do grep -qF "$w" <<<"$top" || fail "jobs criterion 11: the top Unreleased section of CHANGELOG.md does not say $w"; done
 # What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
