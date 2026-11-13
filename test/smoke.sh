@@ -4687,6 +4687,12 @@ not_approved() { :; }
 # Today's callers name the command run_limited runs (jobs-report-the-truth); the baseline's takes run_agent's arguments.
 eval "base_$(declare -f run_limited)"
 run_limited() { local l=$1 w=$2; shift 2; [[ "${1:-}" != run_agent ]] || shift; base_run_limited "$l" "$w" "$@"; }
+# And the tiers and run files of model-per-task: names today's callers use, doing nothing, since the baseline's
+# run_agent reads no tier.
+CABINET_LIGHT_ROLES="${CABINET_LIGHT_ROLES:-}" TIERS="light standard strong" RUN_TIER="" RUN_MODEL="" RUN_EFFORT="" RUN_KEY="" RUN_LOCK="" RUN_KIND="" RUN_WORK=""
+run_note() { :; }
+run_unlock() { rm -f "$1/run" "$1/.gitignore"; rmdir "$1" 2>/dev/null || true; }
+tier_get() { TIER_MODEL="" TIER_EFFORT="" TIER_KEY=""; }
 SHIM
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
