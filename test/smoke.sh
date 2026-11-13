@@ -2212,7 +2212,9 @@ printf 'app\t-\t-\tno\n' >> "$PW/repos.tsv"
 L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
 git -C "$PW" commit -qam "app, built by web"
 # A fake claude that acts as each role: the builder commits, hands on with --depends-on and closes the
-# work; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down. With
+# work, naming its commit on the status line ("done (<today>) Built in <repo> <short hash>."); with
+# $FS/lazy it does nothing, with $FS/nocommit it closes the work naming no commit, and with
+# $FS/noreview it files no review and leaves the work acknowledged, naming its commit; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down. With
 # FAKE_ARGS and FAKE_EFFORT set, each call's arguments ("[a] [b] ...") and its CABINET_EFFORT ("unset" when
 # not set) are appended there, one line per call; FAKE_SLEEP: it sleeps that long first (its process ID in
 # $FS/fake.pid); FAKE_USD: the cost it reports (default 0.01). Run as codex (a link), it takes the role
@@ -2245,9 +2247,11 @@ elif [[ "$agent" == architect ]]; then
 elif [[ ( "$agent" == web || "$agent" == backend ) && "$prompt" == "Pick up handoff"* ]]; then
   if [[ -f "$FS/reject" ]]; then sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: rejected/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm rej -- HANDOFFS.md
   elif [[ ! -f "$FS/lazy" ]]; then
-    echo "$id" >> $repo/a.txt; git -C $repo commit -qam "build $id"; git -C $repo rev-parse --short HEAD > "$FS/commits-$id"
-    bin/handoff.sh add --from $agent --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
-    sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: done/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
+    echo "$id" >> $repo/a.txt; git -C $repo commit -qam "build $id"; c="$(git -C $repo rev-parse --short HEAD)"; echo "$c" > "$FS/commits-$id"
+    s="- Status: done ($(date +%F)) Built in $repo $c."; [[ ! -f "$FS/nocommit" ]] || s="- Status: done ($(date +%F))"
+    if [[ -f "$FS/noreview" ]]; then s="- Status: acknowledged ($(date +%F)) Built in $repo $c."
+    else bin/handoff.sh add --from $agent --to "qa, security" --changed "built" --needed "verify" --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null; fi
+    sed -i.bak "/^### $id:/,/^### /s/^- Status: open.*/$s/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
   fi
 elif [[ "$agent" == web || "$agent" == backend ]]; then
   w="$(printf '%s' "$prompt" | grep -oE 'for H-[0-9]{8}-[0-9]+' | cut -c5-)"
@@ -2429,7 +2433,7 @@ d="$(work "Add a logo")"; touch "$FS/silent-security"
 out="$(run "$d")" && fail "run went on past a reviewer that recorded nothing"; echo "$out" | grep -q "^Stopped: security recorded no verdict on H-" || fail "a silent reviewer: $out"
 rm -f "$FS/silent-security"
 e="$(work "Add a map")"; touch "$FS/lazy"
-out="$(run "$e")" && fail "run went on past a builder that filed nothing"; echo "$out" | grep -q "^Stopped: web ran but filed no review handoff for $e" || fail "a builder that filed nothing: $out"
+out="$(run "$e")" && fail "run went on past a builder that filed nothing"; echo "$out" | grep -qx "Stopped: web ran but $e's status line names no commit: the builder sets it to done naming each commit it made" || fail "a builder that filed nothing: $out"
 rm -f "$FS/lazy"
 g="$(work "Add a chart")"; touch "$FS/reject"
 out="$(run "$g")" && fail "run went on past work sent back"; echo "$out" | grep -q "^Stopped: web sent $g back" || fail "work sent back: $out"
@@ -2437,7 +2441,7 @@ rm -f "$FS/reject"
 # Work closed with no review: the stop says so, and names an open --small entry that depends on it,
 # since that does not count as a review (an entry from before add refused it, here edited to depend on it).
 st() { sed -i.bak "/^### $1:/,/^### /s/^- Status: open/- Status: $2/" "$PW/HANDOFFS.md" && rm "$PW/HANDOFFS.md.bak"; git -C "$PW" commit -qm "$2" -- HANDOFFS.md; }
-i="$(work "Add a badge")"; st "$i" done
+i="$(work "Add a badge")"; st "$i" "done $(cm badge)"
 out="$(run "$i" --dry-run)" || true; [[ "$out" == "Stopped: $i is done, but no review handoff depends on it: the builder hands on with --depends-on $i" ]] || fail "done with no review: $out"
 s="$(hs add --from web --to qa --changed built --needed verify --small "Review the badge")"; s="${s%% *}"
 sed -i.bak "/^### $s:/,/^### /s/^- Depends on: none/- Depends on: $i/" "$PW/HANDOFFS.md" && rm "$PW/HANDOFFS.md.bak"; git -C "$PW" commit -qm dep -- HANDOFFS.md
@@ -5927,9 +5931,9 @@ while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|
 printf '%s\n' "$prompt" | tr '\n' ' ' >> "$HC"; echo >> "$HC"
 id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
 if [[ -f "$HC.build" && "$agent" == backend && "$prompt" == "Pick up handoff"* ]]; then
-  echo "$id" >> api/a.txt; git -C api commit -qam "build $id"; git -C api rev-parse --short HEAD > "$HC.c-$id"
+  echo "$id" >> api/a.txt; git -C api commit -qam "build $id"; c="$(git -C api rev-parse --short HEAD)"; echo "$c" > "$HC.c-$id"
   bin/handoff.sh add --from backend --to qa --changed built --needed verify --depends-on "$id" --evidence https://example.com/p "Review $id" >/dev/null
-  sed -i.bak "/^### $id:/,/^### /s/^- Status: open/- Status: done/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
+  sed -i.bak "/^### $id:/,/^### /s/^- Status: open.*/- Status: done ($(date +%F)) Built in api $c./" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm done -- HANDOFFS.md
 elif [[ -f "$HC.build" && "$agent" == architect ]]; then
   s="$(printf '%s' "$prompt" | grep -oE 'specs/[a-z0-9-]+\.md' | head -1)"
   mkdir -p specs/adr; echo ok > specs/adr/plan.md; git add specs/adr/plan.md; git commit -qm note -- specs/adr/plan.md >/dev/null 2>&1 || true
@@ -8218,6 +8222,157 @@ rm -r "$MP/.cabinet/run-H-20261113-99.lock" "$MP/.cabinet/run-x.lock"
 # (g) No run.
 st > "$T/mpf.out" && grep -q 'no kit file edited' "$T/mpf.out" || fail "criterion 12 (g): $(cat "$T/mpf.out")"
 return 0
+}
+
+section "build needs commits: ready to push names a commit a passed review covers" ""
+s116() {
+local BW FS BL out rc S W W2 r r1 c c1 c2 cf n x b1 X l0 h today
+# bn_ws <name>: a fresh pipe_setup workspace $T/<name> (BW), its state folder (FS) and log folder (BL); S is a
+# workspace commit (a note under specs/).
+bn_ws() { BW="$T/$1" FS="$T/$1-state" BL="$HOME/$LOGS/$1"; pipe_setup "$BW" "$FS"; : > "$T/bn.args"
+  echo checked > "$BW/specs/rr.md" && git -C "$BW" add specs/rr.md && git -C "$BW" commit -qm note -- specs/rr.md
+  S="$(git -C "$BW" rev-parse --short HEAD)"; }
+bnf() { FS="$FS" FAKE_ARGS="$T/bn.args" PATH="$T/pfakes:$PATH" "$@"; }
+run() { bnf "$F" -C "$BW" handoff run "$@" 2>&1; }
+srun() { bnf "$F" -C "$BW" spec run "$@" 2>&1; }
+hs() { (cd "$BW" && bin/handoff.sh "$@"); }
+work() { local i; i="$(hs add --from chief-of-staff --to app --changed "Nothing yet." --needed "$1" --small "$1")" || fail "add: $i"; echo "${i%% *}"; }
+cm() { echo "$1" >> "$BW/$2/a.txt"; git -C "$BW/$2" commit -qam "$1"; git -C "$BW/$2" rev-parse --short HEAD; }
+# setst <ID> <status>: the entry's status line becomes "- Status: <status>", committed.
+setst() { sedi "/^### $1:/,/^### /s/^- Status: .*/- Status: $2/" "$BW/HANDOFFS.md"; git -C "$BW" commit -qm "status of $1" -- HANDOFFS.md; }
+# rev <W> <commits> [<role>]: a review of W from web, on which every reviewer it needs (but <role>) records
+# PASS naming the commits; prints its ID.
+rev() { local i x; i="$(hs add --from web --to "qa, security" --changed built --needed verify --depends-on "$1" --evidence https://example.com/p "Review $1 on $2")" || fail "add a review: $i"; i="${i%% *}"
+  for x in $(hs list --json | j -r --arg v "$i" '$.find((h) => h.id == $v).needs.join(" ")'); do
+    [[ "$x" == "${3:-}" ]] || hs record "$i" --role "$x" PASS --commits "$2" --note specs/rr.md >/dev/null || fail "record $x PASS on $i"
+  done; echo "$i"; }
+args() { wc -l < "$T/bn.args" | tr -d ' '; }
+# stops <output> <line>: the line is the last, or followed only by one "Log: " line.
+stops() { local o="$1"; [[ "$(tail -1 <<<"$o")" == "Log: "* ]] && o="$(sed '$d' <<<"$o")"; [[ "$(tail -1 <<<"$o")" == "$2" ]]; }
+today="$(date +%F)"
+bn_ws bnc
+# Criterion 1: an open build with a passed review on a workspace commit is built, not ready to push.
+W="$(work "Criterion 1")"; r1="$(rev "$W" "$S")"
+out="$(run "$W" --dry-run)" && [[ "$out" == "web: builds $W" ]] || fail "criterion 1: $out"
+W2="$(work "Criterion 1, a reviewer waiting")"; r="$(rev "$W2" "$S" qa)"
+out="$(run "$W2" --dry-run)" && [[ "$out" == "qa: verifies $r" ]] || fail "criterion 1, a reviewer waiting: $out"
+# Criteria 2 and 10: the builder runs first, the run ends ready to push naming both reviews, the status line
+# names its commit, and its prompt asks for it.
+n="$(args)"; out="$(run "$W")" || fail "criterion 2: $out"
+x="$(hs list --json | j -r --arg w "$W" '$.find((h) => h.title == "Review " + $w).id')"; c="$(cat "$FS/commits-$W")"
+[[ "$(head -1 <<<"$out")" == "web: builds $W" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " \
+  && tail -1 <<<"$out" | grep -q "$r1" && tail -1 <<<"$out" | grep -q "$x" || fail "criterion 2: $out"
+sed -n "/^### $W:/,/^### /p" "$BW/HANDOFFS.md" | grep -q "^- Status: done ($today) Built in app $c\.$" || fail "criterion 2: the status line: $(sed -n "/^### $W:/,/^### /p" "$BW/HANDOFFS.md" | grep Status)"
+tail -n "+$((n + 1))" "$T/bn.args" | grep -F "[--agent] [web]" | grep -qF "then set $W to done, naming on its status line each commit you made." || fail "criterion 10: $(tail -n "+$((n + 1))" "$T/bn.args" | grep -F '[web]')"
+# Criterion 3: a passed review of a spec's wording by product-manager is no review of the build.
+W="$(work "Criterion 3")"
+r="$(hs add --from chief-of-staff --to product-manager --changed x --needed y --depends-on "$W" --evidence https://example.com/p "Wording of $W")"; r="${r%% *}"
+[[ "$(hs list --json | j -r --arg v "$r" '$.find((h) => h.id == $v).needs.join(" ")')" == product-manager ]] || fail "criterion 3: needs $(hs list --json | j -c --arg v "$r" '$.find((h) => h.id == $v).needs')"
+hs record "$r" --role product-manager PASS --commits "$S" --note specs/rr.md >/dev/null || fail "criterion 3: record"
+out="$(run "$W" --dry-run)" && [[ "$out" == "web: builds $W" ]] || fail "criterion 3: $out"
+# Criterion 4: a commit on the status line that no passed review covers.
+W="$(work "Criterion 4")"; c="$(cm c4 app)"; setst "$W" "done ($today) Built in app $c."; rev "$W" "$S" >/dev/null
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 4 (exit $rc): $out"
+# Criterion 5: two commits, one covered; both covered; both only on a session branch; acknowledged with one.
+W="$(work "Criterion 5")"; c1="$(cm c5a app)"; c2="$(cm c5b app)"; setst "$W" "done ($today) Built in app $c1, $c2."; rev "$W" "$c1" >/dev/null
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c2, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 5, one covered: $out"
+W="$(work "Criterion 5, both")"; c1="$(cm c5c app)"; c2="$(cm c5d app)"; setst "$W" "done ($today) Built in app $c1, $c2."; rev "$W" "$c1,$c2" >/dev/null
+n="$(args)"; out="$(run "$W")" && [[ "$(args)" == "$n" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " || fail "criterion 5, both covered: $out"
+h="$(git -C "$BW/app" symbolic-ref --short HEAD)"; git -C "$BW/app" checkout -qb session/x
+c1="$(cm c5e app)"; c2="$(cm c5f app)"; git -C "$BW/app" checkout -q "$h"
+W="$(work "Criterion 5, a session")"; setst "$W" "done ($today) Built in app $c1, $c2."; r="$(rev "$W" "$c1,$c2")"
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $r is not ready, and no reviewer is waiting: see bin/handoff.sh list --json" || fail "criterion 5, a session branch: $out"
+W="$(work "Criterion 5, acknowledged")"; c1="$(cm c5g app)"; setst "$W" "acknowledged ($today) First part in app $c1."; rev "$W" "$S" >/dev/null
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c1, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 5, acknowledged: $out"
+# Criterion 6: an ID and a date on the line are no commits; a short hash matches the verdict's full one; a
+# word that is no commit, or a workspace commit, is none.
+W="$(work "Criterion 6")"; c="$(cm c6 app)"; cf="$(git -C "$BW/app" rev-parse HEAD)"; [[ ${#c} == 7 ]] || fail "criterion 6: the short hash $c"
+setst "$W" "done (2026-11-13) Built in app $c; review in H-20261113-99."; rev "$W" "$cf" >/dev/null
+n="$(args)"; out="$(run "$W")" && [[ "$(args)" == "$n" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " || fail "criterion 6: $out"
+for x in deadbeef0 "$S"; do
+  setst "$W" "done (2026-11-13) Built in app $x; review in H-20261113-99."
+  n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+  [[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W is done but its status line names no commit in a product repo, so nothing was built to push" || fail "criterion 6, $x: $out"
+done
+# Criterion 7: done naming no commit; an open --small entry on it; sent back with a passed review.
+W="$(work "Criterion 7")"; setst "$W" "done ($today) Nothing to build."
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W is done but its status line names no commit in a product repo, so nothing was built to push" || fail "criterion 7: $out"
+x="$(hs add --from web --to qa --changed built --needed verify --small "Small on $W")"; x="${x%% *}"
+sedi "/^### $x:/,/^### /s/^- Depends on: none/- Depends on: $W/" "$BW/HANDOFFS.md"; git -C "$BW" commit -qm dep -- HANDOFFS.md
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $W, without --small" || fail "criterion 7, --small: $out"
+W="$(work "Criterion 7, sent back")"; setst "$W" "rejected ($today) Not ready."; rev "$W" "$S" >/dev/null
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: web sent $W back (its status line says why)" || fail "criterion 7, rejected: $out"
+# Criterion 8: done naming a commit with no review, and with its review closed.
+W="$(work "Criterion 8")"; c="$(cm c8 app)"; setst "$W" "done ($today) Built in app $c."
+n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W is done, but no review handoff depends on it: the builder hands on with --depends-on $W" || fail "criterion 8: $out"
+r="$(rev "$W" "$c")"; setst "$r" "done ($today) Pushed."
+rc=0; out="$(run "$W")" || rc=$?
+[[ $rc == 1 ]] && stops "$out" "Stopped: $W is done, but no review handoff depends on it: the builder hands on with --depends-on $W" || fail "criterion 8, its review closed: $out"
+# Criterion 9: after the builder ran, no commit named stops first; a commit named but no review is today's.
+for x in nocommit lazy noreview; do
+  W="$(work "Criterion 9 $x")"; touch "$FS/$x"; n="$(args)"; rc=0; out="$(run "$W")" || rc=$?; rm -f "${FS:?}/${x:?}"
+  l0="Stopped: web ran but $W's status line names no commit: the builder sets it to done naming each commit it made"
+  [[ $x != noreview ]] || l0="Stopped: web ran but filed no review handoff for $W"
+  [[ $rc == 1 && "$(args)" == $((n + 1)) ]] && stops "$out" "$l0" || fail "criterion 9, $x (exit $rc, $(($(args) - n)) runs): $out"
+done
+# Criteria 12 to 15: spec run passes over a done plan fix, by name, and lists only the work it ran.
+pipe_spec "$BW"
+# bn_plans <spec>: plans in place (one per repo, and the architect's PASS on them).
+bn_plans() {
+  L sub-all "$BW/$1" '/(## Plan\n\n.*?\n)(\n## Reviews)/s' "\$1"$'\n'"### app"$'\n\n'"- the app change"$'\n\n'"### api"$'\n\n'"- the api change"$'\n'"\$2"
+  mkdir -p "$BW/specs/adr"; echo ok > "$BW/specs/adr/plan.md"; git -C "$BW" add -A; git -C "$BW" commit -qm "plans of $1"
+  (cd "$BW" && bin/spec.sh record "$1" --role architect PASS --note specs/adr/plan.md >/dev/null && bin/spec.sh check "$1" --json | j -e '$[0].problems.length == 0 && $[0].missing_plans.length == 0' >/dev/null) \
+    || fail "test setup: plans in place in $1: $(cd "$BW" && bin/spec.sh check "$1")"
+}
+# bn_copy <name>: specs/<name>.md, a copy of specs/login.md with its own verdicts, ready, plans in place.
+bn_copy() {
+  sed "s/^feature: login\$/feature: $1/" "$BW/specs/login.md" | grep -v '^- Verdict:' > "$BW/specs/$1.md"; git -C "$BW" add -A; git -C "$BW" commit -qm "$1 spec"
+  (cd "$BW" && bin/spec.sh record "specs/$1.md" --role qa PASS --note specs/qa/login.md >/dev/null && bin/spec.sh record "specs/$1.md" --role design-lead PASS --note specs/design/login.md >/dev/null) || fail "test setup: $1"
+  bn_plans "specs/$1.md"
+}
+bn_copy early; bn_copy notes; bn_plans specs/login.md
+# sb <repo> <spec name> <title> [<depends on>]: a build filed --spec, as the fake router files them.
+sb() { local i; i="$(hs add --from chief-of-staff --to "$1" --spec "specs/$2.md" --changed "Nothing yet." --needed "$3" ${4:+--depends-on "$4"} "$3")" || fail "add: $i"; echo "${i%% *}"; }
+fix() { local i; i="$(sb api "$1" "$2")"; setst "$i" "done ($today) Plan fix, no code."; echo "$i"; }
+b1="$(sb app login "Login screen")"; x="$(sb api login "Login endpoint" "$b1")"; X="$(fix login "Plan fix")"
+n="$(args)"; out="$(srun specs/login.md)" || fail "criterion 12: $out"
+l0="$X is done and names no commit, with no review: nothing to build or push, passed over"
+grep -qxF "$l0" <<<"$out" && grep -qF "$l0" "$BL/run-login.log" && ! tail -n "+$((n + 1))" "$T/bn.args" | grep -q "$X" \
+  && tail -1 <<<"$out" | grep -q "^specs/login.md is ready to push: all its work ($b1, $x) passed review" || fail "criterion 12: $out"
+r="$(rev "$X" "$S")"
+rc=0; out="$(srun specs/login.md)" || rc=$?
+[[ $rc == 1 ]] && stops "$out" "Stopped: $X did not reach ready to push, so the rest of specs/login.md waits: $X is done but its status line names no commit in a product repo, so nothing was built to push" || fail "criterion 13: $out"
+setst "$r" "rejected ($today) Not a review."; setst "$X" "done ($today) Built in api $(cm c13 api)."
+rc=0; out="$(srun specs/login.md)" || rc=$?
+[[ $rc == 1 ]] && stops "$out" "Stopped: $X did not reach ready to push, so the rest of specs/login.md waits: $X is done, but no review handoff depends on it: the builder hands on with --depends-on $X" || fail "criterion 13, a commit and no review: $out"
+# Criterion 14: every work entry passed over.
+fix notes "Plan fix one" >/dev/null; fix notes "Plan fix two" >/dev/null
+n="$(args)"; rc=0; out="$(srun specs/notes.md)" || rc=$?
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: specs/notes.md has no work that names a commit, so nothing is ready to push" || fail "criterion 14: $out"
+# Criterion 15: passed over first in a dry run, which logs nothing.
+X="$(fix early "Early plan fix")"; b1="$(sb app early "Early screen")"; sb api early "Early endpoint" "$b1" >/dev/null
+h="$(git -C "$BW" rev-parse HEAD)"; x="$(ls -la "$BL")"
+out="$(srun specs/early.md --dry-run)" && [[ "$out" == "$X is done and names no commit, with no review: nothing to build or push, passed over"$'\n'"web: builds $b1" ]] || fail "criterion 15: $out"
+[[ "$(git -C "$BW" rev-parse HEAD)" == "$h" && "$(ls -la "$BL")" == "$x" ]] || fail "criterion 15: the dry run changed the workspace or the log folder"
+wsrm "$BW"
+# Criteria 16 and 17: scheduled, criterion 1's setup and nothing else; list --ready is as before.
+bn_ws bncs
+W="$(work "Criterion 16")"; r1="$(rev "$W" "$S")"
+hs list --ready | grep -q "Review $W on $S" || fail "criterion 17: list --ready: $(hs list --ready)"
+"$F" -C "$BW" config --yes --pipeline small --pipeline-limit 1 >/dev/null 2>&1 || fail "criterion 16: config --pipeline"
+(cd "$BW" && bnf bin/handoff.sh run --scheduled >/dev/null 2>&1) || fail "criterion 16: run --scheduled: $(cat "$BW/PIPELINE.md")"
+x="$(hs list --json | j -r --arg w "$W" '$.find((h) => h.title == "Review " + $w).id')"
+grep "^- $W: $W is ready to push: every reviewer passed " "$BW/PIPELINE.md" | grep -q "$x" && grep -q "web: builds $W" "$BL/run-$W.log" || fail "criterion 16: $(cat "$BW/PIPELINE.md")"
+wsrm "$BW"
+  return 0   # a last "check && fail" line must not end the run
 }
 
 # Which sections to run: the matches, then everything they need, in suite order.

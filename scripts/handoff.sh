@@ -626,7 +626,7 @@ report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for on
 h_run() {
 usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
 [[ "${1:-}" != --scheduled ]] || { (($# == 1)) || { echo "--scheduled takes nothing else. usage: bin/handoff.sh run --scheduled" >&2; exit 2; }; h_scheduled; exit $?; }
-local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v vs r todo x before ag
+local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v vs r todo x before ag st bc u
 while (($#)); do
   case "$1" in
     --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; shift 2 ;;
@@ -768,6 +768,15 @@ again() {
   [[ -z "$u" ]] || s="unknown, read the whole change"
   echo "$1's last verdict covers $a, commits since: ${s:-none}"
 }
+# build: the builder's step. After it, a build whose status line still names no commit stops (Rule 4),
+# unless the builder sent it back, which the next step says.
+build() {
+  agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done, naming on its status line each commit you made. If it is not ready to build, set $id to rejected with what is missing instead."
+  built=1
+  rd="$(readiness)"
+  [[ "$(json -r --arg i "$id" '$[$i].status_now' <<<"$rd")" == rejected || "$(build_commits "$id" <<<"$rd" | json '$.named.length')" != 0 ]] \
+    || stop "$builder ran but $id's status line names no commit: the builder sets it to done naming each commit it made"
+}
 while :; do
   step=$((step + 1)); ((step <= 30)) || stop "more steps than any piece of work takes; the owner looks at it"
   rd="$(readiness)"
@@ -782,22 +791,32 @@ while :; do
   # later handoff in a spec's chain), --spec or not. Ready only when every one that needs review is.
   vs="$(json -r --arg i "$id" 'reviewsOf($, $i).filter((k) => !statusClosed($[k].status_now)).join(" ")' <<<"$rd")"
   v="$(json -r --arg v "$vs" '$v.split(" ").find((k) => $[k]?.ready === false)' <<<"$rd")"
-  if [[ -z "$vs" ]]; then
-    case "$(json -r '$.status_now' <<<"$w")" in
-      rejected) stop "$builder sent $id back (its status line says why)" ;;
-      done)
-        x="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && $[k].small && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
-          && !statusClosed($[k].status_now))' <<<"$rd")"
-        [[ -z "$x" ]] || stop "$id is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $id, without --small"
-        stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id" ;;
-    esac
-    ((built == 0)) || stop "$builder ran but filed no review handoff for $id"
-    agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done. If it is not ready to build, set $id to rejected with what is missing instead."
-    built=1; continue
-  fi
-  if [[ -z "$v" ]]; then
+  # No step left on its reviews (none open, or every one ready): what the build itself says decides
+  # (Rules 1 to 3 of ready to push). A build is ready to push only when its status line names a commit in
+  # a product repo (build_commits) and a ready open review covers each one it names; a passed review of a
+  # plan, a spec or a note never stands in for the build.
+  if [[ -z "$vs" || -z "$v" ]]; then
+    st="$(json -r '$.status_now' <<<"$w")"
+    [[ "$st" != rejected ]] || stop "$builder sent $id back (its status line says why)"
+    if [[ -z "$vs" && "$st" == done ]]; then
+      x="$(json -r --arg i "$id" 'Object.keys($).find((k) => k != $i && $[k].small && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
+        && !statusClosed($[k].status_now))' <<<"$rd")"
+      [[ -z "$x" ]] || stop "$id is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $id, without --small"
+    fi
+    bc="$(build_commits "$id" <<<"$rd")"
+    if [[ "$(json '$.named.length' <<<"$bc")" == 0 ]]; then
+      [[ "$st" != done ]] || stop "$id is done but its status line names no commit in a product repo, so nothing was built to push"
+      build; continue
+    fi
+    if [[ -z "$vs" ]]; then
+      [[ "$st" != done ]] || stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id"
+      ((built == 0)) || stop "$builder ran but filed no review handoff for $id"
+      build; continue
+    fi
     x="$(json -r --arg v "$vs" '$v.split(" ").filter((k) => $[k].ready === true).join(", ")' <<<"$rd")"
     [[ -n "$x" ]] || stop "${vs// /, } needs no review, so there is nothing to run"
+    u="$(json -r '$.uncovered.join(", ")' <<<"$bc")"
+    [[ -z "$u" ]] || stop "$id names $u, which no passed review covers: the builder hands on with --depends-on $id"
     say "$id is ready to push: every reviewer passed $x$(spent). Push it from your terminal; chief-of-staff closes $x once it is pushed."
     rm -f "$mark"; exit 0
   fi

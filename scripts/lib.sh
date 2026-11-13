@@ -534,10 +534,17 @@ readiness() {
       while IFS= read -r c; do sareas+="specs/${n##*/}"$'\t'"$c"$'\n'; done < <(spec_areas "$n")
     done
   fi
-  # Each repo's main folder, where the branch the owner pushes is checked out (sessions: lib.js readiness).
-  local rdirs="" name url files link path
-  while IFS=$'\t' read -r name url files link path; do rdirs+="$(repo_dir "$path")"$'\n'; done < <(repos 2>/dev/null)
-  REPODIRS="$rdirs" WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+  REPODIRS="$(repo_dirs)" WSDIR="$WS" TEAM="$(team_roles)" BUILDS="$builds" UI="$ui" DELEGATES="$(delegates)" AREAS="$areas" TOUCH="$touch" SAREAS="$sareas" node "$LIBJS" readiness "$SPEND" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+}
+# repo_dirs: each repo's main folder, one per line, where the branch the owner pushes is checked out
+# (readiness, and build_commits; sessions: lib.js readiness).
+repo_dirs() { local name url files link path; while IFS=$'\t' read -r name url files link path; do printf '%s\n' "$(repo_dir "$path")"; done < <(repos 2>/dev/null); }
+# build_commits <ID>: the commits a build's status line names, and the ones no ready open review of it
+# covers, as {"named": [...], "uncovered": [...]}, with readiness's JSON on stdin (lib.js build-commits).
+build_commits() {
+  local n; local -a arch
+  arch=(); for n in "$WS"/handoffs/archive-*.md; do [[ -f "$n" ]] && arch+=("$n"); done
+  REPODIRS="$(repo_dirs)" node "$LIBJS" build-commits "$1" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
 }
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
 # a repo in the team table: whoever it is, work sent to it is built (.cabinet/rules/ready-to-build.md).

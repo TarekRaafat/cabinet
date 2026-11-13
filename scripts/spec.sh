@@ -96,7 +96,7 @@ echo "$spec: $role $verdict recorded and committed"
 
 s_run() {
 usage="usage: bin/spec.sh run <spec> [--retries <n>] [--dry-run]"
-local spec="" retries=2 dry=0 routed=0 step=0 st works w r o x c total out=""
+local spec="" retries=2 dry=0 routed=0 step=0 st works w r o x c total out="" ran rd
 local -a pass
 pass=()
 while (($#)); do
@@ -132,7 +132,7 @@ SPEND_LABEL="$spec"
 local mark="$LOGDIR/run-spec-$name.stopped"
 ((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
-stop() { say "Stopped: $1"; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
+stop() { say "Stopped: $1"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
   if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
   say "$1: $2"
@@ -166,7 +166,16 @@ while :; do
     [[ "$(sc | json -r '$.plan_review')" =~ ^(PASS|BLOCK)$ ]] || stop "architect recorded no review of the plan in $spec"
     continue
   fi
+  ran=""
   for w in $works; do
+    # A work entry that is done, names no commit and has no open review (a plan fix) has nothing to build
+    # or push: passed over, by name (Rule 6). One that names a commit, or has a review, is run.
+    rd="$(readiness)"
+    if [[ "$(json --arg i "$w" '$[$i].status_now == "done" && !reviewsOf($, $i).some((k) => !statusClosed($[k].status_now))' <<<"$rd")" == true \
+      && "$(build_commits "$w" <<<"$rd" | json '$.named.length')" == 0 ]]; then
+      say "$w is done and names no commit, with no review: nothing to build or push, passed over"; continue
+    fi
+    ran+="$w"$'\n'
     if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
     say "running $w"
     run_note "" "" ""   # the handoff run's own lock says who runs now; this one names no agent meanwhile
@@ -178,9 +187,10 @@ while :; do
     ((x == 0)) || { r="$(run_result <"$out")" || r="$(tail -1 "$out")"; r="${r#Stopped: }"
       stop "$w did not reach ready to push, so the rest of $spec waits: ${r:-its run ended with exit $x and printed nothing; see $LOGDIR/run-$w.log}"; }
   done
+  [[ -n "$ran" ]] || stop "$spec has no work that names a commit, so nothing is ready to push"
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
-  total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$works" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
-  say "$spec is ready to push: all its work ($(printf '%s' "$works" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal."
+  total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$ran" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
+  say "$spec is ready to push: all its work ($(printf '%s' "$ran" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal."
   rm -f "$mark"; exit 0
 done
 }

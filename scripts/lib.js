@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, build-commits, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -104,6 +104,28 @@ const ownerCase = (to) => to.replace(OWNER_RE, (m, a, b) => a + b.toLowerCase())
 // Depends on. handoff run takes the open ones; the tier's step up counts the BLOCK and CHANGES on all of them.
 const reviewsOf = (rd, id) => Object.keys(rd).filter((k) => k != id && !rd[k].small && rd[k].builder === null
   && new RegExp("(^|[^0-9A-Za-z-])" + id + "($|[^0-9])").test(rd[k].depends_on));
+// covers(have, want): every commit in want is one in have, short and long hashes matching (readiness, build-commits).
+const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h) || h.startsWith(w)));
+// build-commits <ID> <HANDOFFS.md> [<archive>...]: what handoff run and spec run check before ready to push,
+// with readiness's JSON on stdin and REPODIRS (each product repo's main folder) in the environment:
+// {"named": [...], "uncovered": [...]}. named: each word on the entry's status line of 7 to 40 characters,
+// all 0-9a-f and not joined to a letter, digit or - (so an ID's or a date's digits are never one), that git
+// finds as a commit in a product repo, as written; uncovered: the named ones no ready open review of it
+// covers. Each word goes to git as one argument, never through a shell.
+function buildCommits(id, ...files) {
+  const rd = JSON.parse(fs.readFileSync(0, "utf8"));
+  let rest = "";
+  files.forEach((file, n) => {
+    const e = handoffEntries(read(file).split("\n"), n > 0).find((x) => x.id === id);
+    if (e && !rest) rest = statusOf(e.lines).rest;
+  });
+  const dirs = env("REPODIRS").split("\n").filter(Boolean), named = [];
+  for (const [w] of rest.matchAll(/(?<![0-9A-Za-z-])[0-9a-f]{7,40}(?![0-9A-Za-z-])/g)) {
+    if (!named.includes(w) && dirs.some((d) => spawnSync("git", ["-C", d, "cat-file", "-e", w + "^{commit}"], { stdio: "ignore" }).status === 0)) named.push(w);
+  }
+  const have = reviewsOf(rd, id).filter((k) => !statusClosed(rd[k].status_now) && rd[k].ready === true).flatMap((k) => rd[k].verdicts.flatMap((v) => v.commits));
+  process.stdout.write(JSON.stringify({ named, uncovered: named.filter((c) => !covers(have, [c])) }) + "\n");
+}
 // idOrder(a, b): IDs by their date (the eight digits), then their number as a number: H-20261107-100
 // after H-20261107-99. Anything else by its text.
 function idOrder(a, b) {
@@ -255,7 +277,6 @@ function readiness(spend, ...files) {
   const VER = /^- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$/;
   const names = (s) => s.replace(/\([^)]*\)/g, "").split(" and ").join(",").split("&").join(",").split("`").join("")
     .split(",").map((n) => n.trim()).filter(Boolean).map((n) => n.toLowerCase());
-  const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h) || h.startsWith(w)));  // short and long hashes match
   const entries = [];
   files.forEach((file, n) => {  // HANDOFFS.md, then the archives (closed work a run may still need)
     for (const e of handoffEntries(read(file).split("\n"), n > 0)) entries.push({ id: e.id, lines: e.lines, archived: n > 0 });
@@ -2210,7 +2231,7 @@ const COMMANDS = {
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,
-  "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
+  "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "build-commits": buildCommits, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, runs, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
