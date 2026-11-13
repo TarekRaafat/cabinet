@@ -135,7 +135,7 @@ agent() {  # agent <role> <what it does> <prompt>
   say "$1: $2"
   ((dry)) && exit 0
   AGENT=$1 PROMPT=$3
-  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
 # Its work: every handoff filed with --spec for it to one builder, not sent back, oldest first (the order
 # routing set, by the handoff reader's idOrder). A routing request or a review filed with --spec is not work

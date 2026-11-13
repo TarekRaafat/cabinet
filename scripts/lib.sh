@@ -227,18 +227,27 @@ approved() {
 }
 not_approved() { echo "$2 in $1 is not approved on this machine: run cabinet bootstrap at a terminal to see it and approve it"; }
 
-# The agent runs in its own process group, so a run past its limit is stopped with
-# everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
+# writer_gone <ID read from a lock, or empty> <the lock folder>: true when the lock's writer is no longer
+# running (the handoff lock and a job's lock). kill -0 also fails on a running process this user may not
+# signal (another user's, or one outside an agent tool's sandbox), so the writer is gone only when ps cannot
+# find it either. With no ID in it, the lock is gone once it is over a minute old.
+writer_gone() {
+  if [[ "$1" =~ ^[1-9][0-9]*$ ]]; then ! kill -0 "$1" 2>/dev/null && ! ps -p "$1" >/dev/null 2>&1
+  else (( $(date +%s) - $(mtime "$2" 2>/dev/null || date +%s) > 60 )); fi
+}
+
+# The command (run_agent, or a job's COMMAND) runs in its own process group, so a run past its limit is
+# stopped with everything it started: TERM, then KILL 10 seconds later. Exit 124, as timeout(1).
 # Its own group misses Ctrl-C and launchd's stop, so those are passed on; it gets no
 # terminal input, which a background group would stop on.
-run_limited() {  # run_limited <minutes, 0 for none> <what set the limit> [<model> <its file>]: run_agent, stopped at the limit
+run_limited() {  # run_limited <minutes, 0 for none> <what set the limit> <command>...: the command, stopped at the limit
   local limit=$1 why=$2; shift 2
-  ((limit)) || { run_agent "$@"; return; }
+  ((limit)) || { "$@"; return; }
   local secs=$((limit * ${CABINET_TEST_MINUTE:-60})) st=0   # CABINET_TEST_MINUTE: tests only
   # Stopped means the watchdog stopped it (it writes the mark), never that the clock moved past the
   # limit: a machine that sleeps during a run moves the clock, not the watchdog's timer.
   local mark; mark="$(mktemp "${TMPDIR:-/tmp}/cabinet-run.XXXXXX")"
-  set -m; run_agent "$@" </dev/null & pid=$!; set +m
+  set -m; "$@" </dev/null & pid=$!; set +m
   node "$LIBJS" watchdog "$secs" "$pid" "$mark" & dog=$!
   trap 'kill -TERM -- "-$pid" "$dog" 2>/dev/null; rm -f "$mark"; exit 130' INT TERM
   wait "$pid" || st=$?
@@ -316,6 +325,7 @@ HOST=""; [[ "$CABINET_LAYOUT" == inside ]] && HOST="$(cd "$WS/.." && pwd -P)"
 # The local-only files (third column, space separated) keep only plain paths inside the repo: not empty,
 # not starting with / or ~, parts joined by single /, none . or .., no * ? [ ] \ or control character.
 # Each other entry is skipped with a line on stderr, so snapshot and bootstrap never copy outside.
+# The same test as inside-file in lib.js (a job's RESULT): change both together.
 repos() {
   [[ -f "$WS/repos.tsv" ]] || return 0
   LC_ALL=C awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2 {

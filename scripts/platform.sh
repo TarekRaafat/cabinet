@@ -144,7 +144,8 @@ sched_label() { local b="${1##*/}"; printf '%s' "${b%"$SCHED_EXT"}"; }
 
 xml() { local s=$1; s="${s//&/&amp;}"; s="${s//</&lt;}"; s="${s//>/&gt;}"; printf '%s' "$s"; }
 sd_q() { local s=$1; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//%/%%}"; printf '"%s"' "$s"; }   # systemd, no $ expansion
-sh_q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+# The replacement is held in a variable: bash 3.2 removes quotes from one written inline, so 'co'\''s' came out wrong.
+sh_q() { local q="'\\''"; printf "'%s'" "${1//\'/$q}"; }
 
 # sched_render <label> <when> <log> <path> <program> <arg>...: the schedule's file, as written.
 # Returns 1 when <when> is not a schedule time.

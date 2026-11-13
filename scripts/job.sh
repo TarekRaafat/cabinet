@@ -5,12 +5,16 @@
 #
 #   bin/job.sh run <job>
 #       Run it now. The agent tool comes from CABINET_RUNNER in cabinet.env: claude, codex, antigravity,
-#       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). A run is
-#       stopped after TIMEOUT minutes (the job's, else CABINET_JOB_TIMEOUT; 0 for none). A scheduled
-#       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run. A job
-#       with COMMAND instead of AGENT and PROMPT runs that command in the workspace (the pipeline job:
-#       bin/handoff.sh run --scheduled), which starts and limits its own agent runs. MODEL="<name>" in an
-#       agent job asks for that model in place of CABINET_MODEL; a COMMAND job with MODEL is refused.
+#       qwen, grok, opencode, cursor, or custom (CABINET_RUNNER_CMD, any other tool). One run of a job
+#       at a time on this machine: a run takes the job's lock first, and a second run while it is held
+#       starts nothing ("<job> is already running (process <pid>): this run started nothing", exit 1).
+#       Every run, a COMMAND job's too, is stopped after TIMEOUT minutes (the job's, else
+#       CABINET_JOB_TIMEOUT; 0 for none). A failed after-step (AFTER) fails the run (exit 1). A scheduled
+#       run of a job with QUIET_DAYS is skipped when nothing changed since its last full run; RESULT must
+#       then be a file inside the workspace, or every run is a full run. A job with COMMAND instead of
+#       AGENT and PROMPT runs that command in the workspace (the pipeline job: bin/handoff.sh run
+#       --scheduled, with TIMEOUT="0"). MODEL="<name>" in an agent job asks for that model in place of
+#       CABINET_MODEL; a COMMAND job with MODEL is refused.
 #   bin/job.sh list [--json]
 #       Every job: its name, role, schedule, time limit and what it cost this week, with the week's
 #       total and budget (CABINET_BUDGET), from what the agent tool reports.
@@ -64,9 +68,11 @@ QUIET_DAYS="${QUIET_DAYS:-0}"
 [[ -z "$COMMAND" ]] || approved "jobs/$job.job" COMMAND "$COMMAND" || { not_approved "jobs/$job.job" COMMAND >&2; exit 1; }
 [[ -n "$COMMAND" || "$CABINET_RUNNER" != custom ]] || approved cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD" || { not_approved cabinet.env CABINET_RUNNER_CMD >&2; exit 1; }
 
+# A COMMAND as an agent: its own process group, stopped at the limit with everything it started.
 limited() {
-  if [[ -n "$COMMAND" ]]; then (cd "$WS" && bash -c "$COMMAND"); return; fi   # it limits its own agent runs
-  run_limited "$limit" "the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)" "$MODEL" "jobs/$job.job"
+  local why="the job's time limit (TIMEOUT in jobs/$job.job, or CABINET_JOB_TIMEOUT)"
+  if [[ -n "$COMMAND" ]]; then run_limited "$limit" "$why" bash -c "$COMMAND"; return; fi
+  run_limited "$limit" "$why" run_agent "$MODEL" "jobs/$job.job"
 }
 
 # What a quiet run is judged by: every branch and remote branch of the workspace and its repos,
@@ -101,12 +107,43 @@ quiet() {
 after() {
   [[ -n "$AFTER" ]] || return 0
   approved "jobs/$job.job" AFTER "$AFTER" 2>>"$log" || { not_approved "jobs/$job.job" AFTER >>"$log"; return 0; }
-  (cd "$WS" && bash -c "$AFTER") >>"$log" 2>&1 || echo "after-step failed: see the lines above" >>"$log"
+  (cd "$WS" && bash -c "$AFTER") >>"$log" 2>&1 && return 0
+  echo "after-step failed: see the lines above" >>"$log"; return 1
 }
 
 cd "$WS"
 mkdir -p -m 700 "$LOGDIR"
 log="$LOGDIR/$job.log"
+# One run of a job at a time: the folder <log folder>/<job>.lock (this machine's, never in the workspace)
+# holds this run's process ID, and the EXIT trap removes it however the run ends, while it still holds that
+# ID. A lock whose run is gone (writer_gone in lib.sh) is taken over; any other means a second run, which
+# starts nothing. Names other than pid, which run_limited sets.
+# ponytail: a run that saw the lock stale just as another took it over could move the new lock; a lost race refuses.
+# ponytail: a process ID reused after a crash reads as a running job until that process ends; the refusal names it.
+job_lock="$LOGDIR/$job.lock" lock_held=""
+take_lock() { mkdir "$job_lock" 2>/dev/null || return 1; lock_held=1; trap release_lock EXIT; echo $$ > "$job_lock/pid"; }
+release_lock() { [[ -z "${lock_held:-}" || "$(cat "$job_lock/pid" 2>/dev/null)" != "$$" ]] || rm -rf "$job_lock"; }
+if ! take_lock; then
+  lock_pid="$(cat "$job_lock/pid" 2>/dev/null || true)"
+  if writer_gone "$lock_pid" "$job_lock" && mv "$job_lock" "$job_lock.stale.$$" 2>/dev/null; then
+    rm -rf "$job_lock.stale.$$"
+    take_lock || lock_pid="$(cat "$job_lock/pid" 2>/dev/null || true)"
+  fi
+  if [[ -z "$lock_held" ]]; then
+    # The ID is named only when it is one: a file's text never reaches the terminal.
+    [[ "$lock_pid" =~ ^[1-9][0-9]*$ ]] && lock_pid="process $lock_pid" || lock_pid="process unknown"
+    msg="$job is already running ($lock_pid): this run started nothing"
+    echo "$msg" >>"$log"; echo "$msg" >&2
+    exit 1
+  fi
+fi
+# RESULT counts for QUIET_DAYS only as a file inside the workspace (lib.js inside-file): otherwise nothing
+# at it is read or touched, and the run is a full one.
+result_note=""
+if ((QUIET_DAYS)) && ! node "$LIBJS" inside-file "$WS" "$RESULT"; then
+  result_note="$job: RESULT \"$(shown "$RESULT")\" is not a file inside the workspace, so QUIET_DAYS does not apply: a full run"
+  QUIET_DAYS=0
+fi
 started="$(date +%s)"
 SPEND_LABEL="$job"
 # The run's cost and the week's, when the tool reported it.
@@ -124,6 +161,7 @@ if [[ ! -t 1 ]] && quiet; then
   exit 0
 fi
 echo "=== $(date '+%F %T') $job (${AGENT:-$COMMAND}, $CABINET_RUNNER)" >>"$log"
+[[ -z "$result_note" ]] || echo "$result_note" >>"$log"
 rm -f "$state_file"
 if [[ -t 1 ]]; then
   # Started by hand: say what is happening, then show the result here too.
@@ -132,7 +170,7 @@ if [[ -t 1 ]]; then
   start=$SECONDS status=0
   limited 2>&1 | tee -a "$log" || status=$?
   cost | tee -a "$log"
-  ((status)) || { after; remember; }
+  ((status)) || { after || status=1; ((status)) || remember; }
   echo
   echo "Finished in $(( (SECONDS - start) / 60 )) min (exit $status). Open $RESULT."
   exit "$status"
@@ -140,7 +178,7 @@ fi
 st=0; limited >>"$log" 2>&1 || st=$?
 cost >>"$log"
 ((st == 0)) || { echo "exit $st at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
-after
+after || exit 1
 remember
 }
 

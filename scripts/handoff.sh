@@ -135,13 +135,7 @@ ev_link() {
 }
 # One writer at a time, or two agents filing at once could take the same number or lose a line.
 # The lock folder holds the writer's process ID, and locked says this process took it.
-# writer_gone <ID read from the lock, or empty>: true when the lock's writer is no longer running.
-# kill -0 also fails on a running process this user may not signal (another user's, or one outside an
-# agent tool's sandbox), so the writer is gone only when ps cannot find it either.
-writer_gone() {
-  if [[ "$1" =~ ^[1-9][0-9]*$ ]]; then ! kill -0 "$1" 2>/dev/null && ! ps -p "$1" >/dev/null 2>&1
-  else (( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) > 60 )); fi
-}
+# writer_gone (lib.sh) says when the lock's writer is no longer running.
 lock_handoffs() {
   cd "$WS"
   grep -q '^## Open$' HANDOFFS.md || { echo "no '## Open' heading in HANDOFFS.md" >&2; exit 1; }
@@ -156,7 +150,7 @@ lock_handoffs() {
     # Its .gitignore keeps the ID out of git status, and so out of any commit, even when a writer is stopped.
     if mkdir "$lock" 2>/dev/null; then printf '*\n' > "$lock/.gitignore"; echo $$ > "$lock/pid"; locked=1; break; fi
     p="$(cat "$lock/pid" 2>/dev/null || true)"
-    if writer_gone "$p" && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
+    if writer_gone "$p" "$lock" && mv "$lock" "$lock.stale.$$" 2>/dev/null; then
       rm -rf "$lock.stale.$$"; continue
     fi
     sleep 1
@@ -643,7 +637,7 @@ agent() {  # agent <role> <what it does> <prompt>
   say "$1: $2"
   ((dry)) && exit 0
   AGENT=$1 PROMPT=$3
-  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
 }
 # again <role>: for a reviewer asked again, the commits its last verdict on the review entry ($r) names
 # and the ones made after them, so it reads only those (.cabinet/rules/reviews.md, "A re-review");

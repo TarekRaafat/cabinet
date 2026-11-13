@@ -1063,6 +1063,10 @@ done
 grep -qF "not approved on this machine" "$KIT/docs/guardrails.md" || fail "criterion 24: docs/guardrails.md"
 top="$(awk "/^## /{n++} n == 1" "$KIT/CHANGELOG.md")"
 head -1 <<<"$top" | grep -q "Unreleased" && grep -qF "cabinet.env" <<<"$top" && grep -qF "not a literal value" <<<"$top" || fail "criterion 24: the top Unreleased section of CHANGELOG.md"
+# specs/jobs-report-the-truth.md, criterion 11: the docs and the changelog say the new behavior.
+grep -qF "is already running" "$CD" && grep -qF "after-step failed" "$CD" || fail "jobs criterion 11: docs/commands.md"
+! grep -qF "starts and limits its own agent runs" "$KIT/scripts/job.sh" "$CD" || fail "jobs criterion 11: a COMMAND job still starts and limits its own agent runs"
+for w in "already running" after-step RESULT TIMEOUT apostrophe; do grep -qF "$w" <<<"$top" || fail "jobs criterion 11: the top Unreleased section of CHANGELOG.md does not say $w"; done
 # What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
 # changed" with git or without, and the commands that commit themselves.
 grep -qF "In a terminal it prints the Cabinet mark with the version and the tagline beside it" "$KIT/docs/commands.md" || fail "docs/commands.md does not say cabinet version shows the tagline"
@@ -1893,6 +1897,8 @@ qc() { git -C "$Q" add -A && git -C "$Q" commit -qm "$1"; }
 qc "custom runner"
 r() { "$Q/bin/job.sh" run brief 2>&1; }   # stdout is not a terminal: run as the scheduler runs it
 runs() { [[ "$(wc -l < "$T/qruns" | tr -d ' ')" == "$1" ]]; }
+# BRIEF.md written first: a RESULT not written yet makes every run a full one (specs/jobs-report-the-truth.md, Rule 7).
+cp "$T/qbrief" "$Q/BRIEF.md"
 r >/dev/null; runs 1 || fail "the first run did not run"
 touch -t 202601010000 "$Q/BRIEF.md"
 r | grep -q 'brief skipped: nothing changed since the full run of' && runs 1 || fail "a run with nothing new was not skipped"
@@ -4641,6 +4647,9 @@ job_bad() { return 1; }
 job_set() { source "$WS/jobs/$1.job"; }
 approved() { return 0; }
 not_approved() { :; }
+# Today's callers name the command run_limited runs (jobs-report-the-truth); the baseline's takes run_agent's arguments.
+eval "base_$(declare -f run_limited)"
+run_limited() { local l=$1 w=$2; shift 2; [[ "${1:-}" != run_agent ]] || shift; base_run_limited "$l" "$w" "$@"; }
 SHIM
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
@@ -7686,6 +7695,193 @@ notty "$SW/bin/job.sh" run brief >/dev/null 2>&1 || true
 out="$(notty "$SW/bin/job.sh" run pipeline 2>&1)" || true
 [[ -f "$SW/jobs/pipeline.job" ]] && ! grep -q 'not approved' <<<"$out" && ! grep -q 'not approved' "$HOME/$LOGS/$slug/pipeline.log" || fail "criterion 22: the pipeline: $out"
 svback
+  return 0   # a last "check && fail" line must not end the run
+}
+
+# specs/jobs-report-the-truth.md. jw_new <dir> <runs file>: a workspace whose custom runner counts its runs
+# in <runs file> and sleeps JW_SLEEP seconds (approved, as cabinet new approves it), the brief with
+# QUIET_DAYS="0", committed, and BRIEF.md written (git ignores it).
+jw_new() {
+  "$F" new "$1" --yes --runner custom --runner-cmd "echo run >> \"$2\"; sleep \"\${JW_SLEEP:-0}\"" >/dev/null
+  sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$1/jobs/brief.job"; git -C "$1" add -A; git -C "$1" commit -qm "jw"
+  printf '# Brief\n' > "$1/BRIEF.md"
+}
+nruns() { if [[ -f "$R" ]]; then wc -l < "$R" | tr -d ' '; else echo 0; fi; }
+waitruns() { local i; for i in $(seq 50); do [[ "$(nruns)" -ge "$1" ]] && return 0; sleep 0.2; done; return 1; }   # at most 10 s
+jset() { sedi "/^$2=/d" "$1"; [[ "$#" -lt 3 ]] || printf '%s=%s\n' "$2" "$3" >> "$1"; }   # jset <job file> <KEY> [<value as written>]: none when no value
+jcommit() { git -C "$JW" add -A; git -C "$JW" commit -qm "$1" --allow-empty; }
+# A lock's time set back, with node: BSD and GNU touch take different dates.
+backdate() { node -e 'const t = Date.now() / 1000 - Number(process.argv[2]); require("node:fs").utimesSync(process.argv[1], t, t)' "$1" "$2"; }
+jan1() { [[ "$(pf mtime "$1")" == "$(pf stamp_epoch 20260101-000000)" ]]; }
+
+section "jobs report the truth A: quoting" ""
+s107() {
+bq() { /bin/bash -c 'source "$0/scripts/when.sh"; source "$0/scripts/platform.sh"; "$@"' "$KIT" "$@"; }   # under /bin/bash, named outright
+# Criterion 1: sh_q reads back through /bin/sh as its input, under macOS's bash 3.2 too.
+if [[ "$(uname)" == Darwin ]]; then v="$(/bin/bash -c 'echo $BASH_VERSION')"; [[ "$v" == 3.2* ]] || fail "criterion 1: /bin/bash is $v, not 3.2, so this would not show the fault"; fi
+for s in "co's" "''" "a'b'c" '$HOME' '100%' 'a b' '-x' ''; do
+  q="$(bq sh_q "$s")"; o="$(/bin/sh -c "printf '%s' $q")" || fail "criterion 1: /bin/sh could not read $q"
+  [[ "$o" == "$s" ]] || fail "criterion 1: [$s] came back as [$o] from $q"
+done
+[[ "$(bq sh_q "co's")" == "'co'\\''s'" ]] || fail "criterion 1: sh_q \"co's\" is $(bq sh_q "co's")"
+# Criterion 2: the cron line of a workspace whose path has a space and an apostrophe runs under /bin/sh.
+svhome jta-home; R="$T/runs-a"
+CW="$T/co's jw"; jw_new "$CW" "$R"
+cslug="$(sed -n 's/^CABINET_SLUG="\(.*\)"$/\1/p' "$CW/cabinet.env")"
+CABINET_SCHEDULER=cron /bin/bash "$CW/bin/bootstrap.sh" >/dev/null 2>&1 || true
+line="$(grep -F " jw/bin/job.sh' 'run' 'brief'" "$T/crontab" | head -1)"
+[[ -n "$line" ]] || fail "criterion 2: no cron line for the brief: $(cat "$T/crontab" 2>&1)"
+rest="$(cut -d' ' -f6- <<<"$line")"
+st=0; /bin/sh -c "$rest" || st=$?; sleep 2
+[[ "$st" == 0 && "$(nruns)" == 1 && "$(grep -c '^=== ' "$HOME/$LOGS/$cslug/brief.log")" == 1 ]] || fail "criterion 2: exit $st, runs $(nruns), line: $rest"
+: > "$T/crontab"; svback
+# Criterion 3: the command that stores the backup passphrase in a file, with an apostrophe in HOME.
+H3="$T/h'ome"; mkdir -p "$H3"
+pfile="$(HOME="$H3" CABINET_SCHEDULER=cron bq pass_file cabinet.jw.backup)"
+[[ "$pfile" == *"h'ome"* ]] || fail "criterion 3: pass_file is $pfile"
+cmd="$(HOME="$H3" CABINET_SCHEDULER=cron bq pass_add_cmd cabinet.jw.backup)"
+st=0; printf 's3cret\n' | /bin/sh -c "$cmd" >/dev/null 2>&1 || st=$?
+[[ "$st" == 0 && "$(cat "$pfile" 2>/dev/null; echo .)" == "s3cret
+." && "$(perm "$pfile")" == 600 ]] || fail "criterion 3: exit $st, command: $cmd"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "jobs report the truth B: one run at a time" ""
+s108() {
+JW="$T/jw"; R="$T/runs"; jw_new "$JW" "$R"
+JF="$JW/jobs/brief.job" JL="$HOME/$LOGS/jw/brief.log" LK="$HOME/$LOGS/jw/brief.lock"
+run() { "$JW/bin/job.sh" run "${1:-brief}"; }   # scheduled: stdout is not a terminal. In the background, bin/job.sh itself, so $! is its process
+refusals() { grep -c 'is already running' "$JL" 2>/dev/null || true; }
+# Criterion 4: a second run starts nothing, five times over.
+for i in 1 2 3 4 5; do
+  rm -f "$R"; JW_SLEEP=5 "$JW/bin/job.sh" run brief >/dev/null 2>&1 & p1=$!
+  waitruns 1 || fail "criterion 4 ($i): run 1 did not start"
+  n0="$(refusals)" s=$SECONDS st=0
+  e="$(run 2>&1 >/dev/null)" || st=$?
+  ((st == 1 && SECONDS - s <= 3)) || fail "criterion 4 ($i): run 2 exit $st after $((SECONDS - s)) s: $e"
+  [[ "$e" =~ ^brief\ is\ already\ running\ \(process\ ([0-9]+)\):\ this\ run\ started\ nothing$ && "${BASH_REMATCH[1]}" == "$p1" ]] || fail "criterion 4 ($i): stderr [$e], run 1 is $p1"
+  [[ "$(refusals)" == $((n0 + 1)) ]] || fail "criterion 4 ($i): the log has the refusal $(( $(refusals) - n0 )) times"
+  [[ -z "$(git -C "$JW" status --porcelain)" ]] || fail "criterion 4 ($i): git status: $(git -C "$JW" status --porcelain)"
+  st=0; wait "$p1" || st=$?; sleep 2
+  [[ "$st" == 0 && "$(nruns)" == 1 ]] || fail "criterion 4 ($i): run 1 exit $st, runs $(nruns)"
+done
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && "$(nruns)" == 2 ]] || fail "criterion 4: run 3 exit $st, runs $(nruns)"
+# Criterion 5: another job runs while the brief holds its lock.
+cp "$JF" "$JW/jobs/other.job"; jcommit "other"
+rm -f "$R"; JW_SLEEP=5 "$JW/bin/job.sh" run brief >/dev/null 2>&1 & p1=$!; waitruns 1 || fail "criterion 5: the brief did not start"
+st=0; run other >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && "$(nruns)" == 2 ]] || fail "criterion 5: other exit $st, runs $(nruns)"
+wait "$p1" || true; rm "$JW/jobs/other.job"; jcommit "no other"
+# Criterion 6: the lock is released however the run ends. (a) At its time limit.
+jset "$JF" TIMEOUT '"2"'
+st=0; JW_SLEEP=5 CABINET_TEST_MINUTE=1 run >/dev/null 2>&1 || st=$?
+[[ "$st" == 1 ]] && grep -qF 'stopped after 2 min' "$JL" || fail "criterion 6(a): exit $st"
+jset "$JF" TIMEOUT '""'; sleep 2
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 ]] || fail "criterion 6(a): the next run exits $st"
+# (b) Stopped with TERM, then INT: started with job control, so a background run does not ignore INT.
+for sig in TERM INT; do
+  rm -f "$R"; set -m; JW_SLEEP=5 "$JW/bin/job.sh" run brief >/dev/null 2>&1 & p1=$!; set +m
+  waitruns 1 || fail "criterion 6(b) $sig: the run did not start"
+  sleep 1; kill -s "$sig" "$p1"; wait "$p1" || true; sleep 2
+  st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 ]] || fail "criterion 6(b): after $sig, the next run exits $st"
+done
+# (c) A failed after-step.
+jset "$JF" AFTER '"exit 3"'; approve "$JW" jobs/brief.job AFTER
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 1 ]] || fail "criterion 6(c): exit $st"
+jset "$JF" AFTER; st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 ]] || fail "criterion 6(c): with AFTER removed, exit $st"
+# Criterion 7: a lock left behind. (a) Its run stopped with KILL (a short limit, so the run's watchdog ends too).
+jset "$JF" TIMEOUT '"1"'
+rm -f "$R"; JW_SLEEP=5 CABINET_TEST_MINUTE=10 "$JW/bin/job.sh" run brief >/dev/null 2>&1 & p1=$!
+waitruns 1 || fail "criterion 7(a): the run did not start"
+sleep 1; kill -KILL "$p1"; wait "$p1" 2>/dev/null || true
+[[ -d "$LK" ]] || fail "criterion 7(a): no lock left at $LK"
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && "$(nruns)" == 2 ]] || fail "criterion 7(a): exit $st, runs $(nruns)"
+jset "$JF" TIMEOUT '""'
+# (b) No process ID in it, two minutes old: taken over.
+rm -rf "$LK"; mkdir "$LK"; backdate "$LK" 120
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && "$(nruns)" == 3 ]] || fail "criterion 7(b): exit $st, runs $(nruns)"
+# (c) No process ID in it, made now: refused.
+rm -rf "$LK"; mkdir "$LK"; n0="$(refusals)"
+st=0; e="$(run 2>&1 >/dev/null)" || st=$?
+[[ "$st" == 1 && "$e" == "brief is already running (process unknown): this run started nothing" && "$(nruns)" == 3 && "$(refusals)" == $((n0 + 1)) ]] || fail "criterion 7(c): exit $st, runs $(nruns): $e"
+rm -rf "$LK"
+# (d) The lock comes before the quiet check: a run that would be skipped is refused, and BRIEF.md is not touched.
+jset "$JF" QUIET_DAYS '"6"'; jcommit "quiet"
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 ]] || fail "criterion 7(d): the full run exits $st"
+touch -t 202601010000 "$JW/BRIEF.md"
+sleep 30 & sp=$!; rm -rf "$LK"; mkdir "$LK"; echo "$sp" > "$LK/pid"
+st=0; o="$(run 2>&1)" || st=$?
+kill "$sp" 2>/dev/null || true; wait "$sp" 2>/dev/null || true; rm -rf "$LK"
+[[ "$st" == 1 ]] && grep -qF "brief is already running (process $sp): this run started nothing" <<<"$o" && ! grep -q skipped <<<"$o" && jan1 "$JW/BRIEF.md" || fail "criterion 7(d): exit $st: $o"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "jobs report the truth C: what the status says" ""
+s109() {
+JW="$T/jwc"; R="$T/runs-c"; jw_new "$JW" "$R"
+JF="$JW/jobs/brief.job" JD="$HOME/$LOGS/jwc"
+run() { "$JW/bin/job.sh" run "${1:-brief}"; }   # scheduled
+lastblock() { awk '/^=== /{ b = "" } { b = b $0 "\n" } END { printf "%s", b }' "$JD/${1:-brief}.log"; }
+# Criterion 8: a failed after-step fails the job. (a) Scheduled.
+jset "$JF" QUIET_DAYS '"6"'; jset "$JF" RESULT '"BRIEF.md"'; jset "$JF" AFTER '"exit 3"'; approve "$JW" jobs/brief.job AFTER; jcommit "after fails"
+st=0; run >/dev/null 2>&1 || st=$?
+[[ "$st" == 1 && ! -e "$JD/brief.quiet" ]] && grep -qF 'after-step failed: see the lines above' <<<"$(lastblock)" || fail "criterion 8(a): exit $st: $(lastblock)"
+n="$(nruns)"; run >/dev/null 2>&1 || true; [[ "$(nruns)" == $((n + 1)) ]] || fail "criterion 8(a): the next run was skipped"
+# (b) By hand.
+o="$(in_tty_typed "" "$T/st" "$JW/bin/job.sh" run brief | tr -d '\r')"
+last="$(grep . <<<"$o" | tail -1)"
+[[ "$(cat "$T/st" 2>/dev/null)" == 1 && "$last" == *"(exit 1). Open BRIEF.md." ]] || fail "criterion 8(b): status $(cat "$T/st" 2>/dev/null), last line [$last]"
+# (c) Control: an after-step that succeeds.
+jset "$JF" AFTER '"true"'; approve "$JW" jobs/brief.job AFTER; jcommit "after true"
+st=0; run >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && -f "$JD/brief.quiet" ]] || fail "criterion 8(c): exit $st"
+n="$(nruns)"; o="$(run 2>&1)" || true
+grep -qF 'brief skipped: nothing changed' <<<"$o" && [[ "$(nruns)" == "$n" ]] || fail "criterion 8(c): not skipped: $o"
+# Criterion 9: a COMMAND job is stopped at TIMEOUT, with what it started.
+SL="323.$$"; left() { pgrep -f "sleep 323\.$$([^0-9]|\$)" >/dev/null; }
+CF="$JW/jobs/cmd.job"
+printf '%s\n' "COMMAND='sleep $SL; touch \"$T/cmd-done\"'" 'TIMEOUT="2"' > "$CF"; approve "$JW" jobs/cmd.job COMMAND; jcommit "cmd"
+limitcheck() {  # (a) and (d)
+  local s=$SECONDS st=0
+  CABINET_TEST_MINUTE=1 L run-limited 15 "$JW/bin/job.sh" run cmd >/dev/null 2>&1 || st=$?
+  ((st == 1 && SECONDS - s < 10)) && grep -qF "stopped after 2 min: the job's time limit" "$JD/cmd.log" || fail "criterion 9($1): exit $st after $((SECONDS - s)) s"
+  sleep 3; ! left && [[ ! -e "$T/cmd-done" ]] || fail "criterion 9($1): the command's sleep still runs, or it went on"
+}
+limitcheck a
+# (b) No limit: it runs to its end.
+printf '%s\n' "COMMAND='sleep 1; touch \"$T/cmd-done\"'" 'TIMEOUT="0"' > "$CF"; approve "$JW" jobs/cmd.job COMMAND; jcommit "cmd 0"
+st=0; run cmd >/dev/null 2>&1 || st=$?; [[ "$st" == 0 && -e "$T/cmd-done" ]] || fail "criterion 9(b): exit $st"
+rm -f "$T/cmd-done"
+# (c) The pipeline job keeps no limit. Its own workspace: config turns it on only with a runner whose cost it counts.
+"$F" new "$T/jwc-p" --yes >/dev/null; o="$("$F" -C "$T/jwc-p" config --pipeline small --pipeline-limit 5 --apply 2>&1)" || true
+grep -qx 'TIMEOUT="0"' "$T/jwc-p/jobs/pipeline.job" 2>/dev/null || fail "criterion 9(c): $o"
+# (d) No TIMEOUT line: CABINET_JOB_TIMEOUT.
+printf '%s\n' "COMMAND='sleep $SL; touch \"$T/cmd-done\"'" > "$CF"; approve "$JW" jobs/cmd.job COMMAND
+jset "$JW/cabinet.env" CABINET_JOB_TIMEOUT '"2"'; jcommit "cmd, limit from cabinet.env"
+limitcheck d
+jset "$JW/cabinet.env" CABINET_JOB_TIMEOUT '60'; rm "$CF"; jcommit "no cmd"
+# Criterion 10: RESULT outside the workspace. Every run full, nothing outside read or touched.
+jset "$JF" AFTER; jset "$JF" QUIET_DAYS '"6"'
+printf 'keep\n' > "$T/outside.md"; touch -t 202601010000 "$T/outside.md"; cp "$T/outside.md" "$T/outside.snap"
+notes() { grep -cF "brief: RESULT \"$1\" is not a file inside the workspace, so QUIET_DAYS does not apply: a full run" "$JD/brief.log" || true; }
+twice() {  # twice <RESULT value, or none> <the value the line names> <what>: two scheduled runs, both full
+  if [[ "$1" == none ]]; then jset "$JF" RESULT; else jset "$JF" RESULT "\"$1\""; fi; jcommit "$3"
+  local n r0; n="$(notes "$2")" r0="$(nruns)"
+  run >/dev/null 2>&1 || true; run >/dev/null 2>&1 || true
+  [[ "$(nruns)" == $((r0 + 2)) && "$(notes "$2")" == $((n + 2)) ]] || fail "criterion 10 ($3): runs grew by $(( $(nruns) - r0 )), the line $(( $(notes "$2") - n )) times"
+  cmp -s "$T/outside.md" "$T/outside.snap" && jan1 "$T/outside.md" || fail "criterion 10 ($3): $T/outside.md changed"
+}
+twice ../outside.md ../outside.md "a path up"
+twice "$T/outside.md" "$T/outside.md" "a full path"
+rm "$JW/BRIEF.md"; ln -s "$T/outside.md" "$JW/BRIEF.md"; twice BRIEF.md BRIEF.md "a link to outside"
+rm "$JW/BRIEF.md"; twice none "the log" "no RESULT line"
+twice BRIEF.md BRIEF.md "BRIEF.md not written yet"; [[ ! -e "$JW/BRIEF.md" && ! -L "$JW/BRIEF.md" ]] || fail "criterion 10(c): BRIEF.md was made"
+# Controls: a plain file, and a link to it inside the workspace: the second run is skipped.
+quietpair() {
+  jset "$JF" RESULT "\"$1\""; jcommit "$2"; local r0; r0="$(nruns)"
+  run >/dev/null 2>&1 || true; run >/dev/null 2>&1 || true
+  [[ "$(nruns)" == $((r0 + 1)) ]] || fail "criterion 10, control ($2): runs grew by $(( $(nruns) - r0 ))"
+}
+printf '# Brief\n' > "$JW/BRIEF.md"; quietpair BRIEF.md "a plain file"
+ln -s BRIEF.md "$JW/r.md"; quietpair r.md "a link inside"
   return 0   # a last "check && fail" line must not end the run
 }
 

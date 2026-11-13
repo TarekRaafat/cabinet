@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: settings, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -748,6 +748,22 @@ function fillTemplate(file) {
 }
 // slug <text>: one "-" for each character that is not a letter or digit (Claude Code's folder names).
 function slug(text) { process.stdout.write(text.replace(/[^A-Za-z0-9]/gu, "-")); }
+// inside-file <folder> <path>: exit 0 only when the path is a plain path (the test repos() in lib.sh gives a
+// local-only file: change both together), names a file that exists, and that file, links followed, is
+// inside the folder, links followed. A job's RESULT counts for QUIET_DAYS only then.
+// ponytail: checked before the touch, not at it; only a process on this machine could swap a link in between.
+function insideFile(folder, p) {
+  p = p || "";
+  const plain = p !== "" && !/^[/~]/.test(p) && !/[\][*?\\\x00-\x1f\x7f]/.test(p) && !p.includes("//") && !p.endsWith("/") && !/(^|\/)\.\.?(\/|$)/.test(p);
+  let ok = false;
+  if (plain) {
+    try {
+      const root = fs.realpathSync(folder), real = fs.realpathSync(path.join(folder, p));
+      ok = fs.statSync(real).isFile() && real.startsWith(root + path.sep);
+    } catch (e) { /* missing or unreadable: not inside */ }
+  }
+  process.exit(ok ? 0 : 1);
+}
 
 // ---- Time limits ----------------------------------------------------------------------------
 // watchdog <seconds> <pid> [<mark file>]: after the seconds, write "stopped" to the mark file, TERM
@@ -2132,7 +2148,7 @@ const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
-  "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
+  "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
   "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck, "week-start": weekStart,
 };
