@@ -452,7 +452,7 @@ data_dirs() {
   } | while IFS= read -r d; do abspath "$d"; echo; done | awk '!seen[$0]++'
 }
 
-has() { [[ " $1 " == *" $2 "* ]]; }   # has "<words>" <word>
+has() { [[ "$2" != *" "* && " $1 " == *" $2 "* ]]; }   # has "<words>" <word>: one word, so "a b" is never in "a b c"
 
 # The kit's builder roles. Each is built when it owns a repo in the team table of AGENTS.md,
 # so the table is the one record of who builds what; CABINET_ROLES holds the other roles.

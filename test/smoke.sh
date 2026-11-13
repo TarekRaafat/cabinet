@@ -7962,7 +7962,7 @@ mp_known() { local x; x="$(grep -o '\[--model\] \[[^]]*\]' "$T/claude.args" | se
 
 section "model per task A: tiers set and checked" ""
 s110() {
-local MP FS MLOG out e
+local MP FS MLOG out e x
 mp_ws mpa
 # Criterion 1: set, removed, refused with cabinet.env unchanged.
 mp_tiers
@@ -7973,6 +7973,8 @@ mpc config --tier strong off >/dev/null && ! grep -q '^CABINET_TIER_STRONG=' "$M
 cp "$MP/cabinet.env" "$T/mpa.env"
 e="$(mpc config --tier huge "m" 2>&1 >/dev/null)" && fail "criterion 1: --tier huge was taken"
 grep -qF "light, standard, strong" <<<"$e" && cmp -s "$MP/cabinet.env" "$T/mpa.env" || fail "criterion 1: --tier huge: $e"
+x=0; e="$(mpc config --tier "light standard" "m" 2>&1 >/dev/null)" || x=$?
+[[ "$x" == 2 ]] && grep -qF "light, standard, strong" <<<"$e" && cmp -s "$MP/cabinet.env" "$T/mpa.env" || fail "criterion 1: --tier 'light standard' (exit $x): $e"
 for v in "--yolo" "m x;y" "m a b"; do
   e="$(mpc config --tier strong "$v" 2>&1 >/dev/null)" && fail "criterion 1: --tier strong '$v' was taken"
   [[ -n "$e" ]] && cmp -s "$MP/cabinet.env" "$T/mpa.env" || fail "criterion 1: --tier strong '$v': $e"
@@ -8029,6 +8031,8 @@ i="$(mp_work --model strong)"; [[ "$(mp_model_line "$i")" == "- Model: strong (s
 cp "$MP/HANDOFFS.md" "$T/mpb.h"
 mph add --from chief-of-staff --to app --changed c --needed n --small --model huge "Huge" >/dev/null 2>&1 && fail "criterion 3: --model huge was taken"
 cmp -s "$MP/HANDOFFS.md" "$T/mpb.h" || fail "criterion 3: --model huge changed HANDOFFS.md"
+x=0; mph add --from chief-of-staff --to app --changed c --needed n --small --model "light standard" "Two" >/dev/null 2>&1 || x=$?
+[[ "$x" == 2 ]] && cmp -s "$MP/HANDOFFS.md" "$T/mpb.h" || fail "criterion 3: --model 'light standard' (exit $x) changed HANDOFFS.md or was taken"
 # Criterion 4: the run uses the line.
 a="$(mp_work)"; mp_mark; mph run "$a" >/dev/null 2>&1 || fail "criterion 4: run $a"
 mp_is --model m-std web qa security; mp_is --effort none web qa security; mp_is --model m-light design-lead; mp_is --effort low design-lead
@@ -8135,6 +8139,9 @@ s114() {
 local MP FS MLOG a b s x n1 n2 n3 tsv
 mp_ws mpe; mp_tiers
 tsv="$MLOG/spend.tsv"; mkdir -p "$MLOG"
+# No run recorded yet (no spend.tsv): no rows, exit 0.
+rm -f "$tsv"; s=""; x=""; s="$(mpc job list --by-model)" && x="$(mpc job list --by-model --json)" && [[ "$s" == "No runs this week." && "$x" == "[]" ]] \
+  || fail "criterion 11: --by-model with no spend.tsv (exit $?): $s / $x"
 printf '%s\tbrief\tclaude\t1.00\t\t\t\n' "$(date +%s)" > "$tsv"   # a row from 0.5.1: seven columns
 a="$(mp_work)"; (cd "$MP" && FAKE_USD=0.50 mpf bin/handoff.sh run "$a" >/dev/null 2>&1) || fail "criterion 11: run $a"
 b="$(mp_work)"; mp_line "$b" "- Model: strong (default)"; (cd "$MP" && FAKE_USD=0.50 mpf bin/handoff.sh run "$b" >/dev/null 2>&1) || fail "criterion 11: run $b"

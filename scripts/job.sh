@@ -33,7 +33,7 @@ j_list() {
     # One pass over this week's rows; dollars counted as spend_since counts them.
     LC_ALL=C awk -F'\t' -v s="$ws" '$1 >= s && $4 ~ /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/ {
         k = (NF < 9 ? "unknown\t" : ($8 == "" ? "tool-default" : $8) "\t" $9); t[k] += $4 }
-      END { for (k in t) { split(k, x, "\t"); o = (x[1] == "unknown" ? 2 : x[1] == "tool-default" ? 1 : 0); printf "%d\t%s\t%s\t%.2f\n", o, x[1], x[2], t[k] } }' "$SPEND" 2>/dev/null \
+      END { for (k in t) { split(k, x, "\t"); o = (x[1] == "unknown" ? 2 : x[1] == "tool-default" ? 1 : 0); printf "%d\t%s\t%s\t%.2f\n", o, x[1], x[2], t[k] } }' "$([[ -f "$SPEND" ]] && echo "$SPEND" || echo /dev/null)" 2>/dev/null \
       | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 -k3,3 | cut -f2- \
       | if ((json)); then json -R '$.map((l) => l.split("\t")).map((r) => ({model: r[0] == "tool-default" ? null : r[0], effort: r[1] || null, cost_this_week_usd: num(r[2])}))'
         else awk -F'\t' 'BEGIN { n = 0 } { n++; printf "%s %s $%s\n", $1, ($2 == "" ? "-" : $2), $3 } END { if (!n) print "No runs this week." }'; fi
