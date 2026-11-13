@@ -559,6 +559,20 @@ builds_repos() {
 # run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused or ready to
 # push), or nothing; for handoff run --scheduled and spec run.
 run_result() { grep -E '^(Stopped|Paused|.* is ready to push)' | tail -1; }
+# Run estimates (lib.js estimate): worked out from the log folder each time one is shown; nothing is stored,
+# and a failure here prints nothing and never stops a run. A run's log gains "run started" before its first
+# step and "<role> took <D>" after each; an Expected line goes into the log as it is, with no "=== ", so it is
+# never read as a step. The run's start is RUN_T0, set by the run.
+estimate() { node "$LIBJS" estimate "$WS" "$LOGDIR" "$@" 2>/dev/null || true; }
+# est_begin <log> <small|spec|specrun>: once per run, before its first step: "run started" logged and the run's
+# Expected line printed.
+est_begin() { [[ -z "${EST_BEGUN:-}" ]] || return 0; EST_BEGUN=1; echo "=== $(date '+%F %T') run started" >>"$1"; estimate run "$2" "$CABINET_JOB_TIMEOUT"; }
+# est_step <log, or empty in a dry run> <small|spec> <start> <step line>: the step's Expected line, printed and logged.
+est_step() { local x; x="$(estimate step "$2" "$CABINET_JOB_TIMEOUT" "$3" "$4")"; [[ -n "$x" ]] || return 0; printf '%s\n' "$x"; [[ -z "$1" ]] || printf '%s\n' "$x" >>"$1"; }
+# est_took <log> <role> <start>: after a step, "  took <D>" printed and "<role> took <D>" logged.
+est_took() { local d; d="$(estimate took "$3")"; echo "  took $d"; echo "=== $(date '+%F %T') $2 took $d" >>"$1"; }
+# run_time <line> <start>: the run's last line ending " Run time: <D>.", after a "." added when it has none.
+run_time() { local l="$1"; [[ "$l" == *. ]] || l="$l."; printf '%s Run time: %s.' "$l" "$(estimate took "$2")"; }
 # guarded_paths: "<repo>\t<path>" for every path a small task must not touch: the files contracts live
 # in ("Source of truth" in the contracts table of AGENTS.md) and the paths under "Hard to undo", each
 # written as `<repo>/<path>`.

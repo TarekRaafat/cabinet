@@ -1906,9 +1906,9 @@ cmd_digest() {
     n=$((n + 1))
     [[ -f "$ws/.cabinet/version" ]] || { rows+="$slug"$'\037'""$'\037'"$(printf %s "$ws" | tt)"$'\037'"gone"$'\037\037\037\037\037\037\037\n'; continue; }
     # Read as text with this kit's code (ws_facts): nothing of that workspace runs.
-    local f_problems f_checked f_shown
-    project="" budget="" waiting="" spent=""
-    { IFS= read -r project; IFS= read -r budget; IFS= read -r waiting; IFS= read -r spent; IFS= read -r f_problems; IFS= read -r f_checked; IFS= read -r f_shown; } < <(ws_facts "$slug" "$ws") || true
+    local f_problems f_checked f_shown agent
+    project="" budget="" waiting="" spent="" agent=""
+    { IFS= read -r project; IFS= read -r budget; IFS= read -r waiting; IFS= read -r spent; IFS= read -r f_problems; IFS= read -r f_checked; IFS= read -r f_shown; IFS= read -r agent; } < <(ws_facts "$slug" "$ws") || true
     project="$(printf '%s' "$project" | tt)" spent="$(printf '%s' "$spent" | tt)" budget="$(printf '%s' "$budget" | tt)"
     wsd="$(printf %s "$ws" | tt)"; brief="$ws/BRIEF.md" written="" iso="" stale="" queue="" actions=""
     if [[ -f "$brief" ]]; then
@@ -1921,7 +1921,7 @@ cmd_digest() {
       queue="${queue//"$rel"/$to}" actions="${actions//"$rel"/$to}"
     fi
     # One record per workspace; \002 stands for a line break inside a field.
-    rows+="$slug"$'\037'"$project"$'\037'"$wsd"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\n'
+    rows+="$slug"$'\037'"$project"$'\037'"$wsd"$'\037'"ok"$'\037'"$written"$'\037'"$iso"$'\037'"$stale"$'\037'"${queue//$'\n'/$'\002'}"$'\037'"${actions//$'\n'/$'\002'}"$'\037'"$waiting"$'\037'"$spent"$'\037'"$budget"$'\037'"$agent"$'\n'
   done < <(known_workspaces)
 
   if ((json)); then
@@ -1935,7 +1935,7 @@ cmd_digest() {
 
   # The counts a notification gives: numbered queue items, action lines, waiting handoffs, late briefs.
   local decisions=0 acts=0 handoffs=0 late=0 needy=0 tight=0 total=0.00 reported=0 exists q a c
-  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget; do
+  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget agent; do
     [[ -n "$slug" && "$exists" == ok ]] || continue
     q="$(printf '%s\n' "${queue//$'\002'/$'\n'}" | grep -cE '^[0-9]+\. ' || true)"
     a="$(printf '%s\n' "${actions//$'\002'/$'\n'}" | grep -cE '^[-*] ' || true)"
@@ -1978,13 +1978,13 @@ cmd_digest() {
 budget_pct() { awk -v w="$1" -v b="$2" 'BEGIN { printf "%d", (b > 0 ? w * 100 / b : 100) }'; }   # budget_pct <spent> <budget>
 
 digest_text() {  # digest_text <count> <rows>
-  local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting spent budget pct
+  local n=$1 rows=$2 slug project ws exists written iso stale queue actions waiting spent budget agent pct
   ((n)) || { echo "${S_B}No cabinet workspaces on this machine yet.${S_Z} Start one: cabinet new, or cabinet init in an existing project."; return 0; }
   # Styled (platform.sh): headings bold without "== " and their folders dim, the date of the brief dim,
   # what waits on the owner yellow, notes blue.
   local hd="== " h
   [[ -z "$S_B" ]] || hd=""
-  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget; do
+  while IFS=$'\037' read -r slug project ws exists written iso stale queue actions waiting spent budget agent; do
     [[ -n "$slug" ]] || continue
     h="${S_D}(${ws/#$HOME/$TILDE})${S_Z}"
     if [[ "$exists" != ok ]]; then echo "$hd${S_B}$slug: folder gone${S_Z} $h${S_B}; cabinet list says how to free the slug${S_Z}"; echo; continue; fi
@@ -2002,11 +2002,13 @@ digest_text() {  # digest_text <count> <rows>
     ((${waiting:-0})) && { echo; echo "${S_Y}$waiting handoff(s) wait on you${S_Z}: cd ${ws/#$HOME/$TILDE} && cabinet handoff list owner"; }
     if [[ -n "$spent" ]]; then
       echo
-      if [[ -z "$budget" ]]; then echo "Agent runs this week: \$$spent, no budget set."
+      # The week's agent time (lib.js estimate), from the took lines in its log folder: kit-made words only.
+      agent="${agent:+, $agent of agent time}"
+      if [[ -z "$budget" ]]; then echo "Agent runs this week: \$$spent$agent, no budget set."
       else
         pct="$(budget_pct "$spent" "$budget")"
-        if ((pct >= 80)); then echo "Agent runs this week: ${S_U}\$$spent of the \$$budget budget ($pct%)${S_Z}. What each job cost: cd ${ws/#$HOME/$TILDE} && cabinet job list"
-        else echo "Agent runs this week: \$$spent of the \$$budget budget ($pct%)."; fi
+        if ((pct >= 80)); then echo "Agent runs this week: ${S_U}\$$spent of the \$$budget budget ($pct%)${S_Z}$agent. What each job cost: cd ${ws/#$HOME/$TILDE} && cabinet job list"
+        else echo "Agent runs this week: \$$spent of the \$$budget budget ($pct%)$agent."; fi
       fi
     fi
     echo
@@ -2055,13 +2057,13 @@ digest_schedule() {
 }
 
 # ws_facts <slug> <ws>: another workspace's facts, read as text with this kit's code (lib.js ws-facts), one
-# per line: project, budget, waiting on the owner, dollars this week, doctor problems, its time (ISO), and
-# that time as people read it. Nothing of that workspace runs: none of its bin/ scripts, lib.sh or
+# per line: project, budget, waiting on the owner, dollars this week, doctor problems, its time (ISO),
+# that time as people read it, and the week's agent time (as "3 h 10 min", or empty when it has none). Nothing of that workspace runs: none of its bin/ scripts, lib.sh or
 # node_modules. The slug and log folder come from the claim, never from its cabinet.env.
 ws_facts() {
   local d t; d="$(sed -n 's/^SPEND_DOLLARS="\(.*\)"$/\1/p' "$KIT/scripts/lib.sh")" t="$(sed -n 's/^SPEND_TOKENS="\(.*\)"$/\1/p' "$KIT/scripts/lib.sh")"
   node "$LIBJS" ws-facts "$2" "$LOGROOT/$1" "$d" "$t" 2>/dev/null \
-    | json -r '[$.project, $.budget, $.waiting ?? "", $.spent ?? "", $.doctor_problems ?? "", $.doctor_checked ?? "", $.doctor_shown].map((x) => String(x).replace(/[\n\u001f]/g, " ")).join("\n")' 2>/dev/null
+    | json -r '[$.project, $.budget, $.waiting ?? "", $.spent ?? "", $.doctor_problems ?? "", $.doctor_checked ?? "", $.doctor_shown, $.agent_time ?? ""].map((x) => String(x).replace(/[\n\u001f]/g, " ")).join("\n")' 2>/dev/null
 }
 # Every workspace on this machine, from the slug claims in <logs>/<slug>/workspace
 # (written by setup and bootstrap): its version, what waits on the owner, the count of its last

@@ -620,7 +620,7 @@ for item in ${items[@]+"${items[@]}"}; do
 done
 ((${#items[@]})) || lines+=("- Nothing to move: no work the setting ($CABINET_PIPELINE) allows is waiting.")
 spent="$(spend_since "$CABINET_RUN_SINCE")"
-report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for one run."
+report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for one run, in $(estimate took "$CABINET_RUN_SINCE")."
 }
 
 h_run() {
@@ -670,20 +670,32 @@ if ((dry == 0)); then
   RUN_LOCK="$lock" RUN_KIND=handoff RUN_WORK="$id"; run_note "" "" ""
 fi
 SPEND_LABEL="$id"
+# What kind of work it is, for its estimates (lib.js estimate), and when the run began, for its run time.
+est_work=spec; [[ "$(json -r '$.small' <<<"$w")" != true ]] || est_work=small
+RUN_T0="$(date +%s)"
 # A stop that needs the owner is remembered, so a scheduled run does not pay for it again; a run by
 # hand clears it, the owner having settled it.
 mark="$LOGDIR/run-$id.stopped"
 ((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
 spent() { local c; c="$(json -r --arg i "$id" '$[$i]?.cost_usd ?? undefined' <<<"$(readiness)")"; [[ -n "$c" ]] && printf ', $%.2f so far' "$c"; return 0; }
-stop() { say "Stopped: $1"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
+# ended <line>: the run's last line, with its run time outside a dry run (lib.sh run_time).
+ended() { if ((dry)); then printf '%s' "$1"; else run_time "$1" "$RUN_T0"; fi; }
+# The stopped mark keeps stop's own words, with no run time: the scheduled run's skip line quotes it.
+stop() { say "$(ended "Stopped: $1")"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
-  if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
+  if run_over_limit; then say "$(ended "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here")"; exit 3; fi
+  ((dry)) || est_begin "$log" "$est_work"
+  local t0 st=0
   say "$1: $2"
-  ((dry)) && exit 0
+  t0="$(date +%s)"   # after the logged line, so a finish time counted from it is never a minute early
+  if ((dry)); then est_step "" "$est_work" "$t0" "$1: $2"; exit 0; fi
   tier_for "$1"
+  est_step "$log" "$est_work" "$t0" "$1: $2"
   AGENT=$1 PROMPT=$3
-  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || st=$?
+  est_took "$log" "$1" "$t0"
+  ((st == 0)) || stop "$1 did not finish (exit $st): see the log"
 }
 # tier_for <role>: the tier, model and effort run_agent uses for the agent about to start (RUN_TIER,
 # RUN_MODEL, RUN_EFFORT, RUN_KEY), worked out again before each one, and its "Model:" line in the log.
@@ -817,7 +829,7 @@ while :; do
     [[ -n "$x" ]] || stop "${vs// /, } needs no review, so there is nothing to run"
     u="$(json -r '$.uncovered.join(", ")' <<<"$bc")"
     [[ -z "$u" ]] || stop "$id names $u, which no passed review covers: the builder hands on with --depends-on $id"
-    say "$id is ready to push: every reviewer passed $x$(spent). Push it from your terminal; chief-of-staff closes $x once it is pushed."
+    say "$(ended "$id is ready to push: every reviewer passed $x$(spent). Push it from your terminal; chief-of-staff closes $x once it is pushed.")"
     rm -f "$mark"; exit 0
   fi
   r="$(json -c --arg v "$v" '$[$v]' <<<"$rd")"

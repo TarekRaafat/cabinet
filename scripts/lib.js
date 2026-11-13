@@ -2191,6 +2191,202 @@ function showCommand() {
   put(1, ls.map((l) => "    " + l).join("\n") + "\n  (" + count + " line" + (count === 1 ? "" : "s") + ")\n");
 }
 
+// Run estimates (docs/commands.md, "handoff run"): how long a step or a run should take, worked out from
+// this machine's log folder each time it is asked; nothing is stored. Only lines in the kit's exact formats
+// are read ("=== YYYY-MM-DD HH:MM:SS " and a step, "run started", "<role> took <D>", a run's last line, a
+// job's start and its took line), a role matching role_ok and a job name the job-name check; any other line
+// (Model:, running <ID>, agent output, an impossible date) is skipped. A duration comes from two logged
+// times, never from the text of a took line. Nothing read from a log reaches a shell.
+// ponytail: every log is read whole on each call; a cap on lines read if a log folder grows large.
+const EST_ROLE = "[a-z0-9][a-z0-9-]*";
+const EST_D = "(?:under 1 min|[0-9]+ min|[0-9]+ h(?: [0-9]+ min)?)";
+const EST_STEP = new RegExp("^(" + EST_ROLE + "): (builds|fixes|verifies|routes|plans|reviews the plan)(?: (.*))?$");
+const EST_TOOK = new RegExp("^(" + EST_ROLE + ") took " + EST_D + "$");
+const EST_DNF = new RegExp("^Stopped: (" + EST_ROLE + ") did not finish \\(exit ([0-9]+)\\)");
+const EST_END = /^(Stopped: |Paused: |\S+ is ready to push(?=[:. ]|$))/;
+// The kit's typical times in minutes, typical and upper end (measured on Cabinet's own runs, 9 Nov 2026).
+const EST_KIT = { builds: [9, 60], fixes: [15, 45], "code-reviewer verifies": [2, 6], "qa verifies": [4, 8], "security verifies": [2, 47],
+  "design-lead verifies": [2, 2], "code-reviewer verifies again": [2, 4], "qa verifies again": [3, 29], "security verifies again": [37, 56], "run small": [28, 146] };
+function estStamp(l) {
+  const m = /^=== ([0-9]{4})-([0-9]{2})-([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2}) (.*)$/.exec(l);
+  if (!m) return null;
+  const v = m.slice(1, 7).map(Number), d = new Date(v[0], v[1] - 1, v[2], v[3], v[4], v[5]);
+  if (d.getFullYear() !== v[0] || d.getMonth() !== v[1] - 1 || d.getDate() !== v[2] || d.getHours() !== v[3] || d.getMinutes() !== v[4] || d.getSeconds() !== v[5]) return null;
+  return { t: d.getTime() / 1000, rest: m[7] };
+}
+// estWord <step line text>: "<role>\t<word>" (word "verifies again" when the word after the ID is again), or null.
+function estWord(rest) {
+  const m = EST_STEP.exec(rest);
+  if (!m) return null;
+  return { role: m[1], word: m[2] === "verifies" && /^\S+ again(?: |$)/.test(m[3] || "") ? "verifies again" : m[2] };
+}
+// A run log: its steps {role, word, start, end, took}, its finished runs {start, end} and its took lines {at, secs}.
+function estRunLog(text) {
+  const steps = [], runs = [], tooks = [];
+  let open = null, last = null, runStart = null;
+  const close = (t) => { if (open) { open.end = t; if (t >= open.start) steps.push(open); open = null; } };
+  for (const l of text.split("\n")) {
+    const s = estStamp(l);
+    if (!s) continue;
+    let m;
+    if (s.rest === "run started") { close(s.t); last = null; runStart = s.t; }
+    else if ((m = estWord(s.rest))) { close(s.t); last = null; if (runStart === null) runStart = s.t; open = { role: m.role, word: m.word, start: s.t }; }
+    else if ((m = EST_TOOK.exec(s.rest))) {
+      if (open && open.role === m[1] && s.t >= open.start) { open.end = s.t; open.took = true; steps.push(open); tooks.push({ at: s.t, secs: s.t - open.start }); last = open; }
+      open = null;
+    } else if (EST_END.test(s.rest)) {
+      const dnf = EST_DNF.exec(s.rest), cut = dnf && dnf[2] !== "124";
+      if (open) { if (cut && dnf[1] === open.role) open.cut = true; close(s.t); }
+      else if (last && cut && dnf[1] === last.role) last.cut = true;
+      last = null;
+      if (runStart !== null && / is ready to push/.test(s.rest) && !/^(Stopped|Paused): /.test(s.rest) && s.t >= runStart) runs.push({ start: runStart, end: s.t });
+      runStart = null;
+    }
+  }
+  return { steps: steps.filter((x) => !x.cut), runs, tooks };
+}
+// A job's log: its steps (exit 0 or 124), its finished runs (exit 0) and its took lines.
+function estJobLog(text, job) {
+  const steps = [], runs = [], tooks = [], q = escapeRe(job);
+  const startRe = new RegExp("^" + q + " \\(.*\\)$"), tookRe = new RegExp("^" + q + " took " + EST_D + " \\(exit ([0-9]+)\\)$");
+  let start = null;
+  for (const l of text.split("\n")) {
+    const s = estStamp(l);
+    if (!s) continue;
+    let m;
+    if (startRe.test(s.rest)) start = s.t;
+    else if ((m = tookRe.exec(s.rest)) && start !== null) {
+      if (s.t >= start) {
+        tooks.push({ at: s.t, secs: s.t - start });
+        if (m[1] === "0" || m[1] === "124") steps.push({ start, end: s.t });
+        if (m[1] === "0") runs.push({ start, end: s.t });
+      }
+      start = null;
+    }
+  }
+  return { steps, runs, tooks };
+}
+const estRead = (p) => { try { return read(p); } catch (e) { return ""; } };
+// estPast <ws> <logdir>: every past step and run here, each with its kind, and the took lines that time agent work.
+function estPast(ws, logdir) {
+  const steps = [], runs = [], tooks = [];
+  let names = [];
+  try { names = fs.readdirSync(logdir).sort(); } catch (e) { return { steps, runs, tooks }; }
+  let work = null;
+  const workOf = (id) => {
+    if (!work) {
+      work = {};
+      const files = [path.join(ws, "HANDOFFS.md")];
+      try { for (const f of fs.readdirSync(path.join(ws, "handoffs")).sort()) if (/^archive-.*\.md$/.test(f)) files.push(path.join(ws, "handoffs", f)); } catch (e) { /* none */ }
+      // As the handoff reader reads them: HANDOFFS.md under "## Open", an archive whole.
+      files.forEach((f, k) => {
+        let es = [];
+        try { es = handoffEntries(read(f).split("\n"), k > 0); } catch (e) { return; }
+        for (const e of es) if (!(e.id in work)) work[e.id] = e.lines.some((l) => l.trim() === "- Size: small") ? "small" : e.lines.some((l) => l.startsWith("- Spec:") && l.slice(7).trim()) ? "spec" : "";  // as readiness reads them
+      });
+    }
+    return work[id] || "";
+  };
+  for (const n of names) {
+    const m = /^run-(.+)\.log$/.exec(n);
+    if (!m) continue;
+    const h = /^H-[0-9]{8}-[0-9]+$/.test(m[1]), w = h ? workOf(m[1]) : "spec";
+    const r = estRunLog(estRead(path.join(logdir, n)));
+    tooks.push(...r.tooks);
+    if (!w) continue;
+    for (const s of r.steps) steps.push({ kind: s.role + " " + s.word + "\t" + w, role: s.role, word: s.word, start: s.start, secs: s.end - s.start });
+    for (const x of r.runs) runs.push({ kind: "run " + (h ? w : "specrun"), start: x.start, secs: x.end - x.start });
+  }
+  let jobs = [];
+  try { jobs = fs.readdirSync(path.join(ws, "jobs")).filter((f) => f.endsWith(".job")).map((f) => f.slice(0, -4)).filter(jobNameOk).sort(); } catch (e) { /* none */ }
+  for (const j of jobs) {
+    const r = estJobLog(estRead(path.join(logdir, j + ".log")), j);
+    for (const s of r.steps) steps.push({ kind: "job " + j, start: s.start, secs: s.end - s.start });
+    for (const x of r.runs) runs.push({ kind: "job " + j, start: x.start, secs: x.end - x.start });
+    let agent = false;
+    try { agent = readSettings(path.join(ws, "jobs", j + ".job"), true).known.some((k) => k.key === "AGENT" && k.value !== ""); } catch (e) { /* unreadable */ }
+    if (agent) tooks.push(...r.tooks);
+  }
+  return { steps, runs, tooks };
+}
+// The typical time and upper end (nearest rank) of the last 20 of a kind, newest first, once there are 5.
+function estStats(list, kind) {
+  const v = list.filter((x) => x.kind === kind).sort((a, b) => b.start - a.start).slice(0, 20).map((x) => x.secs);
+  const s = [...v].sort((a, b) => a - b), at = (p) => s[Math.ceil(p * s.length) - 1];
+  return { n: v.length, mid: v.length >= 5 ? at(0.5) : null, up: v.length >= 5 ? at(0.9) : null };
+}
+// A duration as people read it: "under 1 min" in a took line (took), "1 min" in an Expected line, else whole minutes.
+function estDur(secs, took) {
+  if (secs < 60) return took ? "under 1 min" : "1 min";
+  const m = Math.floor((secs + 30) / 60), h = Math.floor(m / 60);
+  return m < 60 ? m + " min" : h + " h" + (m % 60 ? " " + (m % 60) + " min" : "");
+}
+function estClock(t) {
+  const d = new Date(t * 1000), now = new Date();
+  if (d.toDateString() !== now.toDateString()) return houseTime(d);
+  return ((d.getHours() + 11) % 12 + 1) + ":" + String(d.getMinutes()).padStart(2, "0") + " " + (d.getHours() < 12 ? "AM" : "PM");
+}
+// The part of an Expected line after "about": the range, the finish times and the source.
+function estRange(st, kit, start, cap) {
+  let mid, up, src;
+  if (st.mid !== null) { mid = st.mid; up = st.up; src = "from the last " + st.n + " like it here"; }
+  else if (kit) { mid = kit[0] * 60; up = kit[1] * 60; src = "the kit's typical time; " + (st.n ? st.n + " like it here so far" : "none like it here yet"); }
+  else return null;
+  let capped = false;
+  if (cap > 0 && up > cap) { up = cap; capped = true; }
+  if (cap > 0 && mid > cap) mid = cap;
+  return "about " + estDur(mid) + ", up to " + estDur(up) + (capped ? ", the time limit" : "") + "; done about " + estClock(start + mid)
+    + ", by " + estClock(start + up) + " at the latest (" + src + ").";
+}
+const estLimit = (x) => (/^[0-9]+$/.test(x || "") ? Number(x) : 0);
+// estimate <ws> <logdir> step <work: small|spec> <limit min> <start> <step line> | run <small|spec|specrun> <limit min>
+//   | job <name> <MINUTES> <limit min> | took <start> | misses <limit min>: one finished line (or a duration), or nothing;
+//   misses prints "<kind>\t<misses>\t<steps counted>" per kind that misses 5 times or more.
+function estimate(ws, logdir, mode, ...a) {
+  const now = Math.floor(Date.now() / 1000), out = (s) => put(1, s + "\n");
+  if (mode === "took") { out(estDur(Math.max(0, now - (Number(a[0]) || now)), true)); return; }
+  const past = estPast(ws, logdir);
+  if (mode === "step") {
+    const w = estWord(a[3] || ""), limit = estLimit(a[1]), start = Number(a[2]) || now;
+    if (!w) return;
+    const kind = w.role + " " + w.word;
+    const r = estRange(estStats(past.steps, kind + "\t" + a[0]), EST_KIT[w.word] || EST_KIT[kind], start, limit * 60);
+    if (r) out("  Expected: " + r);
+    else if (limit) out("  Expected: no estimate yet (nothing like it here); it stops at the time limit, " + estDur(limit * 60) + ", by " + estClock(start + limit * 60) + ".");
+    else out("  Expected: no estimate yet (nothing like it here), and no time limit is set.");
+  } else if (mode === "run") {
+    const kind = "run " + a[0], limit = estLimit(a[1]);
+    const r = estRange(estStats(past.runs, kind), EST_KIT[kind], now, 0);
+    out("Expected for this run: " + (r || "no estimate yet (nothing like it here).") + (limit ? " Each step stops at its time limit, " + estDur(limit * 60) + "." : ""));
+  } else if (mode === "job") {
+    const limit = estLimit(a[2]), st = estStats(past.runs, "job " + a[0]);
+    if (st.mid !== null) out("Expected for this run: " + estRange(st, null, now, limit * 60));
+    else out("Expected for this run: about " + (a[1] || "").replace(/[\x00-\x1f\x7f\u0080-\u009f]/g, "?") + " min (the job's own estimate).");
+  } else if (mode === "misses") {
+    // Each kind whose last 20 steps took longer than the upper end given before each 5 times or more (the doctor's note).
+    const limit = estLimit(a[0]) * 60, kinds = [...new Set(past.steps.map((x) => x.kind))].sort();
+    for (const k of kinds) {
+      const all = past.steps.filter((x) => x.kind === k).sort((x, y) => x.start - y.start), last = all.slice(-20);
+      const kit = k.startsWith("job ") ? null : EST_KIT[all[0].word] || EST_KIT[all[0].role + " " + all[0].word];
+      let n = 0;
+      last.forEach((x, i) => {
+        const before = all.slice(Math.max(0, all.length - last.length + i - 20), all.length - last.length + i);
+        let up = estStats(before.map((y) => ({ ...y, kind: k })), k).up;
+        if (up === null && kit) up = kit[1] * 60;
+        if (up === null) return;
+        if (limit > 0 && up > limit) up = limit;
+        if (x.secs > up) n++;
+      });
+      if (n >= 5) out((k.startsWith("job ") ? k : k.replace("\t", " (") + (k.endsWith("\tsmall") ? " tasks)" : " work)")) + "\t" + n + "\t" + last.length);
+    }
+  } else die("usage: node lib.js estimate <ws> <logdir> step|run|job|took|misses ...", 2);
+}
+// The week's agent time: the took lines since <since> that time agent work, in seconds, or null when there are none.
+function estWeek(ws, logdir, since) {
+  const t = estPast(ws, logdir).tooks.filter((x) => x.at >= since);
+  return t.length ? t.reduce((s, x) => s + x.secs, 0) : null;
+}
+
 // ws-facts <workspace> <log folder> <dollar runners> <token runners>: what cabinet list and digest show for
 // another workspace, read as text with this kit's code (nothing of the workspace runs): its project and
 // budget (cabinet.env, through the reader; unreadable: empty), the open entries for the owner (as handoff
@@ -2202,11 +2398,10 @@ function wsFacts(ws, logdir, dollars, tokens) {
   let waiting = null;
   try { waiting = handoffRowsOf(path.join(ws, "HANDOFFS.md")).filter((e) => e.owner && !(e.known && statusClosed(e.status))).length; } catch (e) { waiting = 0; }
   const runner = set.CABINET_RUNNER || "claude", price = set.CABINET_PRICE || "";
-  let spent = null;
+  let spent = null, first = "sun";
+  try { first = (/^- \*\*Week starts on:\*\* ([A-Za-z]*)\./m.exec(read(path.join(ws, "AGENTS.md"))) || [])[1]?.toLowerCase().slice(0, 3) || "sun"; } catch (e) { /* default */ }
+  const since = weekStartOf(Math.max(0, ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(first)), new Date());
   if (words(dollars).includes(runner) || (words(tokens).includes(runner) && price)) {
-    let first = "sun";
-    try { first = (/^- \*\*Week starts on:\*\* ([A-Za-z]*)\./m.exec(read(path.join(ws, "AGENTS.md"))) || [])[1]?.toLowerCase().slice(0, 3) || "sun"; } catch (e) { /* default */ }
-    const since = weekStartOf(Math.max(0, ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].indexOf(first)), new Date());
     let t = 0;
     try {
       for (const l of read(path.join(logdir, "spend.tsv")).split("\n")) {
@@ -2216,6 +2411,8 @@ function wsFacts(ws, logdir, dollars, tokens) {
     } catch (e) { /* none yet */ }
     spent = t.toFixed(2);
   }
+  // The week's agent time, from the took lines in its log folder (run estimates): only kit-made words leave here.
+  const secs = estWeek(ws, logdir, since), agent = secs === null ? null : estDur(secs, true);
   // The doctor's record: whole, and written for this workspace, or none.
   let problems = null, checked = null;
   try {
@@ -2223,7 +2420,7 @@ function wsFacts(ws, logdir, dollars, tokens) {
     if (/^(0|[1-9][0-9]{0,8})$/.test(f[0]) && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(f[1] || "") && f[2] === ws) { problems = Number(f[0]); checked = f[1]; }
   } catch (e) { /* not run yet */ }
   const shown = checked ? houseTime(new Date(checked)) : "";
-  put(1, JSON.stringify({ project: set.CABINET_PROJECT || "", budget: set.CABINET_BUDGET || "", waiting, spent, doctor_problems: problems, doctor_checked: checked, doctor_shown: shown }) + "\n");
+  put(1, JSON.stringify({ project: set.CABINET_PROJECT || "", budget: set.CABINET_BUDGET || "", waiting, spent, doctor_problems: problems, doctor_checked: checked, doctor_shown: shown, agent_time: agent }) + "\n");
 }
 
 const COMMANDS = {
@@ -2236,7 +2433,7 @@ const COMMANDS = {
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, runs, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
-  "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck, "week-start": weekStart,
+  "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck, "week-start": weekStart, estimate,
 };
 const [cmd, ...args] = process.argv.slice(2);
 if (!COMMANDS[cmd]) die("usage: node lib.js " + Object.keys(COMMANDS).join("|") + " <args>...", 2);

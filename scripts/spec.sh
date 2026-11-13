@@ -129,16 +129,25 @@ if ((dry == 0)); then
   RUN_LOCK="$lock" RUN_KIND=spec RUN_WORK="$spec"; run_note "" "" ""
 fi
 SPEND_LABEL="$spec"
+RUN_T0="$(date +%s)"   # for its run time (lib.sh run_time)
 local mark="$LOGDIR/run-spec-$name.stopped"
 ((dry)) || [[ -n "${CABINET_RUN_SCHEDULED:-}" ]] || rm -f "$mark"
 say() { echo "$*"; ((dry)) || echo "=== $(date '+%F %T') $*" >>"$log"; }
-stop() { say "Stopped: $1"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
+# ended <line>: the run's last line, with its run time outside a dry run; the stopped mark keeps stop's own words.
+ended() { if ((dry)); then printf '%s' "$1"; else run_time "$1" "$RUN_T0"; fi; }
+stop() { say "$(ended "Stopped: $1")"; ((dry)) && exit 1; echo "Log: $log"; printf '%s %s\n' "$(date +%F)" "$1" > "$mark"; exit 1; }
 agent() {  # agent <role> <what it does> <prompt>
-  if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
+  if run_over_limit; then say "$(ended "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here")"; exit 3; fi
+  ((dry)) || est_begin "$log" specrun
+  local t0 st=0
   say "$1: $2"
-  ((dry)) && exit 0
+  t0="$(date +%s)"   # after the logged line, so a finish time counted from it is never a minute early
+  if ((dry)); then est_step "" spec "$t0" "$1: $2"; exit 0; fi
+  est_step "$log" spec "$t0" "$1: $2"
   AGENT=$1 PROMPT=$3
-  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+  run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || st=$?
+  est_took "$log" "$1" "$t0"
+  ((st == 0)) || stop "$1 did not finish (exit $st): see the log"
 }
 # Its work: every handoff filed with --spec for it to one builder, not sent back, oldest first (the order
 # routing set, by the handoff reader's idOrder). A routing request or a review filed with --spec is not work
@@ -177,6 +186,7 @@ while :; do
     fi
     ran+="$w"$'\n'
     if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
+    est_begin "$log" specrun
     say "running $w"
     run_note "" "" ""   # the handoff run's own lock says who runs now; this one names no agent meanwhile
     # Its output, a refusal on stderr too, goes to the screen and this log; the stop names how it ended,
@@ -185,12 +195,14 @@ while :; do
     x=0; : >"$out"; "$WS/bin/handoff.sh" run "$w" ${pass[@]+"${pass[@]}"} 2>&1 | tee -a "$log" "$out" || x=${PIPESTATUS[0]}
     ((x != 3)) || exit 3   # the cost limit: paused, not stopped
     ((x == 0)) || { r="$(run_result <"$out")" || r="$(tail -1 "$out")"; r="${r#Stopped: }"
+      # Without the handoff run's own run time, and the "." added before it (no stop line ends in one).
+      case "$r" in *". Run time: "*) r="${r%. Run time: *}" ;; esac
       stop "$w did not reach ready to push, so the rest of $spec waits: ${r:-its run ended with exit $x and printed nothing; see $LOGDIR/run-$w.log}"; }
   done
   [[ -n "$ran" ]] || stop "$spec has no work that names a commit, so nothing is ready to push"
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
   total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$ran" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
-  say "$spec is ready to push: all its work ($(printf '%s' "$ran" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal."
+  say "$(ended "$spec is ready to push: all its work ($(printf '%s' "$ran" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal.")"
   rm -f "$mark"; exit 0
 done
 }

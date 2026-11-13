@@ -178,22 +178,27 @@ fi
 echo "=== $(date '+%F %T') $job (${AGENT:-$COMMAND}, $CABINET_RUNNER)" >>"$log"
 [[ -z "$result_note" ]] || echo "$result_note" >>"$log"
 rm -f "$state_file"
+# How long it took, logged by hand and unattended, after AFTER (lib.js estimate reads it back).
+took() { echo "=== $(date '+%F %T') $job took $(estimate took "$started") (exit $1)" >>"$log"; }
 if [[ -t 1 ]]; then
-  # Started by hand: say what is happening, then show the result here too.
+  # Started by hand: say what is happening, with how long it should take, then show the result here too.
+  estimate job "$job" "$MINUTES" "$limit"
   echo "Running $job with ${AGENT:-$COMMAND}. It takes $MINUTES minutes and prints nothing until it finishes."
   echo "Result: $RESULT and $log"
-  start=$SECONDS status=0
+  status=0
   limited 2>&1 | tee -a "$log" || status=$?
   cost | tee -a "$log"
   ((status)) || { after || status=1; ((status)) || remember; }
+  took "$status"
   echo
-  echo "Finished in $(( (SECONDS - start) / 60 )) min (exit $status). Open $RESULT."
+  echo "Finished in $(estimate took "$started") (exit $status). Open $RESULT."
   exit "$status"
 fi
 st=0; limited >>"$log" 2>&1 || st=$?
 cost >>"$log"
-((st == 0)) || { echo "exit $st at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
-after || exit 1
+((st == 0)) || { took "$st"; echo "exit $st at $(date '+%T'): see the lines above" >>"$log"; exit 1; }
+after || { took 1; exit 1; }
+took 0
 remember
 }
 

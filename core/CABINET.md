@@ -123,6 +123,8 @@ Everything an agent writes for the owner (the brief, sign-off items, answers in 
 6. **Plain words.** No file names, IDs or jargon unless the owner must act on them; then give the exact command or name. Evidence links stay, with a plain name as the link text ("the login page").
 7. **Time to act**, when known: "2 min".
 
+**How long, before and after.** Before a long task the kit does not time (a role run by hand, a full test suite), tell the owner how long it should take and when it should end, from `handoff run <ID> --dry-run`, `spec run <spec> --dry-run` or a saved suite log's `-- <seconds>s` lines; with none, say you do not know, never a guess. After, say how long it took.
+
 The brief, short: its first line says what waits today ("Today: 2 decisions, 1 action, about 5 min."), then the same `## ` headings (the digest reads them), each part at most three lines except the sign-off queue, which is always complete.
 
 ## Seats

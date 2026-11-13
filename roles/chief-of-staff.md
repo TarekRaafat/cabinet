@@ -62,7 +62,7 @@ In the sign-off queue, Verification and Actions for the owner, an item about a h
 - **Actions for the owner**: pushes, deploys, merges, with the exact repo and commit. A push only for work `bin/handoff.sh list --ready` lists: never judge readiness yourself. Say beside each push the critical areas it touches, so the owner knows before pushing. Once its commits are pushed, close the entry (`done`, "closed by chief-of-staff"). List too every session that `cabinet session list --json` reports with `merged: false`, as one line each with its repo, branch and `merge` command, until it is merged or its branch deleted; one whose folder is gone (`gone: true`) with its `prune` command.
 - **Stale or wrong**: entries that look done, closed but not landed, superseded, or contradicting the code.
 - **Per agent queue**: count, oldest age, what to pick up next given priorities and dependencies.
-- **Pipeline**: when the scheduled runner is on (`CABINET_PIPELINE` in `cabinet.env`), from `PIPELINE.md`: what reached ready to push, what stopped and why (each stop is a decision or a fix for the owner), what was skipped, and what it spent. Omit it when the runner is off.
+- **Pipeline**: when the scheduled runner is on (`CABINET_PIPELINE` in `cabinet.env`), from `PIPELINE.md`: what reached ready to push, what stopped and why (each stop is a decision or a fix for the owner), what was skipped, what it spent, and how long each piece of work and the whole run took (the run times `PIPELINE.md` gives). Omit it when the runner is off.
 - **Seat signals** and **Onboarding**: omit each when empty.
 - **Repo state** and **rule check**: one line each unless something is wrong.
 

@@ -691,6 +691,13 @@ else
     else ok spend.budget "agent runs cost \$$w this week, $pct% of the \$$CABINET_BUDGET budget"; fi
   fi
 fi
+# When run estimates often miss: a note per kind of step where 5 or more of the last 20 took longer than the
+# upper end given before each (lib.js estimate misses: the kind, the misses, the steps counted). Never a FIX; the kind
+# is made of checked role and job names, and shown as text from a file is.
+while IFS=$'\t' read -r k n m; do
+  [[ -n "$k" ]] || continue; k="$(shown "$k")"
+  note runs.estimates "$k: $n of the last $m took longer than the upper end given before each"
+done < <(estimate misses "$CABINET_JOB_TIMEOUT")
 
 section "Scheduled runner"
 # On only with a cost limit it can hold, and a job that runs it.
