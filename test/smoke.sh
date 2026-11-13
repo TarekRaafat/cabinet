@@ -1061,14 +1061,14 @@ for id in settings.literal settings.unknown roles.name jobs.name repos.local-pat
   grep -qF "| \`$id\` |" "$KIT/docs/troubleshooting.md" || fail "criterion 24: docs/troubleshooting.md has no row for $id"
 done
 grep -qF "not approved on this machine" "$KIT/docs/guardrails.md" || fail "criterion 24: docs/guardrails.md"
-top="$(awk "/^## /{n++} n == 1" "$KIT/CHANGELOG.md")"
-head -1 <<<"$top" | grep -q "Unreleased" && grep -qF "cabinet.env" <<<"$top" && grep -qF "not a literal value" <<<"$top" || fail "criterion 24: the top Unreleased section of CHANGELOG.md"
+top="$(awk '/^## /{on = /^## 0\.6\.0 /} on' "$KIT/CHANGELOG.md")"
+grep -qF "cabinet.env" <<<"$top" && grep -qF "not a literal value" <<<"$top" || fail "criterion 24: CHANGELOG.md's 0.6.0 section"
 # specs/jobs-report-the-truth.md, criterion 11: the docs and the changelog say the new behavior.
 grep -qF "is already running" "$CD" && grep -qF "after-step failed" "$CD" || fail "jobs criterion 11: docs/commands.md"
 # A run stopped at its time limit exits 1 when scheduled and 124 by hand (set -o pipefail on the tee): the docs say both.
 grep -qF "the run exits 1 (124 when run by hand)" "$CD" && grep -qF "124 when a run by hand was stopped by its time limit" "$CD" || fail "jobs criterion 11: docs/commands.md does not give both exit codes for a run stopped at its time limit"
 ! grep -qF "starts and limits its own agent runs" "$KIT/scripts/job.sh" "$CD" || fail "jobs criterion 11: a COMMAND job still starts and limits its own agent runs"
-for w in "already running" after-step RESULT TIMEOUT apostrophe; do grep -qF "$w" <<<"$top" || fail "jobs criterion 11: the top Unreleased section of CHANGELOG.md does not say $w"; done
+for w in "already running" after-step RESULT TIMEOUT apostrophe; do grep -qF "$w" <<<"$top" || fail "jobs criterion 11: CHANGELOG.md's 0.6.0 section does not say $w"; done
 # specs/model-per-task.md, criterion 15: the docs and the changelog say the new options, line, fields and checks.
 for w in "--tier" "--model <tier>" "- Model:" "--by-model" "runs in progress:" "Sessions the owner opens"; do grep -qF -- "$w" "$CD" || fail "model criterion 15: docs/commands.md does not say $w"; done
 grep -F '| `cabinet status --json` |' "$CD" | grep -qF 'runs' || fail "model criterion 15: the cabinet status --json row has no runs field"
@@ -1076,7 +1076,7 @@ grep -qF 'The rule, from recorded facts only: start at `standard`; `light` when 
   || fail "model criterion 15: docs/concepts.md does not give the rule as the spec words it"
 grep -q '^| Runner | Model option | .*| Effort option |$' "$KIT/docs/agent-setup.md" || fail "model criterion 15: docs/agent-setup.md's runner table has no effort column"
 for id in tier.exists tier.effort; do grep -qF "| \`$id\` |" "$KIT/docs/troubleshooting.md" || fail "model criterion 15: docs/troubleshooting.md has no row for $id"; done
-for w in "--tier" "cabinet status" "Model:" "spend.tsv"; do grep -qF -- "$w" <<<"$top" || fail "model criterion 15: the top Unreleased section of CHANGELOG.md does not say $w"; done
+for w in "--tier" "cabinet status" "Model:" "spend.tsv"; do grep -qF -- "$w" <<<"$top" || fail "model criterion 15: CHANGELOG.md's 0.6.0 section does not say $w"; done
 # What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
 # changed" with git or without, and the commands that commit themselves.
 grep -qF "In a terminal it prints the Cabinet mark with the version and the tagline beside it" "$KIT/docs/commands.md" || fail "docs/commands.md does not say cabinet version shows the tagline"
