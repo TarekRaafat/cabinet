@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: settings, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -99,6 +99,11 @@ const statusClosed = (w) => w === "done" || w === "rejected";
 const OWNER_RE = /(^|[^a-z-])(owner|founder)(?![a-z-])/gi;
 const ownerIn = (to) => new RegExp(OWNER_RE.source, "i").test(to || "");
 const ownerCase = (to) => to.replace(OWNER_RE, (m, a, b) => a + b.toLowerCase());
+// reviewsOf(rd, id): the entries handoff run counts as the reviews of work <id>, in readiness's output
+// rd: not filed --small, not work for a builder (a later handoff in a spec's chain), and naming it in
+// Depends on. handoff run takes the open ones; the tier's step up counts the BLOCK and CHANGES on all of them.
+const reviewsOf = (rd, id) => Object.keys(rd).filter((k) => k != id && !rd[k].small && rd[k].builder === null
+  && new RegExp("(^|[^0-9A-Za-z-])" + id + "($|[^0-9])").test(rd[k].depends_on));
 // idOrder(a, b): IDs by their date (the eight digits), then their number as a number: H-20261107-100
 // after H-20261107-99. Anything else by its text.
 function idOrder(a, b) {
@@ -246,7 +251,7 @@ function readiness(spend, ...files) {
   } catch (e) { /* no spend file yet */ }
   const team = new Set(words(env("TEAM"))), builds = new Set(words(env("BUILDS"))), ui = new Set(words(env("UI")));
   // The lines the sender wrote (asking for a verdict is not one); Status and any other line are read.
-  const SENDER = /^- (From|Changed|Needed|Depends on|Way back|Evidence|Spec|Size):/;
+  const SENDER = /^- (From|Changed|Needed|Depends on|Way back|Evidence|Spec|Size|Model):/;
   const VER = /^- Verdict: ([a-z0-9-]+) (PASS|BLOCK|CHANGES) (\d{4}-\d{2}-\d{2}) ([0-9a-f]+(?:,[0-9a-f]+)*|none) (\S+)$/;
   const names = (s) => s.replace(/\([^)]*\)/g, "").split(" and ").join(",").split("&").join(",").split("`").join("")
     .split(",").map((n) => n.trim()).filter(Boolean).map((n) => n.toLowerCase());
@@ -344,11 +349,15 @@ function readiness(spend, ...files) {
     // The one addressee that builds (a repo, or a role that builds one), else null: work for one builder,
     // as spec run and handoff run count it (ADR-006).
     const bs = [...new Set(names(to).filter((n) => builds.has(n)))];
+    // The tier on its "- Model: <word> (<reason>)" line (handoff add), as written: handoff run checks the
+    // word. No line (an entry from before tiers): both null.
+    const ml = e.lines.find((l) => l.startsWith("- Model: ")), mt = ml === undefined ? null : ml.slice(9).replace(/\s+$/, "");
+    const mw = mt === null ? null : mt.split(" ")[0], mr = mt === null ? null : mt.slice(mw.length).trim().replace(/^\((.*)\)$/, "$1");
     out[e.id] = {
       builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: statusOf(e.lines).word,
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
       cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
-      ready, unread_verdicts: unread,
+      ready, unread_verdicts: unread, model_word: mw, model_reason: mr,
     };
   }
   process.stdout.write(JSON.stringify(out) + "\n");
@@ -746,6 +755,63 @@ function fillTemplate(file) {
   }
   process.stdout.write(Buffer.from(t, "latin1"));
 }
+// houseTime(date): the time as people read it (10 Oct 2026, 2:30 PM), local.
+function houseTime(t) {
+  const M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return t.getDate() + " " + M[t.getMonth()] + " " + t.getFullYear() + ", " + ((t.getHours() + 11) % 12 + 1) + ":" + String(t.getMinutes()).padStart(2, "0") + " " + (t.getHours() < 12 ? "AM" : "PM");
+}
+// runs <workspace .cabinet folder> [<log folder>] [--text]: the runs the kit started that hold a lock now, as
+// JSON [{kind, work, role, runner, model, effort, pid, started, seconds, state}] (cabinet status), or with
+// --text one row each. The locks: folders run-*.lock in .cabinet (handoff run, spec run) and *.lock in the
+// log folder (jobs), real folders only. Each one's file run counts only when it is a regular file under 4 KB
+// whose every line is one of the eight keys run_note (lib.sh) writes, each once, in its fixed form; anything
+// else (an empty folder from an older kit, a hand-edited file, a link) is state "unknown" with every other
+// value null. state: running while its process exists, else stale. Reads only: nothing is removed.
+const RUN_KEYS = ["kind", "work", "role", "runner", "model", "effort", "pid", "started"];
+function runsOf(cab, logdir) {
+  const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$/, JOB = /^[A-Za-z0-9._-]+$/;
+  const WORK = { handoff: /^H-\d{8}-\d+$/, spec: /^specs\/[A-Za-z0-9._\/-]+\.md$/, job: JOB };
+  const RUNNERS = ["claude", "codex", "antigravity", "qwen", "grok", "opencode", "cursor", "custom"];
+  const locks = [];
+  const scan = (d, re) => { let n = []; try { n = fs.readdirSync(d).sort(); } catch (e) { return; }
+    for (const x of n) { const p = path.join(d, x); try { if (re.test(x) && fs.lstatSync(p).isDirectory()) locks.push(p); } catch (e) { /* gone */ } } };
+  scan(cab, /^run-.+\.lock$/);
+  if (logdir) scan(logdir, /^[A-Za-z0-9._-]+\.lock$/);
+  const unknown = () => ({ kind: null, work: null, role: null, runner: null, model: null, effort: null, pid: null, started: null, seconds: null, state: "unknown" });
+  return locks.map((l) => {
+    const f = path.join(l, "run");
+    let st, text;
+    try { st = fs.lstatSync(f); if (!st.isFile() || st.size >= 4096) return unknown(); text = fs.readFileSync(f, "latin1"); } catch (e) { return unknown(); }
+    const v = {}, lines = text.replace(/\n$/, "").split("\n");
+    for (const x of lines) {
+      const m = /^([a-z]+)=(.*)$/.exec(x);
+      if (!m || !RUN_KEYS.includes(m[1]) || m[1] in v) return unknown();
+      v[m[1]] = m[2];
+    }
+    const ok = RUN_KEYS.every((k) => k in v) && v.kind in WORK && WORK[v.kind].test(v.work) && !v.work.startsWith("-") && !/(^|\/)\.\.?(\/|$)/.test(v.work)
+      && /^([a-z0-9][a-z0-9-]*)?$/.test(v.role) && RUNNERS.includes(v.runner) && (v.model === "" || MODEL.test(v.model))
+      && (v.effort === "" || MODEL.test(v.effort)) && /^[1-9][0-9]{0,9}$/.test(v.pid) && /^[0-9]{1,12}$/.test(v.started);
+    if (!ok) return unknown();
+    let running = true;
+    try { process.kill(Number(v.pid), 0); } catch (e) { running = e.code === "EPERM"; }
+    const started = Number(v.started);
+    return { kind: v.kind, work: v.work, role: v.role || null, runner: v.runner, model: v.model || null, effort: v.effort || null,
+      pid: Number(v.pid), started: new Date(started * 1000).toISOString(), seconds: Math.max(0, Math.floor(Date.now() / 1000) - started),
+      state: running ? "running" : "stale" };
+  });
+}
+function runs(cab, logdir, mode) {
+  if (logdir === "--text") { mode = logdir; logdir = ""; }
+  const r = runsOf(cab, logdir);
+  if (mode !== "--text") { process.stdout.write(JSON.stringify(r) + "\n"); return; }
+  for (const x of r) {
+    if (x.state === "unknown") { process.stdout.write("  ? on ?: ?, ?, effort ?, since ?, ?, unknown\n"); continue; }
+    const s = x.seconds;
+    process.stdout.write("  " + (x.role || "no agent yet") + " on " + x.work + ": " + x.runner + ", " + (x.model || "tool default") + ", effort " + (x.effort || "tool default")
+      + ", since " + houseTime(new Date(x.started)) + ", " + Math.floor(s / 60) + " min " + (s % 60) + " s, " + x.state + "\n");
+  }
+  if (!r.length) process.stdout.write("  no runs in progress\n");
+}
 // slug <text>: one "-" for each character that is not a letter or digit (Claude Code's folder names).
 function slug(text) { process.stdout.write(text.replace(/[^A-Za-z0-9]/gu, "-")); }
 // inside-file <folder> <path>: exit 0 only when the path is a plain path (the test repos() in lib.sh gives a
@@ -934,8 +1000,8 @@ function json(...argv) {
   const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
   const list = (x) => { if (x == null) return []; if (!Array.isArray(x)) throw new Error("not a list"); return x; };
   const obj = (x) => { if (x == null) return {}; if (typeof x != "object" || Array.isArray(x)) throw new Error("not an object"); return x; };
-  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed and ownerIn.
-  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn };
+  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed, ownerIn and reviewsOf.
+  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn, reviewsOf };
   try { fn = new Function("$", ...Object.keys(helpers), ...o.names, "return (" + expr + ");"); } catch (e) { die("json: " + e.message, 5); }
   let out = "";
   const put = (v) => {
@@ -1954,7 +2020,8 @@ function moveAside(from, to) {
 const SETTING_KEYS = ["CABINET_PROJECT", "CABINET_SLUG", "CABINET_ROLES", "CABINET_RUNNER", "CABINET_RUNNER_CMD", "CABINET_MODEL",
   "CABINET_MODEL_LIGHT", "CABINET_LIGHT_ROLES", "CABINET_LAYOUT", "CABINET_VISIBILITY", "CABINET_BACKUP_DIR", "CABINET_BACKUP_TIME",
   "CABINET_BACKUP_KEEP", "CABINET_JOB_TIMEOUT", "CABINET_BUDGET", "CABINET_PRICE", "CABINET_PIPELINE", "CABINET_PIPELINE_LIMIT",
-  "CABINET_CREDIT_ROLES", "CABINET_CREDIT_EMAIL", "CABINET_SKILLS", "CABINET_PLUGINS", "CABINET_UPDATE_CHECK"];
+  "CABINET_CREDIT_ROLES", "CABINET_CREDIT_EMAIL", "CABINET_SKILLS", "CABINET_PLUGINS", "CABINET_UPDATE_CHECK",
+  "CABINET_TIER_LIGHT", "CABINET_TIER_STANDARD", "CABINET_TIER_STRONG"];
 const JOB_KEYS = ["AGENT", "PROMPT", "COMMAND", "WHEN", "MINUTES", "RESULT", "AFTER", "TIMEOUT", "QUIET_DAYS", "MODEL"];
 // The keys whose values are shell commands by design: run only once approved on this machine.
 const COMMAND_KEYS = ["CABINET_RUNNER_CMD", "COMMAND", "AFTER"];
@@ -2134,9 +2201,7 @@ function wsFacts(ws, logdir, dollars, tokens) {
     const f = read(path.join(logdir, "doctor.tsv")).split("\n")[0].split("\t");
     if (/^(0|[1-9][0-9]{0,8})$/.test(f[0]) && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/.test(f[1] || "") && f[2] === ws) { problems = Number(f[0]); checked = f[1]; }
   } catch (e) { /* not run yet */ }
-  // The time as people read it (10 Oct 2026, 2:30 PM), local.
-  const t = checked && new Date(checked), M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const shown = t ? t.getDate() + " " + M[t.getMonth()] + " " + t.getFullYear() + ", " + ((t.getHours() + 11) % 12 + 1) + ":" + String(t.getMinutes()).padStart(2, "0") + " " + (t.getHours() < 12 ? "AM" : "PM") : "";
+  const shown = checked ? houseTime(new Date(checked)) : "";
   put(1, JSON.stringify({ project: set.CABINET_PROJECT || "", budget: set.CABINET_BUDGET || "", waiting, spent, doctor_problems: problems, doctor_checked: checked, doctor_shown: shown }) + "\n");
 }
 
@@ -2148,7 +2213,7 @@ const COMMANDS = {
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
   "spec-check": specCheck, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
-  "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
+  "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, runs, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,
   "version-newer": versionNewer, "latest-write": latestWrite, "release-latest": releaseLatest, "version-check": versionCheck, "week-start": weekStart,
 };

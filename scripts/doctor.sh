@@ -371,6 +371,37 @@ if [[ -n "$CABINET_MODEL_LIGHT" ]]; then
   if [[ -n "$gone" ]]; then note model-light.roles "CABINET_LIGHT_ROLES names $gone, not on the team, so it changes nothing: to drop it, cabinet config --light-roles \"$kept\""
   else ok model-light.roles "the light model runs for: ${CABINET_LIGHT_ROLES:-no role}"; fi
 fi
+# Tiers (cabinet config --tier): each set tier's model and effort are names, its model is in the tool's list
+# as --model's is (one ok line for all), and an effort reaches a runner only when it takes one (EFFORT_RUNNERS).
+tm=() tk=()
+for t in $TIERS; do
+  k="CABINET_TIER_$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')"; v="${!k}"
+  [[ -n "$v" ]] || continue
+  m="${v%% *}" e=""; [[ "$v" != *" "* ]] || e="${v#* }"
+  if [[ ! "$v" =~ ^[^\ ]+(\ [^\ ]+)?$ ]] || ! model_ok "$m" || { [[ -n "$e" ]] && ! model_ok "$e"; }; then
+    v="$(shown "$v")"
+    bad tier.exists "$k \"$v\" in cabinet.env is not \"<model>[ <effort>]\" (each letters, digits and . _ : / @ -, not starting with -), so no run starts with it: cabinet config --tier $t \"<model>[ <effort>]\", or cabinet config --tier $t off"
+    continue
+  fi
+  tm+=("$m"); tk+=("$k")
+  [[ -z "$e" ]] || has "$EFFORT_RUNNERS" "$CABINET_RUNNER" || note tier.effort "$CABINET_RUNNER has no effort setting: the effort in $t is not used"
+done
+if ((${#tm[@]})); then
+  if [[ "$CABINET_RUNNER" == custom ]]; then note tier.exists "not checked: the custom runner cannot list its models without a run (${tm[*]})"
+  else
+    i=0 allin=1
+    while IFS=$'\t' read -r st m how; do
+      k="${tk[$i]}"; i=$((i + 1))
+      case "$st" in
+        ok) ;;
+        missing) allin=0; bad tier.exists "$m ($k in cabinet.env) is not in $CABINET_RUNNER's model list ($how): fix the name (cabinet config --tier <tier> \"<model>[ <effort>]\")" ;;
+        unlisted) allin=0; note tier.exists "not checked: $CABINET_RUNNER cannot list its models without a run ($m, $k)" ;;
+        *) allin=0; note tier.exists "not checked: $CABINET_RUNNER's model list could not be read ($how), for $m ($k)" ;;
+      esac
+    done < <(node "$LIBJS" model-check "$LOGROOT" "$CABINET_RUNNER" "${tm[@]}")
+    ((allin == 0)) || ok tier.exists "every tier's model is one of $CABINET_RUNNER's models"
+  fi
+fi
 
 section "Credit roles"
 # Read as written (lib.sh, credit_value): only an exact on or off is a setting.

@@ -74,18 +74,20 @@ A website that is only designed (mockups) is design work: HTML and SVG pages in 
 
 `--model` (`CABINET_MODEL`, or `MODEL` in one job file) goes to the tool through its own option, as its own argument before the prompt. The doctor (`model.exists`), setup and `config` check the name against the tool's model list when the tool can list its models without a run; Cabinet never makes a paid run to check one. Seen on these versions:
 
-| Runner | Model option | Free model list | Checked |
-|---|---|---|---|
-| `claude` (Claude Code 2.1.312) | `--model` | none | not checked (a note) |
-| `codex` (Codex 0.165.0) | `--model` | `codex debug models` (JSON, each `slug`) | yes |
-| `antigravity` (`agy` 1.4.8) | `--model` | `agy models` (the name before each tab) | yes |
-| `qwen` (Qwen Code 0.26.2) | `--model` (a string: an all-digit name stays text) | none | not checked (a note) |
-| `grok` (Grok 1.0.70) | `--model` | `grok models` (each `*` or `-` line) | yes |
-| `opencode` (opencode 2.2.0) | `--model`, as `provider/model` | `opencode models` | yes |
-| `cursor` (Cursor CLI 2026.10.22) | `--model` | `cursor-agent models` (the name before ` - `) | yes |
-| `custom` | `$CABINET_MODEL` in its environment | none | not checked (a note) |
+| Runner | Model option | Free model list | Checked | Effort option |
+|---|---|---|---|---|
+| `claude` (Claude Code 2.1.312) | `--model` | none | not checked (a note) | yes (Claude Code 2.1.323) |
+| `codex` (Codex 0.165.0) | `--model` | `codex debug models` (JSON, each `slug`) | yes | none (Codex 0.167.0) |
+| `antigravity` (`agy` 1.4.8) | `--model` | `agy models` (the name before each tab) | yes | yes (`agy` 1.5.3) |
+| `qwen` (Qwen Code 0.26.2) | `--model` (a string: an all-digit name stays text) | none | not checked (a note) | none (Qwen Code 0.27.1) |
+| `grok` (Grok 1.0.70) | `--model` | `grok models` (each `*` or `-` line) | yes | yes (Grok 1.0.77) |
+| `opencode` (opencode 2.2.0) | `--model`, as `provider/model` | `opencode models` | yes | none (opencode 2.2.7) |
+| `cursor` (Cursor CLI 2026.10.22) | `--model` | `cursor-agent models` (the name before ` - `) | yes | none (Cursor CLI 2026.10.22) |
+| `custom` | `$CABINET_MODEL` in its environment | none | not checked (a note) | `$CABINET_EFFORT` in its environment |
 
 A list that needs the network or a login and cannot be read gives a note, never a problem.
+
+The effort options, from each tool's own help on the version named: Claude Code `--effort <level>` and Antigravity `--effort` (low, medium, high, xhigh, max each), Grok `--reasoning-effort <EFFORT>`. Codex has only a general `-c key=value`, which names no effort; opencode's model takes `provider/model#variant`, which does not say effort; the Cursor CLI shows effort only inside a bracketed model name in one example. Each of those counts as having none, as does any tool whose help shows no effort option or does not say how to pass one. A [tier](commands.md#model-and-effort-per-task)'s effort goes to the tool through that option, as its own argument after the model; a tool with none gets no effort, the run goes on, and the doctor notes `tier.effort`. With Claude Code, the `--model` a run passes wins over a `model:` line in the role's file in `.claude/agents/` (seen in Claude Code 2.1.323), so a tier's model is the one that runs.
 
 A second, lighter model, `CABINET_MODEL_LIGHT` (`cabinet config --model-light <name>`), runs the roles in `CABINET_LIGHT_ROLES` (by default chief-of-staff, product-manager, design-lead and finance, those on the team); every other role keeps `--model`. It reaches the tool the same way, and with Claude Code also as a `model:` line in each role's file in `.claude/agents/`. The doctor checks it as `model-light.exists` ([a light model for some roles](commands.md#a-light-model-for-some-roles)).
 

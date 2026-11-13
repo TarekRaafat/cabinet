@@ -100,7 +100,7 @@ C	Setup	config	[options]	Change settings: the setup questions again, with the cu
 C	Setup	move	<new-path>	Move the workspace folder and update what remembers its path.
 C	Setup	remove		Remove this workspace from this machine after showing the plan: schedules, logs, folder, and what setup added to a project.
 C	Kit	update	[--force]	Apply the installed kit to this workspace and print the changelog since its version. First says when a newer Cabinet is out, and the command that takes it.
-C	Kit	status		This workspace's kit version, the installed kit's, and every kit file edited here.
+C	Kit	status		This workspace's kit version, the installed kit's, every kit file edited here, and the runs in progress.
 C	Kit	outdated		Is a newer kit published? Compares this workspace, the installed kit and the npm registry.
 C	Kit	changelog	[from-version]	What changed since a version (all versions when left out).
 C	Kit	completion	bash|zsh	Tab completion: add eval "$(cabinet completion zsh)" to ~/.zshrc.
@@ -115,6 +115,7 @@ O	new,init,config	--runner	<tool>	Agent tool for scheduled jobs: claude, codex, 
 O	new,init,config	--runner-cmd	'<command>'	With --runner custom: the command, using "$CABINET_PROMPT".
 O	new,init,config	--model	<name>|off	The model every run asks the agent tool for; off (default) leaves it to the tool. A job's MODEL line overrides it.
 O	config	--model-light	<name>|off	A lighter model for the roles in --light-roles; every other role keeps --model. off (default): none. Setting it writes the default list once.
+O	config	--tier	<tier> "<model>[ <effort>]"|off	A tier's model and optional effort: light, standard or strong. A handoff names its tier on its Model: line, and handoff run uses it; off removes it (an unset tier uses --model-light or --model).
 O	config	--light-roles	"<roles>"	The roles that run on the light model (default, written with the first light model: chief-of-staff, product-manager, design-lead and finance, those on the team); "" for none.
 O	new,init,config	--brief-time	<when>	A time every day ("7 AM"), days and a time ("fri 4 PM", "sun,mon,tue,wed,thu 8:30 AM"), or off (default: 7:00 AM).
 O	new,init,config	--week-start	<day>	First day of the week (default: sunday).
@@ -162,6 +163,7 @@ O	handoff add	--changed-file	<file>	--changed read from a file as written (one t
 O	handoff add	--needed-file	<file>	--needed read from a file as written (one trailing newline dropped). Not with --needed.
 O	handoff add	--depends-on	"..."	The commit or branch it depends on (default: none).
 O	handoff add	--spec	<file>	The spec it builds; refused unless the spec is ready to build (cabinet spec check).
+O	handoff add	--model	<tier>	The tier its runs use: light, standard or strong (default: proposed from the facts, on its Model: line).
 O	handoff add	--small		A small task: one repo, no contract change, no owner decision, easy to undo. Work for a builder needs this or --spec.
 O	handoff add	--evidence	<file or URL>	What shows the work: a file (copied into specs/evidence/<ID>/) or a link. Once for each.
 O	handoff add	--way-back	"..."	How to undo the change once pushed, released or published, or why there is none. Needed for a PASS when it changes a Hard to undo path.
@@ -176,6 +178,7 @@ O	spec record	--role	<qa|architect|design-lead>	qa reviews the acceptance criter
 O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	handoff run	--retries	<n>	Fix rounds after a BLOCK before it stops and asks you (default 2).
 O	spec run	--retries	<n>	Fix rounds after a BLOCK, for each of its handoffs, before it stops and asks you (default 2).
+O	job list	--by-model		This week's cost per model and effort, from every run cabinet started.
 O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
 O	session start	--repo	<repo>	The repo in repos.tsv to start it in (needed when the workspace has more than one).
 O	session end	--force		Remove the folder even when that deletes what is not safe to delete, after listing it. Asks at a terminal; refused with no terminal and in a scheduled run.
@@ -276,6 +279,7 @@ state_ok() {
 put_line() { rm -f "$1.cabinet-new" && printf '%s\n' "$2" > "$1.cabinet-new" && mv -f "$1.cabinet-new" "$1"; }
 
 RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs a command
+TIERS="light standard strong"   # cabinet config --tier (lib.sh has the same)
 ROLES_ALL="chief-of-staff product-manager architect qa security design-lead finance"
 ROLES_OPT="brand-designer dba code-reviewer auditor"   # kit roles a project turns on; off by default
 DAYS="sunday monday tuesday wednesday thursday friday saturday"
@@ -361,6 +365,7 @@ model_say() {
   [[ -n "$2" ]] || return 0
   local st m how o="${3:---model}" w=Model
   [[ "$o" == --model-light ]] && w="Light model"
+  [[ "$o" != "--tier "* ]] || w="Tier ${o#--tier } model"
   [[ "$1" != custom ]] || { echo "$w $2: not checked: the custom runner cannot list its models without a run."; return 0; }
   IFS=$'\t' read -r st m how < <(node "$LIBJS" model-check "$LOGROOT" "$1" "$2") || true
   case "$st" in
@@ -1184,6 +1189,7 @@ cmd_config() {
   local hard="" set_hard=0 o_hard pipe="" plimit="" ptime="" set_pipe=0 set_plimit=0 set_ptime=0 o_pipe o_plimit o_ptime
   local credit="" cemail="" set_credit=0 cemail_given=0 model="" set_model=0 o_model uc="" set_uc=0
   local mlight="" set_mlight=0 o_mlight lroles="" set_lroles=0 o_lroles o_lroles_set=0
+  local set_tier=0 tier_light="" tier_standard="" tier_strong="" set_tier_light=0 set_tier_standard=0 set_tier_strong=0 t tv tm te v
   local set_price=0 set_writing=0 set_name=0 set_slug=0 set_owner=0 set_email=0 set_roles=0 set_runner=0 set_cmd=0 set_brief=0 set_week=0 set_backup=0 set_btime=0 set_budget=0
   while (($#)); do
     case "$1" in
@@ -1196,6 +1202,9 @@ cmd_config() {
       --runner-cmd) need "--runner-cmd needs a command" "$@"; runner_cmd="$2"; set_cmd=1; shift 2 ;;
       --model) need "--model needs a model name, or off" "$@"; model="$2"; set_model=1; shift 2 ;;
       --model-light) need "--model-light needs a model name, or off" "$@"; mlight="$2"; set_mlight=1; shift 2 ;;
+      --tier) (($# >= 3)) || bad_usage "--tier needs a tier and its model, like --tier strong \"<model> high\", or --tier strong off"
+        has "$TIERS" "$2" || bad_usage "--tier: \"$(term_say "$2")\" is not a tier (light, standard, strong)"
+        printf -v "tier_$2" '%s' "$3"; printf -v "set_tier_$2" 1; set_tier=1; shift 3 ;;
       --light-roles) (($# >= 2)) || bad_usage "--light-roles needs role names, like \"chief-of-staff finance\", or \"\" for none"; lroles="$2"; set_lroles=1; shift 2 ;;
       --brief-time) need "--brief-time needs a time, like 7 AM, or off" "$@"; brief="$2"; set_brief=1; shift 2 ;;
       --week-start) need "--week-start needs a day" "$@"; week="$2"; set_week=1; shift 2 ;;
@@ -1223,7 +1232,7 @@ cmd_config() {
   done
   if ((this_machine)); then
     # Only the backup settings and the credit roles answer are per machine; the rest is shared by every machine.
-    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_mlight || set_lroles || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
+    (( set_name || set_slug || set_owner || set_email || set_roles || set_runner || set_cmd || set_model || set_mlight || set_tier || set_lroles || set_brief || set_week || set_writing || set_hard || set_pipe || set_plimit || set_ptime || set_budget || set_price || cemail_given || ${#repos[@]} )) \
       && die "--this-machine sets only --backup-dir, --backup-time, --credit-roles and --update-check: the other settings are shared by every machine"
     (( set_backup || set_btime || clear || set_credit || set_uc )) || die "--this-machine needs --backup-dir <folder>|off, --backup-time <time>, --credit-roles off|on, --update-check off|on, or --clear"
     (( clear && (set_credit || set_uc) )) && die "--clear cannot be combined with --credit-roles or --update-check"
@@ -1353,6 +1362,15 @@ cmd_config() {
   # The light model and its roles, given or carried, the same way (token cost).
   [[ "$mlight" == off ]] && mlight=""
   [[ -z "$mlight" ]] || model_ok "$mlight" || die "CABINET_MODEL_LIGHT is '$(term_say "$mlight")', which is not a model name: letters, digits and . _ : / @ -, up to 100, not starting with -. Give one with cabinet config --model-light <name>, or cabinet config --model-light off"
+  # Each tier given: off, or a model and an optional effort, one space between, each a model name (Rule 1).
+  for t in $TIERS; do
+    v="set_tier_$t"; ((${!v})) || continue
+    v="tier_$t"; tv="${!v}"
+    [[ "$tv" == off ]] && { printf -v "tier_$t" '%s' ""; continue; }
+    tm="${tv%% *}" te=""; [[ "$tv" != *" "* ]] || te="${tv#* }"
+    [[ "$tv" =~ ^[^\ ]+(\ [^\ ]+)?$ ]] && model_ok "$tm" && { [[ -z "$te" ]] || model_ok "$te"; } \
+      || die "--tier $t: '$(term_say "$tv")' is not \"<model>[ <effort>]\": a model name and an optional effort, one space between, each letters, digits and . _ : / @ -, up to 100, not starting with -"
+  done
   lroles="$(printf '%s' "$lroles" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
   ( set -f; for r in $lroles; do role_ok "$r" || die "--light-roles: '$(term_say "$r")' is not a role name: lowercase letters, digits and dashes"; done ) || exit 1
   # The default list, written once: when a light model is first set and cabinet.env has no list.
@@ -1447,6 +1465,11 @@ cmd_config() {
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
   [[ "$model" != "$o_model" ]] && changes+=("model: ${o_model:-the tool default} -> ${model:-the tool default}")
   [[ "$mlight" != "$o_mlight" ]] && changes+=("light model: ${o_mlight:-none} -> ${mlight:-none}")
+  for t in $TIERS; do
+    v="set_tier_$t"; ((${!v})) || continue
+    v="tier_$t"; tv="${!v}"; tm="$(envget "CABINET_TIER_$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')")"
+    [[ "$tv" == "$tm" ]] || changes+=("tier $t: ${tm:-not set} -> ${tv:-not set}")
+  done
   ((set_lroles)) && { [[ "$lroles" != "$o_lroles" ]] || ((!o_lroles_set)); } && changes+=("light model roles: $( ((o_lroles_set)) && printf '%s' "${o_lroles:-none}" || echo "not set") -> ${lroles:-none}")
   [[ "$brief" != "$o_brief" ]] && changes+=("brief: ${o_brief:-off} -> ${brief:-off}")
   [[ "$week" != "$o_week" ]] && changes+=("week starts: ${o_week:-unset} -> $week")
@@ -1506,6 +1529,13 @@ cmd_config() {
   [[ "$mlight" == "$o_mlight" ]] || setenv CABINET_MODEL_LIGHT "$mlight"
   ((set_lroles)) && { [[ "$lroles" != "$o_lroles" ]] || ((!o_lroles_set)); } && setenv CABINET_LIGHT_ROLES "$lroles"
   [[ "$mlight" == "$o_mlight" && "$runner" == "$o_runner" ]] || model_say "$runner" "$mlight" --model-light
+  # A tier given: its line set, or removed with off; its model checked against the tool's list, as --model is.
+  for t in $TIERS; do
+    v="set_tier_$t"; ((${!v})) || continue
+    v="tier_$t"; tv="${!v}" tm="CABINET_TIER_$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')"
+    [[ "$tv" != "$(envget "$tm")" ]] || continue
+    if [[ -z "$tv" ]]; then node "$LIBJS" drop "$ws/cabinet.env" "/^$tm=/"; else setenv "$tm" "$tv"; model_say "$runner" "${tv%% *}" "--tier $t"; fi
+  done
   ((set_uc)) && [[ "$uc" != "$o_uc" ]] && setenv CABINET_UPDATE_CHECK "$uc"
   # A new model, or a new tool for the one set: whether the tool lists it (said, never refused).
   [[ "$model" == "$o_model" && "$runner" == "$o_runner" ]] || model_say "$runner" "$model"
@@ -2505,9 +2535,15 @@ cmd_status() {
   # A newer Cabinet on the registry (the release notice, platform.sh), and what to run.
   local latest r=""; latest="$(update_latest "$ws")"
   [[ -z "$latest" ]] || r="$(update_cmd "$ws" "$latest" "$(pin_kit "$ws")")"
+  # The runs in progress: each run lock in .cabinet and in the log folder (the jobs'), read by the kit's own
+  # lib.js, never the workspace's; the log folder only from a slug that is one (cabinet.env read as text).
+  local slug; local -a ld
+  ld=(); slug="$( (unset CABINET_SLUG; ws_load "$ws" && envget CABINET_SLUG) 2>/dev/null || true)"
+  ! slug_ok "$slug" || ld=("$LOGROOT/$slug")
   if ((json)); then
     printf '%s\n' ${edited[@]+"${edited[@]}"} | json -R --arg ws "$ws" --arg have "$(cat "$ws/.cabinet/version")" --arg kit "$VERSION" --arg kitdir "$KIT" --arg latest "$latest" \
-      '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean), latest: $latest || null})'
+      --argjson runs "$(node "$LIBJS" runs "$ws/.cabinet" ${ld[@]+"${ld[@]}"})" \
+      '({workspace: $ws, version: $have, kit_version: $kit, kit: $kitdir, edited: $.filter(Boolean), latest: $latest || null, runs: $runs})'
     return 0
   fi
   # Folders and the workspace's own words, in a terminal through term_text (platform.sh).
@@ -2520,6 +2556,8 @@ cmd_status() {
     echo "latest: cabinet $latest"
     echo "Run: ${S_B}${r#*$'\t'}${S_Z}$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' (in %s)' "${r%%$'\t'*}")"
   fi
+  echo "runs in progress:"
+  node "$LIBJS" runs "$ws/.cabinet" ${ld[@]+"${ld[@]}"} --text | TERM_OUT=1 term_text
   return 0
 }
 

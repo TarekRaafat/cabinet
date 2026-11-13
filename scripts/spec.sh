@@ -121,9 +121,12 @@ mkdir -p -m 700 "$LOGDIR"
 local name="${spec#specs/}"; name="${name%.md}"
 local lock="$K/run-spec-$name.lock" log="$LOGDIR/run-$name.log"
 if ((dry == 0)); then
-  mkdir "$lock" 2>/dev/null || { echo "$spec is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
+  mkdir "$lock" 2>/dev/null || { echo "$spec is already being run ($lock; remove the folder, rm -r, if no run is)" >&2; exit 1; }
   out="$(mktemp)"
-  trap 'rmdir "$lock" 2>/dev/null || true; rm -f "$out"' EXIT
+  trap 'run_unlock "$lock"; rm -f "$out"' EXIT
+  # The run file (cabinet status), kept out of git by the lock's .gitignore.
+  printf '*\n' > "$lock/.gitignore"
+  RUN_LOCK="$lock" RUN_KIND=spec RUN_WORK="$spec"; run_note "" "" ""
 fi
 SPEND_LABEL="$spec"
 local mark="$LOGDIR/run-spec-$name.stopped"
@@ -166,6 +169,7 @@ while :; do
   for w in $works; do
     if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
     say "running $w"
+    run_note "" "" ""   # the handoff run's own lock says who runs now; this one names no agent meanwhile
     # Its output, a refusal on stderr too, goes to the screen and this log; the stop names how it ended,
     # or, when it ended before a step (a refusal), its last line.
     # The exit code from PIPESTATUS, never through a file.

@@ -1053,7 +1053,7 @@ CD="$KIT/docs/commands.md"
 grep -qF "not a literal value" "$CD" && grep -qF "AGENT, PROMPT, COMMAND, WHEN, MINUTES, RESULT, AFTER, TIMEOUT, QUIET_DAYS, MODEL" "$CD" && grep -qF "skipped the local-only file" "$CD" \
   || fail "criterion 24: docs/commands.md"
 sk="$(awk "/^const SETTING_KEYS/,/\\];/" "$KIT/scripts/lib.js" | grep -o "\"CABINET_[A-Z_]*\"" | tr -d "\"" | sort -u)"
-[[ "$(grep -c . <<<"$sk")" == 23 ]] || fail "criterion 24: SETTING_KEYS in scripts/lib.js is not the 23 keys: $sk"
+[[ "$(grep -c . <<<"$sk")" == 26 ]] || fail "criterion 24: SETTING_KEYS in scripts/lib.js is not the 26 keys (23, and the three tiers of model per task): $sk"
 for k in $sk; do
   grep -qF "$k" "$CD" || fail "criterion 24: docs/commands.md does not list the cabinet.env key $k"
 done
@@ -1069,6 +1069,14 @@ grep -qF "is already running" "$CD" && grep -qF "after-step failed" "$CD" || fai
 grep -qF "the run exits 1 (124 when run by hand)" "$CD" && grep -qF "124 when a run by hand was stopped by its time limit" "$CD" || fail "jobs criterion 11: docs/commands.md does not give both exit codes for a run stopped at its time limit"
 ! grep -qF "starts and limits its own agent runs" "$KIT/scripts/job.sh" "$CD" || fail "jobs criterion 11: a COMMAND job still starts and limits its own agent runs"
 for w in "already running" after-step RESULT TIMEOUT apostrophe; do grep -qF "$w" <<<"$top" || fail "jobs criterion 11: the top Unreleased section of CHANGELOG.md does not say $w"; done
+# specs/model-per-task.md, criterion 15: the docs and the changelog say the new options, line, fields and checks.
+for w in "--tier" "--model <tier>" "- Model:" "--by-model" "runs in progress:" "Sessions the owner opens"; do grep -qF -- "$w" "$CD" || fail "model criterion 15: docs/commands.md does not say $w"; done
+grep -F '| `cabinet status --json` |' "$CD" | grep -qF 'runs' || fail "model criterion 15: the cabinet status --json row has no runs field"
+grep -qF 'The rule, from recorded facts only: start at `standard`; `light` when the entry is addressed to a role in `CABINET_LIGHT_ROLES`; `strong` when the entry'"'"'s spec has a critical area in `areas`. At run time, one tier up for each BLOCK or CHANGES verdict recorded on the entry, never above `strong`.' "$KIT/docs/concepts.md" \
+  || fail "model criterion 15: docs/concepts.md does not give the rule as the spec words it"
+grep -q '^| Runner | Model option | .*| Effort option |$' "$KIT/docs/agent-setup.md" || fail "model criterion 15: docs/agent-setup.md's runner table has no effort column"
+for id in tier.exists tier.effort; do grep -qF "| \`$id\` |" "$KIT/docs/troubleshooting.md" || fail "model criterion 15: docs/troubleshooting.md has no row for $id"; done
+for w in "--tier" "cabinet status" "Model:" "spend.tsv"; do grep -qF -- "$w" <<<"$top" || fail "model criterion 15: the top Unreleased section of CHANGELOG.md does not say $w"; done
 # What version, update and the recipes say matches what they do: the tagline beside the mark, "Nothing
 # changed" with git or without, and the commands that commit themselves.
 grep -qF "In a terminal it prints the Cabinet mark with the version and the tagline beside it" "$KIT/docs/commands.md" || fail "docs/commands.md does not say cabinet version shows the tagline"
@@ -2193,20 +2201,34 @@ for x in cr-code cr-none cr-chosen; do wsrm "$T/$x"; done
   return 0   # a last "check && fail" line must not end the run
 }
 
-section "pipeline runner: one piece of work from build to ready to push" ""
-s51() {
-PW="$T/pipe"; FS="$T/pipe-state"; mkdir -p "$FS" "$T/pfakes"
-"$F" new "$PW" --yes >/dev/null || fail "new for the runner"
+# pipe_setup <workspace> <state folder> [<options for new>...]: the pipeline runner's fixture: a workspace with
+# the repo app built by web, and the fake agent tool in $T/pfakes that plays each role (claude, and codex).
+pipe_setup() {
+local PW="$1" FS="$2"; shift 2
+mkdir -p "$FS" "$T/pfakes"
+"$F" new "$PW" --yes "$@" >/dev/null || fail "new for the runner ($PW)"
 git init -q "$PW/app" && echo x > "$PW/app/a.txt" && git -C "$PW/app" add -A && git -C "$PW/app" commit -qm init
 printf 'app\t-\t-\tno\n' >> "$PW/repos.tsv"
 L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The web app | web |'
 git -C "$PW" commit -qam "app, built by web"
 # A fake claude that acts as each role: the builder commits, hands on with --depends-on and closes the
-# work; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down.
+# work; a reviewer writes a note and records PASS, or BLOCK while $FS/block-<role> counts down. With
+# FAKE_ARGS and FAKE_EFFORT set, each call's arguments ("[a] [b] ...") and its CABINET_EFFORT ("unset" when
+# not set) are appended there, one line per call; FAKE_SLEEP: it sleeps that long first (its process ID in
+# $FS/fake.pid); FAKE_USD: the cost it reports (default 0.01). Run as codex (a link), it takes the role
+# from the "Act as the <role> role:" line, as codex is given it.
 cat > "$T/pfakes/claude" <<'FAKE'
 #!/bin/bash
 agent="" prompt=""
-while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+[[ -z "${FAKE_ARGS:-}" ]] || { for a in "$@"; do printf '[%s] ' "$a"; done; echo; } >> "$FAKE_ARGS"
+[[ -z "${FAKE_EFFORT:-}" ]] || printf '%s\n' "${CABINET_EFFORT-unset}" >> "$FAKE_EFFORT"
+if [[ "${0##*/}" == codex ]]; then
+  case "$1 ${2:-}" in "debug models") echo '{"models":[{"slug":"m-std"}]}'; exit 0 ;; esac
+  [[ "${1:-}" == exec ]] || { echo '{}'; exit 0; }
+fi
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model|--effort) shift 2 ;; -p|exec|--json) shift ;; *) prompt="$1"; shift ;; esac; done
+if [[ "${0##*/}" == codex ]]; then agent="$(printf '%s' "$prompt" | sed -n 's/^Act as the \([a-z-]*\) role: .*/\1/p')"; prompt="${prompt#*follow it as your instructions. }"; fi
+[[ -z "${FAKE_SLEEP:-}" ]] || { echo $$ > "$FS/fake.pid"; sleep "$FAKE_SLEEP"; }
 printf '%s\n' "$prompt" >> "$FS/prompts"
 id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
 repo=app; [[ "$agent" == backend ]] && repo=api
@@ -2230,15 +2252,67 @@ elif [[ ( "$agent" == web || "$agent" == backend ) && "$prompt" == "Pick up hand
 elif [[ "$agent" == web || "$agent" == backend ]]; then
   w="$(printf '%s' "$prompt" | grep -oE 'for H-[0-9]{8}-[0-9]+' | cut -c5-)"
   echo fix >> $repo/a.txt; git -C $repo commit -qam "fix $w"; git -C $repo rev-parse --short HEAD >> "$FS/commits-$w"
+elif [[ -z "$id" ]]; then
+  :   # no handoff named (a job's prompt): nothing to do
 elif [[ ! -f "$FS/silent-$agent" ]]; then
   w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
   v=PASS; n="$(cat "$FS/block-$agent" 2>/dev/null || echo 0)"; ((n > 0)) && { v=BLOCK; echo $((n - 1)) > "$FS/block-$agent"; }
   mkdir -p "specs/$agent"; echo "checked" > "specs/$agent/$id.md"; git add "specs/$agent/$id.md"; git commit -qm note -- "specs/$agent/$id.md"
   bin/handoff.sh record "$id" --role "$agent" "$v" --commits "$(paste -sd, "$FS/commits-$w")" --note "specs/$agent/$id.md" >/dev/null
 fi
-echo '{"type":"result","result":"done","total_cost_usd":0.01}'
+echo '{"type":"result","result":"done","total_cost_usd":'"${FAKE_USD:-0.01}"'}'
 FAKE
-chmod +x "$T/pfakes/claude"
+chmod +x "$T/pfakes/claude"; ln -sf claude "$T/pfakes/codex"
+}
+# pipe_spec <workspace>: in a pipe_setup workspace, the repo api built by backend and a ready spec,
+# specs/login.md, built in app and api (spec run's fixture).
+pipe_spec() {
+local PW="$1"
+git init -q "$PW/api" && echo x > "$PW/api/a.txt" && git -C "$PW/api" add -A && git -C "$PW/api" commit -qm init
+printf 'api\t-\t-\tno\n' >> "$PW/repos.tsv"
+L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'
+cat > "$PW/specs/login.md" <<'SPEC'
+---
+feature: login
+status: ready
+repos: [app, api]
+---
+
+# Login
+
+## Rules
+
+Email and password.
+
+## Design
+
+- One screen: email, password, a button; states: empty, wrong password.
+
+## Acceptance criteria
+
+- A valid password signs in.
+
+## Decisions
+
+| # | Question | Options | Recommendation | Owner answer (date) |
+|---|---|---|---|---|
+
+## Plan
+
+How it will be built.
+
+## Reviews
+
+SPEC
+mkdir -p "$PW/specs/qa" "$PW/specs/design"; echo ok > "$PW/specs/qa/login.md"; echo ok > "$PW/specs/design/login.md"
+git -C "$PW" add -A && git -C "$PW" commit -qm "login spec"
+"$PW/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null && "$PW/bin/spec.sh" record specs/login.md --role design-lead PASS --note specs/design/login.md >/dev/null \
+  && "$PW/bin/spec.sh" check specs/login.md >/dev/null || fail "test setup: a ready spec: $("$PW/bin/spec.sh" check specs/login.md)"
+}
+section "pipeline runner: one piece of work from build to ready to push" ""
+s51() {
+PW="$T/pipe"; FS="$T/pipe-state"
+pipe_setup "$PW" "$FS"
 run() { FS="$FS" PATH="$T/pfakes:$PATH" "$F" -C "$PW" handoff run "$@" 2>&1; }
 work() { local i; i="$("$PW/bin/handoff.sh" add --from chief-of-staff --to app --changed "Nothing yet." --needed "$1" --small "$1")"; echo "${i%% *}"; }
 # Work that is not ready to build, or not for one builder, is not run.
@@ -2375,46 +2449,7 @@ mkdir "$PW/.cabinet/run-$g.lock"; out="$(run "$g")" && fail "two runs of one pie
 rmdir "$PW/.cabinet/run-$g.lock"
 # From a ready spec to ready to push: routing, each builder's plan, the architect's review of it, then
 # each of its handoffs in order. Two repos, two builders.
-git init -q "$PW/api" && echo x > "$PW/api/a.txt" && git -C "$PW/api" add -A && git -C "$PW/api" commit -qm init
-printf 'api\t-\t-\tno\n' >> "$PW/repos.tsv"
-L before "$PW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `api` | The API | backend |'
-cat > "$PW/specs/login.md" <<'SPEC'
----
-feature: login
-status: ready
-repos: [app, api]
----
-
-# Login
-
-## Rules
-
-Email and password.
-
-## Design
-
-- One screen: email, password, a button; states: empty, wrong password.
-
-## Acceptance criteria
-
-- A valid password signs in.
-
-## Decisions
-
-| # | Question | Options | Recommendation | Owner answer (date) |
-|---|---|---|---|---|
-
-## Plan
-
-How it will be built.
-
-## Reviews
-
-SPEC
-mkdir -p "$PW/specs/qa" "$PW/specs/design"; echo ok > "$PW/specs/qa/login.md"; echo ok > "$PW/specs/design/login.md"
-git -C "$PW" add -A && git -C "$PW" commit -qm "login spec"
-"$PW/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/login.md >/dev/null && "$PW/bin/spec.sh" record specs/login.md --role design-lead PASS --note specs/design/login.md >/dev/null \
-  && "$PW/bin/spec.sh" check specs/login.md >/dev/null || fail "test setup: a ready spec: $("$PW/bin/spec.sh" check specs/login.md)"
+pipe_spec "$PW"
 srun() { FS="$FS" PATH="$T/pfakes:$PATH" "$F" -C "$PW" spec run "$@" 2>&1; }
 out="$(srun specs/login.md --dry-run)" && [[ "$out" == "chief-of-staff: routes specs/login.md" ]] || fail "spec run --dry-run: $out"
 out="$(srun specs/login.md)" || fail "spec run: $out"
@@ -7885,6 +7920,285 @@ quietpair() {
 printf '# Brief\n' > "$JW/BRIEF.md"; quietpair BRIEF.md "a plain file"
 ln -s BRIEF.md "$JW/r.md"; quietpair r.md "a link inside"
   return 0   # a last "check && fail" line must not end the run
+}
+
+# Model per task (specs: model and effort per task). Each section has its own pipe_setup workspace; the fake
+# records each call's arguments in $T/claude.args and its CABINET_EFFORT in $T/claude.effort.
+# mp_ws <name>: a fresh workspace $T/<name> (slug <name>) and its state folder; sets MP, FS, MLOG.
+mp_ws() { MP="$T/$1" FS="$T/$1-state" MLOG="$HOME/$LOGS/$1"; pipe_setup "$MP" "$FS" --runner claude; : > "$T/claude.args"; : > "$T/claude.effort"; }
+mpf() { FS="$FS" FAKE_ARGS="$T/claude.args" FAKE_EFFORT="$T/claude.effort" PATH="$T/pfakes:$PATH" "$@"; }
+mpc() { mpf "$F" -C "$MP" "$@"; }
+mph() { (cd "$MP" && mpf bin/handoff.sh "$@"); }
+# mp_work [<add options>...]: a --small builder entry (to app, built by web); prints its ID.
+mp_work() { local i; i="$(mph add --from chief-of-staff --to app --changed "Nothing yet." --needed "Build it" --small "$@" "Build it")" || fail "add: $i"; echo "${i%% *}"; }
+# mp_line <ID> <line>: the entry's "- Model:" line becomes <line> ("" removes it), committed.
+mp_line() {
+  node -e 'const fs = require("node:fs"), [f, id, line] = process.argv.slice(1), l = fs.readFileSync(f, "latin1").split("\n");
+    let on = false; const out = [];
+    for (const x of l) { if (x.startsWith("### ")) on = x.startsWith("### " + id + ":"); if (on && x.startsWith("- Model:")) { if (line !== "") out.push(line); } else out.push(x); }
+    fs.writeFileSync(f, out.join("\n"), "latin1");' "$MP/HANDOFFS.md" "$1" "$2"
+  git -C "$MP" commit -qm "model line of $1" -- HANDOFFS.md
+}
+mp_model_line() { sed -n "/^### $1:/,/^### /p" "$MP/HANDOFFS.md" | grep '^- Model:' || true; }
+# mp_mark / mp_added: the lines of $T/claude.args after the mark.
+mp_mark() { MPN="$(wc -l < "$T/claude.args" | tr -d ' ')"; }
+mp_added() { tail -n "+$((MPN + 1))" "$T/claude.args"; }
+# mp_vals <option> <role>: the value after <option> on each added line whose --agent is <role>, "none" without it.
+mp_vals() { mp_added | grep -F "[--agent] [$2] " | while IFS= read -r l; do v="$(printf '%s' "$l" | sed -n "s/.*\[$1\] \[\([^]]*\)\].*/\1/p")"; echo "${v:-none}"; done | sort -u | paste -sd' ' -; }
+# mp_is <option> <value> <role>...: each role ran, and every added line of it has that value.
+mp_is() { local o=$1 v=$2 r; shift 2; for r in "$@"; do [[ "$(mp_vals "$o" "$r")" == "$v" ]] || fail "$r: $o $(mp_vals "$o" "$r"), not $v: $(mp_added | grep -F "[--agent] [$r] " | cut -c1-200)"; done; }
+mp_tiers() {
+  mpc config --light-roles "chief-of-staff product-manager design-lead finance" >/dev/null || fail "config --light-roles"
+  mpc config --tier light "m-light low" >/dev/null && mpc config --tier standard "m-std" >/dev/null && mpc config --tier strong "m-strong high" >/dev/null || fail "tiers set"
+}
+# Criterion 14: every model any run asked for is one the owner set.
+mp_known() { local x; x="$(grep -o '\[--model\] \[[^]]*\]' "$T/claude.args" | sed 's/.*\[\(.*\)\]$/\1/' | sort -u | grep -vxE 'm-light|m-std|m-strong|m-1|m-l' || true)"; [[ -z "$x" ]] || fail "criterion 14: a model no setting names: $x"; }
+
+section "model per task A: tiers set and checked" ""
+s110() {
+local MP FS MLOG out e
+mp_ws mpa
+# Criterion 1: set, removed, refused with cabinet.env unchanged.
+mp_tiers
+grep -qx 'CABINET_TIER_LIGHT="m-light low"' "$MP/cabinet.env" && grep -qx 'CABINET_TIER_STANDARD="m-std"' "$MP/cabinet.env" && grep -qx 'CABINET_TIER_STRONG="m-strong high"' "$MP/cabinet.env" || fail "criterion 1: $(grep TIER "$MP/cabinet.env")"
+grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff product-manager design-lead finance"' "$MP/cabinet.env" || fail "criterion 1: the light roles"
+out="$(mpc config --tier strong "m-s" --dry-run)" && grep -qF "tier strong: m-strong high -> m-s" <<<"$out" || fail "config --tier --dry-run: $out"
+mpc config --tier strong off >/dev/null && ! grep -q '^CABINET_TIER_STRONG=' "$MP/cabinet.env" || fail "criterion 1: --tier strong off left $(grep TIER_STRONG "$MP/cabinet.env")"
+cp "$MP/cabinet.env" "$T/mpa.env"
+e="$(mpc config --tier huge "m" 2>&1 >/dev/null)" && fail "criterion 1: --tier huge was taken"
+grep -qF "light, standard, strong" <<<"$e" && cmp -s "$MP/cabinet.env" "$T/mpa.env" || fail "criterion 1: --tier huge: $e"
+for v in "--yolo" "m x;y" "m a b"; do
+  e="$(mpc config --tier strong "$v" 2>&1 >/dev/null)" && fail "criterion 1: --tier strong '$v' was taken"
+  [[ -n "$e" ]] && cmp -s "$MP/cabinet.env" "$T/mpa.env" || fail "criterion 1: --tier strong '$v': $e"
+done
+# Criterion 13: a hand-edited tier, and tier models against the tool's list (the fake codex lists m-std only).
+printf 'CABINET_TIER_STRONG="--x"\n' >> "$MP/cabinet.env"
+out="$(mpc doctor --json | j -r '$.results.filter((r) => r.id == "tier.exists").map((r) => r.level + " " + r.message).join("\n")')"
+grep -q '^fix .*CABINET_TIER_STRONG.*--x' <<<"$out" || fail "criterion 13: a hand-edited tier: $out"
+mp_tiers; mpc config --runner codex >/dev/null 2>&1 || fail "config --runner codex"
+out="$(mpc doctor --json | j -r '$.results.filter((r) => r.id == "tier.exists").map((r) => r.level + " " + r.message).join("\n")')"
+[[ "$(grep -c '^fix ' <<<"$out")" == 2 ]] && grep -q '^fix .*m-light' <<<"$out" && grep -q '^fix .*m-strong' <<<"$out" && ! grep -q 'm-std' <<<"$out" || fail "criterion 13: tier models and codex's list: $out"
+return 0
+}
+
+section "model per task B: the Model: line and the run" ""
+s111() {
+local MP FS MLOG a b c i out e x r
+mp_ws mpb
+# Criterion 2: no tier, today's models.
+mpc config --model m-1 --model-light m-l >/dev/null 2>&1 || fail "config --model --model-light"
+a="$(mp_work)"; [[ "$(mp_model_line "$a")" == "- Model: standard (default)" ]] || fail "criterion 2: the line: $(mp_model_line "$a")"
+mp_mark; mph run "$a" >/dev/null 2>&1 || fail "criterion 2: run $a"
+mp_is --model m-1 web qa security; mp_is --model m-l design-lead
+b="$(mp_work)"; mp_line "$b" "- Model: light (default)"
+mp_mark; mph run "$b" >/dev/null 2>&1 || fail "criterion 2: run $b"
+mp_is --model m-l web qa security design-lead
+mpc config --model off --model-light off >/dev/null 2>&1 || fail "config --model off"
+c="$(mp_work)"; mp_mark; mph run "$c" >/dev/null 2>&1 || fail "criterion 2: run $c"
+mp_is --model none web qa security design-lead
+# Criterion 3: the proposed line.
+mp_tiers
+L sub "$MP/AGENTS.md" -- '/^\| none yet \| \| \| \| \|$/' '| setup | `app/setup/` | security | the check | none |'
+pipe_spec "$MP"
+sed 's/^feature: login$/feature: tiers/; s/^repos: \[app, api\]$/repos: [app]/' "$MP/specs/login.md" | awk '{ print } /^repos: \[app\]$/ { print "areas: [setup]" }' | grep -v '^- Verdict:' > "$MP/specs/tiers.md"
+git -C "$MP" add -A && git -C "$MP" commit -qm "tiers spec, a setup area" >/dev/null
+(cd "$MP" && bin/spec.sh record specs/tiers.md --role qa PASS --note specs/qa/login.md >/dev/null && bin/spec.sh record specs/tiers.md --role design-lead PASS --note specs/design/login.md >/dev/null && bin/spec.sh check specs/tiers.md >/dev/null) \
+  || fail "test setup: specs/tiers.md ready: $(cd "$MP" && bin/spec.sh check specs/tiers.md)"
+i="$(mp_work)"; [[ "$(mp_model_line "$i")" == "- Model: standard (default)" ]] || fail "criterion 3, builder: $(mp_model_line "$i")"
+i="$(mph add --from chief-of-staff --to product-manager --changed c --needed n "Plan it")"; i="${i%% *}"
+[[ "$(mp_model_line "$i")" == "- Model: light (role in CABINET_LIGHT_ROLES)" ]] || fail "criterion 3, product-manager: $(mp_model_line "$i")"
+for r in app product-manager; do
+  i="$(mph add --from chief-of-staff --to "$r" --spec specs/tiers.md --changed c --needed n "Tiers $r")" || fail "add --spec: $i"; i="${i%% *}"
+  [[ "$(mp_model_line "$i")" == "- Model: strong (critical area: setup)" ]] || fail "criterion 3, a critical area, to $r: $(mp_model_line "$i")"
+done
+i="$(mph add --from qa --to owner --changed c --needed n "For you")"; i="${i%% *}"; [[ -z "$(mp_model_line "$i")" ]] || fail "criterion 3, owner: $(mp_model_line "$i")"
+i="$(mp_work --model strong)"; [[ "$(mp_model_line "$i")" == "- Model: strong (set when filed)" ]] || fail "criterion 3, --model strong: $(mp_model_line "$i")"
+[[ "$(sed -n "/^### $i:/,/^### /p" "$MP/HANDOFFS.md" | grep -c '^- Model:')" == 1 ]] || fail "criterion 3: more than one Model line"
+cp "$MP/HANDOFFS.md" "$T/mpb.h"
+mph add --from chief-of-staff --to app --changed c --needed n --small --model huge "Huge" >/dev/null 2>&1 && fail "criterion 3: --model huge was taken"
+cmp -s "$MP/HANDOFFS.md" "$T/mpb.h" || fail "criterion 3: --model huge changed HANDOFFS.md"
+# Criterion 4: the run uses the line.
+a="$(mp_work)"; mp_mark; mph run "$a" >/dev/null 2>&1 || fail "criterion 4: run $a"
+mp_is --model m-std web qa security; mp_is --effort none web qa security; mp_is --model m-light design-lead; mp_is --effort low design-lead
+grep -qF "Model: standard (m-std, effort tool default): default" "$MLOG/run-$a.log" && grep -qF "Model: light (m-light, effort low): reviewer in CABINET_LIGHT_ROLES" "$MLOG/run-$a.log" || fail "criterion 4: the run log: $(grep Model: "$MLOG/run-$a.log")"
+b="$(mp_work)"; mp_line "$b" "- Model: strong (default)"; mp_mark; mph run "$b" >/dev/null 2>&1 || fail "criterion 4: run $b"
+mp_is --model m-strong web qa security; mp_is --effort high web qa security; mp_is --model m-light design-lead; mp_is --effort low design-lead
+# Criterion 6: a bad word stops the run before any agent, shown with ? for a control character.
+mkdir -p "$T/mpb-cwd"
+for x in "Strong (default)|Strong" "strong;touch pwned (default)|strong;touch" "m-strong (default)|m-strong" "$(printf '\033[31mx') (default)|?[31mx"; do
+  i="$(mp_work)"; mp_line "$i" "- Model: ${x%%|*}"; mp_mark
+  (cd "$T/mpb-cwd" && mpf "$MP/bin/handoff.sh" run "$i" >/dev/null 2>"$T/mpb.err") && fail "criterion 6: run took ${x%%|*}"
+  sleep 2
+  e="$i: \"Model: ${x#*|}\" is not a tier (light, standard, strong): edit the line"
+  [[ -z "$(mp_added)" ]] && grep -qxF "$e" "$T/mpb.err" && grep -qF "$e" "$MLOG/run-$i.log" || fail "criterion 6, ${x#*|}: $(cat "$T/mpb.err") / $(cat "$MLOG/run-$i.log" 2>/dev/null)"
+  [[ "$(grep -c $'\033' "$T/mpb.err")" == 0 && "$(grep -c $'\033' "$MLOG/run-$i.log")" == 0 ]] || fail "criterion 6: an ESC byte reached the output"
+  [[ ! -e "$MP/pwned" && ! -e "$T/mpb-cwd/pwned" ]] || fail "criterion 6: a file pwned"
+done
+# Criterion 7: an old entry, a job, and spec run's own agents keep today's models; its handoff runs use their lines.
+mpc config --model m-1 --model-light m-l >/dev/null 2>&1 || fail "config --model --model-light again"
+grep -qx 'CABINET_LIGHT_ROLES="chief-of-staff product-manager design-lead finance"' "$MP/cabinet.env" || fail "criterion 7: the light roles changed"
+a="$(mp_work)"; mp_line "$a" ""; [[ -z "$(mp_model_line "$a")" ]] || fail "test setup: an old entry"
+mp_mark; mph run "$a" >/dev/null 2>&1 || fail "criterion 7: run an old entry"
+mp_is --model m-1 web qa security; mp_is --model m-l design-lead; ! grep -q 'Model: ' "$MLOG/run-$a.log" || fail "criterion 7: an old entry's log names a tier"
+mp_added > "$T/mpb.old"
+mp_mark; (cd "$MP" && mpf bin/job.sh run brief >/dev/null 2>&1) || fail "criterion 7: job run brief"
+mp_is --model m-l chief-of-staff; mp_added >> "$T/mpb.old"
+! grep -qE '\[(m-light|m-std|m-strong)\]' "$T/mpb.old" || fail "criterion 7: a tier model reached an old entry or a job: $(cat "$T/mpb.old")"
+mp_mark; (cd "$MP" && mpf bin/spec.sh run specs/login.md >/dev/null 2>&1) || fail "criterion 7: spec run: $(tail -5 "$MLOG/run-login.log")"
+mp_added > "$T/mpb.spec"
+grep -E '\] \[(Route |Write your plan for |Review the plan in )' "$T/mpb.spec" > "$T/mpb.own" || fail "criterion 7: spec run started no agent of its own"
+while IFS= read -r x; do
+  r="$(sed -n 's/.*\[--agent\] \[\([^]]*\)\].*/\1/p' <<<"$x")"; e=m-1; [[ "$r" != chief-of-staff ]] || e=m-l
+  [[ "$(sed -n 's/.*\[--model\] \[\([^]]*\)\].*/\1/p' <<<"$x")" == "$e" ]] || fail "criterion 7 (i): $r: $(cut -c1-160 <<<"$x")"
+done < "$T/mpb.own"
+for i in $(mph list --json | j -r --each '$.filter((h) => h.spec == "specs/login.md" && h.builder !== null).map((h) => h.id)'); do
+  [[ "$(mp_model_line "$i")" == "- Model: standard (default)" ]] || fail "criterion 7 (ii): $i: $(mp_model_line "$i")"
+  awk '/: (builds|verifies|fixes) / { want = 1; next } want { if ($0 !~ /Model: standard \(m-std, effort tool default\): default$|Model: light \(m-light, effort low\): reviewer in CABINET_LIGHT_ROLES$/) bad = 1; want = 0 } END { exit bad || want }' "$MLOG/run-$i.log" \
+    || fail "criterion 7 (ii): $i's log: $(cat "$MLOG/run-$i.log")"
+done
+grep -vE '\] \[(Route |Write your plan for |Review the plan in )' "$T/mpb.spec" | while IFS= read -r x; do
+  r="$(sed -n 's/.*\[--agent\] \[\([^]]*\)\].*/\1/p' <<<"$x")"; e=m-std; [[ "$r" != design-lead ]] || e=m-light
+  [[ "$(sed -n 's/.*\[--model\] \[\([^]]*\)\].*/\1/p' <<<"$x")" == "$e" ]] || fail "criterion 7 (ii): $r: $(cut -c1-160 <<<"$x")"
+done
+mp_known
+return 0
+}
+
+section "model per task C: one tier up after a BLOCK" ""
+s112() {
+local MP FS MLOG i r n x v t m up c
+mp_ws mpc; mp_tiers
+i="$(mp_work)"; mp_line "$i" "- Model: light (default)"
+mph run "$i" >/dev/null 2>&1 || fail "criterion 5: the first run"
+r="$(mph list --json | j -r --arg i "$i" '$.find((h) => h.depends_on.includes($i)).id')"
+n=0
+for x in "qa m1 standard m-std 1 1" "security m2 strong m-strong 2 2" "qa m3 strong m-strong 2 3"; do
+  read -r v n t m up c <<<"$x"
+  mkdir -p "$MP/specs/$v"; echo "$v blocks" > "$MP/specs/$v/$n.md"
+  git -C "$MP" add "specs/$v/$n.md" && git -C "$MP" commit -qm "note $n" -- "specs/$v/$n.md"
+  mph record "$r" --role "$v" BLOCK --commits "$(paste -sd, "$FS/commits-$i")" --note "specs/$v/$n.md" >/dev/null || fail "criterion 5: record $v BLOCK"
+  mp_mark; mph run "$i" >/dev/null 2>&1 || fail "criterion 5 ($n): run: $(tail -3 "$MLOG/run-$i.log")"
+  [[ "$(mp_added | grep -F '[--agent] [web] ' | head -1 | sed -n 's/.*\[--model\] \[\([^]]*\)\].*/\1/p')" == "$m" ]] || fail "criterion 5 ($n): the builder: $(mp_added | grep -F '[--agent] [web] ' | head -1 | cut -c1-120)"
+  grep -q "Model: $t ($m, effort [a-z ]*): default; up $up after $c BLOCK or CHANGES$" "$MLOG/run-$i.log" || fail "criterion 5 ($n): the log: $(grep 'Model:' "$MLOG/run-$i.log" | tail -4)"
+  mp_is --model m-light design-lead
+  [[ "$(mph list --json | j -r --arg r "$r" '$.find((h) => h.id == $r).verdicts.filter((w) => w.role == "'"$v"'").pop().verdict')" == PASS ]] || fail "criterion 5 ($n): $v did not pass after the fix"
+done
+mp_known
+return 0
+}
+
+section "model per task D: the pipeline and effort" ""
+s113() {
+local MP FS MLOG i out
+mp_ws mpd; mp_tiers
+# Criterion 8: the scheduled pipeline uses the line (a cost limit is needed to turn it on).
+mpc config --pipeline small --pipeline-limit 5 >/dev/null 2>&1 || fail "config --pipeline small"
+i="$(mp_work --model strong)"; mp_mark
+(cd "$MP" && mpf bin/job.sh run pipeline >/dev/null 2>&1) || fail "criterion 8: job run pipeline: $(cat "$MP/PIPELINE.md")"
+mp_is --model m-strong web
+grep -qF "Model: strong (m-strong, effort high): set when filed" "$MP/PIPELINE.md" || fail "criterion 8: PIPELINE.md: $(cat "$MP/PIPELINE.md")"
+mp_known
+mpc config --pipeline off >/dev/null 2>&1 || fail "config --pipeline off"
+# Criterion 9: effort reaches the tool as its own argument; CABINET_EFFORT only for a custom runner.
+i="$(mp_work --model strong)"; mp_mark; local en; en="$(wc -l < "$T/claude.effort")"
+mph run "$i" >/dev/null 2>&1 || fail "criterion 9: run"
+mp_added | grep -F '[--agent] [web] ' | grep -qF '[--effort] [high] ' || fail "criterion 9: the builder's effort: $(mp_added | grep -F '[--agent] [web] ' | cut -c1-200)"
+[[ "$(tail -n "+$((en + 1))" "$T/claude.effort" | sort -u)" == unset ]] || fail "criterion 9: CABINET_EFFORT reached a built-in runner: $(tail -n "+$((en + 1))" "$T/claude.effort")"
+mpc config --runner custom --runner-cmd "printf \"%s %s\\n\" \"\$CABINET_AGENT\" \"\${CABINET_EFFORT-unset}\" >> \"$T/custom.effort\"" >/dev/null 2>&1 || fail "config --runner custom"
+i="$(mp_work --model strong)"; mph run "$i" >/dev/null 2>&1 || true
+grep -qx "web high" "$T/custom.effort" || fail "criterion 9: custom, strong: $(cat "$T/custom.effort")"
+: > "$T/custom.effort"; i="$(mp_work)"; mph run "$i" >/dev/null 2>&1 || true
+grep -qx "web unset" "$T/custom.effort" || fail "criterion 9: custom, standard: $(cat "$T/custom.effort")"
+mpc config --runner codex >/dev/null 2>&1 || fail "config --runner codex"
+i="$(mp_work --model strong)"; mp_mark
+mph run "$i" >/dev/null 2>&1 || fail "criterion 9: codex: $(tail -5 "$MLOG/run-$i.log")"
+[[ -n "$(mp_added | grep -F '[exec] ')" ]] && ! mp_added | grep -qF '[--effort]' || fail "criterion 9: codex got an effort: $(mp_added | cut -c1-160)"
+out="$(mpc doctor --json | j -r '$.results.filter((r) => r.id == "tier.effort").map((r) => r.level + " " + r.message).join("\n")')"
+[[ "$out" == "note codex has no effort setting: the effort in light is not used"$'\n'"note codex has no effort setting: the effort in strong is not used" ]] || fail "criterion 9: tier.effort: $out"
+return 0
+}
+
+section "model per task E: cost by model" ""
+s114() {
+local MP FS MLOG a b s x n1 n2 n3 tsv
+mp_ws mpe; mp_tiers
+tsv="$MLOG/spend.tsv"; mkdir -p "$MLOG"
+printf '%s\tbrief\tclaude\t1.00\t\t\t\n' "$(date +%s)" > "$tsv"   # a row from 0.5.1: seven columns
+a="$(mp_work)"; (cd "$MP" && FAKE_USD=0.50 mpf bin/handoff.sh run "$a" >/dev/null 2>&1) || fail "criterion 11: run $a"
+b="$(mp_work)"; mp_line "$b" "- Model: strong (default)"; (cd "$MP" && FAKE_USD=0.50 mpf bin/handoff.sh run "$b" >/dev/null 2>&1) || fail "criterion 11: run $b"
+awk -F'\t' 'NR > 1 && (NF != 9 || $8 !~ /^m-/) { exit 1 }' "$tsv" || fail "criterion 11: a new row is not nine columns with its model: $(cat "$tsv")"
+awk -F'\t' '$8 == "m-strong" && $9 != "high" || $8 == "m-std" && $9 != "" { exit 1 }' "$tsv" || fail "criterion 11: the effort column: $(cat "$tsv")"
+# job list is as it was: the same lines with the two new columns cut off.
+cp "$tsv" "$T/mpe.tsv"; cut -f1-7 "$T/mpe.tsv" > "$tsv"
+s="$(mpc job list)"; x="$(mpc job list --json)"; cp "$T/mpe.tsv" "$tsv"
+[[ "$(mpc job list)" == "$s" && "$(mpc job list --json)" == "$x" ]] || fail "criterion 11: job list changed: $(mpc job list)"
+n1="$(grep -c '\[--model\] \[m-light\]' "$T/claude.args")"; n2="$(grep -c '\[--model\] \[m-std\]' "$T/claude.args")"; n3="$(grep -c '\[--model\] \[m-strong\]' "$T/claude.args")"
+x="$(printf 'm-light low $%.2f\nm-std - $%.2f\nm-strong high $%.2f\nunknown - $1.00' "$(awk "BEGIN { print $n1 * 0.5 }")" "$(awk "BEGIN { print $n2 * 0.5 }")" "$(awk "BEGIN { print $n3 * 0.5 }")")"
+[[ "$(mpc job list --by-model)" == "$x" ]] || fail "criterion 11: job list --by-model: $(mpc job list --by-model) -- expected: $x"
+mpc job list --by-model --json | j -e --argjson n "[$n1, $n2, $n3]" '$.length == 4 && $[0].model == "m-light" && $[0].effort == "low" && $[0].cost_this_week_usd == $n[0] * 0.5
+  && $[1].model == "m-std" && $[1].effort === null && $[1].cost_this_week_usd == $n[1] * 0.5 && $[2].model == "m-strong" && $[2].effort == "high" && $[2].cost_this_week_usd == $n[2] * 0.5
+  && $[3].model == "unknown" && $[3].effort === null && $[3].cost_this_week_usd == 1' >/dev/null || fail "criterion 11: --by-model --json: $(mpc job list --by-model --json)"
+return 0
+}
+
+section "model per task F: runs in progress" ""
+s115() {
+local MP FS MLOG i s0 t0 out p w st
+mp_ws mpf; mp_tiers
+sedi 's/^CABINET_JOB_TIMEOUT=.*/CABINET_JOB_TIMEOUT="0"/' "$MP/cabinet.env"; grep -q '^CABINET_JOB_TIMEOUT="0"' "$MP/cabinet.env" || echo 'CABINET_JOB_TIMEOUT="0"' >> "$MP/cabinet.env"
+git -C "$MP" commit -qam "no time limit (no watchdog left behind by a killed run)"
+# mp_wait: until the sleeping fake has started (its arguments written), polled every 0.2 s, at most 10 s.
+mp_wait() { local k=0; until [[ -s "$T/claude.args" && -s "$FS/fake.pid" ]]; do sleep 0.2; k=$((k + 1)); ((k < 50)) || fail "criterion 12: no agent started"; done; }
+st() { mpc status "$@"; }
+# The snapshot: status as it was before runs were listed (its lines up to the new section).
+s0="$(st --json)"; t0="$(st | sed '/^runs in progress:$/,$d')"
+# (a, b) A handoff run in progress.
+i="$(mp_work)"; : > "$T/claude.args"; rm -f "$FS/fake.pid"
+(cd "$MP" && FAKE_SLEEP=5 mpf bin/handoff.sh run "$i" >/dev/null 2>&1) & p=$!
+mp_wait
+out="$(st --json)"
+j -e --arg i "$i" --argjson s "$s0" '$.runs.length == 1 && ((r) => r.kind == "handoff" && r.role == "web" && r.work == $i && r.runner == "claude" && r.model == "m-std" && r.effort === null
+  && r.state == "running" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(r.started) && typeof r.seconds == "number")($.runs[0])
+  && ["workspace", "version", "kit_version", "kit", "edited", "latest"].every((k) => JSON.stringify($[k]) == JSON.stringify($s[k]))' <<<"$out" >/dev/null || fail "criterion 12 (a): $out"
+kill -0 "$(j -r '$.runs[0].pid' <<<"$out")" 2>/dev/null || fail "criterion 12 (a): its pid is not a running process"
+[[ -z "$(git -C "$MP" status --porcelain -- .cabinet)" ]] || fail "N1: the run file reached git status: $(git -C "$MP" status --porcelain -- .cabinet)"
+out="$(st)"
+[[ "${out:0:${#t0}}" == "$t0" ]] && grep -qx 'runs in progress:' <<<"${out:${#t0}}" && grep -E "^  .*$i" <<<"$out" | grep -q 'web' && grep -E "^  .*$i" <<<"$out" | grep -q 'm-std' || fail "criterion 12 (b): $out"
+# (c) Once it ends: none.
+wait "$p" || fail "criterion 12: the run failed"; sleep 2
+st --json | j -e '$.runs.length == 0' >/dev/null && st | grep -A1 -x 'runs in progress:' | grep -qx '  no runs in progress' || fail "criterion 12 (c): $(st)"
+# (d) A run killed with KILL: stale, and its lock stays.
+i="$(mp_work)"; : > "$T/claude.args"; rm -f "$FS/fake.pid"
+(cd "$MP" && FAKE_SLEEP=5 mpf bin/handoff.sh run "$i" >/dev/null 2>&1) & p=$!
+mp_wait
+w="$(st --json | j -r '$.runs[0].pid')"; kill -KILL "$w"; kill "$(cat "$FS/fake.pid")" 2>/dev/null || true; wait "$p" 2>/dev/null || true
+out="$(st --json)"; j -e '$.runs.length == 1 && $.runs[0].state == "stale"' <<<"$out" >/dev/null || fail "criterion 12 (d): $out"
+ls -d "$MP/.cabinet/run-$i.lock" >/dev/null 2>&1 || fail "criterion 12 (d): status removed the lock"
+rm -r "$MP/.cabinet/run-$i.lock"
+# (e) A job's run: its lock in the log folder; tiers do not apply to jobs.
+: > "$T/claude.args"; rm -f "$FS/fake.pid"
+(cd "$MP" && FAKE_SLEEP=5 mpf bin/job.sh run brief >/dev/null 2>&1) & p=$!
+mp_wait
+out="$(st --json)"
+j -e '$.runs.length == 1 && ((r) => r.kind == "job" && r.work == "brief" && r.role == "chief-of-staff" && r.runner == "claude" && r.model === null && r.effort === null && r.state == "running")($.runs[0])' <<<"$out" >/dev/null || fail "criterion 12 (e): $out"
+wait "$p" || true
+# (e2) A spec run: its first agent, chief-of-staff.
+pipe_spec "$MP"; : > "$T/claude.args"; rm -f "$FS/fake.pid"
+(cd "$MP" && FAKE_SLEEP=5 mpf bin/spec.sh run specs/login.md >/dev/null 2>&1) & p=$!
+mp_wait
+out="$(st --json)"; w="$(j -r '$.runs[0]?.pid ?? ""' <<<"$out")"
+j -e '$.runs.length == 1 && ((r) => r.kind == "spec" && r.work == "specs/login.md" && r.role == "chief-of-staff" && r.state == "running")($.runs[0])' <<<"$out" >/dev/null || fail "criterion 12 (e2): $out"
+[[ -z "$w" ]] || kill -TERM "$w" 2>/dev/null; kill "$(cat "$FS/fake.pid")" 2>/dev/null || true; wait "$p" 2>/dev/null || true; sleep 1
+rm -rf "$MP/.cabinet"/run-spec-*.lock
+# (f) Locks it cannot read: unknown, and nothing from them reaches the terminal.
+mkdir "$MP/.cabinet/run-H-20261113-99.lock" "$MP/.cabinet/run-x.lock"; printf '\033]0;x\007\npid=abc\n' > "$MP/.cabinet/run-x.lock/run"
+st --json | j -e '$.runs.length == 2 && $.runs.every((r) => r.state == "unknown" && Object.keys(r).every((k) => k == "state" || r[k] === null))' >/dev/null || fail "criterion 12 (f): $(st --json)"
+st > "$T/mpf.out" || fail "criterion 12 (f): status failed"
+[[ "$(grep -c $'\033' "$T/mpf.out")" == 0 ]] && ! grep -qF ']0;x' "$T/mpf.out" || fail "criterion 12 (f): a lock's text reached the output"
+rm -r "$MP/.cabinet/run-H-20261113-99.lock" "$MP/.cabinet/run-x.lock"
+# (g) No run.
+st > "$T/mpf.out" && grep -q 'no kit file edited' "$T/mpf.out" || fail "criterion 12 (g): $(cat "$T/mpf.out")"
+return 0
 }
 
 # Which sections to run: the matches, then everything they need, in suite order.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # HANDOFFS.md, the one channel between agents (CABINET.md, "Handoffs").
 #
-#   bin/handoff.sh add --from <name> --to <name> --changed "..."|--changed-file <file> --needed "..."|--needed-file <file> [--depends-on "..."] [--spec <file> | --small] [--way-back "..."|--way-back-file <file>] [--evidence <file or URL>]... "<title>"
+#   bin/handoff.sh add --from <name> --to <name> --changed "..."|--changed-file <file> --needed "..."|--needed-file <file> [--depends-on "..."] [--spec <file> | --small] [--model <tier>] [--way-back "..."|--way-back-file <file>] [--evidence <file or URL>]... "<title>"
 #       Append one entry to "## Open" with the next free ID for today (unique across HANDOFFS.md and
 #       handoffs/archive-*.md), today's date and the template's lines, then commit it on its own.
 #       Each --evidence file is copied to specs/evidence/<ID>/ and linked on the entry's Evidence line,
@@ -12,6 +12,10 @@
 #       one of the two. --small with a --depends-on holding a handoff ID, for a reviewer, is refused:
 #       run does not count a --small entry as a review. --way-back says how to undo the change once pushed, released or published
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
+#       An entry to a role (not owner or founder) gets "- Model: <tier> (<reason>)", the tier handoff run
+#       uses: strong for a spec with a critical area in AGENTS.md (critical area: <areas>), else light when
+#       every addressee is in CABINET_LIGHT_ROLES (role in CABINET_LIGHT_ROLES), else standard (default);
+#       --model light|standard|strong sets it (set when filed). The owner changes it by editing the word.
 #       --to writes owner and founder in lower case, in any case given (the handoff reader in lib.js).
 #       Prints the new ID first. With someone else's uncommitted lines in HANDOFFS.md, add, attach and
 #       record still commit only their own change (save_own), so those lines never go into the commit.
@@ -59,6 +63,12 @@
 #       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready:
 #       when every open review of it is (each entry that depends on it, not --small and not to a
 #       builder, --spec or not).
+#       Each agent runs at the tier on the work's "- Model:" line (cabinet config --tier), one tier up for
+#       each BLOCK or CHANGES on the work and its reviews (blocks in list --json), never above strong; a
+#       reviewer in CABINET_LIGHT_ROLES runs at light. Before each agent, the log says "Model: <tier>
+#       (<model>, effort <effort>): <reason>". A word that is not a tier stops the run before any agent; an
+#       entry with no Model line (filed before tiers) runs on the models as before. Its lock folder holds
+#       the file run (what runs now: cabinet status) and a .gitignore.
 #       Each run is limited like a job (CABINET_JOB_TIMEOUT), logged in the log folder as
 #       run-<ID>.log, and its cost recorded under <ID>. --dry-run prints the next step only. On an
 #       entry whose status word the kit does not know (Done, closed, none), it stops before any agent.
@@ -225,8 +235,8 @@ entry() {
 }
 
 h_add() {
-usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\"|--changed-file <file> --needed \"...\"|--needed-file <file> [--depends-on \"...\"] [--spec <file> | --small] [--way-back \"...\"|--way-back-file <file>] [--evidence <file or URL>]... \"<title>\""
-from="" to="" changed="" needed="" depends="none" title="" spec="" small="" back="" given="" v=""
+usage="usage: bin/handoff.sh add --from <name> --to <name> --changed \"...\"|--changed-file <file> --needed \"...\"|--needed-file <file> [--depends-on \"...\"] [--spec <file> | --small] [--model <tier>] [--way-back \"...\"|--way-back-file <file>] [--evidence <file or URL>]... \"<title>\""
+from="" to="" changed="" needed="" depends="none" title="" spec="" small="" back="" given="" v="" mtier="" mline=""
 local -a ev
 ev=()
 while (($#)); do
@@ -236,6 +246,10 @@ while (($#)); do
       ev+=("$(ev_arg "$2")") || exit 2
       shift 2 ;;
     --small) small=1; shift ;;
+    --model)
+      (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
+      has "$TIERS" "$2" || { echo "--model is light, standard or strong, not \"$(shown "$2")\". $usage" >&2; exit 2; }
+      mtier="$2"; shift 2 ;;
     --way-back|--way-back-file)
       (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }
       twin "$1"; v="$2"; [[ "$1" == --way-back ]] || file_text "$1" "$2" v
@@ -292,6 +306,21 @@ if [[ -n "$spec" ]]; then
   [[ "$st" =~ ^(ready|building)$ ]] || { echo "$spec is ${st:-without a status}, not ready: product-manager sets it ready once bin/spec.sh check $spec passes" >&2; exit 1; }
   [[ -z "$sp" ]] || { echo "$spec is not ready to build: $sp (bin/spec.sh check $spec)" >&2; exit 1; }
 fi
+# The tier it proposes (cabinet config --tier), for an entry to a role: from the facts the kit records only.
+if ! printf '%s\n' "$to" | json -R -e 'ownerIn($.join(" "))' >/dev/null 2>&1; then
+  if [[ -n "$mtier" ]]; then mline="$mtier (set when filed)"
+  else
+    x=""
+    if [[ -n "$spec" ]]; then
+      x="$(spec_areas "$WS/$spec" | while IFS= read -r a; do critical_areas | cut -f1 | grep -qxF -- "$a" && printf '%s\n' "$a"; done | LC_ALL=C sort -u | paste -sd, - | sed 's/,/, /g')"
+    fi
+    if [[ -n "$x" ]]; then mline="strong (critical area: $x)"
+    else
+      mline="light (role in CABINET_LIGHT_ROLES)"
+      while IFS= read -r n; do has "$CABINET_LIGHT_ROLES" "$n" || mline="standard (default)"; done < <(names_of "$to")
+    fi
+  fi
+fi
 
 lock_handoffs
 
@@ -311,7 +340,8 @@ entry="### $id: $title
 - Needed: $needed
 - Depends on: $depends${spec:+
 - Spec: $spec}${small:+
-- Size: small}${back:+
+- Size: small}${mline:+
+- Model: $mline}${back:+
 - Way back: $back}${evline:+
 - Evidence: $evline}"
 own_change() {
@@ -548,7 +578,7 @@ echo "archived $n closed entries"
 }
 
 h_scheduled() {
-local out="$WS/PIPELINE.md" spent limit="$CABINET_PIPELINE_LIMIT" item key mark x last
+local out="$WS/PIPELINE.md" spent limit="$CABINET_PIPELINE_LIMIT" item key mark x last said
 local -a items cmd
 items=()
 report() { { echo "# Pipeline, $(LC_ALL=C date '+%-d %b %Y, %-I:%M %p')"; echo; printf '%s\n' "$@"; } > "$out"; printf '%s\n' "$@"; }
@@ -581,8 +611,11 @@ for item in ${items[@]+"${items[@]}"}; do
   if [[ -f "$mark" ]]; then lines+=("- $key: skipped, stopped on $(cut -d' ' -f1 "$mark") for you: $(cut -d' ' -f2- "$mark") Once settled, run it by hand: cabinet ${item%% *} run $key"); continue; fi
   # Chosen outside $( ): bash 3.2 ends a command substitution at a case pattern's ")".
   if [[ "$item" == spec* ]]; then cmd=("$WS/bin/spec.sh" run "$key"); else cmd=("$0" run "$key"); fi
-  last="$("${cmd[@]}" 2>&1 | run_result)" || true
+  said="$("${cmd[@]}" 2>&1)" || true
+  last="$(run_result <<<"$said")" || true
   lines+=("- $key: ${last:-no result; see the log}")
+  # Each agent's tier and model, under its item (handoff run printed them through shown).
+  while IFS= read -r x; do lines+=("  $x"); done < <(grep '^Model: ' <<<"$said" || true)
   [[ "$last" != Paused* ]] || break
 done
 ((${#items[@]})) || lines+=("- Nothing to move: no work the setting ($CABINET_PIPELINE) allows is waiting.")
@@ -620,9 +653,21 @@ if [[ -n "$x" ]] && ! "$WS/bin/spec.sh" check "$x" >/dev/null 2>&1; then echo "$
 
 mkdir -p -m 700 "$LOGDIR"
 local lock="$K/run-$id.lock" log="$LOGDIR/run-$id.log"
+# The tier on its Model: line is a teammate's text: a word that is not a tier stops the run here, before
+# the lock and any agent, shown with each control character as ? (shown) on stderr and in the log.
+tier_ok() {
+  local mw; mw="$(json -r '$.model_word ?? ""' <<<"$1")"
+  [[ "$(json '$.model_word === null' <<<"$1")" == true ]] || has "$TIERS" "$mw" && return 0
+  x="$id: \"Model: $(shown "$mw")\" is not a tier (light, standard, strong): edit the line"
+  echo "$x" >&2; ((dry)) || echo "=== $(date '+%F %T') $x" >>"$log"; exit 1
+}
+tier_ok "$w"
 if ((dry == 0)); then
-  mkdir "$lock" 2>/dev/null || { echo "$id is already being run ($lock; remove the folder if no run is)" >&2; exit 1; }
-  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  mkdir "$lock" 2>/dev/null || { echo "$id is already being run ($lock; remove the folder, rm -r, if no run is)" >&2; exit 1; }
+  # Its .gitignore keeps the run file out of git status, and so out of any commit (as the handoff lock's).
+  trap 'run_unlock "$lock"' EXIT
+  printf '*\n' > "$lock/.gitignore"
+  RUN_LOCK="$lock" RUN_KIND=handoff RUN_WORK="$id"; run_note "" "" ""
 fi
 SPEND_LABEL="$id"
 # A stop that needs the owner is remembered, so a scheduled run does not pay for it again; a run by
@@ -636,8 +681,35 @@ agent() {  # agent <role> <what it does> <prompt>
   if run_over_limit; then say "Paused: this run's cost limit (\$$CABINET_RUN_LIMIT) is reached; the next run goes on from here"; exit 3; fi
   say "$1: $2"
   ((dry)) && exit 0
+  tier_for "$1"
   AGENT=$1 PROMPT=$3
   run_limited "$CABINET_JOB_TIMEOUT" "the run's time limit (CABINET_JOB_TIMEOUT in cabinet.env)" run_agent >>"$log" 2>&1 || stop "$1 did not finish (exit $?): see the log"
+}
+# tier_for <role>: the tier, model and effort run_agent uses for the agent about to start (RUN_TIER,
+# RUN_MODEL, RUN_EFFORT, RUN_KEY), worked out again before each one, and its "Model:" line in the log.
+# None for an entry with no Model line. A reviewer in CABINET_LIGHT_ROLES: light. Any other role: the
+# line's word, one tier up for each BLOCK or CHANGES on the work and its reviews (reviewsOf, as the
+# reviews above are found), never above strong.
+tier_for() {
+  local now e m=0 b i=0 t why
+  now="$(readiness)"
+  e="$(json -c --arg i "$id" '$[$i]' <<<"$now")"
+  RUN_TIER=""
+  tier_ok "$e"
+  [[ "$(json '$.model_word === null' <<<"$e")" == false ]] || return 0
+  if [[ "$1" != "$builder" ]] && has "$CABINET_LIGHT_ROLES" "$1"; then t=light why="reviewer in CABINET_LIGHT_ROLES"
+  else
+    t="$(json -r '$.model_word' <<<"$e")"
+    why="$(json -r '$.model_reason ?? ""' <<<"$e" | cut -c1-200)"; why="$(shown "$why")"
+    m="$(json --arg i "$id" '[$i, ...reviewsOf($, $i)].reduce((n, k) => n + Object.values($[k].blocks).reduce((a, c) => a + c, 0), 0)' <<<"$now")"
+    case "$t" in light) b=0 ;; standard) b=1 ;; *) b=2 ;; esac
+    i=$((b + m)); ((i <= 2)) || i=2
+    case "$i" in 0) t=light ;; 1) t=standard ;; *) t=strong ;; esac
+    ((m == 0)) || why="$why; up $((i - b)) after $m BLOCK or CHANGES"
+  fi
+  tier_get "$t"
+  RUN_TIER="$t" RUN_MODEL="$TIER_MODEL" RUN_EFFORT="$TIER_EFFORT" RUN_KEY="$TIER_KEY"
+  say "Model: $t ($(shown "${RUN_MODEL:-tool default}"), effort $(shown "${RUN_EFFORT:-tool default}")): $why"
 }
 # again <role>: for a reviewer asked again, the commits its last verdict on the review entry ($r) names
 # and the ones made after them, so it reads only those (.cabinet/rules/reviews.md, "A re-review");
@@ -708,8 +780,7 @@ while :; do
   fi
   # Its reviews: every open entry that depends on it, not filed --small and not work for a builder (a
   # later handoff in a spec's chain), --spec or not. Ready only when every one that needs review is.
-  vs="$(json -r --arg i "$id" 'Object.keys($).filter((k) => k != $i && !$[k].small && $[k].builder === null && new RegExp("(^|[^0-9A-Za-z-])" + $i + "($|[^0-9])").test($[k].depends_on)
-    && !statusClosed($[k].status_now)).join(" ")' <<<"$rd")"
+  vs="$(json -r --arg i "$id" 'reviewsOf($, $i).filter((k) => !statusClosed($[k].status_now)).join(" ")' <<<"$rd")"
   v="$(json -r --arg v "$vs" '$v.split(" ").find((k) => $[k]?.ready === false)' <<<"$rd")"
   if [[ -z "$vs" ]]; then
     case "$(json -r '$.status_now' <<<"$w")" in

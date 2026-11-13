@@ -15,16 +15,30 @@
 #       AGENT and PROMPT runs that command in the workspace (the pipeline job: bin/handoff.sh run
 #       --scheduled, with TIMEOUT="0"). MODEL="<name>" in an agent job asks for that model in place of
 #       CABINET_MODEL; a COMMAND job with MODEL is refused.
-#   bin/job.sh list [--json]
+#   bin/job.sh list [--by-model] [--json]
 #       Every job: its name, role, schedule, time limit and what it cost this week, with the week's
-#       total and budget (CABINET_BUDGET), from what the agent tool reports.
+#       total and budget (CABINET_BUDGET), from what the agent tool reports. --by-model: this week's cost
+#       per model and effort instead, from every run cabinet started (spend.tsv, columns 8 and 9): rows
+#       "<model> <effort or -> $<dollars>", sorted by model, tool-default (no model asked for) and then
+#       unknown (a row from before the columns) last; JSON [{model, effort, cost_this_week_usd}], with
+#       model null for the tool's default and effort null for none.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 j_list() {
-  local json=0 a jf ws reported=0
-  for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/job.sh list [--json]" >&2; exit 2 ;; esac; done
+  local json=0 bymodel=0 a jf ws reported=0
+  for a in "$@"; do case "$a" in --json) json=1 ;; --by-model) bymodel=1 ;; *) echo "usage: bin/job.sh list [--by-model] [--json]" >&2; exit 2 ;; esac; done
   ws="$(week_start)"; spend_counts && reported=1
+  if ((bymodel)); then
+    # One pass over this week's rows; dollars counted as spend_since counts them.
+    LC_ALL=C awk -F'\t' -v s="$ws" '$1 >= s && $4 ~ /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$/ {
+        k = (NF < 9 ? "unknown\t" : ($8 == "" ? "tool-default" : $8) "\t" $9); t[k] += $4 }
+      END { for (k in t) { split(k, x, "\t"); o = (x[1] == "unknown" ? 2 : x[1] == "tool-default" ? 1 : 0); printf "%d\t%s\t%s\t%.2f\n", o, x[1], x[2], t[k] } }' "$SPEND" 2>/dev/null \
+      | LC_ALL=C sort -t $'\t' -k1,1n -k2,2 -k3,3 | cut -f2- \
+      | if ((json)); then json -R '$.map((l) => l.split("\t")).map((r) => ({model: r[0] == "tool-default" ? null : r[0], effort: r[1] || null, cost_this_week_usd: num(r[2])}))'
+        else awk -F'\t' 'BEGIN { n = 0 } { n++; printf "%s %s $%s\n", $1, ($2 == "" ? "-" : $2), $3 } END { if (!n) print "No runs this week." }'; fi
+    return 0
+  fi
   # Each job as the reader read it (lib.sh): a file whose name is not a job name is left out, and an
   # unreadable one is said on stderr, by its message, while the others are listed.
   for jf in "$WS"/jobs/*.job; do
@@ -117,11 +131,12 @@ log="$LOGDIR/$job.log"
 # One run of a job at a time: the folder <log folder>/<job>.lock (this machine's, never in the workspace)
 # holds this run's process ID, and the EXIT trap removes it however the run ends, while it still holds that
 # ID. A lock whose run is gone (writer_gone in lib.sh) is taken over; any other means a second run, which
-# starts nothing. Names other than pid, which run_limited sets.
+# starts nothing. Its file run says what runs now (cabinet status; run_note in lib.sh). Names other than
+# pid, which run_limited sets.
 # ponytail: a run that saw the lock stale just as another took it over could move the new lock; a lost race refuses.
 # ponytail: a process ID reused after a crash reads as a running job until that process ends; the refusal names it.
 job_lock="$LOGDIR/$job.lock" lock_held=""
-take_lock() { mkdir "$job_lock" 2>/dev/null || return 1; lock_held=1; trap release_lock EXIT; echo $$ > "$job_lock/pid"; }
+take_lock() { mkdir "$job_lock" 2>/dev/null || return 1; lock_held=1; trap release_lock EXIT; echo $$ > "$job_lock/pid"; RUN_LOCK="$job_lock" RUN_KIND=job RUN_WORK="$job"; run_note "" "" ""; }
 release_lock() { [[ -z "${lock_held:-}" || "$(cat "$job_lock/pid" 2>/dev/null)" != "$$" ]] || rm -rf "$job_lock"; }
 if ! take_lock; then
   lock_pid="$(cat "$job_lock/pid" 2>/dev/null || true)"
@@ -186,5 +201,5 @@ verb="${1:-}"; (($#)) && shift
 case "$verb" in
   run) j_run "$@" ;;
   list) j_list "$@" ;;
-  *) echo "usage: bin/job.sh run <job> | list [--json]" >&2; exit 2 ;;
+  *) echo "usage: bin/job.sh run <job> | list [--by-model] [--json]" >&2; exit 2 ;;
 esac

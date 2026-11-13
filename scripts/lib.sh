@@ -70,6 +70,37 @@ model_ok() {
   [[ "$1" =~ $re ]]
 }
 RUNNERS="claude codex antigravity qwen grok opencode cursor"   # built in; "custom" runs CABINET_RUNNER_CMD
+# The runners that take an effort level (docs/agent-setup.md, "Effort option"); run_agent and the doctor read it.
+EFFORT_RUNNERS="claude antigravity grok custom"
+# Tiers (cabinet config --tier): "<model>[ <effort>]" each, checked with model_ok before a run uses them.
+CABINET_TIER_LIGHT="${CABINET_TIER_LIGHT:-}" CABINET_TIER_STANDARD="${CABINET_TIER_STANDARD:-}" CABINET_TIER_STRONG="${CABINET_TIER_STRONG:-}"
+TIERS="light standard strong"
+# tier_get <tier>: TIER_MODEL, TIER_EFFORT and TIER_KEY (the cabinet.env key they came from) for the tier:
+# CABINET_TIER_<TIER>, else today's settings (light: CABINET_MODEL_LIGHT, else CABINET_MODEL; the others
+# CABINET_MODEL), with no effort. Empty: the tool's default.
+tier_get() {
+  local k v
+  k="CABINET_TIER_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"; v="${!k:-}"
+  TIER_EFFORT="" TIER_KEY="$k"
+  if [[ -n "$v" ]]; then TIER_MODEL="${v%% *}"; [[ "$v" != *" "* ]] || TIER_EFFORT="${v#* }"; return 0; fi
+  TIER_MODEL="$CABINET_MODEL" TIER_KEY=CABINET_MODEL
+  [[ "$1" != light || -z "$CABINET_MODEL_LIGHT" ]] || TIER_MODEL="$CABINET_MODEL_LIGHT" TIER_KEY=CABINET_MODEL_LIGHT
+}
+# What handoff run gives run_agent for the agent it starts: the tier, its model and effort. Never exported,
+# and never from the caller's environment: jobs, spec run and role draft run with none (today's models).
+RUN_TIER="" RUN_MODEL="" RUN_EFFORT="" RUN_KEY=""
+# A run's lock (handoff run, spec run, a job) holds the file run, which cabinet status reads: what runs now.
+# Each script sets these three for its own lock, never exported, so a nested run writes only its own.
+RUN_LOCK="" RUN_KIND="" RUN_WORK=""
+# run_note <role> <model> <effort>: rewrite the lock's run file (run.new, then a rename, so a reader never
+# sees half of one): when the lock is taken (no role yet), and before each agent starts.
+run_note() {
+  [[ -n "$RUN_LOCK" && -d "$RUN_LOCK" ]] || return 0
+  printf 'kind=%s\nwork=%s\nrole=%s\nrunner=%s\nmodel=%s\neffort=%s\npid=%s\nstarted=%s\n' \
+    "$RUN_KIND" "$RUN_WORK" "$1" "$CABINET_RUNNER" "$2" "$3" "$$" "$(date +%s)" > "$RUN_LOCK/run.new" && mv -f "$RUN_LOCK/run.new" "$RUN_LOCK/run"
+}
+# run_unlock <lock>: remove a handoff or spec run's lock: its files, then the folder.
+run_unlock() { rm -f "$1/run" "$1/run.new" "$1/.gitignore"; rmdir "$1" 2>/dev/null || true; }
 CABINET_BACKUP_DIR="${CABINET_BACKUP_DIR:-}"
 CABINET_BACKUP_TIME="${CABINET_BACKUP_TIME:-1:00 PM}"
 CABINET_BACKUP_KEEP="${CABINET_BACKUP_KEEP:-14}"
@@ -152,10 +183,11 @@ spend_js() {
                 out: sum(p.map((x) => (x?.tokens?.output ?? 0) + (x?.tokens?.reasoning ?? 0)))}))($.filter((x) => x.type == "step_finish").map((x) => x.part))' ;;
   esac
 }
-# spend_report <out file>: print the reply from the runner's JSON (or the output as it is, when it
-# is not that JSON) and record the run: dollars the tool reported, else priced from tokens.
+# spend_report <out file> [<model> <effort>]: print the reply from the runner's JSON (or the output as it is,
+# when it is not that JSON) and record the run: dollars the tool reported, else priced from tokens, then the
+# model and effort it ran with (empty: the tool's default), columns 8 and 9, which older rows do not have.
 spend_report() {
-  local f="$1" j slurp="" usd tin tc tout
+  local f="$1" um="${2:-}" ue="${3:-}" j slurp="" usd tin tc tout
   case "$CABINET_RUNNER" in codex|opencode) slurp=-s ;; esac
   if ! j="$(json -c $slurp "$(spend_js "$CABINET_RUNNER")" "$f" 2>/dev/null)" || [[ "$(json -r 'typeof $.text' <<<"$j" 2>/dev/null)" != string ]]; then
     cat "$f"; return 0
@@ -171,7 +203,7 @@ spend_report() {
   [[ "$usd" =~ $SPEND_USD ]] || usd=""
   [[ -z "$usd$tin$tout" || "$usd$tin$tout" == -- ]] && return 0
   mkdir -p -m 700 "$LOGDIR"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$usd" "${tin/-/}" "${tc/-/}" "${tout/-/}" >> "$SPEND"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${SPEND_LABEL:-$AGENT}" "$CABINET_RUNNER" "$usd" "${tin/-/}" "${tc/-/}" "${tout/-/}" "$um" "$ue" >> "$SPEND"
 }
 # Midnight at the start of this week, the day "Week starts on" in AGENTS.md names (Sunday by default).
 week_start() {
@@ -260,28 +292,44 @@ run_limited() {  # run_limited <minutes, 0 for none> <what set the limit> <comma
 }
 
 # Run $AGENT on $PROMPT headless with the configured agent tool, in the current folder:
-# scheduled jobs and role drafts.
+# scheduled jobs, role drafts and the runs of handoff run and spec run.
 run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else the light model for a role in
-  # CABINET_LIGHT_ROLES when CABINET_MODEL_LIGHT is set, else CABINET_MODEL, from cabinet.env
-  local model="${1:-}" from="${2:-}" setting=model
-  [[ -n "$model" ]] || { model="$CABINET_MODEL"; from=cabinet.env; }
-  [[ -n "${1:-}" || -z "$CABINET_MODEL_LIGHT" ]] || ! has "$CABINET_LIGHT_ROLES" "$AGENT" || { model="$CABINET_MODEL_LIGHT" setting=model-light; }
-  # First, for every runner: a model reaches a tool only as a name, never as code or an option.
-  [[ -z "$model" ]] || model_ok "$model" || { echo "the model '$model' in $from is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --$setting off" >&2; return 2; }
-  local -a mo
+  # CABINET_LIGHT_ROLES when CABINET_MODEL_LIGHT is set, else CABINET_MODEL, from cabinet.env. With RUN_TIER
+  # set (handoff run, for the tier on its entry), RUN_MODEL and RUN_EFFORT as given, from RUN_KEY; empty
+  # is the tool's default, never another setting's model.
+  local model="${1:-}" from="${2:-}" setting=model effort=""
+  if [[ -n "$RUN_TIER" ]]; then
+    model="$RUN_MODEL" effort="$RUN_EFFORT" from="cabinet.env ($RUN_KEY)"
+    case "$RUN_KEY" in CABINET_TIER_*) setting="tier $RUN_TIER" ;; CABINET_MODEL_LIGHT) setting=model-light ;; esac
+  else
+    [[ -n "$model" ]] || { model="$CABINET_MODEL"; from=cabinet.env; }
+    [[ -n "${1:-}" || -z "$CABINET_MODEL_LIGHT" ]] || ! has "$CABINET_LIGHT_ROLES" "$AGENT" || { model="$CABINET_MODEL_LIGHT" setting=model-light; }
+  fi
+  # First, for every runner: a model and an effort reach a tool only as names, never as code or an option.
+  [[ -z "$model" ]] || model_ok "$model" || { echo "the model '$(shown "$model")' in $from is not a model name (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --$setting off" >&2; return 2; }
+  [[ -z "$effort" ]] || model_ok "$effort" || { echo "the effort '$(shown "$effort")' in $from is not an effort level (letters, digits and . _ : / @ -, up to 100, not starting with -): no agent was started. Fix it, or cabinet config --$setting off" >&2; return 2; }
+  local -a mo eo
   mo=(); [[ -z "$model" ]] || mo=(--model "$model")
+  # The effort, its own argument after the tool's option (docs/agent-setup.md); a tool with none gets none.
+  eo=()
+  if [[ -n "$effort" ]]; then
+    case "$CABINET_RUNNER" in claude|antigravity) eo=(--effort "$effort") ;; grok) eo=(--reasoning-effort "$effort") ;; esac
+  fi
+  run_note "$AGENT" "$model" "$effort"
   # Tools without cabinet's named agents get the role file as their first instruction.
   local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
   # Every runner gets the role in $CABINET_AGENT and the credit its commits carry (credit roles):
   # CABINET_CREDIT, on or off, and CABINET_CREDIT_ADDRESS, the email; the credit hook reads them.
   local credit address=""; credit="$(credit_mode)"
   [[ "$credit" == on ]] && address="${CABINET_CREDIT_EMAIL:-$CREDIT_KIT_EMAIL}"
-  # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT
-  # and the role name in $CABINET_AGENT, for example 'mytool --run "$CABINET_PROMPT"'.
+  # Any other tool: CABINET_RUNNER_CMD runs with the prompt in $CABINET_PROMPT, the role name in
+  # $CABINET_AGENT and, when the tier has one, the effort in $CABINET_EFFORT (else it is unset), for
+  # example 'mytool --run "$CABINET_PROMPT"'.
   if [[ "$CABINET_RUNNER" == custom ]]; then
     [[ -n "${CABINET_RUNNER_CMD:-}" ]] || { echo "CABINET_RUNNER=custom needs CABINET_RUNNER_CMD in cabinet.env" >&2; return 2; }
     approved cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD" || { not_approved cabinet.env CABINET_RUNNER_CMD >&2; return 1; }
-    CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" CABINET_MODEL="$model" bash -c "$CABINET_RUNNER_CMD"; return
+    ( unset CABINET_EFFORT; [[ -z "$effort" ]] || export CABINET_EFFORT="$effort"
+      CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address" CABINET_PROMPT="$as_role" CABINET_MODEL="$model" bash -c "$CABINET_RUNNER_CMD" ); return
   fi
   [[ "$CABINET_RUNNER" != gemini ]] || { echo "CABINET_RUNNER=gemini is no longer a runner (Gemini CLI users moved to Antigravity): cabinet config --runner antigravity" >&2; return 2; }
   has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
@@ -289,21 +337,22 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   # before, the cost to $SPEND (spend_report).
   local out st=0; out="$(mktemp)"
   # In a subshell, so the caller keeps none of the run's variables. The model, when there is one, is its
-  # own argument right after the tool's --model option, before the prompt (docs/agent-setup.md).
-  ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"
+  # own argument right after the tool's --model option, before the prompt (docs/agent-setup.md); the
+  # effort likewise after the model. CABINET_EFFORT is for a custom runner only.
+  ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"; unset CABINET_EFFORT
   case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} "$PROMPT" ;;
+    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$PROMPT" ;;
     codex)    codex exec --json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the
     # prompts keeps its deny rules, as the owner saw with a denied command (docs/guardrails.md).
-    antigravity) agy ${mo[@]+"${mo[@]}"} -p "$as_role" --output-format json --dangerously-skip-permissions ;;
+    antigravity) agy ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} -p "$as_role" --output-format json --dangerously-skip-permissions ;;
     qwen)     qwen --approval-mode auto -o json ${mo[@]+"${mo[@]}"} "$as_role" ;;
-    grok)     grok ${mo[@]+"${mo[@]}"} -p "$as_role" --permission-mode auto --output-format json ;;
+    grok)     grok ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} -p "$as_role" --permission-mode auto --output-format json ;;
     opencode) opencode run --format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # --force lets print mode write files (the brief); deny rules are the guardrail.
     cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
   esac ) > "$out" || st=$?
-  spend_report "$out"; rm -f "$out"; return "$st"
+  spend_report "$out" "$model" "$effort"; rm -f "$out"; return "$st"
 }
 
 # Claude Code keeps per-folder memory under the folder's path with every non-alphanumeric as "-".
@@ -448,6 +497,14 @@ delegates() {
     printf '%s\t%s\t%s\t%s\n' "$r" "$lead" "$(printf '%s' "$cov" | tr -d ' ' | tr '[:upper:]' '[:lower:]')" "$(role_team "$r" "Trial until")"
   done
 }
+# spec_areas <spec file>: the areas its front matter names, lower case, one per line (readiness, and the
+# tier handoff add proposes). One area per comma, kept whole: a name can have spaces.
+spec_areas() {
+  awk '/^---$/ { f++; next } f == 1 && /^areas:/ {
+      sub(/^areas: *\[?/, ""); sub(/\].*$/, ""); sub(/ *#.*$/, ""); k = split($0, x, ",")
+      for (i = 1; i <= k; i++) { gsub(/^[ \t]+|[ \t]+$/, "", x[i]); if (x[i] != "") print tolower(x[i]) }
+      exit }' "$1"
+}
 # readiness: {"<ID>": {verdicts, needs, missing, blocking, stale, ready, unread_verdicts}} for every
 # entry. Needed: each reviewer the entry is addressed to, and for code (from a builder, or a verdict
 # that names commits) qa, security and code-reviewer, with design-lead for a web or mobile builder,
@@ -473,11 +530,7 @@ readiness() {
     done
     for n in "$WS"/specs/*.md; do
       [[ -f "$n" ]] || continue
-      # One area per comma, kept whole: a name can have spaces.
-      while IFS= read -r c; do sareas+="specs/${n##*/}"$'\t'"$c"$'\n'; done < <(awk '/^---$/ { f++; next } f == 1 && /^areas:/ {
-          sub(/^areas: *\[?/, ""); sub(/\].*$/, ""); sub(/ *#.*$/, ""); k = split($0, x, ",")
-          for (i = 1; i <= k; i++) { gsub(/^[ \t]+|[ \t]+$/, "", x[i]); if (x[i] != "") print tolower(x[i]) }
-          exit }' "$n")
+      while IFS= read -r c; do sareas+="specs/${n##*/}"$'\t'"$c"$'\n'; done < <(spec_areas "$n")
     done
   fi
   # Each repo's main folder, where the branch the owner pushes is checked out (sessions: lib.js readiness).

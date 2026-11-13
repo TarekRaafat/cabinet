@@ -17,6 +17,7 @@ Status values: `open`, `acknowledged`, `done`, `rejected`. The addressee edits o
 - Depends on: <commit or branch on the sender's side, or "none">
 - Spec: <specs/<feature>.md it builds (--spec), or instead:>
 - Size: small   (--small: one repo, no contract change, no decision for the owner, easy to undo)
+- Model: <light|standard|strong> (<why>)   (the tier handoff run uses; add proposes it, --model sets it; edit the word to change it)
 - Evidence: <links to what shows the work, from the workspace root (--evidence, later bin/handoff.sh attach); omit the line when there is none>
 - Verdict: <role> <PASS|BLOCK|CHANGES> <YYYY-MM-DD> <commits> <note under specs/>   (one per reviewer: bin/handoff.sh record)
 ```

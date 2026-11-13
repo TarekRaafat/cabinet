@@ -113,6 +113,11 @@ Every message `bin/doctor.sh` can print, what it means and how to fix it. `FIX` 
 | Each `model.exists` message, for the light model | `model-light.exists` | The same check as `model.exists`, for `CABINET_MODEL_LIGHT`. | As for `model.exists`, with `cabinet config --model-light <name>\|off`. |
 | `note CABINET_LIGHT_ROLES names <...>, not on the team, so it changes nothing: to drop it, cabinet config --light-roles "<...>"` | `model-light.roles` | A role in the list is not on the team (removed, or never added). Never a problem: the list is kept for when it comes back. | The command it gives, or nothing. |
 | `ok the light model runs for: <...>` | `model-light.roles` | Every role in the list is on the team. | Nothing. |
+| `fix CABINET_TIER_<TIER> "<value>" in cabinet.env is not "<model>[ <effort>]" (each letters, digits and . _ : / @ -, not starting with -), so no run starts with it: cabinet config --tier <tier> "<model>[ <effort>]", or cabinet config --tier <tier> off` | `tier.exists` | A tier's value, edited by hand, is not a model name and an optional effort, one space between, so no run starts with it. | `cabinet config --tier <tier> "<model>[ <effort>]"`, or `cabinet config --tier <tier> off`. |
+| `fix <model> (CABINET_TIER_<TIER> in cabinet.env) is not in <runner>'s model list (<list command>): fix the name (cabinet config --tier <tier> "<model>[ <effort>]")` | `tier.exists` | The tool lists its models without a run, and a tier's model is not among them. | Fix the name: `cabinet config --tier <tier> "<model>[ <effort>]"`. |
+| `note not checked: ...` | `tier.exists` | The tool cannot list its models without a run, or its list could not be read: the tier's model is not checked. | Nothing; a run with a wrong name fails and says so. |
+| `ok every tier's model is one of <runner>'s models` | `tier.exists` | Every tier you set names a model the tool lists. | Nothing. |
+| `note <runner> has no effort setting: the effort in <tier> is not used` | `tier.effort` | The tier names an effort, and the agent tool has no effort option ([agent setup](agent-setup.md#models)): its runs use the tool's own effort. | Nothing, or drop the effort: `cabinet config --tier <tier> "<model>"`. |
 
 ## Credit roles
 
