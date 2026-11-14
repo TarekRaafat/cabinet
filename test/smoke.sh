@@ -1381,6 +1381,9 @@ grep -q '^CABINET_BACKUP_DIR=".*/team-bk"$' "$P/cabinet/cabinet.local.env" && gr
 
 section "guides: the project's own standing documents" "0"
 s33() {
+# AGENTS.md is put back as it was at the end: "| none yet |" starts the critical areas row too, and a later section
+# in the same run (a parallel shard runs any of them next) reads that row as the template wrote it.
+cp "$W/AGENTS.md" "$T/agents-guides.bak"
 git -C "$W" ls-files --error-unmatch guides/README.md >/dev/null 2>&1 || fail "guides/ is not placed and tracked"
 grep -q '^## Guides$' "$W/AGENTS.md" && grep -q 'Guides' "$W/CABINET.md" || fail "the Guides table or its rule is missing"
 (cd "$W" && "$F" doctor --json) | j -e 'JSON.stringify($.results.filter((r) => r.section == "Guides")) == JSON.stringify([{level: "ok", section: "Guides", id: "guides.listed", message: "every guide is listed in AGENTS.md"}])' >/dev/null || fail "doctor flags a fresh workspace's guides"
@@ -1392,7 +1395,7 @@ L replace-line "$W/AGENTS.md" "| none yet |" $'| `guides/brand.md` | voice | eve
 j="$(cd "$W" && "$F" doctor --json || true)"
 j -e '!$.results.some((r) => r.id == "guides.listed" && r.level == "fix") && JSON.stringify($.results.filter((r) => r.id == "guides.exists").map((r) => r.message)) == JSON.stringify(["AGENTS.md lists guides/gone.md, which does not exist"])' <<<"$j" >/dev/null || { j -c --each '$.results.filter((r) => r.section == "Guides")' <<<"$j"; fail "doctor on listed and missing guides"; }
 L drop-text "$W/AGENTS.md" "guides/gone.md"; rm -rf "$W/guides/brand.md" "$W/guides/legal"
-L replace-line "$W/AGENTS.md" '| `guides/brand.md` |' "| none yet | x | |"; L drop-text "$W/AGENTS.md" "guides/legal"
+cp "$T/agents-guides.bak" "$W/AGENTS.md"
   return 0   # a last "check && fail" line must not end the run
 }
 
