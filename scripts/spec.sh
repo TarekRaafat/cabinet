@@ -7,8 +7,17 @@
 #       acceptance criteria as they are now; for one built in a repo a web or mobile builder owns, with
 #       design-lead on the team, also a "## Design" section with a design-lead PASS on it as it is now. building: also a plan for each repo ("### <repo>" under "## Plan"), and, for
 #       more than one repo or any critical area in areas, an architect PASS on the plan as it is now. draft, shipped and dropped
-#       need nothing. Prints each spec with its problems; exit 1 when any has one.
-#       --json: [{spec, status, problems}].
+#       need nothing. Prints each spec with its problems; exit 1 when any has one. A building spec
+#       that is released (finished, and each repo's named commits in a version tag) prints
+#       "<spec> (building): in <repo> <tag>, released: set it to shipped" instead, and is no problem.
+#       --json: [{spec, status, problems, repos, missing_plans, plan_review_needed, plan_review, released}],
+#       released null or {repo: tag}.
+#   bin/spec.sh list [--json]
+#       Every spec with its status, "<spec> (<status>)"; --json: [{spec, status, released}]. Exit 0.
+#   bin/spec.sh list --released <repo> [<commit>] [--json]
+#       The building specs a release of <repo> at <commit> (default the repo's HEAD) completes, one per
+#       line, "(<repo>, ... not released yet)" after one whose other repos are not; "No spec ships in this
+#       release." when none. --json: [{spec, not_released}]. Exit 0; 2 for a repo not in repos.tsv or no commit.
 #   bin/spec.sh record <spec> --role qa|architect|design-lead <PASS|BLOCK> --note <file>
 #       A review of a spec: qa of its acceptance criteria (can each be tested?), architect of its
 #       plan, design-lead of its design. Writes, or replaces, the role's "- Verdict:" line under "## Reviews" with today's date
@@ -21,15 +30,20 @@
 #       run in order (bin/handoff.sh run, with --retries); a routing request or a review filed --spec
 #       is not its work. It stops at the first step that does not finish, as handoff run does, and
 #       says why. Logged as run-<spec>.log; routing, plans and review are recorded under the
-#       spec's path in the spend file, each handoff's runs under its ID.
+#       spec's path in the spend file, each handoff's runs under its ID. A released spec (check) is
+#       refused with check's line for it, exit 1, before any step.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-# spec_py check <spec>... | record <spec> <role> <verdict> <date> <note>: reads and writes specs.
+# spec_py check <spec>... | released <repo> <commit> <spec>... | record <spec> <role> <verdict> <date> <note>: reads and writes specs.
 spec_py() {
   local mode=$1; shift
   node "$LIBJS" "spec-$mode" "$WS" "$@"
 }
+# The repos.tsv repos and their folders, "<name><TAB><folder>" per line (REPOS for spec-check and spec-released).
+repo_folders() { local name url files link path; while IFS=$'\t' read -r name url files link path; do printf '%s\t%s\n' "$name" "$(repo_dir "$path")"; done < <(repos 2>/dev/null); }
+# all_specs: every spec in specs/, by file name, one per line.
+all_specs() { local f; for f in "$WS"/specs/*.md; do [[ -f "$f" ]] || continue; case "${f##*/}" in _template.md|ROADMAP.md) continue ;; esac; echo "specs/${f##*/}"; done; }
 
 s_check() {
 local json=0 one="" f
@@ -47,25 +61,51 @@ if [[ -n "$one" ]]; then
   [[ "$one" =~ ^specs/[^/]+\.md$ && -f "$WS/$one" ]] || { echo "no spec $one (a file specs/<feature>.md in the workspace)" >&2; exit 2; }
   files=("$one")
 else
-  for f in "$WS"/specs/*.md; do
-    [[ -f "$f" ]] || continue
-    case "${f##*/}" in _template.md|ROADMAP.md) continue ;; esac
-    files+=("specs/${f##*/}")
-  done
+  while IFS= read -r f; do files+=("$f"); done < <(all_specs)
 fi
 local out='[]' n o ui=""
 # What people see is designed first, when design-lead is on the team (.cabinet/rules/ready-to-build.md).
 if has "$(team_roles)" design-lead; then
   for n in $(repos 2>/dev/null | cut -f1); do o="$(owner_of "$n")"; [[ "$o" == web || "$o" == mobile ]] && ui+="$n "; done
 fi
-((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1)" spec_py check "${files[@]}")"
+((${#files[@]})) && out="$(UI_REPOS="$ui" AREAS="$(critical_areas | cut -f1)" REPOS="$(repo_folders)" spec_py check "${files[@]}")"
+# A released spec shows as released in place of its problems, and is none.
+local bad='$.filter((s) => s.problems.length && !s.released).length'
 if ((json)); then json '$' <<<"$out"
 else
-  json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out" | term_text
-  [[ "$(json '$.filter((s) => s.problems.length).length' <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
+  json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + "): " + (s.released ? "in " + releasedIn(s) + ", released: set it to shipped" : s.problems.length ? s.problems.join("; ") : "ok"))' <<<"$out" | term_text
+  [[ "$(json "$bad" <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
     || echo "Not ready for their status: fix each problem, or set the spec's status back (draft)."
 fi
-[[ "$(json '$.filter((s) => s.problems.length).length' <<<"$out")" == 0 ]]
+[[ "$(json "$bad" <<<"$out")" == 0 ]]
+}
+
+s_list() {
+usage="usage: bin/spec.sh list [--released <repo> [<commit>]] [--json]"
+local json=0 rel=0 repo="" commit="" out
+local -a files
+files=()
+while (($#)); do
+  case "$1" in
+    --json) json=1; shift ;;
+    --released) (($# >= 2)) && [[ "$2" != -* ]] || { echo "--released needs a repo. $usage" >&2; exit 2; }; rel=1; repo="$2"; shift 2
+      if (($#)) && [[ "$1" != -* ]]; then commit="$1"; shift; fi ;;
+    -*) echo "unknown option $1. $usage" >&2; exit 2 ;;
+    *) echo "unexpected $1. $usage" >&2; exit 2 ;;
+  esac
+done
+while IFS= read -r f; do files+=("$f"); done < <(all_specs)
+if ((rel == 0)); then
+  out='[]'
+  ((${#files[@]})) && { out="$(s_check --json)" || true; }
+  if ((json)); then json '$.map((s) => ({ spec: s.spec, status: s.status, released: s.released }))' <<<"$out"
+  else json -r --each '$.map((s) => s.spec + " (" + (s.status || "no status") + ")")' <<<"$out" | term_text; fi
+  return 0
+fi
+out="$(REPOS="$(repo_folders)" spec_py released "$repo" "${commit:-HEAD}" ${files[@]+"${files[@]}"})" || exit $?
+if ((json)); then json '$' <<<"$out"
+elif [[ "$(json '$.length' <<<"$out")" == 0 ]]; then echo "No spec ships in this release."
+else json -r --each '$.map((s) => s.spec + (s.not_released.length ? " (" + s.not_released.join(", ") + " not released yet)" : ""))' <<<"$out" | term_text; fi
 }
 
 s_record() {
@@ -114,6 +154,8 @@ spec="$(ws_md "the spec" "$spec")" || exit 1
 cd "$WS"
 sc() { "$WS/bin/spec.sh" check "$spec" --json 2>/dev/null | json -c '$[0]'; }
 st="$(sc)"
+# A released spec is not work (Rule 5): check's line for it, and no step.
+[[ "$(json '!!$.released' <<<"$st" 2>/dev/null)" != true ]] || { json -r '$.spec + " (building): in " + releasedIn($) + ", released: set it to shipped"' <<<"$st" | term_text >&2; exit 1; }
 [[ "$(json -r '$.status' <<<"$st")" =~ ^(ready|building)$ && "$(json '$.problems.length' <<<"$st")" == 0 ]] \
   || { echo "$spec is not ready to build: $(json -r '$.status + ": " + $.problems.join("; ")' <<<"$st") (bin/spec.sh check $spec)" >&2; exit 1; }
 
@@ -210,7 +252,8 @@ done
 verb="${1:-}"; (($#)) && shift
 case "$verb" in
   check) s_check "$@" ;;
+  list) s_list "$@" ;;
   record) s_record "$@" ;;
   run) s_run "$@" ;;
-  *) echo "usage: bin/spec.sh check|record|run (see the top of this file)" >&2; exit 2 ;;
+  *) echo "usage: bin/spec.sh check|list|record|run (see the top of this file)" >&2; exit 2 ;;
 esac

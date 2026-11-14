@@ -585,9 +585,12 @@ section "Specs"
 # A spec marked ready or building has what that status needs (bin/spec.sh check).
 if [[ -x "$WS/bin/spec.sh" ]]; then
   sc="$("$WS/bin/spec.sh" check --json 2>/dev/null || true)"
-  notready="$(json -r '$.filter((s) => s.problems.length > 0).map((s) => s.spec + " (" + s.problems.join(", ") + ")").join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
+  # A released spec (its work in a version tag) is not unfinished work: one note, never in specs.ready.
+  notready="$(json -r '$.filter((s) => s.problems.length > 0 && !s.released).map((s) => s.spec + " (" + s.problems.join(", ") + ")").join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
   [[ -z "$notready" ]] && ok specs.ready "every spec marked ready or building has what its status needs" \
     || bad specs.ready "specs not ready for their status: $notready (fix each, or set it back to draft; cabinet spec check)"
+  x="$(json -r '$.filter((s) => s.released).map((s) => s.spec + " is in " + releasedIn(s) + ", released: set it to shipped").join("; ")' <<<"${sc:-[]}" 2>/dev/null || true)"
+  [[ -z "$x" ]] || note specs.released "$x"
 fi
 
 section "Secrets"

@@ -2,8 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.7.1 - Unreleased
+## 0.8.0 - Unreleased
 
+- Released specs: `cabinet doctor` and `cabinet spec check` tell a `building` spec whose work is out in a release apart from unfinished work. A spec is released when every entry naming it on a `- Spec:` line is `done` or `rejected` and, in each of its repos in `repos.tsv`, the commits on the Verdict lines of its `done` entries are all in a version tag (`v1.2.3` or `1.2.3`, no pre-release suffix). `spec check` then prints `<spec> (building): in <repo> <tag>, released: set it to shipped` in place of its problems and does not exit 1 for it; `--json` gains `released` on every spec (`null`, or `{"<repo>": "<tag>"}`, the earliest version tag holding them all), and `problems` is unchanged. The doctor leaves a released spec out of `specs.ready` and names it in a new note, `specs.released`: `<spec> is in <repo> <tag>, released: set it to shipped`. It only suggests: you or product-manager set `shipped`. `cabinet spec run` refuses a released spec with the same line (exit 1, before any step), and the scheduled runner skips it.
+- New: `cabinet spec list` (`bin/spec.sh list`) shows every spec with its status, `specs/<feature>.md (<status>)`; `--json` prints `[{spec, status, released}]`. `cabinet spec list --released <repo> [<commit>]` lists the specs a release of that repo at that commit (default its `HEAD`) completes, for the release review: `specs/<feature>.md`, with `(<repo>, ... not released yet)` when its other repos are not, or `No spec ships in this release.`; `--json` prints `[{spec, not_released}]`. Both change nothing and exit 0; 2 for a repo not in `repos.tsv` or a commit git does not find there.
 - `cabinet handoff run` and `cabinet spec run` no longer count a branch or tag named only in hex (`deadbeef`, a date-shaped `2026111`) on a status line as a commit: a word counts only when it is the start of a commit's own ID in a repo of `repos.tsv`. Such a name used to count, and pointed wherever the branch or tag pointed at the time.
 
 ## 0.7.0 - 14 Nov 2026

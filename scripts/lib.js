@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, build-commits, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, build-commits, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-released, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -485,17 +485,99 @@ function specTools(ws) {
     }
     return [status, p.filter(Boolean)];
   };
-  return { parse, fingerprint, planState, problems };
+  // Released (specs/released-specs.md), from the spec's entries (a "- Spec:" line naming its path, in
+  // HANDOFFS.md and every handoffs/archive-*.md) and its repos' version tags. REPOS in the environment is
+  // "<name><TAB><folder>" per repos.tsv row. A hash reaches git only as one argument, and only when it is
+  // 7 to 40 hex characters; it counts in a repo when git resolves it there to a commit ID starting with it.
+  const dirs = new Map(env("REPOS").split("\n").filter((l) => l.includes("\t")).map((l) => l.split("\t")));
+  const git = (dir, ...a) => { const r = spawnSync("git", ["-C", dir, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); return r.status === 0 ? r.stdout : ""; };
+  const commitIn = (dir, w) => { const id = git(dir, "rev-parse", "--verify", "--quiet", w + "^{commit}").trim(); return id.startsWith(w) ? id : ""; };
+  let entries = null;
+  const entriesOf = (spec) => {
+    if (!entries) {
+      entries = [];
+      const add = (file, whole) => { try { entries.push(...handoffEntries(read(file).split("\n"), whole)); } catch (e) { /* no file */ } };
+      add(path.join(ws, "HANDOFFS.md"), false);
+      let arch = [];
+      try { arch = fs.readdirSync(path.join(ws, "handoffs")).filter((f) => /^archive-.*\.md$/.test(f)).sort(); } catch (e) { /* none */ }
+      for (const f of arch) add(path.join(ws, "handoffs", f), true);
+    }
+    return entries.filter((e) => { const l = e.lines.find((x) => x.startsWith("- Spec:")); return l !== undefined && l.slice(7).trim() === spec; });
+  };
+  // named(fm, spec): null when unfinished (an entry whose status word is not done or rejected), else
+  // {repo: [commit IDs]} for each of its repos in repos.tsv, from the Verdict lines of its done entries.
+  const named = (fm, spec) => {
+    const es = entriesOf(spec);
+    if (es.some((e) => !statusClosed(statusOf(e.lines).word))) return null;
+    const hs = new Set();
+    for (const e of es.filter((x) => statusOf(x.lines).word === "done")) {
+      for (const l of e.lines) {
+        const m = l.match(/^- Verdict: \S+ \S+ \S+ (\S+)/);
+        if (m) m[1].split(",").filter((h) => /^[0-9a-f]{7,40}$/.test(h)).forEach((h) => hs.add(h));
+      }
+    }
+    const out = Object.create(null);
+    for (const r of repos(fm)) if (dirs.has(r)) out[r] = [...new Set([...hs].map((h) => commitIn(dirs.get(r), h)).filter(Boolean))];
+    return out;
+  };
+  // Version tags (v1.2.3 or 1.2.3) holding every one of the commits, earliest first in version order.
+  const VTAG = /^v?(\d+)\.(\d+)\.(\d+)$/;
+  const vOrder = (a, b) => {
+    const x = VTAG.exec(a), y = VTAG.exec(b);
+    for (let i = 1; i <= 3; i++) { const p = BigInt(x[i]), q = BigInt(y[i]); if (p !== q) return p < q ? -1 : 1; }
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
+  const tagsHolding = (dir, ids) => {
+    let t = null;
+    for (const id of ids) { const s = git(dir, "tag", "--contains", id).split("\n").filter((x) => VTAG.test(x)); t = t === null ? s : t.filter((x) => s.includes(x)); }
+    return (t || []).sort(vOrder);
+  };
+  const tagIn = (r, ids) => (ids.length ? tagsHolding(dirs.get(r), ids)[0] || null : null);
+  // released(fm, spec): {repo: tag} when the spec is building, finished, names at least one repo in
+  // repos.tsv, and each of those has named commits a version tag holds; null otherwise.
+  const released = (fm, spec) => {
+    if (fm.status !== "building") return null;
+    const n = named(fm, spec);
+    if (!n || !Object.keys(n).length) return null;
+    const out = Object.create(null);
+    for (const r of Object.keys(n)) { const t = tagIn(r, n[r]); if (!t) return null; out[r] = t; }
+    return out;
+  };
+  return { parse, fingerprint, planState, problems, released, named, dirs, git, tagsHolding, tagIn, repos };
 }
+// releasedIn(row): a spec check row's released repos and tags, "app v1.0.0, api v2.0.0", in the order of its repos.
+const releasedIn = (s) => s.repos.filter((r, i, a) => a.indexOf(r) === i && Object.prototype.hasOwnProperty.call(s.released, r)).map((r) => r + " " + s.released[r]).join(", ");
 
-// spec-check <workspace> <spec>...: [{spec, status, problems, repos, missing_plans, plan_review_needed, plan_review}].
+// spec-check <workspace> <spec>...: [{spec, status, problems, repos, missing_plans, plan_review_needed, plan_review, released}].
 function specCheck(ws, ...specs) {
   const t = specTools(ws);
   const out = specs.map((f) => {
     const text = read(path.join(ws, f));
     const [status, p] = t.problems(text);
-    return Object.assign({ spec: f, status, problems: p }, t.planState(text));
+    return Object.assign({ spec: f, status, problems: p }, t.planState(text), { released: t.released(t.parse(text)[0], f) });
   });
+  process.stdout.write(JSON.stringify(out) + "\n");
+}
+
+// spec-released <workspace> <repo> <commit> <spec>...: the building specs a release of <repo> at <commit>
+// completes (Rule 6), [{spec, not_released}]: finished, with named commits in the repo, all in the commit's
+// history, and no version tag on another commit already holding them all; not_released names its other
+// repos that are not released yet. Exit 2 for a repo not in repos.tsv or a commit git does not find there.
+function specReleased(ws, repo, commit, ...specs) {
+  const t = specTools(ws);
+  if (!t.dirs.has(repo)) die(repo + " is no repo in repos.tsv", 2);
+  const dir = t.dirs.get(repo), at = t.git(dir, "rev-parse", "--verify", "--quiet", commit + "^{commit}").trim();
+  if (!at) die(commit + " is no commit in " + repo, 2);
+  const out = [];
+  for (const f of specs) {
+    const [fm] = t.parse(read(path.join(ws, f)));
+    if (fm.status !== "building") continue;
+    const n = t.named(fm, f), ids = n && n[repo];
+    if (!ids || !ids.length) continue;
+    if (!ids.every((id) => spawnSync("git", ["-C", dir, "merge-base", "--is-ancestor", id, at], { stdio: "ignore" }).status === 0)) continue;
+    if (t.tagsHolding(dir, ids).some((tag) => t.git(dir, "rev-parse", "--verify", "--quiet", "refs/tags/" + tag + "^{commit}").trim() !== at)) continue;
+    out.push({ spec: f, not_released: t.repos(fm).filter((r, i, a) => a.indexOf(r) === i && r !== repo && r in n && !t.tagIn(r, n[r])) });
+  }
   process.stdout.write(JSON.stringify(out) + "\n");
 }
 
@@ -1022,8 +1104,8 @@ function json(...argv) {
   const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
   const list = (x) => { if (x == null) return []; if (!Array.isArray(x)) throw new Error("not a list"); return x; };
   const obj = (x) => { if (x == null) return {}; if (typeof x != "object" || Array.isArray(x)) throw new Error("not an object"); return x; };
-  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed, ownerIn, ownerCase and reviewsOf.
-  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn, ownerCase, reviewsOf };
+  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed, ownerIn, ownerCase and reviewsOf; and releasedIn.
+  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn, ownerCase, reviewsOf, releasedIn };
   try { fn = new Function("$", ...Object.keys(helpers), ...o.names, "return (" + expr + ");"); } catch (e) { die("json: " + e.message, 5); }
   let out = "";
   const put = (v) => {
@@ -2432,7 +2514,7 @@ const COMMANDS = {
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,
   "hard-write": hardWrite, "handoff-entry": handoffEntry, "handoff-archive": handoffArchive, "handoff-rows": handoffRows, "build-commits": buildCommits, "owner-case": (to) => process.stdout.write(ownerCase(to || "") + "\n"), readiness,
-  "spec-check": specCheck, "spec-record": specRecord, manual,
+  "spec-check": specCheck, "spec-released": specReleased, "spec-record": specRecord, manual,
   sub, "sub-all": subAll, has, drop, "drop-text": dropText, "drop-line": dropLine, before, after, "replace-line": replaceLine,
   "after-last": afterLast, "credit-line": creditLine, "fill-template": fillTemplate, slug, "inside-file": insideFile, runs, watchdog, "run-limited": runLimited, "secret-scan": secretScan, json,
   closest, "changelog-render": changelogRender, "push-check": pushCheck, "model-check": modelCheck,

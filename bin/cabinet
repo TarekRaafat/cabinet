@@ -77,6 +77,7 @@ C	Team	handoff add	--from <name> --to <name> --changed "..." --needed "..." "tit
 C	Team	handoff attach	<ID> [<file or URL>...] [--way-back "..."] --from <name>	Add evidence or a way back to your own handoff: files copied to specs/evidence/<ID>/, linked, committed.
 C	Team	handoff record	<ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>	Record a reviewer's verdict on a handoff in the one format, and commit it.
 C	Team	spec check	[spec]	Check each spec against its status: ready needs criteria qa passed, no TBD, every decision answered.
+C	Team	spec list	[--released <repo> [<commit>]]	List every spec with its status, or with --released the specs a release of the repo completes.
 C	Team	spec record	<spec> --role <qa|architect|design-lead> <PASS|BLOCK> --note <file>	Record qa's review of a spec's acceptance criteria, design-lead's of its design, or architect's of its plan, and commit it.
 C	Team	spec run	<spec> [--retries <n>]	Move a ready spec through routing, plans and each of its handoffs with agent runs, until all its work is ready to push.
 C	Team	handoff list	[name] [--ready]	Open handoffs, oldest first; with a repo or role name, everything addressed to it, in full; --ready, the work ready to push.
@@ -178,6 +179,7 @@ O	spec record	--role	<qa|architect|design-lead>	qa reviews the acceptance criter
 O	spec record	--note	<file>	The reviewer's committed note under specs/, with the details.
 O	handoff run	--retries	<n>	Fix rounds after a BLOCK before it stops and asks you (default 2).
 O	spec run	--retries	<n>	Fix rounds after a BLOCK, for each of its handoffs, before it stops and asks you (default 2).
+O	spec list	--released	<repo> [<commit>]	The specs a release of the repo at the commit (default its HEAD) completes; none already in an earlier version tag.
 O	job list	--by-model		This week's cost per model and effort, from every run cabinet started.
 O	handoff list	--ready		Only the work every reviewer it needs has passed, at its latest commits: ready for you to push.
 O	session start	--repo	<repo>	The repo in repos.tsv to start it in (needed when the workspace has more than one).
@@ -194,7 +196,7 @@ O	remove	--force		Remove even when that deletes what is not safe to delete (unco
 O	remove	--delete-key		Also delete the backup passphrase from the keychain or secret store, and its passphrase file.
 O	new,init,config,bootstrap,move,remove,role add,role remove,repo add,repo remove,handoff run,spec run	--dry-run		Print what it would do, and change nothing.
 O	new,init,config,remove,role add,doctor	--yes		No questions (or -y). For doctor, with --fix.
-O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,repo list,session list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
+O	next,digest,list,push-check,doctor,status,outdated,changelog,version,help,role list,handoff list,spec check,spec list,repo list,session list,job list,secret check,backup verify	--json		The result as JSON, for agents and scripts.
 TABLE
 }
 is_cmd() { commands_table | awk -F'\t' -v c="$1" '$1 == "C" && $3 == c {f = 1} END {exit !f}'; }

@@ -593,11 +593,11 @@ spend_counts || { report "$CABINET_RUNNER's cost cannot be counted, so the limit
 if [[ -n "$CABINET_BUDGET" ]] && awk -v s="$(spend_since "$(week_start)")" -v b="$CABINET_BUDGET" 'BEGIN { exit !(s + 0 >= b + 0) }'; then
   report "This week's budget (\$$CABINET_BUDGET) is spent, so nothing ran."; exit 0
 fi
-# The work, oldest first (idOrder): specs ready to build (all), then handoffs filed --small that are still
+# The work, oldest first (idOrder): specs ready to build and not released (all), then handoffs filed --small that are still
 # open or wait on their review; never one archived, sent back, or closed with nothing left to review. One
 # whose status word the kit does not know is taken too: its run stops, naming it, before any agent run.
 if [[ "$CABINET_PIPELINE" == all ]]; then
-  while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | json -r --each '$.filter((s) => (s.status == "ready" || s.status == "building") && s.problems.length == 0).map((s) => s.spec)')
+  while IFS= read -r x; do items+=("spec $x"); done < <("$WS/bin/spec.sh" check --json 2>/dev/null | json -r --each '$.filter((s) => (s.status == "ready" || s.status == "building") && s.problems.length == 0 && s.released === null).map((s) => s.spec)')
 fi
 while IFS= read -r x; do items+=("handoff $x"); done < <(readiness | json -r --each '
   Object.keys($).filter((i) => $[i].small && !$[i].archived && $[i].status_now != "rejected").sort(idOrder)
