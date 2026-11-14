@@ -1163,7 +1163,7 @@ for x in '  Expected: about <D1>, up to <D2>' '  took <D>' ' Run time: <D>.' '--
   grep -qF -- "$x" "$KIT/docs/commands.md" || fail "criterion 25: docs/commands.md lacks $x"
 done
 grep -F '**Pipeline**' "$KIT/roles/chief-of-staff.md" | grep -qF 'how long each piece of work and the whole run took' || fail "criterion 25: the brief's Pipeline line"
-awk '/^## /{ n++ } n == 1' "$KIT/CHANGELOG.md" | grep -qF 'Run estimates' && head -10 "$KIT/CHANGELOG.md" | grep -q '^## .* - Unreleased$' || fail "criterion 25: CHANGELOG.md"
+awk '/^## /{on = /^## 0\.7\.0 /} on' "$KIT/CHANGELOG.md" | grep -qF 'Run estimates' || fail "criterion 25: CHANGELOG.md's 0.7.0 section"
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -8787,9 +8787,9 @@ grep -qF 'most to ?[31mx (1)' <<<"$o" && ! grep -qF $'\033[31mx' <<<"$o" || fail
 rm "$HW/HANDOFFS.md"
 [[ "$(hs)" == "none " && "$(j -r '$.level' <<<"$(hr_doc kit.handoffs-file)")" == fix ]] || fail "criterion 10: $(hs); $(hr_doc kit.handoffs-file)"
 git -C "$HW" checkout -q -- HANDOFFS.md
-# 12: the docs: a troubleshooting row for each message, and the changelog's top Unreleased section.
+# 12: the docs: a troubleshooting row for each message, and the changelog's 0.7.0 section.
 for l in ok note; do grep -qE "^\| \`$l HANDOFFS.md is .*\| \`handoffs.size\` \|" "$KIT/docs/troubleshooting.md" || fail "criterion 12: no $l row for handoffs.size"; done
-awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | { read -r h; [[ "$h" == *Unreleased* ]] && grep -q 'handoffs\.size'; } || fail "criterion 12: the top Unreleased section of CHANGELOG.md does not name handoffs.size"
+awk '/^## /{on = /^## 0\.7\.0 /} on' "$KIT/CHANGELOG.md" | grep -q 'handoffs\.size' || fail "criterion 12: CHANGELOG.md's 0.7.0 section does not name handoffs.size"
 hr_fix hs-end hr_known
   return 0   # a last "check && fail" line must not end the run
 }
