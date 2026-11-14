@@ -1021,8 +1021,8 @@ function json(...argv) {
   const sum = (a) => (a.length ? a.reduce((x, y) => x + y, 0) : null);
   const list = (x) => { if (x == null) return []; if (!Array.isArray(x)) throw new Error("not a list"); return x; };
   const obj = (x) => { if (x == null) return {}; if (typeof x != "object" || Array.isArray(x)) throw new Error("not an object"); return x; };
-  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed, ownerIn and reviewsOf.
-  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn, reviewsOf };
+  // And the handoff reader's: idOrder (a sort's compare), statusKnown, statusClosed, ownerIn, ownerCase and reviewsOf.
+  const helpers = { num, str, sum, list, obj, idOrder, statusKnown, statusClosed, ownerIn, ownerCase, reviewsOf };
   try { fn = new Function("$", ...Object.keys(helpers), ...o.names, "return (" + expr + ");"); } catch (e) { die("json: " + e.message, 5); }
   let out = "";
   const put = (v) => {

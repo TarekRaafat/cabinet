@@ -476,6 +476,29 @@ hrows="$(node "$LIBJS" handoff-rows "$WS/HANDOFFS.md" 2>/dev/null)" || hrows="[]
 hstatus="$(json -r '$.filter((e) => e.section == "open" && !e.known).map((e) => e.id + " (" + e.status_said + ")").join("; ")' <<<"$hrows" 2>/dev/null | term_text || true)"
 [[ -z "$hstatus" ]] && ok handoffs.status "every open handoff's status word is open, acknowledged, done or rejected" \
   || bad handoffs.status "handoffs with a status word the kit does not know: $hstatus (rewrite each status line as one of open, acknowledged, done or rejected)"
+# HANDOFFS.md's size, a note only (never bad): over the limit, fixed in the kit, it says what makes the
+# file large. From the reader's rows: closed is a known done or rejected (what archive moves), open is
+# every other entry, unknown words too; the three addressees holding the most open ones (Owner counted
+# as owner), by count, then name. Closed entries are committed when git shows HANDOFFS.md unchanged, as
+# archive asks; with no git, they are not.
+HSIZE_LIMIT=100000
+if [[ -f "$WS/HANDOFFS.md" ]]; then
+  hsize="$(wc -c < "$WS/HANDOFFS.md" | tr -d ' ')"
+  if ((hsize <= HSIZE_LIMIT)); then ok handoffs.size "HANDOFFS.md is $hsize bytes, within $HSIZE_LIMIT"
+  else
+    hcount="$(json -r '(() => { const o = $.filter((e) => !statusClosed(e.status)), n = {};
+      o.forEach((e) => { const t = ownerCase(e.to.trim()); n[t] = (n[t] || 0) + 1; });
+      const top = Object.keys(n).sort((a, b) => n[b] - n[a] || (a < b ? -1 : a > b ? 1 : 0)).slice(0, 3).map((k) => k + " (" + n[k] + ")").join(", ");
+      return ($.length - o.length) + "\n" + (o.length ? o.length + " open, most to " + top + " (each closes the entries whose work is finished or recorded elsewhere, with the reason)" : ""); })()' <<<"$hrows" 2>/dev/null || true)"
+    hclosed="$(sed -n 1p <<<"$hcount")" hopen="$(sed -n 2p <<<"$hcount")" hparts=""
+    if ((${hclosed:-0} > 0)); then
+      hgit="$(git -C "$WS" status --porcelain -- HANDOFFS.md 2>/dev/null)" && [[ -z "$hgit" ]] \
+        && hparts="$hclosed closed entries (run bin/handoff.sh archive)" || hparts="$hclosed closed entries (commit HANDOFFS.md, then archive)"
+    fi
+    [[ -n "$hopen" ]] && hparts="${hparts:+$hparts; }$hopen"
+    note handoffs.size "HANDOFFS.md is $hsize bytes, over $HSIZE_LIMIT${hparts:+: $hparts}"
+  fi
+fi
 # Each open entry's own text, so the checks below never read past its end (a "## " section after it).
 htext="$(json -r --each '$.filter((e) => e.section == "open").map((e) => e.text)' <<<"$hrows" 2>/dev/null || true)"
 # Verdicts in the one format (.cabinet/rules/reviews.md), each with its note; a qa PASS needs evidence.

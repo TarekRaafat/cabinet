@@ -8721,6 +8721,79 @@ wsrm "$EW"
   return 0
 }
 
+section "handoffs size: the doctor notes a large HANDOFFS.md" "77"
+s120() {
+# specs/handoffs-size.md, criteria 1 to 13, in the handoff reading workspace. hs_pad <bytes>: a "- Changed:"
+# line at the end of HANDOFFS.md (the last entry's, or the section after it) that makes the file that size, committed.
+hs_pad() {
+  local s; s="$(wc -c < "$HW/HANDOFFS.md" | tr -d ' ')"
+  node -e 'process.stdout.write("- Changed: " + "x".repeat(+process.argv[1]) + "\n")' "$(($1 - s - 12))" >> "$HW/HANDOFFS.md"
+  git -C "$HW" commit -qm pad -- HANDOFFS.md
+}
+hs_size() { wc -c < "$HW/HANDOFFS.md" | tr -d ' '; }
+hs() { j -r '($.level ?? "none") + " " + ($.message ?? "")' <<<"$(hr_doc handoffs.size)"; }
+hs_dx() { local s=0; "$HW/bin/doctor.sh" --json >/dev/null 2>&1 || s=$?; echo $s; }
+local EACH="(each closes the entries whose work is finished or recorded elsewhere, with the reason)" st o
+# Fixture S: two done and one rejected, committed; open to product-manager (4), qa (2), backend (2), security (1).
+hs_S() {
+  hr_ent H-20261114-01 "done (2026-11-14)" backend; hr_ent H-20261114-02 "done (2026-11-14)" qa; hr_ent H-20261114-03 "rejected (2026-11-14)" security
+  for i in 04 05 06 07; do hr_ent "H-20261114-$i" "open (2026-11-14)" product-manager; done
+  hr_ent H-20261114-08 "open (2026-11-14)" qa; hr_ent H-20261114-09 "acknowledged (2026-11-14)" qa   # qa before backend: the tie is by name, not file order
+  hr_ent H-20261114-10 "open (2026-11-14)" backend; hr_ent H-20261114-11 "open (2026-11-14)" backend; hr_ent H-20261114-12 "open (2026-11-14)" security
+}
+hs_top="product-manager (4), backend (2), qa (2)"
+# 1: exactly at the limit is within.
+hr_fix hs-one hr_ent H-20261114-01 "open (2026-11-14)" backend; hs_pad 100000
+[[ "$(hs_size)" == 100000 && "$(hs)" == "ok HANDOFFS.md is 100000 bytes, within 100000" ]] || fail "criterion 1: $(hs_size) bytes: $(hs)"
+# 2 and 3: over, both parts; a note, with the exit code it had under the limit.
+hr_fix hs-S hs_S; st="$(hs_dx)"; hs_pad 100001
+o="$(hs)"
+[[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 3 closed entries (run bin/handoff.sh archive); 9 open, most to $hs_top $EACH" ]] || fail "criterion 2: $o"
+[[ "$(hs_dx)" == "$st" ]] || fail "criterion 3: the doctor exits $(hs_dx) over the limit, $st under it"
+# 6: one more done entry, not committed.
+hr_ent H-20261114-13 "done (2026-11-14)" backend >> "$HW/HANDOFFS.md"
+o="$(hs)"; [[ "$o" == *": 4 closed entries (commit HANDOFFS.md, then archive); 9 open, most to $hs_top $EACH" ]] || fail "criterion 6: $o"
+git -C "$HW" checkout -q -- HANDOFFS.md
+# 4: the closed entries archived, padded back over the limit: no closed part.
+hr_fix hs-S hs_S; "$HW/bin/handoff.sh" archive >/dev/null || fail "criterion 4: archive"; hs_pad 100001
+o="$(hs)"; [[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 9 open, most to $hs_top $EACH" ]] || fail "criterion 4: $o"
+# 7: an unknown word (Done, on a backend entry) counts as open.
+hr_fix hs-S hs_S
+node -e 'const fs = require("node:fs"), f = process.argv[1]; fs.writeFileSync(f, fs.readFileSync(f, "utf8").replace(/(### H-20261114-10:[^]*?- Status: )open/, "$1Done"));' "$HW/HANDOFFS.md"
+git -C "$HW" commit -qm "Done" -- HANDOFFS.md; grep -q '^- Status: Done (2026-11-14)$' "$HW/HANDOFFS.md" || fail "criterion 7: the fixture"; hs_pad 100001
+o="$(hs)"; [[ "$o" == *": 3 closed entries (run bin/handoff.sh archive); 9 open, most to $hs_top $EACH" ]] || fail "criterion 7: $o"
+# 5: only closed entries: no open part.
+hs_done() { hr_ent H-20261114-01 "done (2026-11-14)" backend; hr_ent H-20261114-02 "done (2026-11-14)" qa; }
+hr_fix hs-done hs_done; hs_pad 100001
+o="$(hs)"; [[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 2 closed entries (run bin/handoff.sh archive)" ]] || fail "criterion 5: $o"
+# 8: Owner and owner are one addressee.
+hs_own() { hr_ent H-20261114-01 "open (2026-11-14)" Owner; hr_ent H-20261114-02 "open (2026-11-14)" Owner; hr_ent H-20261114-03 "open (2026-11-14)" owner; }
+hr_fix hs-owner hs_own; hs_pad 100001
+o="$(hs)"; [[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 3 open, most to owner (3) $EACH" ]] || fail "criterion 8: $o"
+# 9: fewer than three addressees.
+hs_two() { hr_ent H-20261114-01 "open (2026-11-14)" backend; hr_ent H-20261114-02 "open (2026-11-14)" backend; }
+hr_fix hs-two hs_two; hs_pad 100001
+o="$(hs)"; [[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 2 open, most to backend (2) $EACH" ]] || fail "criterion 9: $o"
+# 13: the size from a section after the only entry.
+hs_notes() { hr_ent H-20261114-01 "open (2026-11-14)" backend; printf '\n## Notes\n\n'; }
+hr_fix hs-notes hs_notes; hs_pad 100001
+o="$(hs)"; [[ "$o" == "note HANDOFFS.md is $(hs_size) bytes, over 100000: 1 open, most to backend (1) $EACH" ]] || fail "criterion 13: $o"
+# 11: a name with an ESC byte shows as ? in a terminal.
+hs_esc() { hr_ent H-20261114-01 "open (2026-11-14)" $'\033[31mx'; }
+hr_fix hs-esc hs_esc; hs_pad 100001
+o="$(TERM=xterm in_tty "$HW/bin/doctor.sh" | tr -d '\r')"
+grep -qF 'most to ?[31mx (1)' <<<"$o" && ! grep -qF $'\033[31mx' <<<"$o" || fail "criterion 11: $(grep -F 'HANDOFFS.md is' <<<"$o" | od -c | head -5)"
+# 10: no HANDOFFS.md: no handoffs.size result, and kit.handoffs-file still says it is missing.
+rm "$HW/HANDOFFS.md"
+[[ "$(hs)" == "none " && "$(j -r '$.level' <<<"$(hr_doc kit.handoffs-file)")" == fix ]] || fail "criterion 10: $(hs); $(hr_doc kit.handoffs-file)"
+git -C "$HW" checkout -q -- HANDOFFS.md
+# 12: the docs: a troubleshooting row for each message, and the changelog's top Unreleased section.
+for l in ok note; do grep -qE "^\| \`$l HANDOFFS.md is .*\| \`handoffs.size\` \|" "$KIT/docs/troubleshooting.md" || fail "criterion 12: no $l row for handoffs.size"; done
+awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md" | { read -r h; [[ "$h" == *Unreleased* ]] && grep -q 'handoffs\.size'; } || fail "criterion 12: the top Unreleased section of CHANGELOG.md does not name handoffs.size"
+hr_fix hs-end hr_known
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # Which sections to run: the matches, then everything they need, in suite order.
 _want=()
 if (($#)); then
