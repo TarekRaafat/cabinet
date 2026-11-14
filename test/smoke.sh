@@ -541,6 +541,9 @@ git -C "$W" checkout -q -- bin/handoff.sh
 
 section "update to a newer kit shows its changelog" "0"
 s12() {
+# From a workspace with nothing uncommitted, whatever ran before it: "roles" leaves its notes and agents uncommitted,
+# which an update leaves to the owner. In the serial order "handoffs" and "update" commit them first.
+git -C "$W" add -A && { git -C "$W" diff --cached --quiet || git -C "$W" commit -qm "before the update"; }
 # The kit as it is (V), then a copy one patch version ahead (N): works whatever version the kit is at.
 V="$(j -r '$.version' "$KIT/package.json")"
 N="$(node -e 'const v = process.argv[1].split(".").map(Number); v[2]++; console.log(v.join("."))' "$V")"
@@ -9005,11 +9008,11 @@ s122() {
 # H-20261114-08. A throwaway suite: this file's header and runner around six small sections, run with
 # CABINET_TEST_JOBS=3 (test/shards.js). PLANT=<n> fails section n; EXIT0=<n> ends n's shard early with 0. p2 runs
 # the suite with a word, as "the suite says what each section took" does: in a shard, that run is still just p0.
-local PK="$T/par-kit" PS o st n i
+local PK="$T/par-kit" PS o st n i sp
 mkdir -p "$PK/test"; cp -R "$KIT/scripts" "$PK/"; cp "$KIT/test/shards.js" "$PK/test/"
 { awk '{ print } /^section\(\) \{/ { exit }' "$KIT/test/smoke.sh"
   for i in 0 1 2 3 4 5; do
-    printf 'section "p%s" "%s"\ns%s() {\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i"
+    printf 'section "p%s" "%s"\ns%s() {\n[[ -z "${SLEEPY:-}" ]] || sleep "$SLEEPY"\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i"
   done
   printf '%s\n' 's2() { [[ "${PLANT:-}" != 2 ]] || fail "planted in p2"; [[ -n "${NESTED:-}" ]] && return 0; local o2; o2="$(NESTED=1 "$KIT/test/smoke.sh" p0 2>&1)"; [[ "$o2" == "$(printf "== p0\n-- 0s p0\nPASS")" ]] || fail "the nested run: $o2"; }'
   awk '/^# The section list for test\/shards.js:/ { on = 1 } on' "$KIT/test/smoke.sh"; } > "$PK/test/smoke.sh"
@@ -9036,6 +9039,13 @@ EXIT0=0 par; [[ $st == 1 ]] && grep -qE '^FAIL: [0-9]+ of 6 sections did not run
 # CABINET_TEST_JOBS=1, and a run with words, are the one-process run as before; a bad CABINET_TEST_JOBS is refused.
 J=1 par; [[ $st == 0 && "$o" == "$(for i in 0 1 2 3 4 5; do printf '== p%s\n-- 0s p%s\n' "$i" "$i"; done; echo PASS)" ]] || fail "CABINET_TEST_JOBS=1 (exit $st): $o"
 par p5; [[ $st == 0 && "$o" == "$(printf '== p1\n-- 0s p1\n== p5\n-- 0s p5\nPASS')" ]] || fail "a run with words (exit $st): $o"
+# Stopped while a section runs: the runner stops every shard's whole process group and shows its lines so far.
+SLEEPY="37.$$" CABINET_TEST_JOBS=3 "$PS" > "$T/par-stop" 2>&1 & sp=$!
+for i in $(seq 50); do pgrep -f "sleep 37\.$$\$" >/dev/null && break; sleep 0.2; done
+pgrep -f "sleep 37\.$$\$" >/dev/null || fail "the sleeping section did not start: $(cat "$T/par-stop")"
+kill -TERM "$sp"; st=0; wait "$sp" || st=$?; sleep 1
+[[ $st == 130 ]] && ! pgrep -f "sleep 37\.$$\$" >/dev/null && grep -qE '^### shard [0-9] of 3: stopped while running$' "$T/par-stop" \
+  && grep -qx '== p0' "$T/par-stop" || fail "a stopped run (exit $st, left running: $(pgrep -f "sleep 37\.$$\$")): $(cat "$T/par-stop")"
 J=x par; [[ $st == 2 ]] && grep -qx 'FAIL: CABINET_TEST_JOBS is not a whole number above 0: x' <<<"$o" || fail "CABINET_TEST_JOBS=x (exit $st): $o"
   return 0   # a last "check && fail" line must not end the run
 }

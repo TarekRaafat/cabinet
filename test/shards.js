@@ -59,7 +59,7 @@ const began = Date.now(), children = new Map();
 // Stopped (Ctrl-C, a time limit): each unfinished shard's lines so far, so a section that hangs is seen.
 const stop = () => {
   for (const [c, r] of children) {
-    try { c.kill("SIGTERM"); } catch {}
+    try { process.kill(-c.pid, "SIGTERM"); } catch {}   // the shard's whole process group
     process.stdout.write(`\n### shard ${r.k + 1} of ${plan.length}: stopped while running\n${Buffer.concat(r.out).toString("utf8")}\n`);
   }
   process.exit(130);
@@ -68,7 +68,7 @@ process.on("SIGINT", stop); process.on("SIGTERM", stop);
 say(`== ${names.length} sections in ${plan.length} shards (CABINET_TEST_JOBS=1 runs them one after another)`);
 
 const results = plan.map((s, k) => new Promise((done) => {
-  const c = cp.spawn("bash", ["-c", 'exec bash "$0" 2>&1', suite], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, CABINET_TEST_SHARD: s.own.join(" ") } });
+  const c = cp.spawn("bash", ["-c", 'exec bash "$0" 2>&1', suite], { detached: true, stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, CABINET_TEST_SHARD: s.own.join(" ") } });
   const out = [], start = Date.now();
   children.set(c, { k, out });
   c.stdout.on("data", (b) => out.push(b));
