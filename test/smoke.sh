@@ -8313,7 +8313,9 @@ n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
 W="$(work "Criterion 6")"; c="$(cm c6 app)"; cf="$(git -C "$BW/app" rev-parse HEAD)"; [[ ${#c} == 7 ]] || fail "criterion 6: the short hash $c"
 setst "$W" "done (2026-11-13) Built in app $c; review in H-20261113-99."; rev "$W" "$cf" >/dev/null
 n="$(args)"; out="$(run "$W")" && [[ "$(args)" == "$n" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " || fail "criterion 6: $out"
-for x in deadbeef0 "$S"; do
+# A branch or tag named only in hex is no commit, though git finds a commit through it.
+git -C "$BW/app" branch deadbeef1 && git -C "$BW/app" tag 2026111 || fail "criterion 6: hex-named refs"
+for x in deadbeef0 "$S" deadbeef1 2026111; do
   setst "$W" "done (2026-11-13) Built in app $x; review in H-20261113-99."
   n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
   [[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W is done but its status line names no commit in a product repo, so nothing was built to push" || fail "criterion 6, $x: $out"

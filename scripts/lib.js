@@ -110,8 +110,9 @@ const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h
 // with readiness's JSON on stdin and REPODIRS (each product repo's main folder) in the environment:
 // {"named": [...], "uncovered": [...]}. named: each word on the entry's status line of 7 to 40 characters,
 // all 0-9a-f and not joined to a letter, digit or - (so an ID's or a date's digits are never one), that git
-// finds as a commit in a product repo, as written; uncovered: the named ones no ready open review of it
-// covers. Each word goes to git as one argument, never through a shell.
+// finds as a commit in a product repo, as written: git rev-parse resolves it to an object ID that starts
+// with the word, so a branch or tag named in hex (deadbeef, 2026111) is no commit; uncovered: the named ones
+// no ready open review of it covers. Each word goes to git as one argument, never through a shell.
 function buildCommits(id, ...files) {
   const rd = JSON.parse(fs.readFileSync(0, "utf8"));
   let rest = "";
@@ -121,7 +122,7 @@ function buildCommits(id, ...files) {
   });
   const dirs = env("REPODIRS").split("\n").filter(Boolean), named = [];
   for (const [w] of rest.matchAll(/(?<![0-9A-Za-z-])[0-9a-f]{7,40}(?![0-9A-Za-z-])/g)) {
-    if (!named.includes(w) && dirs.some((d) => spawnSync("git", ["-C", d, "cat-file", "-e", w + "^{commit}"], { stdio: "ignore" }).status === 0)) named.push(w);
+    if (!named.includes(w) && dirs.some((d) => (spawnSync("git", ["-C", d, "rev-parse", "--verify", "--quiet", w + "^{commit}"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).stdout || "").startsWith(w))) named.push(w);
   }
   const have = reviewsOf(rd, id).filter((k) => !statusClosed(rd[k].status_now) && rd[k].ready === true).flatMap((k) => rd[k].verdicts.flatMap((v) => v.commits));
   process.stdout.write(JSON.stringify({ named, uncovered: named.filter((c) => !covers(have, [c])) }) + "\n");
