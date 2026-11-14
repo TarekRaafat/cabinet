@@ -8801,8 +8801,8 @@ s121() {
 # specs/released-specs.md, criteria 1 to 13 and 15 to 18. Fixture F: repo app with c1, c2 (tag v1.0.0), c3;
 # specs/login.md building with no plan for app; archived E1, done, naming c1 and c2. R: v1.0.0 on c1, and
 # specs/old.md with a done entry naming only c1.
-local RW="$T/rel" RC="$T/rel-calls" c1 c2 c3 a1 w1 x out rc snap
-mkdir -p "$T/relfakes"
+local RW="$T/relspec" RC="$T/relspec-calls" c1 c2 c3 a1 w1 x out rc snap
+mkdir -p "$T/relspecfakes"
 "$F" new "$RW" --yes >/dev/null || fail "new for released specs"
 RW="$(cd "$RW" && pwd -P)"
 git init -q "$RW/app"
@@ -8843,28 +8843,28 @@ SPEC
 mkdir -p "$RW/specs/qa" "$RW/handoffs"; echo ok > "$RW/specs/qa/x.md"
 git -C "$RW" add specs/login.md specs/qa/x.md && git -C "$RW" commit -qm "login spec" -- specs/login.md specs/qa/x.md
 "$RW/bin/spec.sh" record specs/login.md --role qa PASS --note specs/qa/x.md >/dev/null || fail "test setup: qa PASS on login"
-cp "$RW/specs/login.md" "$T/rel-login.md"; cp "$RW/repos.tsv" "$T/rel-repos"; sed '/^## Open$/q' "$RW/HANDOFFS.md" > "$T/rel-head"
-cat > "$T/relfakes/claude" <<'FAKE'
+cp "$RW/specs/login.md" "$T/relspec-login.md"; cp "$RW/repos.tsv" "$T/relspec-repos"; sed '/^## Open$/q' "$RW/HANDOFFS.md" > "$T/relspec-head"
+cat > "$T/relspecfakes/claude" <<'FAKE'
 #!/bin/bash
 printf '%s\n' "$*" | tr '\n' ' ' >> "$RC"; echo >> "$RC"
 echo '{"type":"result","result":"done","total_cost_usd":0.01}'
 FAKE
-chmod +x "$T/relfakes/claude"
+chmod +x "$T/relspecfakes/claude"
 # rel_ent <ID> <status> <spec> [<commits>]: one entry for the spec, with a qa Verdict naming the commits.
 rel_ent() { printf '\n### %s: Work on %s\n- From: app -> To: qa\n- Status: %s\n- Changed: x\n- Needed: y\n- Spec: %s\n' "$1" "$3" "$2" "$3"
   [[ -z "${4:-}" ]] || printf -- '- Verdict: qa PASS 2026-01-02 %s specs/qa/x.md\n' "$4"; }
 # rel_F [<E1's commits>]: fixture F, E1 naming c1,c2 (or the commits given). The workspace is left uncommitted.
 rel_F() {
-  local t; cp "$T/rel-login.md" "$RW/specs/login.md"; rm -f "$RW/specs/old.md"
-  cp "$T/rel-head" "$RW/HANDOFFS.md"; cp "$T/rel-repos" "$RW/repos.tsv"; [[ ! -d "$RW/api" ]] || mv "$RW/api" "$T/rel-api-$RANDOM"
+  local t; cp "$T/relspec-login.md" "$RW/specs/login.md"; rm -f "$RW/specs/old.md"
+  cp "$T/relspec-head" "$RW/HANDOFFS.md"; cp "$T/relspec-repos" "$RW/repos.tsv"; [[ ! -d "$RW/api" ]] || mv "$RW/api" "$T/relspec-api-$RANDOM"
   { echo "# Archive"; rel_ent H-20260102-01 "done (2026-01-02)" specs/login.md "${1:-$c1,$c2}"; } > "$RW/handoffs/archive-2026-01.md"
   for t in $(git -C "$RW/app" tag -l); do git -C "$RW/app" tag -d "$t" >/dev/null; done
   git -C "$RW/app" tag v1.0.0 "$c2"
   : > "$RC"; rm -f "$RW/PIPELINE.md"
 }
 rel_set() { sedi "s/^$1: .*/$1: $2/" "$RW/specs/${3:-login}.md"; }   # rel_set <key> <value> [<spec>]: a front matter line
-rel_dx() { "$RW/bin/doctor.sh" --json > "$T/rel-dx.json" 2>/dev/null || true; }
-rel_r() { j -r --arg i "$1" '((r) => r ? r.level + " " + r.message : "none")($.results.find((r) => r.id == $i))' "$T/rel-dx.json"; }
+rel_dx() { "$RW/bin/doctor.sh" --json > "$T/relspec-dx.json" 2>/dev/null || true; }
+rel_r() { j -r --arg i "$1" '((r) => r ? r.level + " " + r.message : "none")($.results.find((r) => r.id == $i))' "$T/relspec-dx.json"; }
 # rel_released <message>: the released result; rel_unfinished: the unfinished result. Each runs the doctor.
 rel_released() { rel_dx; [[ "$(rel_r specs.released)" == "note $1" && "$(rel_r specs.ready)" != "fix "*"specs/login.md"* ]]; }
 rel_unfinished() { rel_dx; [[ "$(rel_r specs.ready)" == "fix "*"specs/login.md (no plan for app)"* && "$(rel_r specs.released)" == none ]]; }
@@ -8928,14 +8928,14 @@ git -C "$RW/api" tag v2.0.0 "$a1"
 rel_dx; [[ "$(rel_r specs.released)" == "note specs/login.md is in app v1.0.0, api v2.0.0, released: set it to shipped" ]] || fail "criterion 11, both tagged: $(rel_why)"
 "$RW/bin/spec.sh" check | grep -qx "specs/login.md (building): in app v1.0.0, api v2.0.0, released: set it to shipped" || fail "criterion 11: check: $("$RW/bin/spec.sh" check)"
 # 12: app's folder missing; a hand-edited commits field reaches no shell.
-rel_F; mv "$RW/app" "$T/rel-app"; rel_dx; rc=0; x="$("$RW/bin/spec.sh" check --json)" || rc=$?
-mv "$T/rel-app" "$RW/app"
+rel_F; mv "$RW/app" "$T/relspec-app"; rel_dx; rc=0; x="$("$RW/bin/spec.sh" check --json)" || rc=$?
+mv "$T/relspec-app" "$RW/app"
 [[ "$(rel_r specs.released)" == none && $rc == 1 && "$(j -c '$[0].released' <<<"$x")" == null ]] || fail "criterion 12, no folder: exit $rc; $(rel_why); $x"
 rel_F "$c2"';touch${IFS}$HOME/pwned'; grep -qF ';touch${IFS}$HOME/pwned specs/qa/x.md' "$RW/handoffs/archive-2026-01.md" || fail "criterion 12: the fixture"
 rel_dx; [[ ! -e "$HOME/pwned" && "$(rel_r specs.released)" == none ]] || fail "criterion 12, the hash: $(rel_why); $(ls "$HOME")"
 out="$("$RW/bin/spec.sh" list --released app)" && [[ "$out" == "No spec ships in this release." && ! -e "$HOME/pwned" ]] || fail "criterion 12, list: $out"
 # 13: fixture R.
-rel_R() { rel_F; git -C "$RW/app" tag -f v1.0.0 "$c1" >/dev/null; sed 's/^feature: login$/feature: old/' "$T/rel-login.md" > "$RW/specs/old.md"
+rel_R() { rel_F; git -C "$RW/app" tag -f v1.0.0 "$c1" >/dev/null; sed 's/^feature: login$/feature: old/' "$T/relspec-login.md" > "$RW/specs/old.md"
   rel_ent H-20260102-04 "done (2026-01-02)" specs/old.md "$c1" >> "$RW/handoffs/archive-2026-01.md"; rel_snap; }
 rel_R
 out="$("$RW/bin/spec.sh" list --released app)" && [[ "$out" == "specs/login.md" ]] || fail "criterion 13, R at HEAD: $out"
@@ -8956,18 +8956,18 @@ rel_same "criterion 13, F"
 "$F" help --json | j -e '$.commands.some((c) => c.name == "spec list" && c.options.some((o) => o.name == "--released") && c.options.some((o) => o.name == "--json"))' >/dev/null \
   || fail "criterion 13: help --json: $("$F" help --json | j -c '$.commands.find((c) => c.name == "spec list")')"
 # 15: a released spec is no work for spec run or the scheduled pipeline; one that is not released is.
-rel_plan() { awk '{ print } /^## Plan$/ { print ""; print "### app"; print ""; print "- the change" }' "$T/rel-login.md" > "$RW/specs/login.md"
+rel_plan() { awk '{ print } /^## Plan$/ { print ""; print "### app"; print ""; print "- the change" }' "$T/relspec-login.md" > "$RW/specs/login.md"
   git -C "$RW" commit -qm "login plan" -- specs/login.md >/dev/null 2>&1 || true; }   # spec run takes a committed spec
 rel_F; rel_plan; [[ "$("$RW/bin/spec.sh" check --json | j -c '$[0].problems')" == '[]' ]] || fail "criterion 15: the fixture: $("$RW/bin/spec.sh" check)"
 L15="specs/login.md (building): in app v1.0.0, released: set it to shipped"
-rc=0; out="$(cd "$RW" && RC="$RC" PATH="$T/relfakes:$PATH" bin/spec.sh run specs/login.md --dry-run 2>&1)" || rc=$?
+rc=0; out="$(cd "$RW" && RC="$RC" PATH="$T/relspecfakes:$PATH" bin/spec.sh run specs/login.md --dry-run 2>&1)" || rc=$?
 [[ $rc == 1 && "$out" == "$L15" ]] || fail "criterion 15, --dry-run (exit $rc): $out"
-rc=0; out="$(cd "$RW" && RC="$RC" PATH="$T/relfakes:$PATH" bin/spec.sh run specs/login.md 2>&1)" || rc=$?
+rc=0; out="$(cd "$RW" && RC="$RC" PATH="$T/relspecfakes:$PATH" bin/spec.sh run specs/login.md 2>&1)" || rc=$?
 [[ $rc == 1 && "$out" == "$L15" && ! -s "$RC" ]] || fail "criterion 15, run (exit $rc): $out; calls: $(cat "$RC")"
-(cd "$RW" && RC="$RC" PATH="$T/relfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || true
+(cd "$RW" && RC="$RC" PATH="$T/relspecfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || true
 ! grep -q "specs/login.md" "$RC" && ! grep -q "specs/login.md" "$RW/PIPELINE.md" 2>/dev/null || fail "criterion 15, the pipeline took a released spec: $(cat "$RC" "$RW/PIPELINE.md" 2>/dev/null)"
 rel_F "$c1,$c2,$c3"; rel_plan
-(cd "$RW" && RC="$RC" PATH="$T/relfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || true
+(cd "$RW" && RC="$RC" PATH="$T/relspecfakes:$PATH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || true
 grep -q "specs/login.md" "$RC" || fail "criterion 15, the pipeline skipped a spec that is not released: $(cat "$RW/PIPELINE.md" 2>/dev/null)"
 # 16: the docs.
 grep -q '`released`' "$KIT/docs/commands.md" && grep -qxF 'cabinet spec list [--released <repo> [<commit>]] [--json]' "$KIT/docs/commands.md" || fail "criterion 16: docs/commands.md"
