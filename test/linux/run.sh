@@ -13,4 +13,6 @@ stop() { ((started)) && colima stop >/dev/null 2>&1; return 0; }
 trap stop EXIT
 docker build -q -t cabinet-test "$KIT/test/linux" >/dev/null
 # The sections run in as many shards as the container has CPUs (Colima's, at most 8), or CABINET_TEST_JOBS.
-docker run --rm -e CABINET_TEST_JOBS -v "$KIT":/kit:ro cabinet-test /kit/test/smoke.sh "$@"
+# --init: the shard runner (node) is not a process 1 that reaps the orphans it adopts; a check that ends after
+# its parent ("release notice") would stay a zombie that kill -0 still finds.
+docker run --rm --init -e CABINET_TEST_JOBS -v "$KIT":/kit:ro cabinet-test /kit/test/smoke.sh "$@"

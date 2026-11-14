@@ -9050,6 +9050,8 @@ kill -TERM "$sp"; st=0; wait "$sp" || st=$?; sleep 1
 [[ $st == 130 ]] && ! pgrep -f "sleep 37\.$$\$" >/dev/null && grep -qE '^### shard [0-9] of 3: stopped while running$' "$T/par-stop" \
   && grep -qx '== p0' "$T/par-stop" || fail "a stopped run (exit $st, left running: $(pgrep -f "sleep 37\.$$\$")): $(cat "$T/par-stop")"
 J=x par; [[ $st == 2 ]] && grep -qx 'FAIL: CABINET_TEST_JOBS is not a whole number above 0: x' <<<"$o" || fail "CABINET_TEST_JOBS=x (exit $st): $o"
+# On Linux the container's process 1 is an init that reaps orphans, since the shard runner does not.
+grep -qE '^docker run --rm --init ' "$KIT/test/linux/run.sh" || fail "test/linux/run.sh runs the container without --init"
   return 0   # a last "check && fail" line must not end the run
 }
 
