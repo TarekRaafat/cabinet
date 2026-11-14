@@ -216,7 +216,7 @@ cabinet update        # apply it: replace kit files, rebuild roles, print the ch
 ## Develop the kit
 
 ```sh
-npm test                                        # the whole kit in a scratch home folder, about 30 minutes on macOS
+npm test                                        # the whole kit in scratch home folders, in parallel: about 25 minutes on an 8-core Mac
 npm test -- init                                # only the sections about init, and what they need
 CABINET_PRIVATE_WORDS="word1 word2" npm test    # also checks that none of your private words is in the kit
 ```

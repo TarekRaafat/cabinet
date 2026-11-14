@@ -689,6 +689,7 @@ Tab separated, one row per repo: name, clone URL (`-` for none), local-only file
 | `CI` | next, status, doctor, update | Set to anything but empty: the same. |
 | `CABINET_TTY` | setup, config, remove | Read answers from this file instead of the terminal (the tests use it). Never the `--force` question, which reads only the terminal. |
 | `CABINET_PRIVATE_WORDS` | `npm test` | Words that must not appear in the kit. |
+| `CABINET_TEST_JOBS` | `npm test`, `npm run test:linux` | How many shards the whole suite runs in, in parallel; default the number of CPUs, at most 8; `1` runs the sections one after another. |
 | `NO_COLOR` | every command | Set to anything but empty: plain text with no color, bold or dim, even in a terminal ([output](#output-for-agents-and-scripts)). |
 | `TERM` | every command | `dumb`: the same as `NO_COLOR`. |
 | `COLUMNS` | update, changelog | The width the changelog wraps at in a terminal; default: the terminal's own width, else 80. |

@@ -11,6 +11,10 @@ set -eu
 # A syntax error further down would end the run through the EXIT trap, with success.
 bash -n "$0" || { echo "FAIL: $0 does not parse"; exit 1; }
 KIT="$(cd "$(dirname "$0")/.." && pwd)"
+# No words: the sections run in parallel shards, each a run of this file with its own header (test/shards.js).
+if (($# == 0)) && [[ -z "${CABINET_TEST_SHARD+x}${CABINET_TEST_LIST:-}" && "${CABINET_TEST_JOBS:-}" != 1 ]]; then exec node "$KIT/test/shards.js" "$0"; fi
+# Read once: a run of the suite that a section starts is never this shard's, nor a list.
+_list="${CABINET_TEST_LIST:-}" _shard="${CABINET_TEST_SHARD-}" _sharded="${CABINET_TEST_SHARD+1}"; unset CABINET_TEST_LIST CABINET_TEST_SHARD
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 F="$KIT/bin/cabinet"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -692,8 +696,9 @@ cp "$T/brief.bak" "$W/jobs/brief.job"; cp "$T/env.bak" "$W/cabinet.env"
 # in for a sleeping machine; the run then outlasts its limit on the clock, and finishes.
 printf '%s\n' 'CABINET_RUNNER="custom"' "CABINET_RUNNER_CMD='sleep 4; :'" >> "$W/cabinet.env"; HOME="$H" approve "$W" cabinet.env CABINET_RUNNER_CMD
 sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
-HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!
-dog=""; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do dog="$(pgrep -f "lib.js watchdog 2 " | head -1)"; [[ -n "$dog" ]] && break; sleep 0.2; done
+# Its watchdog is found by its mark file in a TMPDIR of this run's own: another run's watchdog (a parallel shard's) is never taken.
+mkdir -p "$T/wd"; HOME="$H" TMPDIR="$T/wd" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 & p=$!
+dog=""; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do dog="$(pgrep -f "lib.js watchdog 2 [0-9]+ $T/wd/" | head -1)"; [[ -n "$dog" ]] && break; sleep 0.2; done
 [[ -n "$dog" ]] && kill -KILL "$dog" || fail "the run's watchdog did not start"
 st=0; wait "$p" || st=$?
 last="$(awk '/^=== / { b = "" } { b = b $0 "\n" } END { printf "%s", b }' "$H/$LOGS/demo-co/brief.log")"
@@ -8995,26 +9000,76 @@ rel_same "criterion 18, no spec"
   return 0   # a last "check && fail" line must not end the run
 }
 
-# Which sections to run: the matches, then everything they need, in suite order.
-_want=()
+section "parallel shards: every section once, a failure named" ""
+s122() {
+# H-20261114-08. A throwaway suite: this file's header and runner around six small sections, run with
+# CABINET_TEST_JOBS=3 (test/shards.js). PLANT=<n> fails section n; EXIT0=<n> ends n's shard early with 0. p2 runs
+# the suite with a word, as "the suite says what each section took" does: in a shard, that run is still just p0.
+local PK="$T/par-kit" PS o st n i
+mkdir -p "$PK/test"; cp -R "$KIT/scripts" "$PK/"; cp "$KIT/test/shards.js" "$PK/test/"
+{ awk '{ print } /^section\(\) \{/ { exit }' "$KIT/test/smoke.sh"
+  for i in 0 1 2 3 4 5; do
+    printf 'section "p%s" "%s"\ns%s() {\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i"
+  done
+  printf '%s\n' 's2() { [[ "${PLANT:-}" != 2 ]] || fail "planted in p2"; [[ -n "${NESTED:-}" ]] && return 0; local o2; o2="$(NESTED=1 "$KIT/test/smoke.sh" p0 2>&1)"; [[ "$o2" == "$(printf "== p0\n-- 0s p0\nPASS")" ]] || fail "the nested run: $o2"; }'
+  awk '/^# The section list for test\/shards.js:/ { on = 1 } on' "$KIT/test/smoke.sh"; } > "$PK/test/smoke.sh"
+PS="$PK/test/smoke.sh"; chmod +x "$PS"
+printf '%s\tp%s\n' 1 0 1 1 1 2 9 3 9 4 9 5 > "$PK/test/.times"
+par() { st=0; o="$(env CABINET_TEST_JOBS="${J:-3}" "$PS" "$@" 2>&1)" || st=$?; }
+own() { grep -cxE -- "-- [0-9]+s $1" <<<"$o"; }
+# Every section once, in three shards; p3, p4 and p5 need p1, so it runs in each of their shards, as (needed) in two; PASS last.
+par; [[ $st == 0 && "$(tail -1 <<<"$o")" == PASS ]] && grep -qx '== 6 sections in 3 shards (CABINET_TEST_JOBS=1 runs them one after another)' <<<"$o" \
+  && grep -qE '^== 6 of 6 sections ran in 3 shards; took ' <<<"$o" && [[ "$(grep -c '^### shard [123] of 3: ' <<<"$o")" == 3 ]] || fail "parallel run (exit $st): $o"
+for i in 0 1 2 3 4 5; do [[ "$(own "p$i")" == 1 ]] || fail "p$i did not run exactly once as its shard's own: $o"; done
+[[ "$(grep -cxE -- '-- [0-9]+s p1 \(needed\)' <<<"$o")" == 2 ]] || fail "p1 did not run as needed in two shards: $o"
+# Each shard's lines are printed whole: a shard's == and -- lines sit under its own heading.
+awk '/^### shard/ { s = $0 } /^== p[0-9]$/ { if (seen[$2]++) bad = 1; at[$2] = s } /^-- [0-9]+s p[0-9]$/ { if (at[$3] != s) bad = 1 } END { exit bad }' <<<"$o" || fail "shard output interleaved: $o"
+# The times are kept for the next run's balance.
+[[ "$(cut -f2 "$PK/test/.times" | sort | tr '\n' ' ')" == "p0 p1 p2 p3 p4 p5 " ]] || fail "times not kept: $(cat "$PK/test/.times")"
+# A planted failure in any section, whatever its shard: the run fails, names the shard's sections and shows the output.
+for i in 0 1 2 3 4 5; do
+  PLANT=$i par; n="$(grep -E '^FAIL: shard [0-9]+ \(exit 1\), its sections: ' <<<"$o" || true)"
+  [[ $st == 1 && "$(tail -1 <<<"$o")" != PASS ]] && grep -qE "(: |; )p$i(;|$)" <<<"$n" && grep -qx "FAIL: planted in p$i" <<<"$o" || fail "planted in p$i (exit $st): $o"
+done
+# A shard that ends early with 0 leaves its sections unrun: the run fails and names them.
+EXIT0=0 par; [[ $st == 1 ]] && grep -qE '^FAIL: [0-9]+ of 6 sections did not run: .*p0' <<<"$o" || fail "a section that did not run (exit $st): $o"
+# CABINET_TEST_JOBS=1, and a run with words, are the one-process run as before; a bad CABINET_TEST_JOBS is refused.
+J=1 par; [[ $st == 0 && "$o" == "$(for i in 0 1 2 3 4 5; do printf '== p%s\n-- 0s p%s\n' "$i" "$i"; done; echo PASS)" ]] || fail "CABINET_TEST_JOBS=1 (exit $st): $o"
+par p5; [[ $st == 0 && "$o" == "$(printf '== p1\n-- 0s p1\n== p5\n-- 0s p5\nPASS')" ]] || fail "a run with words (exit $st): $o"
+J=x par; [[ $st == 2 ]] && grep -qx 'FAIL: CABINET_TEST_JOBS is not a whole number above 0: x' <<<"$o" || fail "CABINET_TEST_JOBS=x (exit $st): $o"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+# The section list for test/shards.js: "<name><tab><needs>" per line.
+if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
+# Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.
+_want=(); _own=()
+if [[ -n "$_sharded" ]]; then
+  for _i in $_shard; do
+    [[ "$_i" =~ ^[0-9]+$ ]] && ((_i < ${#_names[@]})) || fail "CABINET_TEST_SHARD names no section: $_i"
+    _want[$_i]=1; _own[$_i]=1
+  done
+fi
 if (($#)); then
   for ((_i = 0; _i < ${#_names[@]}; _i++)); do
     for _w in "$@"; do [[ "$(printf %s "${_names[$_i]}" | tr '[:upper:]' '[:lower:]')" == *"$(printf %s "$_w" | tr '[:upper:]' '[:lower:]')"* ]] && _want[$_i]=1; done
   done
   ((${#_want[@]})) || fail "no section matches: $* (sections: $(printf '%s; ' "${_names[@]}"))"
-  _changed=1
-  while ((_changed)); do
-    _changed=0
-    for _i in "${!_want[@]}"; do for _d in ${_needs[$_i]}; do [[ -n "${_want[$_d]:-}" ]] || { _want[$_d]=1; _changed=1; }; done; done
-  done
-else
+elif [[ -z "$_sharded" ]]; then
   for ((_i = 0; _i < ${#_names[@]}; _i++)); do _want[$_i]=1; done
 fi
+_changed=1
+while ((_changed)); do
+  _changed=0
+  for _i in "${!_want[@]}"; do for _d in ${_needs[$_i]}; do [[ -n "${_want[$_d]:-}" ]] || { _want[$_d]=1; _changed=1; }; done; done
+done
+# In a shard, a section another shard owns runs only because one of this shard's needs it: "(needed)".
 for ((_i = 0; _i < ${#_names[@]}; _i++)); do
   [[ -n "${_want[$_i]:-}" ]] || continue
-  echo "== ${_names[$_i]}"
+  _as=""; [[ -z "$_sharded" || -n "${_own[$_i]:-}" ]] || _as=" (needed)"
+  echo "== ${_names[$_i]}$_as"
   _began=$SECONDS
   "s$_i"
-  echo "-- $((SECONDS - _began))s ${_names[$_i]}"
+  echo "-- $((SECONDS - _began))s ${_names[$_i]}$_as"
 done
 echo "PASS"

@@ -12,4 +12,5 @@ fi
 stop() { ((started)) && colima stop >/dev/null 2>&1; return 0; }
 trap stop EXIT
 docker build -q -t cabinet-test "$KIT/test/linux" >/dev/null
-docker run --rm -v "$KIT":/kit:ro cabinet-test /kit/test/smoke.sh "$@"
+# The sections run in as many shards as the container has CPUs (Colima's, at most 8), or CABINET_TEST_JOBS.
+docker run --rm -e CABINET_TEST_JOBS -v "$KIT":/kit:ro cabinet-test /kit/test/smoke.sh "$@"

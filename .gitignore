@@ -3,3 +3,5 @@ node_modules/
 *.tgz
 brand/*/stills/
 brand/demo/out/
+test/.times
+test/.times.new

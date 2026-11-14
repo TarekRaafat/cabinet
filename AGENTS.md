@@ -22,7 +22,7 @@ Read this before changing anything in this repository. It is for agents (and peo
 | `tools/build-brand.js` | Builds `brand/assets/` and `docs/logo.svg` from `brand/tokens.json` (`npm run brand`; not shipped) | |
 | `tools/guardrail-probe.js` | Runs a real Claude Code or Grok in a throwaway HOME, with a probe-only key passed only as an environment variable, to record which guardrail rules the tool really applies (evidence for new rule shapes; not shipped) | |
 | `site/` | The website: `build.js` builds it from `docs/`, `README.md`, `CHANGELOG.md`, `roles/`, `brand/demo/captured.js` and `brand/` (`node site/build.js <folder>`), `copy.js` holds its own wording, `site.css` and `site.js` run in the browser, `fonts/` holds the fonts with their licenses, `github-mark/` GitHub's mark for the header link, with where it came from. `.github/workflows/pages.yml` publishes it to GitHub Pages. Not shipped | |
-| `test/smoke.sh` | The whole test suite; `test/site-check.js` checks a built site (not shipped) | |
+| `test/smoke.sh` | The whole test suite; `test/shards.js` runs it in parallel shards, `test/site-check.js` checks a built site (not shipped) | |
 
 Kit files are replaced on every `cabinet update` and must never be edited in a workspace; project files are the project's own after setup.
 
@@ -86,7 +86,8 @@ Known exceptions, each on the roadmap: `update` has no `--dry-run` yet (`cabinet
 ## Checks
 
 ```sh
-npm test                                      # every section, about 30 minutes on macOS; a "-- <seconds>s <section>" line after each; must end with PASS
+npm test                                      # every section, in parallel shards: about 25 minutes on an 8-core Mac; must end with PASS
+CABINET_TEST_JOBS=1 npm test                  # every section one after another, as one process: about 75 minutes
 npm test -- init config                       # only the sections whose name has a word, and what they need
 npm run test:linux                            # the same suite on Linux, in a Debian container (starts and stops Colima if Docker is not running)
 CABINET_PRIVATE_WORDS="word1 word2" npm test  # also fails on any private word in the kit
@@ -96,3 +97,5 @@ npm pack --dry-run                            # what the package ships
 ```
 
 A new test section is a `section "<name>" "<numbers of the sections it needs>"` line and an `sN()` function in `test/smoke.sh`, ending with `return 0`. Before finishing, run each section you touched alone (`npm test -- "<its name>"`): that proves its list of needs is complete.
+
+`npm test` with no words splits the sections into shards (`CABINET_TEST_JOBS`, default the number of CPUs, at most 8; `1` runs them one after another), longest first by each section's last time, kept in `test/.times` (not tracked; equal counts with none). Each shard is a run of `test/smoke.sh` with its own temp folder, `HOME` and fakes; it runs its sections and the ones they need, marked `(needed)`, and prints its lines whole when it ends, with a `-- <seconds>s <section>` line after each section. The run passes only when every shard passes and every section ran exactly once as its shard's own. So a section shares the machine with other shards: it touches nothing outside its own `$T`, uses no fixed port or global file, and finds a process it started by a path under `$T`, never by a pattern another shard's process could match (the watchdog in "custom runner"). No section needs to run alone today.
