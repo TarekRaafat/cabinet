@@ -2223,13 +2223,15 @@ function estWord(rest) {
 // A run log: its steps {role, word, start, end, took}, its finished runs {start, end} and its took lines {at, secs}.
 function estRunLog(text) {
   const steps = [], runs = [], tooks = [];
-  let open = null, last = null, runStart = null;
-  const close = (t) => { if (open) { open.end = t; if (t >= open.start) steps.push(open); open = null; } };
+  // From the first "run started" on, every step that finishes has a took line, so one without it was killed and has no end;
+  // before it (0.6.0 and older), a step ends at the next step, run started or last line.
+  let open = null, last = null, runStart = null, fresh = false;
+  const close = (t) => { if (open && !fresh) { open.end = t; if (t >= open.start) steps.push(open); } open = null; };
   for (const l of text.split("\n")) {
     const s = estStamp(l);
     if (!s) continue;
     let m;
-    if (s.rest === "run started") { close(s.t); last = null; runStart = s.t; }
+    if (s.rest === "run started") { close(s.t); fresh = true; last = null; runStart = s.t; }
     else if ((m = estWord(s.rest))) { close(s.t); last = null; if (runStart === null) runStart = s.t; open = { role: m.role, word: m.word, start: s.t }; }
     else if ((m = EST_TOOK.exec(s.rest))) {
       if (open && open.role === m[1] && s.t >= open.start) { open.end = s.t; open.took = true; steps.push(open); tooks.push({ at: s.t, secs: s.t - open.start }); last = open; }

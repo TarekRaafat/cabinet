@@ -8544,6 +8544,8 @@ l="$(grep -A1 -x "web: plans app" <<<"$o" | sed -n 2p)"
   || "$l" == "  Expected: no estimate yet (nothing like it here); it stops at the time limit, 1 h, by $(clk $((s + 3660)))." ]] || fail "criterion 7, the plan: $t: $l"
 # Criterion 10: the spec run's last line, and the ready to push line of each handoff run in it, end with the run time.
 tail -1 <<<"$o" | grep -Eq '^specs/login\.md is ready to push: .*Push it from your terminal\. Run time: (under 1 min|[0-9]+ min)\.$' || fail "criterion 10, spec run: $(tail -1 <<<"$o")"
+[[ "$(bash -c 'source "$0/bin/lib.sh"; run_result' "$EW" <<<"$o")" == "$(tail -1 <<<"$o")" ]] || fail "criterion 10, ready to push: run_result"
+[[ "$(grep '^=== ' "$EL/run-login.log" | head -1 | cut -c25-)" == "run started" ]] || fail "criterion 9, spec run: $(head -2 "$EL/run-login.log")"
 grep -Eq '^H-[0-9]+-[0-9]+ is ready to push: .* once it is pushed\. Run time: (under 1 min|[0-9]+ min)\.$' <<<"$o" || fail "criterion 10, ready to push: $o"
 # Criterion 23: every line 5396b58 logs for these runs, in order, with the same words, once the new lines and endings are set aside.
 eid() { sed -n "s/^### \(H-[0-9]*-[0-9]*\): $1\$/\1/p" "$EW/HANDOFFS.md"; }
@@ -8602,6 +8604,16 @@ elines "$EL/run-H-20260101-21.log" 2026-01-02 09:00 "run started@0" "backend: bu
 i="$(eadd "Criterion 12, B")"; o="$(erun "$i")" || fail "criterion 12, B: $o"
 l="$(head -1 <<<"$o")"; [[ "$(pre "$l")" == "Expected for this run: about 28 min, up to 2 h 26 min" && "$(src "$l")" == "(the kit's typical time; 1 like it here so far). Each step stops at its time limit, 1 h." ]] || fail "criterion 12, B, the run: $l"
 l="$(grep -A2 -x "backend: builds $i" <<<"$o" | sed -n 3p)"; [[ "$(pre "$l")" == "  Expected: about 9 min, up to 1 h" && "$(src "$l")" == "(the kit's typical time; 2 like it here so far)." ]] || fail "criterion 12, B, the build: $l"
+# E11: a killed run's step with no took line is not counted, whether the next run or another step line follows it.
+i="$(eadd "E11")"; elim 0
+for x in kill step; do
+  efresh; for a in 1 2 3 4 5; do elines "$EL/run-H-20260101-21.log" 2026-01-0$a 09:00 "run started@0" "backend: builds H-20260101-21@0" "backend took 10 min@10" "H-20260101-21 is ready to push: x. Run time: 10 min.@10"; done
+  elines "$EL/run-H-20260101-21.log" 2026-01-06 09:00 "run started@0" "backend: builds H-20260101-21@0"
+  if [[ $x == kill ]]; then elines "$EL/run-H-20260101-21.log" 2026-01-07 09:00 "run started@0"
+  else elines "$EL/run-H-20260101-21.log" 2026-01-06 09:05 "qa: verifies H-20260101-21@0" "qa took 3 min@3" "H-20260101-21 is ready to push: x. Run time: 8 min.@3"; fi
+  l="$(edl "$i")"; [[ "$(pre "$l")" == "  Expected: about 10 min, up to 10 min" && "$(src "$l")" == "(from the last 5 like it here)." ]] || fail "E11, $x: $l"
+done
+elim 60
 # Criterion 9: a refused run prints no Expected line and logs nothing.
 o="$(erun H-20990101-01 2>&1)" && fail "criterion 9: a run of an ID not in HANDOFFS.md went on"
 ! grep -q Expected <<<"$o" && [[ ! -e "$EL/run-H-20990101-01.log" ]] || fail "criterion 9: $o"
@@ -8701,7 +8713,7 @@ dfix "qa: verifies H-20260102-02" qa; o="$(dj)"
 [[ "$(wc -l <<<"$o" | tr -d ' ')" == 1 && "$o" == "note qa verifies (small tasks): 5 of the last 20 "* && "$(dx)" == "$st" ]] || fail "criterion 21: $o"
 dfix "qa: verifies H-20260102-02" qa 2; [[ -z "$(dj)" ]] || fail "criterion 21, four misses: $(dj)"
 dfix "backend: fixes what qa blocked, round 1" backend; o="$(dj)"
-[[ "$o" == "note backend fixes (small tasks): 5 of the last 20 "* ]] || fail "criterion 21, fix rounds: $o"
+[[ "$o" == "note backend fixes (small tasks): 5 of the last 20 "* && "$(dx)" == "$st" ]] || fail "criterion 21, fix rounds: $o"
 dfix "qa: verifies H-20260102-02" $'qa\033[31m'; [[ -z "$(dj)" && "$(dx)" == "$st" ]] || fail "criterion 22: $(dj)"
 "$F" -C "$EW" doctor --json > "$T/re-d.out" 2> "$T/re-d.err" || true; "$F" -C "$EW" doctor >> "$T/re-d.out" 2>> "$T/re-d.err" || true
 ! LC_ALL=C grep -q $'\033' "$T/re-d.out" "$T/re-d.err" && ! grep -qF '\u001b' "$T/re-d.out" "$T/re-d.err" || fail "criterion 22: an escape in the doctor's output"
