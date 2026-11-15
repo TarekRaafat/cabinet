@@ -87,9 +87,9 @@ Known exceptions, each on the roadmap: `update` has no `--dry-run` yet (`cabinet
 
 ```sh
 npm test                                      # every section, in parallel shards: about 25 minutes on an 8-core Mac; must end with PASS
-CABINET_TEST_JOBS=1 npm test                  # every section one after another, as one process: about 75 minutes
+CABINET_TEST_JOBS=1 npm test                  # every section one after another, as one process: about 80 minutes
 npm test -- init config                       # only the sections whose name has a word, and what they need
-npm run test:linux                            # the same suite on Linux, in a Debian container (starts and stops Colima if Docker is not running)
+npm run test:linux                            # the same suite on Linux, in a Debian container (starts and stops Colima if Docker is not running); in shards by the container's CPUs, about 40 minutes with 2
 CABINET_PRIVATE_WORDS="word1 word2" npm test  # also fails on any private word in the kit
 npm run docs                                  # rebuild llms-full.txt after changing a doc
 npm run brand                                 # rebuild brand/assets/ and docs/logo.svg after changing brand/tokens.json (macOS)

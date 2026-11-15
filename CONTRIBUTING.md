@@ -27,7 +27,7 @@ Read [AGENTS.md](AGENTS.md) before changing anything: it holds every rule for wo
 ```sh
 npm test                 # every section, in parallel, about 25 minutes on an 8-core Mac; must end with PASS
 npm test -- init         # only the sections whose name has a word, and what they need
-npm run test:linux       # the same suite on Linux, in a Debian container (needs Docker or Colima)
+npm run test:linux       # the same suite on Linux, in a Debian container (needs Docker or Colima), in parallel by its CPUs
 ```
 
 ## Working with an agent
