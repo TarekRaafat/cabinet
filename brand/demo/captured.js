@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.7.0).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.8.0).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -118,7 +118,7 @@ var CAPTURED = {
    "<span class=\"b\">Product repos</span>",
    "  <span class=\"green\">ok   </span> product repos checked",
    "<span class=\"b\">Kit and roles</span>",
-   "  <span class=\"green\">ok   </span> cabinet 0.7.0",
+   "  <span class=\"green\">ok   </span> cabinet 0.8.0",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -191,7 +191,7 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "               cabinet 0.7.0",
+   "               cabinet 0.8.0",
    "⬤              One person, a whole team.",
    "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
@@ -201,13 +201,13 @@ var CAPTURED = {
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261114-01 filed for qa and committed"
+   "H-20261115-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261114-01 </span>  qa                        Checkout screens ready"
+   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261115-01 </span>  qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -220,7 +220,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.7.0).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.8.0).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",

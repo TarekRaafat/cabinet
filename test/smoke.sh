@@ -8983,7 +8983,7 @@ grep -q "specs/login.md" "$RC" || fail "criterion 15, the pipeline skipped a spe
 # 16: the docs.
 grep -q '`released`' "$KIT/docs/commands.md" && grep -qxF 'cabinet spec list [--released <repo> [<commit>]] [--json]' "$KIT/docs/commands.md" || fail "criterion 16: docs/commands.md"
 grep -E '^\|.*\| `specs\.released` \|' "$KIT/docs/troubleshooting.md" | grep -q -- '- Spec:' || fail "criterion 16: docs/troubleshooting.md has no specs.released row naming the - Spec: limit"
-awk '/^## /{ n++ } n == 1' "$KIT/CHANGELOG.md" | head -1 | grep -q 'Unreleased' && awk '/^## /{ n++ } n == 1' "$KIT/CHANGELOG.md" | grep -q 'specs\.released' || fail "criterion 16: CHANGELOG.md's top unreleased section does not name specs.released"
+awk '/^## /{on = /^## 0\.8\.0 /} on' "$KIT/CHANGELOG.md" | grep -q 'specs\.released' || fail "criterion 16: CHANGELOG.md's 0.8.0 section does not name specs.released"
 # 17: a spec with no repo in repos.tsv.
 rel_F; rel_set repos "[copy]"; rel_dx
 [[ "$(rel_r specs.released)" == none && "$(rel_cj)" == null ]] || fail "criterion 17: $(rel_why); released $(rel_cj)"
