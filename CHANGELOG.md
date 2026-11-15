@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.8.1 - Unreleased
+## 0.8.1 - 15 Nov 2026
 
 - `cabinet backup restore` refuses an archive whose `.env` files include a name starting with `-`, naming it, before anything is written (exit 1): restore passes each `.env` name to tar, which would read such a name as an option, and GNU tar has options that run a command. `backup create` never writes one, so only a hand-made archive holds it. Archived session folder names are printed with control characters shown as `?`, as other archive names already were.
 - `cabinet move` stops when the backup copy of an agent tool settings file (`~/.claude.json`, Codex's `config.toml`) cannot be written beside it, and changes nothing more, with `stop: could not back up <file>: <reason>` (exit 1). Before, it ended partway with only the copy command's own error, which did not say which file.
