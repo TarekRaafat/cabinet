@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.8.1 - Unreleased
+
+- `cabinet role build`, which `cabinet update` runs, no longer writes through a link. Before, a cloned shared workspace that committed `ORG.md` as a link had the file it pointed to overwritten, one with `agents/` or `.claude/agents/` linked to a folder elsewhere had the role files written there, and a role file linked to a missing file created it outside the workspace (macOS). Now `ORG.md` and each role file are written beside it and renamed into place, so an `ORG.md` link becomes a plain file; a role file that is a link is kept as not generated, and an `agents`, `.claude` or `.claude/agents` folder that is a link, or inside one, gets nothing, with `kept <folder>: it is a link or inside one, so cabinet writes nothing there`.
+
 ## 0.8.0 - 15 Nov 2026
 
 - Released specs: `cabinet doctor` and `cabinet spec check` tell a `building` spec whose work is out in a release apart from unfinished work. A spec is released when every entry naming it on a `- Spec:` line is `done` or `rejected` and, in each of its repos in `repos.tsv`, the commits on the Verdict lines of its `done` entries are all in a version tag (`v1.2.3` or `1.2.3`, no pre-release suffix). `spec check` then prints `<spec> (building): in <repo> <tag>, released: set it to shipped` in place of its problems and does not exit 1 for it; `--json` gains `released` on every spec (`null`, or `{"<repo>": "<tag>"}`, the earliest version tag holding them all), and `problems` is unchanged. The doctor leaves a released spec out of `specs.ready` and names it in a new note, `specs.released`: `<spec> is in <repo> <tag>, released: set it to shipped`. It only suggests: you or product-manager set `shipped`. `cabinet spec run` refuses a released spec with the same line (exit 1, before any step), and the scheduled runner skips it.
