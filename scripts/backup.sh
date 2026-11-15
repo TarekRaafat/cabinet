@@ -100,14 +100,20 @@ set_head() {  # set_head <repo> <bundle> <branch-ref or empty>
 }
 
 # Every member name of a tar the archive holds, checked on the names before anything relies on tar's
-# own handling (GNU tar and bsdtar differ): absolute, or with a .. part, and nothing is restored.
-check_tar() {  # check_tar <tar> <what it is>
+# own handling (GNU tar and bsdtar differ): absolute, or with a .. part, and nothing is restored. With
+# named, its members are passed to tar by name (env.tar), so one starting with - is refused too: tar
+# would read it as an option, and GNU tar has options that run a command. backup create writes those
+# names with a leading ./, so only a hand-made archive holds one.
+check_tar() {  # check_tar <tar> <what it is> [named]
   local n m
   [[ -f "$1" ]] || return 0
   while IFS= read -r n; do
     m="$n"; while [[ "$m" == ./* ]]; do m="${m#./}"; done
     if [[ "$m" == /* || "/$m/" == */../* ]]; then
       echo "the archive's $2 holds a path outside its folder, so nothing was restored: $(printf '%s\n' "$n" | term_text)" >&2; exit 1
+    fi
+    if [[ "${3:-}" == named && "$n" == -* ]]; then
+      echo "the archive's $2 holds a name tar would read as an option, so nothing was restored: $(printf '%s\n' "$n" | term_text)" >&2; exit 1
     fi
   done < <(tar -tf "$1")
 }
@@ -145,7 +151,7 @@ restore_sessions() {  # restore_sessions <name> <archived repo> <the repo when r
         && echo "    session $s restored at $w, on $sb" || echo "    session $s: restored at $w on $sb, but its uncommitted changes did not apply (they are in the archive's repos/$name/sessions/$s/)"
     else
       mkdir -p "$keep/sessions/$s"; cp -p "$so"/* "$keep/sessions/$s/" 2>/dev/null || true
-      echo "    session $s: its uncommitted changes and untracked files are in $keep/sessions/$s"
+      echo "    session $(printf '%s\n' "$s" | term_text): its uncommitted changes and untracked files are in $(printf '%s\n' "$keep/sessions/$s" | term_text)"
     fi
   done
 }
@@ -201,7 +207,8 @@ restore_one() {  # restore_one <name> <archived repo> <folder> <in place: 0 or 1
   restore_sessions "$name" "$o" "$repo" "$keep"
   if [[ -f "$o/env.tar" ]]; then
     while IFS= read -r f; do
-      if [[ -e "$repo/$f" ]]; then echo "    ${f#./} exists, left as is"; else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored ${f#./}"; fi
+      if [[ -e "$repo/$f" ]]; then echo "    $(printf '%s\n' "${f#./}" | term_text) exists, left as is"
+      else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored $(printf '%s\n' "${f#./}" | term_text)"; fi
     done < <(tar -tf "$o/env.tar")
   fi
 }
@@ -228,7 +235,7 @@ for o in "$src/workspace" "$src"/repos/*/; do
     [[ -z "$others" || -e "$repo/.git/cabinet-restore" ]] && inplace=1
   fi
   check_tar "$o/untracked.tar" "untracked files of $name"
-  check_tar "$o/env.tar" ".env files of $name"
+  check_tar "$o/env.tar" ".env files of $name" named
   for so in "$o"/sessions/*/; do [[ ! -d "$so" ]] || check_tar "$so/untracked.tar" "untracked files of a session of $name"; done
   prep "$o" "$tmp/g/$i"
   if [[ "$name" == workspace && "$o" == "$src/workspace" ]]; then

@@ -36,7 +36,7 @@ bin/bootstrap.sh                      # then guardrails, links and schedules
 bin/doctor.sh
 ```
 
-On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file. It reads the whole archive before it writes anything: each repo's folder comes from the `repos.tsv` in the archive, never the one in the folder being restored over (a path there can be absolute or under `~`), and an archive member with an absolute path or a `..` part stops it, naming the member, with nothing written. Then:
+On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file. It reads the whole archive before it writes anything: each repo's folder comes from the `repos.tsv` in the archive, never the one in the folder being restored over (a path there can be absolute or under `~`), and an archive member with an absolute path or a `..` part, or a `.env` file whose name starts with `-` (tar would read it as an option), stops it, naming the member, with nothing written. Then:
 
 - **A repo that already exists** gets the archive's branches under `refs/remotes/backup/*`, to compare and merge by hand. Its patches are copied to `recovered/`.
 - **A missing repo, or an empty folder,** is restored with its uncommitted work, on the branch it was on (or detached, as it was).

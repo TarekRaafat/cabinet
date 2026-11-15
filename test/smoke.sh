@@ -6703,7 +6703,7 @@ s96() {
 # one delete-plan incoming call moves aside (or, with --force answered yes at a terminal, deletes) every
 # path in the way, before anything is written. Each archive is made by backup create and checked by
 # backup verify first. Nothing is pushed; the passphrase is a test one.
-local W K K2 A A3 A32 A37 A38 A39 AX st o b4 bk x n=$RANDOM rt="$T/rr-out" sf="$T/rr-status" ef="$T/rr-err"
+local W K K2 A A3 A32 A37 A38 A39 AX st o b4 bk x c n=$RANDOM rt="$T/rr-out" sf="$T/rr-status" ef="$T/rr-err"
 "$F" new "$T/rr-ws" --yes >/dev/null || fail "new"
 W="$(cd "$T/rr-ws" && pwd -P)"
 echo x > "$W/specs/x.md"; echo y > "$W/notes/y.md"; git -C "$W" add specs/x.md notes/y.md; git -C "$W" commit -qm "x and y"
@@ -6804,6 +6804,27 @@ for x in rel abs; do
   rm -rf "$T/r35"; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$AX" "$T/r35") >/dev/null 2>&1 && fail "criterion 35 ($x): restored into a missing folder"
   [[ ! -e "$T/r35" ]] || fail "criterion 35 ($x): a refused restore made its folder"
 done
+# 35b. env.tar members are passed to tar by name: one starting with - would be read as an option (GNU tar
+# can run a command from one), so it is refused before anything is written. Names reach the terminal
+# through term_text: a session folder named with a control character. (tar -t already escapes one in an
+# env.tar name, as \001, on both tars.)
+# craft <name> <command run in the opened archive's workspace folder>: AX, A repacked after the command.
+craft() {
+  bk="$T/rr-$1"; rm -rf "$bk"; mkdir -p "$bk/open" "$bk/m" "$bk/arch"
+  CABINET_BACKUP_PASSPHRASE=t openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:CABINET_BACKUP_PASSPHRASE < "$A" | tar -C "$bk/open" -xzf -
+  o="$(ls "$bk/open")"; (cd "$bk/open/$o/workspace" && eval "$2")
+  AX="$bk/arch/${A##*/}"
+  tar -C "$bk/open" -czf - "$o" | CABINET_BACKUP_PASSPHRASE=t openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:CABINET_BACKUP_PASSPHRASE > "$AX"
+}
+craft dash '(cd "$bk/m" && printf d > "-dash-$n.env" && tar -cf "$OLDPWD/env.tar" -- "-dash-$n.env")'
+fresh r35; printf k > "$T/r35/keepme"; b4="$(dsnap "$T/r35")"
+st=0; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$AX" "$T/r35") >/dev/null 2>"$ef" || st=$?
+((st == 1)) && [[ "$(dsnap "$T/r35")" == "$b4" ]] && grep -qF -- "-dash-$n.env" "$ef" && grep -qF "read as an option" "$ef" || fail "criterion 35b (dash): exit $st, $(cat "$ef")"
+c=$'\001'
+craft ctl 'mkdir -p "sessions/s${c}x" && printf "session/s${c}x\n" > "sessions/s${c}x/branch"'
+rm -rf "$T/r35t"; o="$(rst "" env NO_COLOR=1 "$F" backup restore "$AX" "$T/r35t")"; st="$(cat "$sf" 2>/dev/null || echo none)"
+[[ "$st" == 0 && "$o" != *"$c"* ]] && grep -qF "session s?x:" <<<"$o" \
+  || fail "criterion 35b (names on a terminal): exit $st, $(cat -v <<<"$o")"
 
 # 36. The keep folder is never incoming.
 fresh r36; mkdir -p "$T/r36d/recovered/k" "$T/r36/recovered/k"; echo a > "$T/r36d/recovered/k/f"; echo b > "$T/r36/recovered/k/f"; b4="$(dsnap "$T/r36")"
