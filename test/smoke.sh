@@ -9015,14 +9015,16 @@ local PK="$T/par-kit" PS o st n i sp
 mkdir -p "$PK/test"; cp -R "$KIT/scripts" "$PK/"; cp "$KIT/test/shards.js" "$PK/test/"
 { awk '{ print } /^section\(\) \{/ { exit }' "$KIT/test/smoke.sh"
   for i in 0 1 2 3 4 5; do
-    printf 'section "p%s" "%s"\ns%s() {\n[[ -z "${SLEEPY:-}" ]] || sleep "$SLEEPY"\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i"
+    printf 'section "p%s" "%s"\ns%s() {\n[[ -z "${SLEEPY:-}" ]] || sleep "$SLEEPY"\n[[ " ${NAP:-} " != *" %s "* ]] || sleep 1\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i" "$i"
   done
-  printf '%s\n' 's2() { [[ "${PLANT:-}" != 2 ]] || fail "planted in p2"; [[ -n "${NESTED:-}" ]] && return 0; local o2; o2="$(NESTED=1 "$KIT/test/smoke.sh" p0 2>&1)"; [[ "$o2" == "$(printf "== p0\n-- 0s p0\nPASS")" ]] || fail "the nested run: $o2"; }'
+  printf '%s\n' 's2() { [[ "${PLANT:-}" != 2 ]] || fail "planted in p2"; [[ -n "${NESTED:-}" ]] && return 0; local o2; o2="$(NESTED=1 "$KIT/test/smoke.sh" p0 2>&1 | sed -E "s/^-- [0-9]+s /-- s /")"; [[ "$o2" == "$(printf "== p0\n-- s p0\nPASS")" ]] || fail "the nested run: $o2"; }'
   awk '/^# The section list for test\/shards.js:/ { on = 1 } on' "$KIT/test/smoke.sh"; } > "$PK/test/smoke.sh"
 PS="$PK/test/smoke.sh"; chmod +x "$PS"
 printf '%s\tp%s\n' 1 0 1 1 1 2 9 3 9 4 9 5 > "$PK/test/.times"
 par() { st=0; o="$(env CABINET_TEST_JOBS="${J:-3}" "$PS" "$@" 2>&1)" || st=$?; }
 own() { grep -cxE -- "-- [0-9]+s $1" <<<"$o"; }
+# A time line is compared by its section name only: a busy machine makes any section take a second or more.
+nos() { sed -E 's/^-- [0-9]+s /-- s /' <<<"$o"; }
 # Every section once, in three shards; p3, p4 and p5 need p1, so it runs in each of their shards, as (needed) in two; PASS last.
 par; [[ $st == 0 && "$(tail -1 <<<"$o")" == PASS ]] && grep -qx '== 6 sections in 3 shards (CABINET_TEST_JOBS=1 runs them one after another)' <<<"$o" \
   && grep -qE '^== 6 of 6 sections ran in 3 shards; took ' <<<"$o" && [[ "$(grep -c '^### shard [123] of 3: ' <<<"$o")" == 3 ]] || fail "parallel run (exit $st): $o"
@@ -9040,8 +9042,9 @@ done
 # A shard that ends early with 0 leaves its sections unrun: the run fails and names them.
 EXIT0=0 par; [[ $st == 1 ]] && grep -qE '^FAIL: [0-9]+ of 6 sections did not run: .*p0' <<<"$o" || fail "a section that did not run (exit $st): $o"
 # CABINET_TEST_JOBS=1, and a run with words, are the one-process run as before; a bad CABINET_TEST_JOBS is refused.
-J=1 par; [[ $st == 0 && "$o" == "$(for i in 0 1 2 3 4 5; do printf '== p%s\n-- 0s p%s\n' "$i" "$i"; done; echo PASS)" ]] || fail "CABINET_TEST_JOBS=1 (exit $st): $o"
-par p5; [[ $st == 0 && "$o" == "$(printf '== p1\n-- 0s p1\n== p5\n-- 0s p5\nPASS')" ]] || fail "a run with words (exit $st): $o"
+# NAP makes p0 (also in p2's nested run) and p5 take a second, so the checks cannot rely on a 0s time.
+J=1 NAP=0 par; [[ $st == 0 && "$(nos)" == "$(for i in 0 1 2 3 4 5; do printf '== p%s\n-- s p%s\n' "$i" "$i"; done; echo PASS)" ]] || fail "CABINET_TEST_JOBS=1 (exit $st): $o"
+NAP=5 par p5; [[ $st == 0 && "$(nos)" == "$(printf '== p1\n-- s p1\n== p5\n-- s p5\nPASS')" ]] || fail "a run with words (exit $st): $o"
 # Stopped while a section runs: the runner stops every shard's whole process group and shows its lines so far.
 SLEEPY="37.$$" CABINET_TEST_JOBS=3 "$PS" > "$T/par-stop" 2>&1 & sp=$!
 for i in $(seq 50); do pgrep -f "sleep 37\.$$\$" >/dev/null && break; sleep 0.2; done
