@@ -1324,7 +1324,7 @@ The effort reaches the tool through its own option, as its own argument, for the
 cabinet move <new-path> [--dry-run]
 ```
 
-Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules, and each [session](#cabinet-session) (it runs `git worktree repair` with the sessions' new folders; with a git older than 2.30 it prints that command for you to run after updating git). Refused for the inside and beside layouts, and, before anything changes, when a row of `repos.tsv` names its repo by a relative path that leaves the workspace (such as `../app`), which would point nowhere after the move: it names each such row; give it its absolute path, commit, and move again. Exit 0, or 1 when refused.
+Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules, and each [session](#cabinet-session) (it runs `git worktree repair` with the sessions' new folders; with a git older than 2.30 it prints that command for you to run after updating git). Refused for the inside and beside layouts, and, before anything changes, when a row of `repos.tsv` names its repo by a relative path that leaves the workspace (such as `../app`), which would point nowhere after the move: it names each such row; give it its absolute path, commit, and move again. Before it changes `~/.claude.json` or Codex's `config.toml`, it copies the file to `<file>.bak.<time>` beside it; when that copy cannot be written, the move stops there and changes nothing more, with `stop: could not back up <file>: <reason>` (the folder has already moved, and the schedules are not reinstalled). Exit 0, or 1 when refused or stopped.
 
 ## cabinet remove
 
@@ -2537,6 +2537,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.8.1 - Unreleased
 
+- `cabinet move` stops when the backup copy of an agent tool settings file (`~/.claude.json`, Codex's `config.toml`) cannot be written beside it, and changes nothing more, with `stop: could not back up <file>: <reason>` (exit 1). Before, it ended partway with only the copy command's own error, which did not say which file.
 - `cabinet role build`, which `cabinet update` runs, no longer writes through a link. Before, a cloned shared workspace that committed `ORG.md` as a link had the file it pointed to overwritten, one with `agents/` or `.claude/agents/` linked to a folder elsewhere had the role files written there, and a role file linked to a missing file created it outside the workspace (macOS). Now `ORG.md` and each role file are written beside it and renamed into place, so an `ORG.md` link becomes a plain file; a role file that is a link is kept as not generated, and an `agents`, `.claude` or `.claude/agents` folder that is a link, or inside one, gets nothing, with `kept <folder>: it is a link or inside one, so cabinet writes nothing there`.
 
 ## 0.8.0 - 15 Nov 2026

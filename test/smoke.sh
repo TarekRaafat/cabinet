@@ -9107,6 +9107,36 @@ rm -rf "$T"/rl-*
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "move: a refused backup stops the move" ""
+s124() {
+# H-20261115-08, beside "guardrail checks C: a refused backup": a fake cp first on PATH refuses every .bak copy.
+# cabinet move stops at the first one (~/.claude.json), names it, exits 1, and changes nothing after it.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" st=0 o
+MH="$T/mb-home"; mkdir -p "$MH/.codex" "$T/mb-fake"; export HOME="$MH" GIT_CONFIG_GLOBAL="$MH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+printf '#!/bin/sh\nfor a in "$@"; do last=$a; done\ncase "$last" in *.bak.*) echo "cp: fake refusal" >&2; exit 1 ;; esac\nexec /bin/cp "$@"\n' > "$T/mb-fake/cp"; chmod 755 "$T/mb-fake/cp"
+MW="$T/mb-ws"; "$F" new "$MW" --yes >/dev/null || fail "new"
+MW="$(cd "$MW" && pwd -P)"; NW="$T/mb-new"
+printf '{"projects": {"%s": {"x": 1}}}\n' "$MW" > "$MH/.claude.json"
+printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MW" > "$MH/.codex/config.toml"
+cp -p "$MH/.claude.json" "$T/mb-cj"; cp -p "$MH/.codex/config.toml" "$T/mb-cx"
+o="$(cd "$MW" && PATH="$T/mb-fake:$PATH" "$F" move "$NW" 2>&1)" || st=$?
+((st == 1)) || fail "a refused backup: exit $st: $o"
+grep -qxF "stop: could not back up $MH/.claude.json: cp: fake refusal" <<<"$o" || fail "the stop does not name the file and cp's reason: $o"
+cmp -s "$T/mb-cj" "$MH/.claude.json" && cmp -s "$T/mb-cx" "$MH/.codex/config.toml" || fail "a settings file changed after the refused backup: $(cat "$MH/.claude.json" "$MH/.codex/config.toml")"
+! ls "$MH"/.claude.json.bak.* "$MH"/.codex/config.toml.bak.* >/dev/null 2>&1 || fail "a .bak copy was written"
+! grep -qF '== Codex trusted projects' <<<"$o" && ! grep -qF '== Schedules: reinstall' <<<"$o" || fail "steps after the refused backup ran: $o"
+# The control: the same move with the real cp writes the .bak copy and goes past it. (Only that: the step after it
+# fails for another reason, filed apart, so neither its exit nor the later steps are checked here.)
+mv "$NW" "$MW"; o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || true
+ls "$MH"/.claude.json.bak.* >/dev/null 2>&1 && ! grep -qF "could not back up" <<<"$o" || fail "the control: $o"
+grep -qF 'stop: could not back up <file>: <reason>' "$KIT/docs/commands.md" || fail "docs/commands.md does not say how move stops on a refused backup"
+wsrm "$NW" || true
+rm -rf "$T"/mb-*
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.

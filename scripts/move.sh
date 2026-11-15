@@ -3,6 +3,8 @@
 # path: Claude Code's per-folder memory and history, its trusted projects,
 # Codex's trusted projects, the schedules, and the sessions (git worktree repair). Refused, before
 # anything changes, when repos.tsv names a repo by a relative path that leaves the workspace (../app).
+# Each agent tool settings file is copied to <file>.bak.<time> before it changes; when that copy is
+# refused, the move stops there (stop: could not back up <file>: <reason>, exit 1) and changes nothing more.
 #
 #   bin/move.sh <new-path> [--dry-run]
 #
@@ -17,7 +19,14 @@ NEW="${1:?usage: move.sh <new-path> [--dry-run]}"; NEW="${NEW%/}"
 DRY=0; [[ "${2:-}" == "--dry-run" ]] && DRY=1
 run() { if ((DRY)); then echo "  would: $*"; else "$@"; fi; }
 die() { echo "stop: $*" >&2; exit 1; }
-backup() { [[ -f "$1" ]] && run cp -p "$1" "$1.bak.$(date +%Y%m%d%H%M%S)"; return 0; }
+# backup <file>: a .bak copy beside it before it changes. A refused copy stops the move there, naming the file
+# and cp's reason, so nothing after it changes (the workspace has already moved; its schedules are not reinstalled).
+backup() {
+  [[ -f "$1" ]] || return 0
+  local b="$1.bak.$(date +%Y%m%d%H%M%S)" err
+  if ((DRY)); then run cp -p "$1" "$b"; return 0; fi
+  err="$(cp -p "$1" "$b" 2>&1)" || die "could not back up $1: $err"
+}
 
 # A workspace inside or beside a project points at it by a path relative to itself:
 # moving the workspace alone would break that. Move the project with it by hand.

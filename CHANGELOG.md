@@ -4,6 +4,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.8.1 - Unreleased
 
+- `cabinet move` stops when the backup copy of an agent tool settings file (`~/.claude.json`, Codex's `config.toml`) cannot be written beside it, and changes nothing more, with `stop: could not back up <file>: <reason>` (exit 1). Before, it ended partway with only the copy command's own error, which did not say which file.
 - `cabinet role build`, which `cabinet update` runs, no longer writes through a link. Before, a cloned shared workspace that committed `ORG.md` as a link had the file it pointed to overwritten, one with `agents/` or `.claude/agents/` linked to a folder elsewhere had the role files written there, and a role file linked to a missing file created it outside the workspace (macOS). Now `ORG.md` and each role file are written beside it and renamed into place, so an `ORG.md` link becomes a plain file; a role file that is a link is kept as not generated, and an `agents`, `.claude` or `.claude/agents` folder that is a link, or inside one, gets nothing, with `kept <folder>: it is a link or inside one, so cabinet writes nothing there`.
 
 ## 0.8.0 - 15 Nov 2026
