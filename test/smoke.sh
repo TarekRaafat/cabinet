@@ -3591,7 +3591,7 @@ done
 # Criterion 2 on update: a fresh copy of one workspace for each run, at the same path.
 cp -R "$CW" "$T/color-base"; U="$T/color-up"
 fresh() { rm -rf "$U"; cp -R "$T/color-base" "$U"; }
-fresh; p="$("$CC" -C "$U" update 2>&1)"; [[ "$p" != *$'\033['* ]] || fail "piped update is styled"
+fresh; p="$(rcheck "piped update" sh -c '"$0" -C "$1" update 2>&1' "$CC" "$U")"; [[ "$p" != *$'\033['* ]] || fail "piped update is styled"
 fresh; [[ "$(NO_COLOR=1 tt "$CC" -C "$U" update)" == "$p" ]] || fail "update in a terminal with NO_COLOR is not its piped output"
 fresh; [[ "$(TT_TERM=dumb tt "$CC" -C "$U" update)" == "$p" ]] || fail "update in a terminal with TERM=dumb is not its piped output"
 
@@ -3650,13 +3650,13 @@ o="$(cd "$CW" && tt "$F" status)"; grep -qF "${E}32mno kit file edited" <<<"$o" 
 echo "# edit" >> "$CW/bin/handoff.sh"; o="$(cd "$CW" && tt "$F" status)"; git -C "$CW" checkout -q -- bin/handoff.sh
 grep -qF "${E}34medited here${E}0m: bin/handoff.sh" <<<"$o" || fail "status: edited here is not blue"
 fresh; o="$(tt "$CC" -C "$U" update)"; printf '%s\n' "$o" >> "$T/color-styled"
-grep -q "^${ER}1mcabinet .* -> 9.9.9 in " <<<"$o" && grep -qF "${E}1mWhat changed since" <<<"$o" && ! nc <<<"$o" | grep -q '^== ' || fail "update: headings not bold, or == left"
-grep -qF "${E}32mCommitted in the workspace${E}0m: cabinet: update to 9.9.9" <<<"$o" || fail "update: Committed in the workspace is not green"
-grep -qF "${E}1m9.9.9${E}0m${E}2m - 1 Jan 2030${E}0m" <<<"$o" && ! nc <<<"$o" | grep -q '^#' || fail "update: the changelog is not rendered"
-o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mNothing changed${E}0m" <<<"$o" || fail "update: Nothing changed is not green"
+grep -q "^${ER}1mcabinet .* -> 9.9.9 in " <<<"$o" && grep -qF "${E}1mWhat changed since" <<<"$o" && ! nc <<<"$o" | grep -q '^== ' || fail "update: headings not bold, or == left: $o"
+grep -qF "${E}32mCommitted in the workspace${E}0m: cabinet: update to 9.9.9" <<<"$o" || fail "update: Committed in the workspace is not green: $o"
+grep -qF "${E}1m9.9.9${E}0m${E}2m - 1 Jan 2030${E}0m" <<<"$o" && ! nc <<<"$o" | grep -q '^#' || fail "update: the changelog is not rendered: $o"
+o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mNothing changed${E}0m" <<<"$o" || fail "update: Nothing changed is not green: $o"
 fresh; echo "# edit" >> "$U/bin/handoff.sh"; o="$(tt "$CC" -C "$U" update)"
-grep -qF "${E}31mSome kit files were edited here${E}0m" <<<"$o" || fail "update: an edited kit file is not red"
-fresh; rm -rf "$U/.git"; o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mUpdated to${E}0m 9.9.9" <<<"$o" || fail "update: Updated to is not green"
+grep -qF "${E}31mSome kit files were edited here${E}0m" <<<"$o" || fail "update: an edited kit file is not red: $o"
+fresh; rm -rf "$U/.git"; o="$(tt "$CC" -C "$U" update)"; grep -qF "${E}32mUpdated to${E}0m 9.9.9" <<<"$o" || fail "update: Updated to is not green: $o"
 
 # Criterion 10: the changelog, rendered.
 o="$(tt "$CC" changelog)"; printf '%s\n' "$o" >> "$T/color-styled"
@@ -9096,7 +9096,7 @@ mkdir -p "$PK/test"; cp -R "$KIT/scripts" "$PK/"; cp "$KIT/test/shards.js" "$PK/
 # them): the header drops each, in any case, and keeps the rest of npm's variables.
 o="$(NPM_CONFIG_USERCONFIG=/x npm_config_cache=/x Npm_Config_Prefix=/x NODE_AUTH_TOKEN=x npm_execpath=/x bash -c "$(grep '^for _v in \$(compgen -e); do ' "$KIT/test/smoke.sh"); env")"
 ! grep -iE '^(npm_config_|node_auth_token=)' <<<"$o" && grep -qx 'npm_execpath=/x' <<<"$o" || fail "the header keeps an npm setting, or drops another variable: $(grep -i '^n' <<<"$o")"
-env | grep -iE '^(npm_config_|NODE_AUTH_TOKEN=)' && fail "this shard still has an npm setting"
+env | grep -iE '^(npm_config_|NODE_AUTH_TOKEN=)' | cut -d= -f1 | grep . && fail "this shard still has an npm setting"
 { awk '{ print } /^section\(\) \{/ { exit }' "$KIT/test/smoke.sh"
   for i in 0 1 2 3 4 5; do
     printf 'section "p%s" "%s"\ns%s() {\n[[ -z "${SLEEPY:-}" ]] || sleep "$SLEEPY"\n[[ " ${NAP:-} " != *" %s "* ]] || sleep 1\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i" "$i"
