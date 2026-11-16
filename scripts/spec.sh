@@ -77,7 +77,7 @@ else
   [[ "$(json "$bad" <<<"$out")" == 0 ]] && echo "Every spec has what its status needs." \
     || echo "Not ready for their status: fix each problem, or set the spec's status back (draft)."
 fi
-[[ "$(json "$bad" <<<"$out")" == 0 ]]
+[[ "$(json "$bad" <<<"$out")" == 0 ]] || exit 1   # a problem found: exit 1, said, not a failure trace
 }
 
 s_list() {

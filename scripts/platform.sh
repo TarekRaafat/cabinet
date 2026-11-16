@@ -20,6 +20,21 @@ styles() {
 }
 styles 1
 ERR_TAG="cabinet:"; styled 2 && ERR_TAG=$'\033[31m'"cabinet:"$'\033[0m'
+# The failure trace: a script under set -e that stops on a failed command it did not handle says which one, on
+# stderr, in one line: the file, the line, the command as written (never its values) and its exit status. -E
+# carries the trap into functions. It prints only while set -e is on and in the script's own shell, so a handled
+# failure (if, ||, &&, !), a command substitution (no -e inside) and a subshell whose status nothing reads (a
+# process substitution) print nothing, and die or exit is not a failed command. A stop inside ( ... ) names the
+# line that started it under bash 4 and later, and prints nothing under bash 3.2, which also gives the line where
+# the function or block holding the command starts. A function that returns a status on purpose ends with an
+# explicit exit or return, not a failing test. trace_stop <status> <command> <line>. The script's own shell is
+# the one whose process sh's parent is ($$ stays the script's in every subshell; bash 3.2 has no BASHPID, and its
+# BASH_SUBSHELL is 0 in a process substitution).
+trace_stop() {
+  [[ $- == *e* && "$(exec sh -c 'echo $PPID')" == "$$" ]] || return 0
+  echo "$ERR_TAG stopped at ${BASH_SOURCE[1]:-?} line $3: ${2//$'\n'/ } exited $1" >&2
+}
+set -E; trap 'trace_stop $? "$BASH_COMMAND" $LINENO' ERR
 # term_text: text from a workspace or project file on stdin, made safe to print: when stdout was a
 # terminal as this file was sourced (with color or without), each C0 control but tab and newline, DEL, and each C1 control (U+0080 to U+009F, as UTF-8;
 # never a raw byte, so UTF-8 text is unchanged) becomes '?', so it cannot move the cursor, clear the

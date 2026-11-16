@@ -9221,6 +9221,41 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "failure trace: an unexpected stop names its command" "0"
+s125() {
+# H-20261116-07: bin/cabinet and every workspace script (through platform.sh) name the file, line, command and
+# exit status when set -e stops them on a failed command nothing handled, in one line on stderr; a handled
+# failure prints nothing. A fake head that exits as a SIGPIPE'd pipe would (141) on "head -1", the read of
+# .cabinet/version before cabinet update's first line, gives the GitHub symptom: no stdout, exit 141.
+# macOS's bash 3.2 gives the trap the line where the function or block holding the command starts; bash 4 and
+# later (GitHub's) the command's own. L5 is the line expected there, any number on bash 3.2.
+local rh n o rc L5=1; (($(bash -c 'echo ${BASH_VERSINFO[0]}') < 4)) && L5=0
+rh="$(command -v head)"; mkdir -p "$T/ft-shim"
+printf '#!/bin/sh\n[ "$1" = -1 ] && exit 141\nexec "%s" "$@"\n' "$rh" > "$T/ft-shim/head"; chmod +x "$T/ft-shim/head"
+n="$(grep -nF 'old="$(head -c 64 "$ws/.cabinet/version" | head -1)"' "$KIT/bin/cabinet" | cut -d: -f1)"
+rc=0; o="$(PATH="$T/ft-shim:$PATH" "$F" -C "$W" update 2>"$T/ft-err")" || rc=$?
+((L5)) || n='[0-9]*'
+[[ $rc == 141 && -z "$o" ]] && [[ "$(cat "$T/ft-err")" == "cabinet: stopped at $F line "$n": old=\"\$(head -c 64 \"\$ws/.cabinet/version\" | head -1)\" exited 141" ]] || fail "the trace of cabinet update stopped at line $n: exit $rc, stdout: $o, stderr: $(cat "$T/ft-err")"
+[[ -z "$(git -C "$W" status --porcelain)" ]] || fail "the stopped update changed the workspace"
+# A passing command with handled failures inside (status reads the release notice, the pin and the runs) adds nothing.
+"$F" -C "$W" status >/dev/null 2>"$T/ft-err" && [[ ! -s "$T/ft-err" ]] || fail "cabinet status printed on stderr: $(cat "$T/ft-err")"
+# A workspace script sources the workspace's own when.sh and platform.sh (through lib.sh), as this one does.
+{ echo 'set -euo pipefail'; echo 'source "$1/bin/when.sh"; source "$1/bin/platform.sh"'
+  echo 'h() { grep -q nope /dev/null; }'
+  echo 'if h; then :; fi; h || true; h && true; ! h; x="$(h)" || true; x="$(false; echo y)"; ( false ) || true; while read -r x; do :; done < <(false | cat)'
+  echo 'f() { local v; v="$(h)" || v=none; }; f'
+  echo '[[ -z "${2:-}" ]] || g() { h; }'
+  echo '[[ -z "${2:-}" ]] || g'
+  echo 'echo end'; } > "$T/ft.sh"
+o="$(bash "$T/ft.sh" "$W" 2>&1)" && [[ "$o" == end ]] || fail "a handled failure printed a trace: $o"
+rc=0; o="$(bash "$T/ft.sh" "$W" stop 2>&1)" || rc=$?
+((L5)) && n=3 || n='[0-9]*'
+[[ $rc == 1 && "$o" == "cabinet: stopped at $T/ft.sh line "$n": grep -q nope /dev/null exited 1" ]] || fail "the trace of a workspace script: exit $rc, $o"
+grep -qF 'cabinet: stopped at <file> line <line>: <command> exited <status>' "$KIT/docs/troubleshooting.md" || fail "docs/troubleshooting.md does not explain the failure trace"
+rm -rf "$T/ft-shim" "$T/ft.sh" "$T/ft-err"
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.
