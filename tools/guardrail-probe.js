@@ -21,7 +21,8 @@
 //   points inside the temporary root. After the run, two fixed-string searches (the whole key, its last
 //   16 characters) run over the temporary root and the log folder, with the text on grep's standard
 //   input; the log redacts both, so it never names either. No GIT_* variable from the shell reaches a
-//   child (GIT_DIR or GIT_WORK_TREE would point every git command at another repo).
+//   child (GIT_DIR or GIT_WORK_TREE would point every git command at another repo), nor any npm setting
+//   (npm_config_*, which can point at the real .npmrc and cache).
 // - A copy that still links to the real disk (a worktree's .git file, alternates, commondir, a local
 //   hooks, work tree, include or extensions setting, a config.worktree file, a symlink that leads outside
 //   the HOME) stops the run before any git command runs in it.
@@ -147,8 +148,12 @@ function log(line) { fs.appendFileSync(LOG, redact(line) + "\n"); }
 // ---- The throwaway HOME --------------------------------------------------------------------------
 function sh(cmd, args, opts) {
   const r = spawnSync(cmd, args, { encoding: "utf8", ...opts });
-  return { code: r.status === null ? 1 : r.status, out: (r.stdout || "") + (r.stderr || ""), error: r.error };
+  return { code: r.status === null ? 1 : r.status, out: (r.stdout || "") + (r.stderr || ""), stdout: r.stdout || "", stderr: r.stderr || "", signal: r.signal, error: r.error };
 }
+// ran: what a failed sh() did, whole: how it ended (its exit status, the signal that stopped it, or why it never ran),
+// its stdout and its stderr, each "(none)" when empty.
+const ran = (r) => (r.error ? "could not run: " + r.error.message : r.signal ? "stopped by " + r.signal : "exit status " + r.code)
+  + "; stdout: " + (r.stdout.trim() || "(none)") + "; stderr: " + (r.stderr.trim() || "(none)");
 function fakes(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const put = (n, body) => { fs.writeFileSync(path.join(dir, n), "#!/bin/sh\n" + body + "\n"); fs.chmodSync(path.join(dir, n), 0o755); };
@@ -163,7 +168,8 @@ const SECRETISH = /(TOKEN|SECRET|PASSWORD|PASSWD|_KEY|APIKEY|CREDENTIALS?)$/i;
 function baseEnv(home) {
   const env = {}, tmp = path.join(home, ".tmp");
   fs.mkdirSync(tmp, { recursive: true });
-  for (const [k, v] of Object.entries(process.env)) if (!SECRETISH.test(k) && !k.startsWith("CABINET_") && !k.startsWith("GIT_") && k !== "SSH_AUTH_SOCK") env[k] = v;
+  // npm's settings (npm_config_*, in any case) point outside the throwaway HOME: npm uses the HOME's own.
+  for (const [k, v] of Object.entries(process.env)) if (!SECRETISH.test(k) && !k.startsWith("CABINET_") && !k.startsWith("GIT_") && !/^npm_config_/i.test(k) && k !== "SSH_AUTH_SOCK") env[k] = v;
   return Object.assign(env, {
     HOME: home, GIT_CONFIG_GLOBAL: path.join(home, ".gitconfig"), GIT_CONFIG_NOSYSTEM: "1",
     XDG_CONFIG_HOME: path.join(home, ".config"), XDG_STATE_HOME: path.join(home, ".local", "state"),
@@ -239,7 +245,7 @@ function setupHome(o, root, name, rules) {
   const cab = path.join(kit, "bin", "cabinet");
   let r = sh(cab, ["-C", ws, "update"], { env });
   log("[" + name + "] cabinet update (exit " + r.code + ")");
-  if (r.code) throw new Error("cabinet update in the workspace copy failed: " + r.out.trim().split("\n").slice(-3).join(" / "));
+  if (r.code) throw new Error("cabinet update in the workspace copy failed: " + redact(ran(r)));
   const benv = rules ? { ...env, CABINET_GUARDRAIL_PROBE: o.tool } : env;
   r = sh(cab, ["-C", ws, "bootstrap", "--no-schedules"], { env: benv });
   log("[" + name + "] cabinet bootstrap --no-schedules" + (rules ? " with CABINET_GUARDRAIL_PROBE=" + o.tool : "") + " (exit " + r.code + ")");

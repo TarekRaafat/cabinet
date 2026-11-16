@@ -27,6 +27,11 @@ export CABINET_UPDATE_CHECK=off
 # The real home folder, git config and agent tool settings are never read or written.
 export HOME="$T/user" GIT_CONFIG_GLOBAL="$T/user/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset XDG_CONFIG_HOME XDG_STATE_HOME   # their defaults follow HOME into the temp folder
+# npm's settings from the environment point outside the temp folder, and every shard of a run shares them: npm test
+# sets npm_config_cache, _prefix, _globalconfig and the rest to the real ones, and GitHub's setup-node adds
+# NPM_CONFIG_USERCONFIG (its own .npmrc) and NODE_AUTH_TOKEN. npm reads them in any case. Without them npm uses
+# this HOME's .npmrc and cache, one per shard, as on a person's machine.
+for _v in $(compgen -e); do case "$_v" in [Nn][Pp][Mm]_[Cc][Oo][Nn][Ff][Ii][Gg]_*|NODE_AUTH_TOKEN) unset "$_v" ;; esac; done
 mkdir -p "$HOME"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 # The real launchd, systemd, crontab, keychain and secret store are never reached: fakes that
 # only log are first on PATH for the whole run, before any section, so even one section run
@@ -57,8 +62,16 @@ jcheck() {
   while (($#)) && [[ "$1" != -- ]]; do q+=("$1"); shift; done
   shift
   o="$("$@" 2>"$T/jcheck-err")" || rc=$?
-  printf '%s\n' "$o" | j -e ${q[@]+"${q[@]}"} >/dev/null 2>&1 \
-    || fail "$(printf '%s\n  exit status: %s\n  stdout: %s\n  stderr: %s' "$label" "$rc" "${o:-(none)}" "$(cat "$T/jcheck-err")")"
+  printf '%s\n' "$o" | j -e ${q[@]+"${q[@]}"} >/dev/null 2>&1 || ran_fail "$label" "$rc" "$o" "$T/jcheck-err"
+}
+ran_fail() { fail "$(printf '%s\n  exit status: %s\n  stdout: %s\n  stderr: %s' "$1" "$2" "${3:-(none)}" "$(cat "$4")")"; }
+# rcheck <label> <command>...: run the command and fail unless it exits 0, showing what jcheck shows. When it passes,
+# its stdout and stderr come out as the command's own would. For the checks that run cabinet update.
+rcheck() {
+  local label="$1" o rc=0; shift
+  o="$("$@" 2>"$T/rcheck-err")" || rc=$?
+  ((rc == 0)) || ran_fail "$label" "$rc" "$o" "$T/rcheck-err"
+  cat "$T/rcheck-err" >&2; [[ -z "$o" ]] || printf '%s\n' "$o"
 }
 in_dir() { cd "$1" && shift && "$@"; }
 # unest <command>...: its output (stdout and stderr) as 5396b58 printed it, with the run estimate lines set aside
@@ -234,7 +247,7 @@ grep -q 'cabinet/CABINET.md' "$I/CLAUDE.local.md" && grep -q 'cabinet/CABINET.md
 [[ "$(cat "$I/.claude/agents/security.md")" == mine ]] || fail "a hand-made project agent was replaced"
 [[ -f "$I/.claude/agents/qa.md" ]] && j -e '$.devDependencies?.["@tarekraafat/cabinet"]' "$I/cabinet/package.json" >/dev/null || fail "roles not in the project, or the private pin not in cabinet/package.json"
 grep -q $'^acme-app\tgit@example.com:acme/app.git\t-\tno\t..$' "$I/cabinet/repos.tsv" || fail "project row"
-(cd "$I" && "$F" status) | grep -q 'no kit file edited' && (cd "$I" && "$F" update >/dev/null) || fail "status or update from the project top"
+(cd "$I" && "$F" status) | grep -q 'no kit file edited' && rcheck "update from the project top" in_dir "$I" "$F" update >/dev/null || fail "status or update from the project top"
 out="$("$I/cabinet/bin/doctor.sh" 2>&1 || true)"
 echo "$out" | grep -q 'ok    roles built' && echo "$out" | grep -q 'ok    product repos checked' && ! echo "$out" | grep -q 'no repo at' || { echo "$out" | grep FIX; fail "doctor inside a project"; }
 (cd "$I" && "$F" init --yes) >/dev/null 2>&1 && fail "a second init was accepted"
@@ -543,13 +556,13 @@ git -C "$W" reset -q --hard "$base"; rm -rf "$W/specs/qa"
 
 section "update" "0"
 s11() {
-"$F" -C "$W" update >/dev/null || fail "clean update failed"
+rcheck "clean update" "$F" -C "$W" update >/dev/null
 echo "# local edit" >> "$W/bin/handoff.sh"
 "$F" -C "$W" update >/dev/null 2>&1 && fail "update replaced an edited kit file"
 grep -q '# local edit' "$W/bin/handoff.sh" || fail "edited kit file was overwritten"
 "$F" -C "$W" status | grep -q 'edited here: bin/handoff.sh' || fail "status missed the edit"
 git -C "$W" checkout -q -- bin/handoff.sh
-"$F" -C "$W" update >/dev/null || fail "update after restore failed"
+rcheck "update after restore" "$F" -C "$W" update >/dev/null
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -565,37 +578,37 @@ K2="$T/kit2"; cp -R "$KIT" "$K2"; rm -rf "$K2/.git"
 N="$N" j '({...$, version: process.env.N})' "$KIT/package.json" > "$K2/package.json"
 { echo "# Changelog"; echo; echo "## $N - test"; echo; echo "- smoke change"; echo; tail -n +2 "$KIT/CHANGELOG.md"; } > "$K2/CHANGELOG.md"
 echo "# $N" >> "$K2/core/CABINET.md"
-out="$("$K2/bin/cabinet" -C "$W" update)"
+out="$(rcheck "update to the newer kit" "$K2/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -qF "What changed since $V" && echo "$out" | grep -q 'smoke change' || fail "update did not show the changelog"
 echo "$out" | grep -qF "## $V " && fail "changelog showed the version already installed"
 [[ "$(cat "$W/.cabinet/version")" == "$N" ]] && tail -1 "$W/CABINET.md" | grep -qF "$N" || fail "newer kit not applied"
 # It commits the update itself, and leaves the owner's own uncommitted edits to the owner.
 echo "$out" | grep -qF "Committed in the workspace: cabinet: update to $N" && git -C "$W" log -1 --format=%s | grep -qxF "cabinet: update to $N" && [[ -z "$(git -C "$W" status --porcelain -- .cabinet CABINET.md bin agents .claude/agents ORG.md)" ]] || fail "update did not commit itself: $out"
 echo "owner note" > "$W/.cabinet/owner-note"; before="$(git -C "$W" rev-parse HEAD)"
-out="$("$KIT/bin/cabinet" -C "$W" update)" || fail "could not go back to the current kit"
+out="$(rcheck "back to the current kit, with an owner's note" "$KIT/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -q 'then commit: git -C' && [[ "$(git -C "$W" rev-parse HEAD)" == "$before" ]] || fail "update committed over the owner's own uncommitted change: $out"
 rm -f "$W/.cabinet/owner-note"; git -C "$W" add -A -- .cabinet CABINET.md bin agents .claude/agents && { git -C "$W" diff --cached --quiet || git -C "$W" commit -qm "back to the current kit"; }
 # With no git of its own, a real update does not end with "Nothing changed".
 cp -R "$W" "$T/nogit"; rm -rf "$T/nogit/.git"
-out="$("$K2/bin/cabinet" -C "$T/nogit" update)" || fail "update failed in a workspace with no git"
+out="$(rcheck "update in a workspace with no git" "$K2/bin/cabinet" -C "$T/nogit" update)"
 echo "$out" | tail -1 | grep -qxF "Updated to $N. Anything to do by hand is in the changelog above." || fail "update did not say it updated: $out"
 rm -rf "$T/nogit"
 # package.json goes into the update's commit only when the pin is its one change.
 pkg() { P="$1" X="$2" node -e 'const o = {name: "w", devDependencies: {"@tarekraafat/cabinet": "^" + process.env.P}}; if (process.env.X) o.private = true; console.log(JSON.stringify(o, null, 2))' > "$W/package.json"; }
 pkg "$V" ""; git -C "$W" add package.json && git -C "$W" commit -qm "pin"
-pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"; WP="$(cd "$W" && pwd -P)"
+pkg "$N" yes; out="$(rcheck "update with an edit beside the pin" "$K2/bin/cabinet" -C "$W" update)"; WP="$(cd "$W" && pwd -P)"
 git -C "$W" status --porcelain -- package.json | grep -q package.json && echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json" || fail "update committed the owner's own edit in package.json, or its hint names a file that is not there: $out"
-pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+pkg 9.9.9 ""; rcheck "back to the current kit, after the edit beside the pin" "$KIT/bin/cabinet" -C "$W" update >/dev/null
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "update left the pin alone uncommitted: $(git -C "$W" status --porcelain)"
 # A lockfile git does not track stays out of the hint, which would fail on it.
-echo '{}' > "$W/package-lock.json"; pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
+echo '{}' > "$W/package-lock.json"; pkg "$N" yes; out="$(rcheck "update with an untracked lockfile" "$K2/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json" || fail "the update hint names a lockfile git does not track: $out"
-rm -f "$W/package-lock.json"; pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+rm -f "$W/package-lock.json"; pkg 9.9.9 ""; rcheck "back to the current kit, after the untracked lockfile" "$KIT/bin/cabinet" -C "$W" update >/dev/null
 # With a lockfile, the hint names it too.
 echo '{}' > "$W/package-lock.json"; pkg "$V" ""; git -C "$W" add package.json package-lock.json && git -C "$W" commit -qm "pin and lockfile"
-pkg "$N" yes; out="$("$K2/bin/cabinet" -C "$W" update)"
+pkg "$N" yes; out="$(rcheck "update with a tracked lockfile" "$K2/bin/cabinet" -C "$W" update)"
 echo "$out" | grep -qxF "package.json has edits of yours besides the pin, so it was left out: git -C \"$WP\" commit -- package.json package-lock.json" || fail "the update hint did not name the lockfile: $out"
-pkg 9.9.9 ""; "$KIT/bin/cabinet" -C "$W" update >/dev/null || fail "could not go back to the current kit"
+pkg 9.9.9 ""; rcheck "back to the current kit, after the tracked lockfile" "$KIT/bin/cabinet" -C "$W" update >/dev/null
 git -C "$W" rm -q package.json package-lock.json && git -C "$W" commit -qm "no pin"
   return 0   # a last "check && fail" line must not end the run
 }
@@ -922,7 +935,8 @@ env GIT_CONFIG_GLOBAL="$T/empty-config" "$F" new "$T/noid" --yes >/dev/null
 # update names only paths that exist; doctor sees a hooks path set in the project around cabinet/.
 # (An uncommitted change of the owner's makes update show the commit instead of making it.)
 touch "$I/cabinet/.cabinet/owner-note"
-(cd "$I" && "$F" update) | grep 'then commit' | grep -qv 'package-lock' || fail "update names a path that does not exist"
+out="$(rcheck "update in a project, with an owner's note" in_dir "$I" "$F" update)"
+grep 'then commit' <<<"$out" | grep -qv 'package-lock' || fail "update names a path that does not exist: $out"
 rm -f "$I/cabinet/.cabinet/owner-note"
 git -C "$I" config core.hooksPath .husky
 "$I/cabinet/bin/doctor.sh" 2>&1 | grep -q "acme-app uses core.hooksPath .husky, set in .git/config, so the push gate does not run there" || fail "doctor missed the project's own hooks path"
@@ -1795,6 +1809,10 @@ bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP
 # Every command that reports prints JSON. A failed check shows what the command printed and its exit status.
 o="$( (jcheck "probe --json" '$.ok' -- sh -c 'echo "{\"ok\": false}"; echo "npm: offline" >&2; exit 3') 2>&1 )" && fail "jcheck passed a false check"
 [[ "$o" == "$(printf 'FAIL: probe --json\n  exit status: 3\n  stdout: {"ok": false}\n  stderr: npm: offline')" ]] || fail "jcheck did not show the command's output: $o"
+# rcheck: a failed command shows the same; a passing one prints what it printed, stdout and stderr each in its place.
+o="$( (rcheck "probe update" sh -c 'echo "== cabinet"; echo "npm: offline" >&2; exit 3') 2>&1 )" && fail "rcheck passed a failed command"
+[[ "$o" == "$(printf 'FAIL: probe update\n  exit status: 3\n  stdout: == cabinet\n  stderr: npm: offline')" ]] || fail "rcheck did not show the command's output: $o"
+o="$(rcheck "probe update" sh -c 'echo out; echo err >&2' 2>"$T/rcheck-self")" && [[ "$o" == out && "$(cat "$T/rcheck-self")" == err ]] || fail "rcheck changed a passing command's output: $o / $(cat "$T/rcheck-self")"
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(j -r '$.version' "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(j -r '$.version' "$KIT/package.json")"
@@ -3164,7 +3182,7 @@ CABINET_AGENT=qa CABINET_CREDIT=on "$RW/bin/spec.sh" record specs/login.md --rol
 KV="$(j -r '$.version' "$KIT/package.json")"
 KN="$(node -e 'const v = process.argv[1].split(".").map(Number); v[2]++; console.log(v.join("."))' "$KV")"
 KU="$T/credit-kit"; cp -R "$KIT" "$KU"; rm -rf "$KU/.git"; KN="$KN" j '({...$, version: process.env.KN})' "$KIT/package.json" > "$KU/package.json"
-CABINET_AGENT=chief-of-staff CABINET_CREDIT=on "$KU/bin/cabinet" -C "$RW" update >/dev/null || fail "update in a run failed"
+rcheck "update in a run" env CABINET_AGENT=chief-of-staff CABINET_CREDIT=on "$KU/bin/cabinet" -C "$RW" update >/dev/null
 [[ "$(git -C "$RW" log -1 --format=%s)" == "cabinet: update to $KN" ]] || fail "update in a run made no commit"; credited chief-of-staff "an update commit"
 # So the suite a critical area's check starts in a run is not a run's: its header drops all four before its first section.
 [[ "$(CABINET_AGENT=x CABINET_CREDIT=on CABINET_CREDIT_ADDRESS=x CABINET_AMEND_AS=x bash -c "$(grep -x 'unset CABINET_.*' "$KIT/test/smoke.sh"); env" | grep -c '^CABINET_\(AGENT\|CREDIT\|CREDIT_ADDRESS\|AMEND_AS\)=')" == 0 ]] \
@@ -5357,7 +5375,7 @@ printf '<html>\n' > "$NP/answer"; up "$UW"; ((st == 0)) && ! grep -q 'is out' <<
 touch "$NP/hang"; t0=$SECONDS; up "$UW"; ((st == 0 && SECONDS - t0 < 30)) && grep -q 'Nothing changed' <<<"$o" || fail "a registry that hangs: $((SECONDS - t0))s: $o"; rm "$NP/hang"
 # 5. Nothing to say: the registry not newer; the check off sends no request.
 printf '0.0.1\n' > "$NP/answer"; up "$UW"; ((st == 0)) && ! grep -q 'is out' <<<"$o" || fail "a registry that is not newer: $o"; printf '9.9.9\n' > "$NP/answer"
-rm -f "$NP/log"; CABINET_UPDATE_CHECK=off "$F" -C "$UW" update >/dev/null; [[ ! -e "$NP/log" ]] || fail "the check off still asked the registry"
+rm -f "$NP/log"; rcheck "update with the check off" env CABINET_UPDATE_CHECK=off "$F" -C "$UW" update >/dev/null; [[ ! -e "$NP/log" ]] || fail "the check off still asked the registry"
 "$F" -C "$UW" config --this-machine --update-check off >/dev/null; up "$UW"; [[ ! -e "$NP/log" ]] || fail "the machine's setting off still asked the registry"
 "$F" -C "$UW" config --this-machine --clear >/dev/null
 # 6. It takes no arguments: --yes, -y and anything else are wrong usage, before any request.
@@ -5446,7 +5464,7 @@ done
 sedi "s/\"0.0.9\"/\"$V\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
 "$F" -C "$PW" status | grep -q '^pinned:' && fail "status named a pin of this kit's version"
 "$F" -C "$PW" config --writing short >/dev/null || fail "config stopped on a pin of this kit's version"
-"$F" -C "$PW" update >/dev/null || fail "update stopped on a pin of this kit's version"
+rcheck "update with a pin of this kit's version" "$F" -C "$PW" update >/dev/null
 [[ ! -e "$MK" ]] || fail "a command ran the pinned copy of this kit's version"
 # A version holding a control character prints escaped in a terminal, and never runs.
 sedi "s/\"$V\"/\"0.0.9${ESC}[2J\"/" "$PW/node_modules/@tarekraafat/cabinet/package.json"
@@ -5472,7 +5490,7 @@ for d in pin nopin none; do
   [[ "$d" != nopin ]] || printf '{"name": "x", "private": true}\n' > "$w/package.json"
   [[ "$d" != none ]] || rm "$w/package.json"
   o="$("$F" -C "$w" status 2>&1)" && ! grep -q '^pinned:' <<<"$o" || fail "status in a stand-alone workspace ($d) named the copy above: $o"
-  o="$("$F" -C "$w" update 2>&1)" || fail "update stopped on the copy above a stand-alone workspace ($d): $o"
+  rcheck "update with the copy above a stand-alone workspace ($d)" "$F" -C "$w" update >/dev/null
   o="$("$F" -C "$w" config --writing short 2>&1)" || fail "config stopped on the copy above a stand-alone workspace ($d): $o"
 done
 [[ ! -e "$MK" ]] || fail "a command ran the copy above a stand-alone workspace"
@@ -5508,6 +5526,7 @@ case "$1" in --version) echo "fake $(basename "$0") 1.0"; exit 0 ;;
 printf '%s\n' "$*" >> "$FAKE_PROBE_LOG"
 echo "tmp=${TMPDIR:-}" >> "$FAKE_PROBE_LOG"
 [[ -z "${GIT_DIR:-}${GIT_WORK_TREE:-}" ]] || echo "a git variable reached the tool" >> "$FAKE_PROBE_LOG"
+env | grep -qi '^npm_config_' && echo "an npm setting reached the tool" >> "$FAKE_PROBE_LOG"
 [[ -z "${CABINET_PROBE_KEY:-}" ]] || echo "probe variable reached the tool" >> "$FAKE_PROBE_LOG"
 [[ -n "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" ]] && echo "key variable set" >> "$FAKE_PROBE_LOG"
 [[ "$FAKE_PROBE_MODE" == leak ]] && printf '{"k": "%s"}\n' "${ANTHROPIC_API_KEY:-}${XAI_API_KEY:-}" | tee "$HOME/.claude.json"
@@ -5670,9 +5689,10 @@ done
 # GIT_DIR and GIT_WORK_TREE from the shell reach no git command and no tool: the copies' remotes are removed,
 # the repo they name keeps its own (security, before step 3).
 : > "$T/gp-fake.log"
-( export GIT_DIR="$T/gp-main/.git" GIT_WORK_TREE="$T/gp-main"; probe obey "$T/gp-out-gitenv" --tool grok --phase asks )
+( export GIT_DIR="$T/gp-main/.git" GIT_WORK_TREE="$T/gp-main" npm_config_cache="$T/gp-npm" NPM_CONFIG_USERCONFIG="$T/gp-npmrc"; probe obey "$T/gp-out-gitenv" --tool grok --phase asks )
 [[ "$(git -C "$T/gp-main" remote)" == origin ]] || fail "a GIT_DIR from the shell sent the probe's git commands to another repo"
 grep -q "a git variable reached the tool" "$T/gp-fake.log" && fail "a GIT_* variable from the shell reached the tool"
+grep -q "an npm setting reached the tool" "$T/gp-fake.log" && fail "an npm setting from the shell reached the tool"
 grep -q "key variable set" "$T/gp-fake.log" || fail "the probe with GIT_DIR set did not run the tool"
 # The team phase: before the rules have to do their own work, or the result is unclear, never differs.
 probe obey "$T/gp-out-team" --tool claude --phase team --team-limit 3
@@ -5681,12 +5701,21 @@ probe obey "$T/gp-out-team" --tool claude --phase team --team-limit 3
 # (code-reviewer, before step 3): a tool that writes none gives false, one that writes it gives true.
 echo "# An old brief" > "$PW/BRIEF.md"
 probe obey "$T/gp-out-nobrief" --tool claude --phase team --team-limit 20
-[[ "$(j -r '$.phases.team.before.briefWritten + " " + $.phases.team.after.briefWritten' "$T/gp-out-nobrief/probe-claude.json")" == "false false" ]] \
+[[ "$(j -r '$.phases.team?.before?.briefWritten + " " + $.phases.team?.after?.briefWritten' "$T/gp-out-nobrief/probe-claude.json")" == "false false" ]] \
   || fail "a brief the run did not write counted as written: $(j -r '$.error || $.phases.team' "$T/gp-out-nobrief/probe-claude.json")"
 probe brief "$T/gp-out-brief" --tool claude --phase team --team-limit 20
-[[ "$(j -r '$.phases.team.before.briefWritten + " " + $.phases.team.after.briefWritten' "$T/gp-out-brief/probe-claude.json")" == "true true" ]] \
+[[ "$(j -r '$.phases.team?.before?.briefWritten + " " + $.phases.team?.after?.briefWritten' "$T/gp-out-brief/probe-claude.json")" == "true true" ]] \
   || fail "a brief the run wrote did not count: $(j -r '$.error || $.phases.team' "$T/gp-out-brief/probe-claude.json")"
 rm -f "$PW/BRIEF.md"
+# A failed cabinet update in the copy says how it ended, its stdout and its stderr, each whole (H-20261116-05: a
+# run on GitHub said only "failed: ", from the last lines of its stdout).
+cp -R "$KC" "$T/gp-badup"; printf '#!/bin/bash
+[[ "$3" == update ]] || exit 0
+echo "update out 1"; echo "update out 2"; echo "update out 3"; echo "update out 4"; echo "update err" >&2; exit 3
+' > "$T/gp-badup/bin/cabinet"
+PK="$T/gp-badup" probe obey "$T/gp-out-badup" --tool grok --phase reads
+((st == 1)) && j -e '$.error.includes("cabinet update in the workspace copy failed: exit status 3; stdout: update out 1\nupdate out 2\nupdate out 3\nupdate out 4; stderr: update err")' "$T/gp-out-badup/probe-grok.json" >/dev/null \
+  || fail "a failed update in the copy did not show how it ended and what it printed: $o $(j -r '$.error' "$T/gp-out-badup/probe-grok.json")"
 node -e 'const { teamResult, verdictsOf } = require(process.argv[1]);
   const row = (x) => Object.assign({ handoffExit: 0, briefExit: 0, briefWritten: true, builderCommits: 1, verdictRoles: ["code-reviewer", "qa", "security"], changed: ["CHANGELOG.md"], refusalLines: 0 }, x);
   const want = [[row(), row(), "finishes as before"], [row(), row({ verdictRoles: ["code-reviewer", "qa"] }), "differs"],
@@ -6907,7 +6936,7 @@ kcopy() { mkdir -p "$1"; (cd "$KIT" && tar --exclude .git --exclude node_modules
 kcopy "$KC"; : > "$KC/scripts/x.sh.swp"; : > "$KC/scripts/.DS_Store"; : > "$KC/guardrails/tmp.orig"
 "$KC/bin/cabinet" new "$T/k4-ws" --yes >/dev/null || fail "40: new from a kit copy holding stray files"
 W="$(cd "$T/k4-ws" && pwd -P)"
-"$KC/bin/cabinet" -C "$W" update >/dev/null || fail "40: update from that copy"
+rcheck "40: update from that copy" "$KC/bin/cabinet" -C "$W" update >/dev/null
 x='x\.sh\.swp|\.DS_Store|tmp\.orig|kit-files'
 [[ -z "$(find "$W" -name .git -prune -o -print | grep -E "$x")" ]] || fail "40: a stray file or kit-files is in the workspace: $(find "$W" -name .git -prune -o -print | grep -E "$x")"
 ! grep -E "$x" "$W/.cabinet/manifest" && ! git -C "$W" log --all --name-only --format= | grep -E "$x" \
@@ -9063,6 +9092,11 @@ s122() {
 # the suite with a word, as "the suite says what each section took" does: in a shard, that run is still just p0.
 local PK="$T/par-kit" PS o st n i sp
 mkdir -p "$PK/test"; cp -R "$KIT/scripts" "$PK/"; cp "$KIT/test/shards.js" "$PK/test/"
+# No shard reads npm's settings from the environment (they point outside its temp folder, and every shard shares
+# them): the header drops each, in any case, and keeps the rest of npm's variables.
+o="$(NPM_CONFIG_USERCONFIG=/x npm_config_cache=/x Npm_Config_Prefix=/x NODE_AUTH_TOKEN=x npm_execpath=/x bash -c "$(grep '^for _v in \$(compgen -e); do ' "$KIT/test/smoke.sh"); env")"
+! grep -iE '^(npm_config_|node_auth_token=)' <<<"$o" && grep -qx 'npm_execpath=/x' <<<"$o" || fail "the header keeps an npm setting, or drops another variable: $(grep -i '^n' <<<"$o")"
+env | grep -iE '^(npm_config_|NODE_AUTH_TOKEN=)' && fail "this shard still has an npm setting"
 { awk '{ print } /^section\(\) \{/ { exit }' "$KIT/test/smoke.sh"
   for i in 0 1 2 3 4 5; do
     printf 'section "p%s" "%s"\ns%s() {\n[[ -z "${SLEEPY:-}" ]] || sleep "$SLEEPY"\n[[ " ${NAP:-} " != *" %s "* ]] || sleep 1\n[[ "${PLANT:-}" != %s ]] || fail "planted in p%s"\n[[ "${EXIT0:-}" != %s ]] || exit 0\n  return 0\n}\n' "$i" "$( ((i > 2)) && echo 1)" "$i" "$i" "$i" "$i" "$i"
