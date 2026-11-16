@@ -47,6 +47,20 @@ perm() { if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$1"; else stat -c %a "
 # JSON (json: options for input and output, and a JavaScript expression).
 L() { node "$KIT/scripts/lib.js" "$@"; }
 j() { L json "$@"; }
+# jcheck <label> <j options and expression>... -- <command>...: run the command and fail unless what it prints on
+# stdout makes the expression true (j -e). The failure names the label, the command's exit status and what it
+# printed on stdout and stderr, so a run on another machine (GitHub's) shows the cause, not only the label.
+# in_dir <folder> <command>...: run the command in that folder, for jcheck (which runs it in a subshell).
+jcheck() {
+  local label="$1" o rc=0; shift
+  local -a q=()
+  while (($#)) && [[ "$1" != -- ]]; do q+=("$1"); shift; done
+  shift
+  o="$("$@" 2>"$T/jcheck-err")" || rc=$?
+  printf '%s\n' "$o" | j -e ${q[@]+"${q[@]}"} >/dev/null 2>&1 \
+    || fail "$(printf '%s\n  exit status: %s\n  stdout: %s\n  stderr: %s' "$label" "$rc" "${o:-(none)}" "$(cat "$T/jcheck-err")")"
+}
+in_dir() { cd "$1" && shift && "$@"; }
 # unest <command>...: its output (stdout and stderr) as 5396b58 printed it, with the run estimate lines set aside
 # (run estimates: the Expected and "  took" lines, and a last line's " Run time: <D>." ending, with the "." added
 # before it on a Stopped or Paused line, none of which ended in one), and its exit status: for the sections that test
@@ -1319,7 +1333,7 @@ rm "$W/jobs/weekly-review.job"
 mkdir -p "$T/npmshim"; printf '#!/bin/sh\necho 9.9.9\n' > "$T/npmshim/npm"; chmod +x "$T/npmshim/npm"
 PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: cabinet 9.9.9' || fail "outdated"
 printf '#!/bin/sh\nexit 1\n' > "$T/npmshim/npm"; PATH="$T/npmshim:$PATH" "$F" -C "$W" outdated | grep -q 'latest: unknown' || fail "outdated offline"
-"$F" -C "$W" status --json | j -e '$.version == $.kit_version && $.edited.length == 0' >/dev/null || fail "status --json"
+jcheck "status --json" '$.version == $.kit_version && $.edited.length == 0' -- "$F" -C "$W" status --json
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -1764,7 +1778,7 @@ mkdir -p "$T/plain"
 # A noun alone shows its verbs; a noun and a verb has its own --help.
 "$F" role | grep -q '^  role add <name>' && "$F" role >/dev/null || fail "a noun alone does not show its verbs"
 "$F" role add --help | grep -q '^Usage: cabinet role add <name>' && "$F" help role add | grep -q -- '--does' || fail "noun and verb --help"
-"$F" help role --json | j -e '$.commands.length == 5 && $.commands.every((c) => c.name.startsWith("role "))' >/dev/null || fail "help <noun> --json"
+jcheck "help <noun> --json" '$.commands.length == 5 && $.commands.every((c) => c.name.startsWith("role "))' -- "$F" help role --json
 # Wrong usage exits 2: an unknown command, verb or option, a missing value, a folder where -C belongs.
 for args in "nope" "role nope" "handoff nope" "next --bogus" "new $T/x --name" "-C" "-C $T/no-such-folder status"; do
   st=0; (cd "$CW" && "$F" $args) >/dev/null 2>&1 || st=$?
@@ -1776,9 +1790,11 @@ st=0; "$CW/bin/handoff.sh" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "a scri
 o="$(set -o pipefail; L json -nr '[...Array(300000).keys()].join("\n")' 2>"$T/epipe-err" | head -1)" && [[ "$o" == 0 && ! -s "$T/epipe-err" ]] \
   || fail "lib.js into head -1: '$o' / $(head -3 "$T/epipe-err")"
 # -C runs a command as if started in that folder.
-(cd "$T/plain" && "$F" -C "$CW" status --json) | j -e --arg w "$(cd "$CW" && pwd -P)" '$.workspace == $w' >/dev/null || fail "-C"
+jcheck "-C" --arg w "$(cd "$CW" && pwd -P)" '$.workspace == $w' -- in_dir "$T/plain" "$F" -C "$CW" status --json
 bash -c 'eval "$("$1" completion bash)"; COMP_WORDS=(cabinet -C x role ""); COMP_CWORD=4; _cabinet; echo "${COMPREPLY[*]}"' _ "$F" | grep -q 'add.*remove.*list' || fail "completion of verbs after -C"
-# Every command that reports prints JSON.
+# Every command that reports prints JSON. A failed check shows what the command printed and its exit status.
+o="$( (jcheck "probe --json" '$.ok' -- sh -c 'echo "{\"ok\": false}"; echo "npm: offline" >&2; exit 3') 2>&1 )" && fail "jcheck passed a false check"
+[[ "$o" == "$(printf 'FAIL: probe --json\n  exit status: 3\n  stdout: {"ok": false}\n  stderr: npm: offline')" ]] || fail "jcheck did not show the command's output: $o"
 # version: one line for a script, the mark in a terminal (ASCII without a UTF-8 locale).
 [[ "$("$F" version)" == "cabinet $(j -r '$.version' "$KIT/package.json")" ]] || fail "version piped should print one line"
 v="$(j -r '$.version' "$KIT/package.json")"
@@ -1788,12 +1804,13 @@ tag="$(sed -n 's/^The tagline: \*\*\(.*\)\*\* (Approved)$/\1/p' "$KIT/brand/BRAN
 [[ "$tag" == "One person, a whole team. Build anything with AI agents, and stay in charge." ]] || fail "BRAND.md's approved tagline changed: update the version banner and its sample with it ($tag)"
 grep -qF 'One person, a whole team.' "$KIT/brand/index.html" && grep -qF 'Build anything with AI agents, and stay in charge.' "$KIT/brand/index.html" && ! grep -qF 'You stay in charge.' "$KIT/brand/index.html" || fail "the brand guide's terminal sample does not show the approved tagline"
 LC_ALL=en_US.UTF-8 in_tty "$F" version | grep -q '⬤' || fail "the mark in a UTF-8 terminal should use large dots"
-"$F" version --json | j -e '$.version' >/dev/null && "$F" changelog --json | j -e '!!$[0].version && !!$[0].text' >/dev/null || fail "version or changelog --json"
+jcheck "version --json" '$.version' -- "$F" version --json
+jcheck "changelog --json" '!!$[0].version && !!$[0].text' -- "$F" changelog --json
 mkdir -p "$T/npmoff"; printf '#!/bin/sh\nexit 1\n' > "$T/npmoff/npm"; chmod +x "$T/npmoff/npm"
-(cd "$CW" && PATH="$T/npmoff:$PATH" "$F" outdated --json) | j -e '$.latest == null && !!$.kit_version' >/dev/null || fail "outdated --json"
-(cd "$CW" && "$F" role list --json) | j -e '$.some((r) => r.name == "qa" && r.kind == "kit" && r.on === true) && $.some((r) => r.name == "dba" && r.on === false)' >/dev/null || fail "role list --json"
-(cd "$CW" && "$F" job list --json) | j -e '$[0].name == "brief" && $[0].role == "chief-of-staff" && $[0].timeout_minutes == 60' >/dev/null || fail "job list --json"
-(cd "$CW" && "$F" secret check --json) | j -e '$.length == 0' >/dev/null || fail "secret check --json"
+jcheck "outdated --json" '$.latest == null && !!$.kit_version' -- in_dir "$CW" env PATH="$T/npmoff:$PATH" "$F" outdated --json
+jcheck "role list --json" '$.some((r) => r.name == "qa" && r.kind == "kit" && r.on === true) && $.some((r) => r.name == "dba" && r.on === false)' -- in_dir "$CW" "$F" role list --json
+jcheck "job list --json" '$[0].name == "brief" && $[0].role == "chief-of-staff" && $[0].timeout_minutes == 60' -- in_dir "$CW" "$F" job list --json
+jcheck "secret check --json" '$.length == 0' -- in_dir "$CW" "$F" secret check --json
 # role add and remove: a kit role on and off, with --dry-run writing nothing.
 cp "$CW/cabinet.env" "$T/conv.env"
 (cd "$CW" && "$F" role add dba --dry-run) | grep -q 'would turn on the kit role dba' && cmp -s "$CW/cabinet.env" "$T/conv.env" || fail "role add --dry-run"
@@ -1807,7 +1824,7 @@ mkrepo "$T/conv-api"
 git -C "$CW" add -A && { git -C "$CW" diff --cached --quiet || git -C "$CW" commit -qm "before repo add"; }
 (cd "$CW" && "$F" repo add "$T/conv-api") >/dev/null && grep -q $'^conv-api\t' "$CW/repos.tsv" && grep -q '| `conv-api` |' "$CW/AGENTS.md" || fail "repo add"
 [[ -z "$(git -C "$CW" status --porcelain)" ]] && git -C "$CW" log -1 --format=%s | grep -qxF "cabinet config: add repo" || fail "repo add did not commit its change in a clean workspace"
-(cd "$CW" && "$F" repo list --json) | j -e '((r) => r.present === false && r.owner == null)($.findLast((r) => r.name == "conv-api"))' >/dev/null || fail "repo list --json"
+jcheck "repo list --json" '((r) => r.present === false && r.owner == null)($.findLast((r) => r.name == "conv-api"))' -- in_dir "$CW" "$F" repo list --json
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null && ! grep -q conv-api "$CW/repos.tsv" "$CW/AGENTS.md" || fail "repo remove"
 (cd "$CW" && "$F" repo remove conv-api) >/dev/null 2>&1 && fail "removing a repo that is not there succeeded"
 # The tests fail when a command breaks a convention: a plural noun, a verb not in the list.
@@ -2853,6 +2870,18 @@ printf '      - run: npm install -g npm\n      - run: npm i -g npm\n      - run:
 [[ -z "$(unpinned "$T/wf/none" 2>&1)" ]] || fail "the pin check found something, or failed, in a folder with no workflows: $(unpinned "$T/wf/none" 2>&1)"
 rm -rf "$T/wf"
 grep -q '^          persist-credentials: false' "$w" || fail "the release workflow's checkout leaves its token on disk (persist-credentials: false)"
+# The tests workflow: the release run's tests on every push to main and on a manual run, on the same runner,
+# checkout, Node, zsh and npm, reading the repository only; it never publishes and gets no id-token.
+t="$KIT/.github/workflows/tests.yml"
+[[ -s "$t" ]] || fail "the tests workflow is missing"
+[[ "$(sed -n '/^on:/,/^[a-z]/p' "$t" | grep -E '^  [a-z_]+:' | tr -d ' \n')" == "push:workflow_dispatch:" ]] && grep -qx '    branches: \[main\]' "$t" || fail "the tests workflow starts on something other than a push to main and a manual run"
+perms="$(grep -E '^ +(actions|attestations|checks|contents|deployments|discussions|id-token|issues|models|packages|pages|pull-requests|repository-projects|security-events|statuses): ' "$t" | sed 's/ *#.*//; s/^ *//' | sort -u | tr '\n' ';')"
+[[ "$perms" == "contents: read;" ]] && ! grep -qE 'permissions: *(write-all|read-all)' "$t" || fail "the tests workflow asks for more than contents: read: $perms"
+! sed 's/#.*//' "$t" | grep -qiE 'publish|secrets\.|id-token' || fail "the tests workflow publishes, or uses a secret or an id-token"
+for l in 'uses: actions/checkout@' 'uses: actions/setup-node@' 'runs-on: ubuntu-latest' 'fetch-depth: 0' 'persist-credentials: false' 'node-version: 22' 'apt-get install -y -q zsh' 'npm install -g npm@'; do
+  [[ "$(grep -F "$l" "$t" | sed 's/ *#.*//; s/^[ -]*//')" == "$(grep -F "$l" "$w" | sed 's/ *#.*//; s/^[ -]*//')" ]] || fail "the tests workflow differs from the release workflow in: $l"
+done
+[[ "$(grep -n 'apt-get install' "$t" | cut -d: -f1)" -lt "$(grep -n 'run: npm test' "$t" | cut -d: -f1)" ]] && ! grep -qE 'run:.*\$\{\{' "$t" || fail "the tests workflow runs the tests without zsh, or puts \${{ }} inside a script"
   return 0   # a last "check && fail" line must not end the run
 }
 

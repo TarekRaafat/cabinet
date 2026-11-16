@@ -96,6 +96,8 @@ npm run brand                                 # rebuild brand/assets/ and docs/l
 npm pack --dry-run                            # what the package ships
 ```
 
+On GitHub, `.github/workflows/tests.yml` runs `npm test` on every push to `main` and on a manual run, set up as `.github/workflows/release.yml` sets up its test step (a check in section "release workflow" holds them to it); it reads the repository only. A check that reads a command's JSON uses `jcheck` in `test/smoke.sh`, so a failure there shows what the command printed and its exit status.
+
 A new test section is a `section "<name>" "<numbers of the sections it needs>"` line and an `sN()` function in `test/smoke.sh`, ending with `return 0`. Before finishing, run each section you touched alone (`npm test -- "<its name>"`): that proves its list of needs is complete.
 
 `npm test` with no words splits the sections into shards (`CABINET_TEST_JOBS`, default the number of CPUs, at most 8; `1` runs them one after another), longest first by each section's last time, kept in `test/.times` (not tracked; equal counts with none). Each shard is a run of `test/smoke.sh` with its own temp folder, `HOME` and fakes; it runs its sections and the ones they need, marked `(needed)`, and prints its lines whole when it ends, with a `-- <seconds>s <section>` line after each section. The run passes only when every shard passes and every section ran exactly once as its shard's own. So a section shares the machine with other shards: it touches nothing outside its own `$T`, uses no fixed port or global file, and finds a process it started by a path under `$T`, never by a pattern another shard's process could match (the watchdog in "custom runner"). No section needs to run alone today.

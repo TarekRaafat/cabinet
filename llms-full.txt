@@ -532,7 +532,7 @@ The website is built from this repository: `site/build.js` reads the docs, `CHAN
 
 Agents working on the kit: read [AGENTS.md](AGENTS.md) first. To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); to report a security problem privately, [SECURITY.md](SECURITY.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
-A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public.
+A release, by the maintainer: date the `## X.Y.Z - Unreleased` section at the top of `CHANGELOG.md` (`## X.Y.Z - D Mon YYYY`, with anything a workspace must do by hand), set the same `version` in `package.json`, commit and push, then publish a GitHub release tagged `vX.Y.Z`. That runs `.github/workflows/release.yml`: it checks the tag against `package.json`, runs `npm test`, and publishes to npm with provenance, signing in as the package's trusted publisher (set once on npmjs.com, so no token is stored). The package is scoped, which npm would publish as private; `publishConfig` in `package.json` makes it public. `.github/workflows/tests.yml` runs the same `npm test`, on the same runner and setup, on every push to `main` and on a manual run, so a failure there shows before a release; it only reads the repository and never publishes.
 
 ## License
 
@@ -3013,6 +3013,8 @@ npm run docs                                  # rebuild llms-full.txt after chan
 npm run brand                                 # rebuild brand/assets/ and docs/logo.svg after changing brand/tokens.json (macOS)
 npm pack --dry-run                            # what the package ships
 ```
+
+On GitHub, `.github/workflows/tests.yml` runs `npm test` on every push to `main` and on a manual run, set up as `.github/workflows/release.yml` sets up its test step (a check in section "release workflow" holds them to it); it reads the repository only. A check that reads a command's JSON uses `jcheck` in `test/smoke.sh`, so a failure there shows what the command printed and its exit status.
 
 A new test section is a `section "<name>" "<numbers of the sections it needs>"` line and an `sN()` function in `test/smoke.sh`, ending with `return 0`. Before finishing, run each section you touched alone (`npm test -- "<its name>"`): that proves its list of needs is complete.
 
