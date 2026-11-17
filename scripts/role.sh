@@ -72,7 +72,7 @@ org_page() {  # org_page <file> <built roles dir>
       lead="$(lead_of "$fn")"
       echo; echo "## ${fn//-/ }"
       for r in $members; do
-        d="$(sed -n 's/^description: //p' "$built/$r.md" 2>/dev/null | head -1 | sed -E 's/ Use (when|for) .*//')"
+        d="$(sed -n 's/^description: //p' "$built/$r.md" 2>/dev/null | sed -n 1p | sed -E 's/ Use (when|for) .*//')"
         owns="$(awk -F'|' -v o="$r" '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 { a = $2; w = $4; gsub(/^ +| +$/, "", a); gsub(/^ +| +$/, "", w); if (w == o && a != "") print a }' "$WS/AGENTS.md" 2>/dev/null | paste -sd ',' - | sed 's/,/, /g')"
         rep="$(role_team "$r" "Reports to")"; cov="$(role_team "$r" "Covers")"; trial="$(role_team "$r" "Trial until")"
         [[ -n "$rep" ]] || { if [[ "$r" == "$lead" || -z "$lead" ]]; then rep=""; else rep="$lead"; fi; }

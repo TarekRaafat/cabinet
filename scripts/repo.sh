@@ -34,7 +34,7 @@ p_remove() {
   local dry=0 name="" a
   for a in "$@"; do case "$a" in --dry-run) dry=1 ;; -*) echo "usage: bin/repo.sh remove <name> [--dry-run]" >&2; exit 2 ;; *) name="$a" ;; esac; done
   [[ -n "$name" ]] || { echo "usage: bin/repo.sh remove <name> [--dry-run]" >&2; exit 2; }
-  repos | cut -f1 | grep -qxF "$name" || { echo "no repo named $name in repos.tsv (bin/repo.sh list)" >&2; exit 1; }
+  grep -qxF -- "$name" < <(repos | cut -f1) || { echo "no repo named $name in repos.tsv (bin/repo.sh list)" >&2; exit 1; }
   if ((dry)); then echo "would remove $name from repos.tsv and the team table of AGENTS.md; its folder is left as is"; return 0; fi
   N="$name" node "$LIBJS" drop "$WS/repos.tsv" '/^${N}\t/'
   N="$name" node "$LIBJS" drop "$WS/AGENTS.md" '/^\| `${N}` \|/'

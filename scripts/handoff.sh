@@ -312,7 +312,7 @@ if ! printf '%s\n' "$to" | json -R -e 'ownerIn($.join(" "))' >/dev/null 2>&1; th
   else
     x=""
     if [[ -n "$spec" ]]; then
-      x="$(spec_areas "$WS/$spec" | while IFS= read -r a; do critical_areas | cut -f1 | grep -qxF -- "$a" && printf '%s\n' "$a"; done | LC_ALL=C sort -u | paste -sd, - | sed 's/,/, /g')"
+      x="$(spec_areas "$WS/$spec" | while IFS= read -r a; do grep -qxF -- "$a" < <(critical_areas | cut -f1) && printf '%s\n' "$a"; done | LC_ALL=C sort -u | paste -sd, - | sed 's/,/, /g')"
     fi
     if [[ -n "$x" ]]; then mline="strong (critical area: $x)"
     else

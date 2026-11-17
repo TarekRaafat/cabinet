@@ -710,7 +710,7 @@ setup() {
   for r in ${repos[@]+"${repos[@]}"}; do
     url_ok "$r" || die "'$r' is not a git URL (https://, ssh://, git@host:path or a local path)"
     rn="$(basename "$r" .git)"; name_ok "$rn" || die "'$r' gives the repo name '$rn', which is not a plain folder name"
-    printf '%s\n' ${rows[@]+"${rows[@]}"} | cut -f1 | grep -qxF "$rn" && die "two repos would both be named '$rn': clone one under another name and add it to repos.tsv by hand"
+    grep -qxF -- "$rn" < <(printf '%s\n' ${rows[@]+"${rows[@]}"} | cut -f1) && die "two repos would both be named '$rn': clone one under another name and add it to repos.tsv by hand"
     rows+=("$rn"$'\t'"$r"$'\t-\tyes')
   done
   # Every folder the workspace will hold data in, for the backup check.
@@ -864,7 +864,7 @@ setup() {
   local row
   for row in ${rows[@]+"${rows[@]}"}; do
     rn="${row%%$'\t'*}"
-    if [[ -f "$ws/repos.tsv" ]] && ! cut -f1 "$ws/repos.tsv" | grep -qxF "$rn"; then printf '%s\n' "$row" >> "$ws/repos.tsv"; fi
+    if [[ -f "$ws/repos.tsv" ]] && ! grep -qxF -- "$rn" < <(cut -f1 "$ws/repos.tsv"); then printf '%s\n' "$row" >> "$ws/repos.tsv"; fi
     is_placed AGENTS.md && node "$LIBJS" before "$ws/AGENTS.md" '/^\| workspace \(this folder\)/' "| \`$rn\` | TBD | TBD |"
   done
   echo "  placed: $(echo $placed | wc -w | tr -d ' ') files"
@@ -1254,10 +1254,10 @@ cmd_config() {
   o_roles="$(envget CABINET_ROLES)"; o_runner="$(envget CABINET_RUNNER)"; o_runner="${o_runner:-claude}"; o_cmd="$(envget CABINET_RUNNER_CMD)"
   o_budget="$(envget CABINET_BUDGET)"; o_price="$(envget CABINET_PRICE)"
   o_backup="$(envget CABINET_BACKUP_DIR)"; o_btime="$(envget CABINET_BACKUP_TIME)"; o_btime="${o_btime:-1:00 PM}"; o_btime="$(when_time_only "$o_btime" || printf '%s' "$o_btime")"
-  o_owner="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
-  o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | head -1)"
-  o_week="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
-  o_writing="$(sed -n 's/^- \*\*Writing to the owner:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
+  o_owner="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | sed -n 1p)"
+  o_email="$(sed -n 's/^- \*\*Commits\.\*\* Authored as \(.*\) <\([^>]*\)>\..*/\2/p' "$ws/AGENTS.md" 2>/dev/null | sed -n 1p)"
+  o_week="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | sed -n 1p | tr '[:upper:]' '[:lower:]')"
+  o_writing="$(sed -n 's/^- \*\*Writing to the owner:\*\* \([A-Za-z]*\)\..*/\1/p' "$ws/AGENTS.md" 2>/dev/null | sed -n 1p | tr '[:upper:]' '[:lower:]')"
   # An unreadable brief or pipeline job has no time cabinet knows: only a change to that time is refused.
   local jm
   ! ((set_brief)) || ! jm="$(jobbad brief)" || die "$jm"
@@ -1500,7 +1500,7 @@ cmd_config() {
   for r in ${repos[@]+"${repos[@]}"}; do
     url_ok "$r" || die "'$r' is not a git URL (https://, ssh://, git@host:path or a local path)"
     rn="$(basename "$r" .git)"; name_ok "$rn" || die "'$r' gives the repo name '$rn', which is not a plain folder name"
-    { cut -f1 "$ws/repos.tsv" 2>/dev/null; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1; } | grep -qxF "$rn" && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
+    grep -qxF -- "$rn" < <(cut -f1 "$ws/repos.tsv" 2>/dev/null; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1) && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
     newrows+=("$rn"$'\t'"$r"$'\t-\tyes'); changes+=("add repo: $rn ($r)")
   done
   # A runner command given here is approved on this machine, even one cabinet.env already holds (a teammate's).
@@ -1629,7 +1629,7 @@ JOB
     for r in $ROLES_ALL $ROLES_OPT; do
       if has "$roles" "$r"; then
         grep -qF "| $r |" "$ws/$f" && continue
-        row="$(grep -F "| $r |" "$KIT/templates/workspace/$f" | head -1)"; [[ -n "$row" ]] || continue
+        row="$(grep -F "| $r |" "$KIT/templates/workspace/$f" | sed -n 1p)"; [[ -n "$row" ]] || continue
         node "$LIBJS" after-last "$ws/$f" "$row" $ROLES_ALL $ROLES_OPT
       else
         node "$LIBJS" drop-text "$ws/$f" "| $r |"
@@ -1803,7 +1803,7 @@ cmd_next() {
   latest="$(update_latest "$ws")"
   if [[ -n "$latest" ]]; then
     r="$(update_cmd "$ws" "$latest" "$(pin_kit "$ws")")"
-    [[ -z "$r" ]] || step update "Cabinet $latest is out (this workspace runs $(head -1 "$ws/.cabinet/version")).$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' Run it in %s.' "${r%%$'\t'*}")" "${r#*$'\t'}"
+    [[ -z "$r" ]] || step update "Cabinet $latest is out (this workspace runs $(ws_version "$ws/.cabinet/version")).$([[ -z "${r%%$'\t'*}" || "${r%%$'\t'*}" == "$ws" ]] || printf ' Run it in %s.' "${r%%$'\t'*}")" "${r#*$'\t'}"
   fi
   # This machine: guardrails and schedules.
   local slug label jf when missing=0
@@ -2286,7 +2286,7 @@ registry_latest() {
 cmd_outdated() {
   local ws latest have="" json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown argument $x (see: cabinet outdated --help)" ;; esac; done
-  ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(head -c 64 "$ws/.cabinet/version" | head -1)"
+  ws="$(find_ws "")"; [[ -f "$ws/.cabinet/version" ]] && have="$(ws_version "$ws/.cabinet/version")"
   # By hand, even with the release notice off.
   local r="" where="" cmd=""
   latest="$(registry_latest 30)"
@@ -2400,7 +2400,7 @@ pin_other() {
   d="$(pin_dir "$1")"; p="$d/node_modules/@tarekraafat/cabinet"
   [[ -n "$d" && -f "$p/package.json" ]] || return 0
   [[ "$(cd "$p" && pwd -P)" != "$(cd "$KIT" && pwd -P)" ]] || return 0
-  v="$(head -c 65536 "$p/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -1)"; v="${v//$'\t'/?}"
+  v="$(head -c 65536 "$p/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | sed -n 1p)"; v="${v//$'\t'/?}"
   [[ -z "$v" || "$v" == "$VERSION" ]] || printf '%s\t%s\n' "$v" "$(cd "$d" && pwd -P)"
   return 0
 }
@@ -2455,7 +2455,7 @@ cmd_update() {
   kit_list_ok
   state_ok "$ws"
   update_notice "$ws"
-  local old oldt; old="$(head -c 64 "$ws/.cabinet/version" | head -1)"; oldt="$(printf %s "$old" | term_text)"
+  local old oldt; old="$(ws_version "$ws/.cabinet/version")"; oldt="$(printf %s "$old" | term_text)"
   # The update is committed when the workspace has its own git and the files it rewrites held no edits
   # of the owner's before (the pin in package.json and its lockfile, from npm update, go with it).
   local pth

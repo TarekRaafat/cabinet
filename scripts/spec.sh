@@ -204,7 +204,7 @@ while :; do
     routed=1; continue
   fi
   st="$(sc)"
-  x="$(json -r --each '$.missing_plans' <<<"$st" | head -1)"
+  x="$(json -r --each '$.missing_plans' <<<"$st")"; x="${x%%$'\n'*}"
   if [[ -n "$x" ]]; then
     o="$(owner_of "$x")"; [[ -n "$o" ]] || stop "$x has no owning role in the team table, so no one plans it"
     agent "$o" "plans $x" "Write your plan for $x in $spec, under \"## Plan\" as \"### $x\" (.cabinet/rules/ready-to-build.md): the files you change, the tests you add, the order across repos, the risks, and name its design choices in one sentence. Commit the spec. Do not build yet."

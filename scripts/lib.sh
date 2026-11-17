@@ -208,7 +208,7 @@ spend_report() {
 # Midnight at the start of this week, the day "Week starts on" in AGENTS.md names (Sunday by default).
 week_start() {
   local d i=0 s=0 x
-  d="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$WS/AGENTS.md" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
+  d="$(sed -n 's/^- \*\*Week starts on:\*\* \([A-Za-z]*\)\..*/\1/p' "$WS/AGENTS.md" 2>/dev/null | sed -n 1p | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
   for x in sun mon tue wed thu fri sat; do [[ "$x" == "${d:-sun}" ]] && s=$i; i=$((i + 1)); done
   node "$LIBJS" week-start "$s"
 }
@@ -552,9 +552,9 @@ builds_repos() {
   local n=$1 names
   names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
   has "$names $BUILDERS" "$n" && return 0
-  awk -F'|' -v names=" $names " '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
+  grep -qxF -- "$n" < <(awk -F'|' -v names=" $names " '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
       a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (index(names, " " a " ")) print o
-    }' "$WS/AGENTS.md" 2>/dev/null | grep -qxF "$n"
+    }' "$WS/AGENTS.md" 2>/dev/null)
 }
 # run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused or ready to
 # push), or nothing; for handoff run --scheduled and spec run.

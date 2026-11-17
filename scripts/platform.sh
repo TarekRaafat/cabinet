@@ -206,13 +206,13 @@ sched_get() {
       path) plutil -extract EnvironmentVariables.PATH raw "$1" ;;
       command) plutil -extract ProgramArguments json -o - "$1" ;;
     esac 2>/dev/null
-  else sed -n "s/^# cabinet-$2: //p" "$1" 2>/dev/null | head -1; fi
+  else sed -n "s/^# cabinet-$2: //p" "$1" 2>/dev/null | sed -n 1p; fi
 }
 # sched_ws <file>: the workspace whose script it runs, if any.
 sched_ws() {
   local p
   if [[ "$SCHEDULER" == launchd ]]; then
-    p="$(sed -n 's#.*<string>\(.*\)/bin/[a-z]*\.sh</string>.*#\1#p' "$1" 2>/dev/null | head -1)"
+    p="$(sed -n 's#.*<string>\(.*\)/bin/[a-z]*\.sh</string>.*#\1#p' "$1" 2>/dev/null | sed -n 1p)"
     p="${p//&lt;/<}"; p="${p//&gt;/>}"; p="${p//&amp;/&}"
   else
     p="$(sched_get "$1" command | json -r '$[0]' 2>/dev/null)"
@@ -257,7 +257,7 @@ sched_loaded() {
   case "$SCHEDULER" in
     launchd) launchctl print "gui/$(id -u)/$1" ;;
     systemd) systemctl --user is-active --quiet "$1.timer" ;;
-    cron) crontab -l 2>/dev/null | grep -qxF "# cabinet schedule: $1" ;;
+    cron) grep -qxF "# cabinet schedule: $1" < <(crontab -l 2>/dev/null) ;;
     *) false ;;
   esac >/dev/null 2>&1
 }
@@ -398,6 +398,10 @@ update_cmd() {
   if [[ -n "$2" ]] && node "$LIBJS" version-newer "$2" "$3"; then
     if [[ -n "$pin" ]]; then printf '%s\t%s\n' "$pin" "npm install @tarekraafat/cabinet@latest && $run"
     else printf '\t%s\n' "npm i -g @tarekraafat/cabinet@latest && $run"; fi
-  elif node "$LIBJS" version-newer "$3" "$(head -c 64 "$1/.cabinet/version" 2>/dev/null | head -1)"; then printf '\t%s\n' "$run"; fi
+  elif node "$LIBJS" version-newer "$3" "$(ws_version "$1/.cabinet/version" 2>/dev/null)"; then printf '\t%s\n' "$run"; fi
   return 0
 }
+# ws_version <file>: a workspace's .cabinet/version, its first line within the first 64 bytes; exits as head
+# does when the file cannot be read. No pipe: under pipefail, "head -c 64 | head -1" could stop with exit 141
+# when head -1 was done before the writer, which then died of SIGPIPE (timing-dependent).
+ws_version() { local v; v="$(head -c 64 "$1")" || return; printf '%s' "${v%%$'\n'*}"; }

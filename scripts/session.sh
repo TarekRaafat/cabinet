@@ -68,7 +68,7 @@ s_start() {
   [[ -e "$dir/.git" ]] || { echo "$repo is not a git repo at $dir, so it cannot have sessions (cabinet bootstrap clones the repos in repos.tsv)" >&2; exit 1; }
   git -C "$dir" rev-parse -q --verify HEAD >/dev/null || { echo "$repo has no commit yet: commit once, then start a session" >&2; exit 1; }
   if [[ -z "$name" ]]; then
-    n=1; while all_sessions | cut -f2 | grep -qx "$(date +%Y-%m-%d)-$n" || git -C "$dir" rev-parse -q --verify "refs/heads/session/$(date +%Y-%m-%d)-$n" >/dev/null; do n=$((n + 1)); done
+    n=1; while grep -qx -- "$(date +%Y-%m-%d)-$n" < <(all_sessions | cut -f2) || git -C "$dir" rev-parse -q --verify "refs/heads/session/$(date +%Y-%m-%d)-$n" >/dev/null; do n=$((n + 1)); done
     name="$(date +%Y-%m-%d)-$n"
   fi
   # One name, one session, across the workspace's repos.

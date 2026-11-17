@@ -9225,17 +9225,26 @@ section "failure trace: an unexpected stop names its command" "0"
 s125() {
 # H-20261116-07: bin/cabinet and every workspace script (through platform.sh) name the file, line, command and
 # exit status when set -e stops them on a failed command nothing handled, in one line on stderr; a handled
-# failure prints nothing. A fake head that exits as a SIGPIPE'd pipe would (141) on "head -1", the read of
-# .cabinet/version before cabinet update's first line, gives the GitHub symptom: no stdout, exit 141.
-# macOS's bash 3.2 gives the trap the line where the function or block holding the command starts; bash 4 and
-# later (GitHub's) the command's own. L5 is the line expected there, any number on bash 3.2.
+# failure prints nothing. macOS's bash 3.2 gives the trap the line where the function or block holding the
+# command starts; bash 4 and later (GitHub's) the command's own. L5 is the line expected there, any number on
+# bash 3.2.
+# H-20261117-01: the GitHub stop was head -c 64 .cabinet/version | head -1 exiting 141 under pipefail, when
+# head -1 was done before its writer, which then died of SIGPIPE. A fake head -1 that exits 141 whenever it
+# reads a pipe stops the old update, outdated and update notice; .cabinet/version is now read with no pipe.
 local rh n o rc L5=1; (($(bash -c 'echo ${BASH_VERSINFO[0]}') < 4)) && L5=0
-rh="$(command -v head)"; mkdir -p "$T/ft-shim"
-printf '#!/bin/sh\n[ "$1" = -1 ] && exit 141\nexec "%s" "$@"\n' "$rh" > "$T/ft-shim/head"; chmod +x "$T/ft-shim/head"
-n="$(grep -nF 'old="$(head -c 64 "$ws/.cabinet/version" | head -1)"' "$KIT/bin/cabinet" | cut -d: -f1)"
+rh="$(command -v head)"; mkdir -p "$T/ft-shim" "$T/ft-npm"
+printf '#!/bin/sh\n[ "$1" = -1 ] && [ -p /dev/stdin ] && exit 141\nexec "%s" "$@"\n' "$rh" > "$T/ft-shim/head"; chmod +x "$T/ft-shim/head"
+printf '#!/bin/sh\necho %s\n' "$(j -r '$.version' "$KIT/package.json")" > "$T/ft-npm/npm"; chmod +x "$T/ft-npm/npm"
+rcheck "update with a head -1 that exits 141 on a pipe" env PATH="$T/ft-shim:$T/ft-npm:$PATH" "$F" -C "$W" update >/dev/null
+jcheck "outdated with a head -1 that exits 141 on a pipe" --arg v "$(head -1 "$W/.cabinet/version")" '$v !== "" && $.workspace_version === $v' -- env PATH="$T/ft-shim:$T/ft-npm:$PATH" "$F" -C "$W" outdated --json
+rcheck "config with a head -1 that exits 141 on a pipe" env PATH="$T/ft-shim:$PATH" "$F" -C "$W" config --writing short --dry-run >/dev/null
+git -C "$W" add -A >/dev/null 2>&1; git -C "$W" commit -qm "update in the failure trace" >/dev/null 2>&1 || true
+# A head that fails on -c (the version read) stops cabinet update before its first line, naming the command.
+printf '#!/bin/sh\n[ "$1" = -c ] && exit 141\nexec "%s" "$@"\n' "$rh" > "$T/ft-shim/head"
+n="$(grep -nF 'old="$(ws_version "$ws/.cabinet/version")"' "$KIT/bin/cabinet" | cut -d: -f1)"
 rc=0; o="$(PATH="$T/ft-shim:$PATH" "$F" -C "$W" update 2>"$T/ft-err")" || rc=$?
 ((L5)) || n='[0-9]*'
-[[ $rc == 141 && -z "$o" ]] && [[ "$(cat "$T/ft-err")" == "cabinet: stopped at $F line "$n": old=\"\$(head -c 64 \"\$ws/.cabinet/version\" | head -1)\" exited 141" ]] || fail "the trace of cabinet update stopped at line $n: exit $rc, stdout: $o, stderr: $(cat "$T/ft-err")"
+[[ $rc == 141 && -z "$o" ]] && [[ "$(cat "$T/ft-err")" == "cabinet: stopped at $F line "$n": old=\"\$(ws_version \"\$ws/.cabinet/version\")\" exited 141" ]] || fail "the trace of cabinet update stopped at line $n: exit $rc, stdout: $o, stderr: $(cat "$T/ft-err")"
 [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "the stopped update changed the workspace"
 # A passing command with handled failures inside (status reads the release notice, the pin and the runs) adds nothing.
 "$F" -C "$W" status >/dev/null 2>"$T/ft-err" && [[ ! -s "$T/ft-err" ]] || fail "cabinet status printed on stderr: $(cat "$T/ft-err")"
