@@ -456,6 +456,7 @@ Removes the workspace you are in from this machine (another one: `cabinet -C <di
 - the backup passphrase and archives stay, unless `--delete-key` (archives always stay);
 - inside a project, private: remove the pointers in `CLAUDE.local.md`, `QWEN.local.md` and an untracked `AGENTS.md` (a file left empty is deleted), the role files setup built in `.claude/agents/`, and their `.git/info/exclude` lines, so the project is as it was before `init`;
 - inside a project, shared: remove the "Agent team" section from `AGENTS.md` and `CLAUDE.md` and the `@tarekraafat/cabinet` devDependency; you commit that change;
+- inside a project, either way, nothing is deleted through a link: when the project's `.claude` or `.claude/agents` is a link, its role files are kept (`kept the role files in the project's .claude/agents: <folder> is a link`), and so is a role file that is a link (`kept .claude/agents/<role>.md in the project: it is a link`);
 - delete the workspace folder.
 
 | Option | Notes |

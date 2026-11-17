@@ -1339,6 +1339,7 @@ Removes the workspace you are in from this machine (another one: `cabinet -C <di
 - the backup passphrase and archives stay, unless `--delete-key` (archives always stay);
 - inside a project, private: remove the pointers in `CLAUDE.local.md`, `QWEN.local.md` and an untracked `AGENTS.md` (a file left empty is deleted), the role files setup built in `.claude/agents/`, and their `.git/info/exclude` lines, so the project is as it was before `init`;
 - inside a project, shared: remove the "Agent team" section from `AGENTS.md` and `CLAUDE.md` and the `@tarekraafat/cabinet` devDependency; you commit that change;
+- inside a project, either way, nothing is deleted through a link: when the project's `.claude` or `.claude/agents` is a link, its role files are kept (`kept the role files in the project's .claude/agents: <folder> is a link`), and so is a role file that is a link (`kept .claude/agents/<role>.md in the project: it is a link`);
 - delete the workspace folder.
 
 | Option | Notes |
@@ -2537,6 +2538,8 @@ File: CHANGELOG.md
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
 ## 0.8.2 - Unreleased
+
+- `cabinet remove` inside a project no longer deletes through a link. Before, when the project's `.claude` or `.claude/agents` was a link to a folder elsewhere, or a role file there was a link, the role files it pointed to were deleted outside the project. Now such a folder or file is kept, with one line naming it (`kept the role files in the project's .claude/agents: <folder> is a link`, `kept .claude/agents/<role>.md in the project: it is a link`), and the rest of `remove` goes on as before. `cabinet role list` no longer writes `.cabinet/roles.list`: in a cloned workspace that committed it as a link, the file it pointed to was overwritten.
 
 - `cabinet backup restore` restores `.env` files from an archive without passing their names to tar. Before, a `.env` file named with a control character stopped the restore with `Not found in archive` (exit 1) after its repo, so the repos after it and the agent memory and settings were not restored; and on macOS a hand-made archive holding a member named `*` wrote over a `.env` file the restore said it left as is. A `.env` file is still restored only where none is there, and never through a link.
 

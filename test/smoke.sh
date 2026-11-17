@@ -9321,6 +9321,43 @@ export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "role list and remove never go through a link" ""
+s127() {
+# H-20261117-07: the two places the role build's link fix (0.8.1) did not reach. (a) role list wrote
+# .cabinet/roles.list with > and removed it, so a committed link there had its target overwritten. remove
+# inside a project deleted generated role files through (b) a linked .claude/agents, (c) a linked .claude,
+# and (d) unlinked a role file that is a link. Each keeps what is outside, names what it kept, and exits 0.
+local W P st b4 x o
+W="$T/ln-ws"; "$F" new "$W" --yes >/dev/null || fail "new"
+printf 'precious\n' > "$T/ln-target"; rm -f "$W/.cabinet/roles.list"; ln -s ../../ln-target "$W/.cabinet/roles.list"
+o="$("$F" -C "$W" role list 2>&1)" || fail "role list with a linked roles.list: exit $?: $o"
+grep -q '^qa  ' <<<"$o" || fail "role list did not print the team: $o"
+"$F" -C "$W" role list --json | j -e '$.some((r) => r.name == "qa" && r.on === true)' >/dev/null || fail "role list --json with a linked roles.list"
+[[ "$(cat "$T/ln-target")" == precious && -L "$W/.cabinet/roles.list" ]] || fail "role list wrote through or removed the roles.list link: $(cat "$T/ln-target")"
+for x in agents claude file; do
+  rm -rf "$T/ln-app" "$T/ln-out"; mkdir "$T/ln-out"; echo mine > "$T/ln-out/keep.md"
+  P="$T/ln-app"; git init -q -b main "$P"; echo x > "$P/f"; git -C "$P" add f; git -C "$P" commit -qm init; (cd "$P" && "$F" init --yes --inside) >/dev/null || fail "init inside for $x"
+  P="$(cd "$P" && pwd -P)"; [[ -f "$P/.claude/agents/qa.md" ]] || fail "init inside placed no qa.md"
+  cp -p "$P/.claude/agents/qa.md" "$T/ln-out/qa.md"
+  case $x in
+    agents) rm -rf "$P/.claude/agents"; ln -s ../../ln-out "$P/.claude/agents" ;;
+    claude) mkdir "$T/ln-out/agents"; mv "$T/ln-out/qa.md" "$T/ln-out/agents/"; rm -rf "$P/.claude"; ln -s ../ln-out "$P/.claude" ;;
+    file) rm "$P/.claude/agents/qa.md"; ln -s ../../../ln-out/qa.md "$P/.claude/agents/qa.md" ;;
+  esac
+  b4="$(dsnap "$T/ln-out")"
+  (cd "$P"; in_tty_typed yes "$T/ln-status" "$F" remove --yes --force) > "$T/ln-o" 2>&1
+  st="$(cat "$T/ln-status" 2>/dev/null)"
+  [[ "$st" == 0 && ! -e "$P/cabinet" && "$(dsnap "$T/ln-out")" == "$b4" ]] || fail "remove with a linked $x: exit $st, $(dsnap "$T/ln-out"): $(cat "$T/ln-o")"
+  case $x in
+    agents) grep -qF "kept the role files in the project's .claude/agents: .claude/agents is a link" "$T/ln-o" && [[ -L "$P/.claude/agents" ]] ;;
+    claude) grep -qF "kept the role files in the project's .claude/agents: .claude is a link" "$T/ln-o" && [[ -L "$P/.claude" ]] ;;
+    file) grep -qF "kept .claude/agents/qa.md in the project: it is a link" "$T/ln-o" && [[ -L "$P/.claude/agents/qa.md" && "$(ls "$P/.claude/agents")" == qa.md ]] ;;
+  esac || fail "remove with a linked $x did not keep and name it: $(cat "$T/ln-o")"
+done
+rm -rf "$T"/ln-*
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.

@@ -231,9 +231,10 @@ echo "Drafted $rf. Read it, and answer what it lists under \"Assumed, for the ow
 }
 
 r_list() {
-  local json=0 a r kind state
+  local json=0 a r kind state list
   for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/role.sh list [--json]" >&2; exit 2 ;; esac; done
-  {
+  # Kept in a variable, never a file: a cloned workspace's .cabinet/roles.list could be a link (H-20261117-07).
+  list="$(
     for r in $(team_roles); do
       if [[ -f "$WS/roles/$r.md" ]] && head -1 "$WS/roles/$r.md" | grep -qx -- '---'; then
         kind=project; state=on; grep -q '^description: TBD' "$WS/roles/$r.md" && state="on, not drafted"
@@ -244,16 +245,15 @@ r_list() {
         "$(role_team "$r" "Title")" "$(role_team "$r" "Name")" "$(function_of "$r" | tr '-' ' ')"
     done
     for r in $ROLES_OPTIONAL; do has "$(team_roles)" "$r" || printf '%s\toptional\toff\t\t\t\t\t\t\n' "$r"; done
-  } > "$K/roles.list"
+  )"
   if ((json)); then
     json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], kind: r[1], on: r[2].startsWith("on"), drafted: r[2] != "on, not drafted",
       reports_to: str(r[3]), covers: r[4] == "" ? [] : r[4].split(/, */),
-      trial_until: str(r[5]), title: str(r[6]), display_name: str(r[7]), function: str(r[8])}))' "$K/roles.list"
+      trial_until: str(r[5]), title: str(r[6]), display_name: str(r[7]), function: str(r[8])}))' <<<"$list"
   else
     # The team table's words, in a terminal through term_text (platform.sh).
-    awk -F'\t' '{printf "%-20s %-9s %s%s%s\n", $1, $2, $3, ($7 $8 == "" ? "" : ", " ($7 != "" && $8 != "" ? $7 ", " $8 : $7 $8)), ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' "$K/roles.list" | term_text
+    awk -F'\t' '{printf "%-20s %-9s %s%s%s\n", $1, $2, $3, ($7 $8 == "" ? "" : ", " ($7 != "" && $8 != "" ? $7 ", " $8 : $7 $8)), ($4 == "" ? "" : ", reports to " $4 ($5 == "" ? "" : ", covers " $5) ($6 == "" ? "" : ", on trial until " $6))}' <<<"$list" | term_text
   fi
-  rm -f "$K/roles.list"
 }
 
 verb="${1:-}"; (($#)) && shift
