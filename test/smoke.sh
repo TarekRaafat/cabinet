@@ -9273,7 +9273,8 @@ rm -rf "$T/ft-shim" "$T/ft.sh" "$T/ft-err"
 section "move: the trusted projects and schedules follow the workspace" ""
 s126() {
 # H-20261117-05: after the folder moves, every node call reads lib.js at the new path. At 7fc5b0f the
-# ~/.claude.json step read <old>/bin/lib.js, which was gone, and stopped the move there (exit 1).
+# ~/.claude.json step read <old>/bin/lib.js, which was gone, and stopped the move there (exit 1). A dry run
+# (H-20261117-08, code-reviewer) still reads the old one, since <new> does not exist yet.
 local oh="$HOME" og="$GIT_CONFIG_GLOBAL" o f s
 MH="$T/mt-home"; mkdir -p "$MH/.codex"; export HOME="$MH" GIT_CONFIG_GLOBAL="$MH/.gitconfig"
 printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
@@ -9281,6 +9282,11 @@ MW="$T/mt-ws"; "$F" new "$MW" --yes >/dev/null || fail "new"
 MW="$(cd "$MW" && pwd -P)"; NW="$(cd "$T" && pwd -P)/mt-new"   # resolved: the schedules name the real path
 printf '{"projects": {"%s": {"x": 1}, "%s/app": {"y": 2}, "%s-old": {"z": 3}}}\n' "$MW" "$MW" "$MW" > "$MH/.claude.json"
 printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MW" > "$MH/.codex/config.toml"
+# A dry run keeps reading the old lib.js (the folder has not moved): it prints what it would rename and changes nothing.
+cp "$MH/.claude.json" "$T/mt-cj"
+o="$(cd "$MW" && "$F" move "$NW" --dry-run 2>&1)" || fail "move --dry-run with ~/.claude.json: exit $?: $o"
+grep -qF "would rename 2 project entries" <<<"$o" && [[ -d "$MW" && ! -e "$NW" ]] || fail "move --dry-run: $o"
+cmp -s "$T/mt-cj" "$MH/.claude.json" || fail "move --dry-run changed ~/.claude.json: $(cat "$MH/.claude.json")"
 o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || fail "move with ~/.claude.json and Codex's config: exit $?: $o"
 [[ ! -e "$MW" && -d "$NW" ]] || fail "the workspace did not move: $o"
 j -e --arg o "$MW" --arg n "$NW" '$.projects[$n]?.x == 1 && $.projects[$n + "/app"]?.y == 2 && $.projects[$o + "-old"]?.z == 3 && !($o in $.projects) && !(($o + "/app") in $.projects)' "$MH/.claude.json" >/dev/null \
