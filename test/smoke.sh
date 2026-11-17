@@ -815,6 +815,10 @@ HOME="$H" PATH="$T/shim:$PATH" "$C/bin/bootstrap.sh" >/dev/null 2>&1
 out="$(cfg --yes --name "Acme Labs" --slug acme-labs --owner Ann --email ann@example.com --roles "qa security" \
   --brief-time 06:30 --week-start Monday --repo git@example.invalid:acme/api.git --apply)" || { echo "$out"; fail "config with options"; }
 echo "$out" | grep -q 'api: clone failed (see above); everything else continues' || fail "a failed clone stopped the setup"
+# Two --repo with the same name and no repos.tsv: the second is skipped, so one row named x.
+DR="$T/cfgdup"; "$F" new "$DR" --yes --backup-dir off >/dev/null || fail "new for config duplicate repo"; rm -f "$DR/repos.tsv"
+out="$(cd "$DR" && "$F" config --yes --dry-run --repo https://example.invalid/a/x.git --repo https://example.invalid/b/x.git 2>&1)" || fail "config duplicate repo dry run: $out"
+echo "$out" | grep -qxF "  a repo named x is already listed, skipped https://example.invalid/b/x.git" && [[ "$(echo "$out" | grep -c 'add repo: x ')" == 1 ]] || fail "config added two repos named x with no repos.tsv: $out"
 grep -qx 'CABINET_PROJECT="Acme Labs"' "$C/cabinet.env" && grep -qx 'CABINET_SLUG="acme-labs"' "$C/cabinet.env" || fail "name or slug not written"
 grep -qx '# AGENTS.md - Acme Labs' "$C/AGENTS.md" && grep -qx '# Acme Labs operations manual' "$C/OPERATIONS.md" || fail "titles not renamed"
 grep -q 'Authored as Ann <ann@example.com>\.' "$C/AGENTS.md" && grep -q 'Week starts on:\*\* Monday\.' "$C/AGENTS.md" || fail "owner or week not written"

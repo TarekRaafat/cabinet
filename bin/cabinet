@@ -1500,7 +1500,7 @@ cmd_config() {
   for r in ${repos[@]+"${repos[@]}"}; do
     url_ok "$r" || die "'$r' is not a git URL (https://, ssh://, git@host:path or a local path)"
     rn="$(basename "$r" .git)"; name_ok "$rn" || die "'$r' gives the repo name '$rn', which is not a plain folder name"
-    grep -qxF -- "$rn" < <(cut -f1 "$ws/repos.tsv" 2>/dev/null; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1) && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
+    grep -qxF -- "$rn" < <(cut -f1 "$ws/repos.tsv" 2>/dev/null || true; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1) && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
     newrows+=("$rn"$'\t'"$r"$'\t-\tyes'); changes+=("add repo: $rn ($r)")
   done
   # A runner command given here is approved on this machine, even one cabinet.env already holds (a teammate's).
