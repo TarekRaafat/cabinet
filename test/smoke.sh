@@ -6911,6 +6911,25 @@ o="$(rst no "$F" backup restore "$A39" "$T/r39" --force)"
 rst yes "$F" backup restore "$A39" "$T/r39" --force >/dev/null
 [[ "$st" == 0 && -d "$x/docs" && "$(cat "$x/docs/a.md")" == a && ! -e "$T/r39/nc" ]] || fail "criterion 39, yes: exit $st"
 
+# H-20261117-06: env.tar is extracted once into a folder of its own and no member name reaches tar.
+# (a) A name with a control character, which tar -t escapes, in the first of two repos: before, tar -x
+# found no such member and the restore stopped there, with nc and the agent memory not restored.
+rm -rf "$x"; A="$A39" craft envc 'printf e > "$bk/m/e${c}x.env" && (cd "$bk/m" && tar -cf "$OLDPWD/env.tar" "./e${c}x.env") && mkdir -p ../claude/memory && printf m > ../claude/memory/m-$n.md'
+fresh r40; rs "$AX" "$T/r40"
+((st == 0)) && [[ "$(cat "$T/r40/e${c}x.env")" == e && "$(cat "$x/docs/a.md")" == a ]] && grep -qxF "    restored e${c}x.env" "$rt" && grep -qxF "  nc: files restored (it had no commits)" "$rt" \
+  && grep -qxF "  Claude memory restored" "$rt" && [[ -n "$(find "$HOME/.claude/projects" -name "m-$n.md")" ]] || fail "H-20261117-06 (a), a control character: exit $st, $(cat -v "$rt")"
+# (b) Members ./.env and ./*, with .env in the folder: bsdtar read ./* as a pattern and wrote over .env.
+craft envp '(cd "$bk/m" && printf archived > .env && printf star > "*" && tar -cf "$OLDPWD/env.tar" ./.env "./*")'
+fresh r41; printf mine > "$T/r41/.env"; cp -p "$T/r41/.env" "$T/r41-env"
+rs "$AX" "$T/r41"
+((st == 0)) && cmp -s "$T/r41/.env" "$T/r41-env" && grep -qxF "    .env exists, left as is" "$rt" && [[ "$(cat "$T/r41/*")" == star ]] \
+  || fail "H-20261117-06 (b), a member ./*: exit $st, .env holds $(cat "$T/r41/.env"), $(cat "$rt")"
+# A link in the folder counts as there: nothing is written through one, even to a missing file.
+craft envl '(cd "$bk/m" && mkdir -p d && printf a > .env && printf b > d/.env && tar -cf "$OLDPWD/env.tar" ./.env ./d/.env)'
+fresh r42; mkdir "$T/r42-out"; ln -s "$T/r42-out/gone" "$T/r42/.env"; ln -s "$T/r42-out" "$T/r42/d"
+rs "$AX" "$T/r42"
+((st == 0)) && [[ -z "$(ls -A "$T/r42-out")" ]] && grep -qxF "    d/.env exists, left as is" "$rt" || fail "H-20261117-06, a link: exit $st, $(ls -A "$T/r42-out"), $(cat "$rt")"
+
 # ADR-010 C5: a project around its workspace whose restore stopped is checked out in place on the next
 # run (the marker wins over the fetch-only branch).
 CABINET_BACKUP_PASSPHRASE=t "$I/cabinet/bin/backup.sh" create "$T/rr-bki" >/dev/null || fail "backup inside a project"

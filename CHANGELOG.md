@@ -4,6 +4,8 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.8.2 - Unreleased
 
+- `cabinet backup restore` restores `.env` files from an archive without passing their names to tar. Before, a `.env` file named with a control character stopped the restore with `Not found in archive` (exit 1) after its repo, so the repos after it and the agent memory and settings were not restored; and on macOS a hand-made archive holding a member named `*` wrote over a `.env` file the restore said it left as is. A `.env` file is still restored only where none is there, and never through a link.
+
 - `cabinet move` finishes when `~/.claude.json` or Codex's `config.toml` is there. Before, once the folder had moved, it still looked for its own files at the old path: Claude Code's trusted folders were left at the old path, the move stopped at Codex's with `Cannot find module`, and the schedules were stopped but not set up again at the new path. A move that stops after the folder has moved now also says so, with `stop: the folder has already moved to <new-path>, and its schedules are stopped: run <new-path>/bin/bootstrap.sh once the problem above is fixed`.
 
 ## 0.8.1 - 15 Nov 2026

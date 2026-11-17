@@ -101,9 +101,9 @@ set_head() {  # set_head <repo> <bundle> <branch-ref or empty>
 
 # Every member name of a tar the archive holds, checked on the names before anything relies on tar's
 # own handling (GNU tar and bsdtar differ): absolute, or with a .. part, and nothing is restored. With
-# named, its members are passed to tar by name (env.tar), so one starting with - is refused too: tar
-# would read it as an option, and GNU tar has options that run a command. backup create writes those
-# names with a leading ./, so only a hand-made archive holds one.
+# named (env.tar), one starting with - is refused too, kept from when its names were passed to tar,
+# which reads such a name as an option. backup create writes those names with a leading ./, so only a
+# hand-made archive holds one.
 check_tar() {  # check_tar <tar> <what it is> [named]
   local n m
   [[ -f "$1" ]] || return 0
@@ -156,6 +156,17 @@ restore_sessions() {  # restore_sessions <name> <archived repo> <the repo when r
   done
 }
 
+# taken <repo> <path>: the path exists in the repo (a link counts, even to nothing), or a folder above
+# it is a link or not a folder, so nothing is ever written through a link.
+taken() {
+  local d=$1 rest=$2
+  while [[ "$rest" == */* ]]; do
+    d="$d/${rest%%/*}" rest="${rest#*/}"
+    [[ -L "$d" || ( -e "$d" && ! -d "$d" ) ]] && return 0
+  done
+  [[ -e "$d/$rest" || -L "$d/$rest" ]]
+}
+
 # The writes for one repo, after the one delete-plan call has moved aside what was in their way.
 restore_one() {  # restore_one <name> <archived repo> <folder> <in place: 0 or 1> <keep folder>
   local name=$1 o=$2 repo=$3 inplace=$4 keep=$5 head f
@@ -205,11 +216,18 @@ restore_one() {  # restore_one <name> <archived repo> <folder> <in place: 0 or 1
   echo "  $name: restored with its uncommitted work"
   if ls "$o"/stash-*.patch >/dev/null 2>&1; then mkdir -p "$keep"; cp -p "$o"/stash-*.patch "$keep/"; echo "    stashes kept as patches in $keep"; fi
   restore_sessions "$name" "$o" "$repo" "$keep"
+  # .env files, only where missing: env.tar is extracted once into a folder of its own, and no member
+  # name ever reaches tar (tar -t escapes some names, and bsdtar reads a name given to -x as a pattern).
   if [[ -f "$o/env.tar" ]]; then
-    while IFS= read -r f; do
-      if [[ -e "$repo/$f" ]]; then echo "    $(printf '%s\n' "${f#./}" | term_text) exists, left as is"
-      else tar -C "$repo" -xf "$o/env.tar" "$f"; echo "    restored $(printf '%s\n' "${f#./}" | term_text)"; fi
-    done < <(tar -tf "$o/env.tar")
+    local e p
+    e="$(mktemp -d "$tmp/env.XXXXXX")"   # inside tmp, so the EXIT trap removes it on a failure too
+    tar -C "$e" -xf "$o/env.tar"
+    while IFS= read -r -d '' p; do
+      f="${p#"$e"/}"
+      if taken "$repo" "$f"; then echo "    $(printf '%s\n' "$f" | term_text) exists, left as is"
+      else [[ "$f" != */* ]] || mkdir -p "$repo/${f%/*}"; cp -p "$p" "$repo/$f"; echo "    restored $(printf '%s\n' "$f" | term_text)"; fi
+    done < <(find "$e" -type f -print0)
+    rm -rf "$e"
   fi
 }
 
