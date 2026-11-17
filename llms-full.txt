@@ -1324,7 +1324,7 @@ The effort reaches the tool through its own option, as its own argument, for the
 cabinet move <new-path> [--dry-run]
 ```
 
-Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules, and each [session](#cabinet-session) (it runs `git worktree repair` with the sessions' new folders; with a git older than 2.30 it prints that command for you to run after updating git). Refused for the inside and beside layouts, and, before anything changes, when a row of `repos.tsv` names its repo by a relative path that leaves the workspace (such as `../app`), which would point nowhere after the move: it names each such row; give it its absolute path, commit, and move again. Before it changes `~/.claude.json` or Codex's `config.toml`, it copies the file to `<file>.bak.<time>` beside it; when that copy cannot be written, the move stops there and changes nothing more, with `stop: could not back up <file>: <reason>` (the folder has already moved, and the schedules are not reinstalled). Exit 0, or 1 when refused or stopped.
+Moves a workspace folder and updates what remembers its path: Claude Code's memory and trusted folders, Codex's trusted folders, the schedules, and each [session](#cabinet-session) (it runs `git worktree repair` with the sessions' new folders; with a git older than 2.30 it prints that command for you to run after updating git). Refused for the inside and beside layouts, and, before anything changes, when a row of `repos.tsv` names its repo by a relative path that leaves the workspace (such as `../app`), which would point nowhere after the move: it names each such row; give it its absolute path, commit, and move again. Before it changes `~/.claude.json` or Codex's `config.toml`, it copies the file to `<file>.bak.<time>` beside it; when that copy cannot be written, the move stops there and changes nothing more, with `stop: could not back up <file>: <reason>`. A move that stops for any reason once the folder has moved also prints `stop: the folder has already moved to <new-path>, and its schedules are stopped: run <new-path>/bin/bootstrap.sh once the problem above is fixed`. Exit 0, or 1 when refused or stopped.
 
 ## cabinet remove
 
@@ -2535,6 +2535,10 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.8.2 - Unreleased
+
+- `cabinet move` finishes when `~/.claude.json` or Codex's `config.toml` is there. Before, once the folder had moved, it still looked for its own files at the old path: Claude Code's trusted folders were left at the old path, the move stopped at Codex's with `Cannot find module`, and the schedules were stopped but not set up again at the new path. A move that stops after the folder has moved now also says so, with `stop: the folder has already moved to <new-path>, and its schedules are stopped: run <new-path>/bin/bootstrap.sh once the problem above is fixed`.
 
 ## 0.8.1 - 15 Nov 2026
 

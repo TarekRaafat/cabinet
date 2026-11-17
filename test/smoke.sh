@@ -9211,12 +9211,13 @@ cp -p "$MH/.claude.json" "$T/mb-cj"; cp -p "$MH/.codex/config.toml" "$T/mb-cx"
 o="$(cd "$MW" && PATH="$T/mb-fake:$PATH" "$F" move "$NW" 2>&1)" || st=$?
 ((st == 1)) || fail "a refused backup: exit $st: $o"
 grep -qxF "stop: could not back up $MH/.claude.json: cp: fake refusal" <<<"$o" || fail "the stop does not name the file and cp's reason: $o"
+grep -qxF "stop: the folder has already moved to $NW, and its schedules are stopped: run $NW/bin/bootstrap.sh once the problem above is fixed" <<<"$o" || fail "the stop does not say the folder has moved: $o"
 cmp -s "$T/mb-cj" "$MH/.claude.json" && cmp -s "$T/mb-cx" "$MH/.codex/config.toml" || fail "a settings file changed after the refused backup: $(cat "$MH/.claude.json" "$MH/.codex/config.toml")"
 ! ls "$MH"/.claude.json.bak.* "$MH"/.codex/config.toml.bak.* >/dev/null 2>&1 || fail "a .bak copy was written"
 ! grep -qF '== Codex trusted projects' <<<"$o" && ! grep -qF '== Schedules: reinstall' <<<"$o" || fail "steps after the refused backup ran: $o"
-# The control: the same move with the real cp writes the .bak copy and goes past it. (Only that: the step after it
-# fails for another reason, filed apart, so neither its exit nor the later steps are checked here.)
-mv "$NW" "$MW"; o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || true
+# The control: the same move with the real cp writes the .bak copy and finishes (the later steps: "move: the
+# trusted projects and schedules follow the workspace").
+mv "$NW" "$MW"; o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || fail "the control: exit $?: $o"
 ls "$MH"/.claude.json.bak.* >/dev/null 2>&1 && ! grep -qF "could not back up" <<<"$o" || fail "the control: $o"
 grep -qF 'stop: could not back up <file>: <reason>' "$KIT/docs/commands.md" || fail "docs/commands.md does not say how move stops on a refused backup"
 wsrm "$NW" || true
@@ -9266,6 +9267,32 @@ rc=0; o="$(bash "$T/ft.sh" "$W" stop 2>&1)" || rc=$?
 [[ $rc == 1 && "$o" == "cabinet: stopped at $T/ft.sh line "$n": grep -q nope /dev/null exited 1" ]] || fail "the trace of a workspace script: exit $rc, $o"
 grep -qF 'cabinet: stopped at <file> line <line>: <command> exited <status>' "$KIT/docs/troubleshooting.md" || fail "docs/troubleshooting.md does not explain the failure trace"
 rm -rf "$T/ft-shim" "$T/ft.sh" "$T/ft-err"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "move: the trusted projects and schedules follow the workspace" ""
+s126() {
+# H-20261117-05: after the folder moves, every node call reads lib.js at the new path. At 7fc5b0f the
+# ~/.claude.json step read <old>/bin/lib.js, which was gone, and stopped the move there (exit 1).
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" o f s
+MH="$T/mt-home"; mkdir -p "$MH/.codex"; export HOME="$MH" GIT_CONFIG_GLOBAL="$MH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+MW="$T/mt-ws"; "$F" new "$MW" --yes >/dev/null || fail "new"
+MW="$(cd "$MW" && pwd -P)"; NW="$(cd "$T" && pwd -P)/mt-new"   # resolved: the schedules name the real path
+printf '{"projects": {"%s": {"x": 1}, "%s/app": {"y": 2}, "%s-old": {"z": 3}}}\n' "$MW" "$MW" "$MW" > "$MH/.claude.json"
+printf '[projects."%s"]\ntrust_level = "trusted"\n' "$MW" > "$MH/.codex/config.toml"
+o="$(cd "$MW" && "$F" move "$NW" 2>&1)" || fail "move with ~/.claude.json and Codex's config: exit $?: $o"
+[[ ! -e "$MW" && -d "$NW" ]] || fail "the workspace did not move: $o"
+j -e --arg o "$MW" --arg n "$NW" '$.projects[$n]?.x == 1 && $.projects[$n + "/app"]?.y == 2 && $.projects[$o + "-old"]?.z == 3 && !($o in $.projects) && !(($o + "/app") in $.projects)' "$MH/.claude.json" >/dev/null \
+  || fail "~/.claude.json after the move: $(cat "$MH/.claude.json")"
+grep -qF "\"$NW\"" "$MH/.codex/config.toml" && ! grep -qF "\"$MW\"" "$MH/.codex/config.toml" || fail "config.toml after the move: $(cat "$MH/.codex/config.toml")"
+# The fake scheduler's state: the brief's schedule runs the workspace's job.sh at the new path.
+s="$MH/$SD/ai.cabinet.mt-ws.brief$SX"
+[[ -f "$s" && "$(cmd_of "$s" | j -r '$[0]')" == "$NW/bin/job.sh" ]] || fail "the brief's schedule is not at the new path: $(cat "$s" 2>&1)"
+grep -qF 'already moved' <<<"$o" && fail "a move that finished says it stopped: $o"
+wsrm "$NW" || true
+rm -rf "$T"/mt-*
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }
 

@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.8.2 - Unreleased
+
+- `cabinet move` finishes when `~/.claude.json` or Codex's `config.toml` is there. Before, once the folder had moved, it still looked for its own files at the old path: Claude Code's trusted folders were left at the old path, the move stopped at Codex's with `Cannot find module`, and the schedules were stopped but not set up again at the new path. A move that stops after the folder has moved now also says so, with `stop: the folder has already moved to <new-path>, and its schedules are stopped: run <new-path>/bin/bootstrap.sh once the problem above is fixed`.
+
 ## 0.8.1 - 15 Nov 2026
 
 - `cabinet update`, `cabinet outdated` and the update notice could stop with no message (exit 141) on some Linux machines, depending on timing, while reading the workspace's version. They now read it without a pipe. Other places that took one line or looked for a match through a pipe (`cabinet config`, `new`, `init` and `repo add` checking repo names, `bin/repo.sh`, `bin/session.sh start`, `bin/spec.sh run`, the team summary of `role build`, and schedules) now read to the end, so none can stop or give a wrong answer the same way.

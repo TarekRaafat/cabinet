@@ -20,7 +20,7 @@ DRY=0; [[ "${2:-}" == "--dry-run" ]] && DRY=1
 run() { if ((DRY)); then echo "  would: $*"; else "$@"; fi; }
 die() { echo "stop: $*" >&2; exit 1; }
 # backup <file>: a .bak copy beside it before it changes. A refused copy stops the move there, naming the file
-# and cp's reason, so nothing after it changes (the workspace has already moved; its schedules are not reinstalled).
+# and cp's reason, so nothing after it changes (the workspace has already moved and its schedules are stopped, which the EXIT trap below says).
 backup() {
   [[ -f "$1" ]] || return 0
   local b="$1.bak.$(date +%Y%m%d%H%M%S)" err
@@ -77,6 +77,12 @@ while IFS= read -r -d '' sub; do cands+=("$sub"); done < <(find "$OLD" -mindepth
 
 echo "== Move $OLD -> $NEW"
 run mv "$OLD" "$NEW"
+# From here the old folder is gone: node reads lib.js at the new path (a dry run keeps the old one, still there),
+# and a move that stops for any reason says where the folder is and that its schedules are stopped.
+if ! ((DRY)); then
+  LIBJS="$NEW/bin/lib.js"
+  trap 'if (($?)); then echo "stop: the folder has already moved to $NEW, and its schedules are stopped: run $NEW/bin/bootstrap.sh once the problem above is fixed" >&2; fi' EXIT
+fi
 
 echo "== Sessions"
 # git records each session's folder (sessions/<repo>/<name>/) and its repo's .git by absolute path,
