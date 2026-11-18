@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.8.2 - Unreleased
+## 0.8.2 - 18 Nov 2026
 
 - `cabinet remove` inside a project no longer deletes through a link. Before, when the project's `.claude` or `.claude/agents` was a link to a folder elsewhere, or a role file there was a link, the role files it pointed to were deleted outside the project. Now such a folder or file is kept, with one line naming it (`kept the role files in the project's .claude/agents: <folder> is a link`, `kept .claude/agents/<role>.md in the project: it is a link`), and the rest of `remove` goes on as before. `cabinet role list` no longer writes `.cabinet/roles.list`: in a cloned workspace that committed it as a link, the file it pointed to was overwritten.
 
@@ -10,7 +10,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 - `cabinet move` finishes when `~/.claude.json` or Codex's `config.toml` is there. Before, once the folder had moved, it still looked for its own files at the old path: Claude Code's trusted folders were left at the old path, the move stopped at Codex's with `Cannot find module`, and the schedules were stopped but not set up again at the new path. A move that stops after the folder has moved now also says so, with `stop: the folder has already moved to <new-path>, and its schedules are stopped: run <new-path>/bin/bootstrap.sh once the problem above is fixed`.
 
-## 0.8.1 - 15 Nov 2026
+## 0.8.1 - 17 Nov 2026
 
 - `cabinet update`, `cabinet outdated` and the update notice could stop with no message (exit 141) on some Linux machines, depending on timing, while reading the workspace's version. They now read it without a pipe. Other places that took one line or looked for a match through a pipe (`cabinet config`, `new`, `init` and `repo add` checking repo names, `bin/repo.sh`, `bin/session.sh start`, `bin/spec.sh run`, the team summary of `role build`, and schedules) now read to the end, so none can stop or give a wrong answer the same way.
 - The failure trace: when `cabinet`, or a workspace script it runs, stops on a command that failed where it did not expect one, it now prints one line on stderr naming it, `cabinet: stopped at <file> line <line>: <command> exited <status>`, where it used to stop with no message at all (such as exit 141 and no output). The command is shown as written in the script, never with its values. Nothing changes for a command that succeeds, a failure it handles, or a stop with its own message.
