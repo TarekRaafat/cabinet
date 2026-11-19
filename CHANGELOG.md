@@ -4,6 +4,8 @@ Each version says what changed and anything a workspace must do by hand after `n
 
 ## 0.8.3 - Unreleased
 
+- A silence default never goes ahead on a question the owner has since decided. Before a reversible sign-off item marked "default" goes ahead after 72 hours, chief-of-staff looks for a newer owner decision on it (an owner handoff, open or archived, a decided note, or an answer to the queue); when it finds one the item is dropped, and when it cannot tell the item stays in the queue without "default". Work filed from a silence default starts its `Changed:` with `Silence default:`, carries the queue item as evidence, and is checked again by the role that receives it before any work; an entry a later one covers is set `rejected`, "superseded by <ID>". Rule text only: no command, option or check changes. Workspaces made before keep their own `OPERATIONS.md` line, which is not wrong, only shorter.
+
 - The kit's edits to workspace files such as `AGENTS.md` (by `cabinet config`, `cabinet repo`, `cabinet bootstrap` and others) no longer write through a link. They write the new text beside the file, as `<file>.tmp` (or `AGENTS.md.new` for `cabinet config --hard-to-undo`), then rename it into place; in a cloned workspace that committed that name as a link, the file it pointed to was overwritten (and, for a `.tmp` file, its permissions changed), or created when the link pointed to nothing, and the edited file itself became that link. Now whatever is at that name is removed first, never followed, and the edited file stays a plain file holding the edit.
 
 ## 0.8.2 - 18 Nov 2026

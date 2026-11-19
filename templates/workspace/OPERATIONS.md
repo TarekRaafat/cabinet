@@ -16,7 +16,7 @@ You sign off; the team runs the rest. Every decision belongs to one of three tie
 
 - **One queue.** Everything waiting on you is at the top of `$WS/BRIEF.md`, written by chief-of-staff each morning (`jobs/brief.job`).
 - **Nothing ships unverified.** Work is ready to push only when qa and security have both passed it, and every other reviewer you enabled whose subject it touches (design-lead for UI, code-reviewer for code, dba for the database).
-- **Silence.** A reversible item marked "default" may go ahead as local commits after 72 hours. Never a push.
+- **Silence.** A reversible item marked "default" may go ahead as local commits after 72 hours, unless you have since decided it. Never a push.
 
 ### The team
 

@@ -85,7 +85,7 @@ Every decision belongs to exactly one tier:
 2. **The function's lead:** reversible, crosses repos or sets direction, costs nothing.
 3. **You:** irreversible, public, or costs money. Pushes, deploys, publishing, prices, spend, brand, legal, and adding or changing an agent.
 
-An agent unsure of the tier treats it as the higher one. When two roles disagree, or both think a decision is theirs, the function's lead settles it; across functions, or when whose call it is is unclear, it comes to you as one sign-off item with both views, and neither acts on it meanwhile. A reversible tier 3 item marked "default" may go ahead as local commits after 72 hours without an objection, but nothing is ever pushed, published or spent on silence.
+An agent unsure of the tier treats it as the higher one. When two roles disagree, or both think a decision is theirs, the function's lead settles it; across functions, or when whose call it is is unclear, it comes to you as one sign-off item with both views, and neither acts on it meanwhile. A reversible tier 3 item marked "default" may go ahead as local commits after 72 hours without an objection, but nothing is ever pushed, published or spent on silence, and a default never goes ahead on a question you have since decided.
 
 ## The brief and the sign-off queue
 
