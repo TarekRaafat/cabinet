@@ -2,6 +2,10 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.8.3 - Unreleased
+
+- The kit's edits to workspace files such as `AGENTS.md` (by `cabinet config`, `cabinet repo`, `cabinet bootstrap` and others) no longer write through a link. They write the new text beside the file, as `<file>.tmp` (or `AGENTS.md.new` for `cabinet config --hard-to-undo`), then rename it into place; in a cloned workspace that committed that name as a link, the file it pointed to was overwritten (and, for a `.tmp` file, its permissions changed), or created when the link pointed to nothing, and the edited file itself became that link. Now whatever is at that name is removed first, never followed, and the edited file stays a plain file holding the edit.
+
 ## 0.8.2 - 18 Nov 2026
 
 - `cabinet remove` inside a project no longer deletes through a link. Before, when the project's `.claude` or `.claude/agents` was a link to a folder elsewhere, or a role file there was a link, the role files it pointed to were deleted outside the project. Now such a folder or file is kept, with one line naming it (`kept the role files in the project's .claude/agents: <folder> is a link`, `kept .claude/agents/<role>.md in the project: it is a link`), and the rest of `remove` goes on as before. `cabinet role list` no longer writes `.cabinet/roles.list`: in a cloned workspace that committed it as a link, the file it pointed to was overwritten.

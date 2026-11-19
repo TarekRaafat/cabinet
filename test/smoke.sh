@@ -9358,6 +9358,31 @@ rm -rf "$T"/ln-*
   return 0   # a last "check && fail" line must not end the run
 }
 
+section "lib.js temporary files never go through a link" ""
+s128() {
+# H-20261119-03: lib.js wrote AGENTS.md.new (hard-write, config --hard-to-undo) and AGENTS.md.tmp
+# (replaceFile: sub, drop, before, after...; here config --writing, which runs sub) with writeFileSync,
+# which follows a link: a cloned workspace that committed either as a link had the file it points to
+# overwritten (and, for .tmp, its mode changed), or created when the link dangles, and the link renamed
+# over AGENTS.md. Each is checked with the link to an outside file and to nothing.
+local W b4 x t o
+W="$T/tl-ws"; "$F" new "$W" --yes >/dev/null || fail "new"
+mkdir -p "$W/app/x"; printf 'app\t-\t-\t-\n' >> "$W/repos.tsv"
+mkdir "$T/tl-out"; printf 'precious\n' > "$T/tl-out/outside.txt"; chmod 600 "$T/tl-out/outside.txt"
+for x in new tmp; do for t in outside.txt missing; do
+  ln -s "$T/tl-out/$t" "$W/AGENTS.md.$x"; git -C "$W" add -f AGENTS.md.$x repos.tsv; git -C "$W" commit -qm "a link at AGENTS.md.$x" || fail "commit the link"
+  b4="$(dsnap "$T/tl-out")"
+  if [[ $x == new ]]; then o="$("$F" -C "$W" config --yes --hard-to-undo "app/x/" 2>&1)"; else o="$("$F" -C "$W" config --yes --writing short 2>&1)"; fi || fail "config with AGENTS.md.$x linked to $t: exit $?: $o"
+  [[ -f "$W/AGENTS.md" && ! -L "$W/AGENTS.md" && ! -e "$W/AGENTS.md.$x" && ! -L "$W/AGENTS.md.$x" ]] || fail "AGENTS.md.$x linked to $t: AGENTS.md is $(ls -l "$W/AGENTS.md"), AGENTS.md.$x left: $(ls -l "$W/AGENTS.md.$x" 2>&1)"
+  [[ "$(dsnap "$T/tl-out")" == "$b4" ]] || fail "config wrote through AGENTS.md.$x linked to $t: $(dsnap "$T/tl-out")"
+  if [[ $x == new ]]; then grep -qx -- '- `app/x/`' "$W/AGENTS.md"; else grep -q '^- \*\*Writing to the owner:\*\* short\.' "$W/AGENTS.md"; fi || fail "config with AGENTS.md.$x linked to $t made no edit"
+  if [[ $x == new ]]; then "$F" -C "$W" config --yes --hard-to-undo off >/dev/null; else "$F" -C "$W" config --yes --writing standard >/dev/null; fi || fail "config back for the next run"
+  git -C "$W" add -A; git -C "$W" commit -qm "back" || fail "commit back"
+done; done
+rm -rf "$T"/tl-*
+  return 0   # a last "check && fail" line must not end the run
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.

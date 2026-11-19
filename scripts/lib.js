@@ -25,6 +25,13 @@ process.stdout.on("error", (e) => { if (e.code === "EPIPE") process.exit(0); thr
 // Read text as the scripts always have: UTF-8, with \r\n and \r read as \n.
 const read = (p) => fs.readFileSync(p, "utf8").replace(/\r\n?/g, "\n");
 const write = (p, s) => fs.writeFileSync(p, s, "utf8");
+// A temporary file beside the one it replaces, made new: whatever is at its path (a link a cloned project
+// committed, even to nothing) is unlinked, not followed (a folder there stops it), and "wx" opens no
+// existing path. Not fs.rmSync with force: it leaves a link to nothing in place.
+const writeNew = (p, s, o = {}) => {
+  try { fs.unlinkSync(p); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  fs.writeFileSync(p, s, { ...o, flag: "wx" });
+};
 const die = (msg, code = 1) => { if (msg) process.stderr.write(msg + "\n"); process.exit(code); };
 const env = (k) => process.env[k] || "";
 const words = (s) => s.split(/\s+/).filter(Boolean);
@@ -56,7 +63,7 @@ function hardWrite(file, ...given) {
   if (!out.includes("## Hard to undo") || out.length < Math.floor(text.length / 2)) {
     die("AGENTS.md: the new Hard to undo section did not come out whole; nothing written");
   }
-  write(file + ".new", out);
+  writeNew(file + ".new", out, { encoding: "utf8" });
   fs.renameSync(file + ".new", file);
 }
 
@@ -781,7 +788,7 @@ function lines(file) {
 }
 function replaceFile(file, text) {  // keeping the file's own permissions
   const mode = fs.statSync(file).mode & 0o7777;
-  fs.writeFileSync(file + ".tmp", text, { encoding: "latin1", mode });
+  writeNew(file + ".tmp", text, { encoding: "latin1", mode });
   fs.chmodSync(file + ".tmp", mode);
   fs.renameSync(file + ".tmp", file);
 }
