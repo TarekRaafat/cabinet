@@ -318,7 +318,9 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   fi
   run_note "$AGENT" "$model" "$effort"
   # Tools without cabinet's named agents get the role file as their first instruction.
-  local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $PROMPT"
+  # Every runner's prompt ends with the attribution sentence: the credit hook refuses such a line, this says so first.
+  local prompt="$PROMPT Commit with no Co-authored-by, Generated with or other attribution line: Cabinet adds its own credit line."
+  local as_role="Act as the $AGENT role: read agents/$AGENT.md and follow it as your instructions. $prompt"
   # Every runner gets the role in $CABINET_AGENT and the credit its commits carry (credit roles):
   # CABINET_CREDIT, on or off, and CABINET_CREDIT_ADDRESS, the email; the credit hook reads them.
   local credit address=""; credit="$(credit_mode)"
@@ -342,7 +344,7 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   # effort likewise after the model. CABINET_EFFORT is for a custom runner only.
   ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"; unset CABINET_EFFORT
   case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$PROMPT" ;;
+    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$prompt" ;;
     codex)    codex exec --json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the
     # prompts keeps its deny rules, as the owner saw with a denied command (docs/guardrails.md).

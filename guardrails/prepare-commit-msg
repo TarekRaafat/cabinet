@@ -1,5 +1,5 @@
 #!/bin/sh
-# cabinet credit hook v8
+# cabinet credit hook v9
 # Credit roles (cabinet config --credit-roles on): a commit made in a Cabinet run ends with one line,
 #   Co-authored-by: Cabinet <role> <email>
 # naming the role of that run. A run sets CABINET_AGENT, CABINET_CREDIT and CABINET_CREDIT_ADDRESS
@@ -23,6 +23,12 @@
 # Placed by bin/bootstrap.sh in the global hooks folder; line 2 is its version, which bootstrap reads to
 # replace an earlier one (keeping an edited one first as prepare-commit-msg.cabinet-v<N>). An edited copy of
 # this version is left as it is, and the doctor says credit is not installed.
+# No foreign attribution: a new commit made with CABINET_AGENT set to a role name (a run, or an agent outside
+# one committing as CABINET_AGENT=<role>) is refused when the message's ending holds a Co-authored-by line other
+# than Cabinet's own for that role, a Claude-Session line, or a line holding "Generated with", in any case. The
+# ending is read from the last line up, comments skipped, while a line is blank, a trailer or holds "Generated
+# with"; the body above it, and a -v diff below the scissors line, are never read. With CABINET_AGENT unset (the
+# owner in a terminal) nothing is checked, credit on or off. A refused line is printed as data, never run.
 own="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/prepare-commit-msg"
 if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
 
@@ -35,11 +41,15 @@ if [ -x "$own" ] && ! [ "$own" -ef "$0" ]; then "$own" "$@" || exit $?; fi
 # first comment line (one starting with # or the comment character, as the scissors line of -v does),
 # since git writes nothing from -m below one. Both only ever give more refusals. Anything but a clean
 # "no amend" from awk (the file unreadable, say) is an amend.
+# comment_chars: the characters a comment line can start with (# and git's comment character, or every one
+# git may pick for auto).
+comment_chars() {
+  cc="$(git config core.commentString 2>/dev/null || git config core.commentChar 2>/dev/null)"
+  case "$cc" in auto) printf '%s' '#;@!$%^&|:' ;; *) printf '#%s' "$(printf '%s' "$cc" | cut -c1)" ;; esac
+}
 amend_arg() {
   if [ -r "/proc/$PPID/cmdline" ]; then tr '\000' '\n' < "/proc/$PPID/cmdline" | grep -qxE -e '--am(e(n(d)?)?)?'; return; fi
-  cc="$(git config core.commentString 2>/dev/null || git config core.commentChar 2>/dev/null)"
-  case "$cc" in auto) cc='#;@!$%^&|:' ;; *) cc="#$(printf '%s' "$cc" | cut -c1)" ;; esac
-  CABINET_PS_CC="$cc" CABINET_PS_ARGS=" $(ps -ww -o args= -p "$PPID" 2>/dev/null) " awk '
+  CABINET_PS_CC="$(comment_chars)" CABINET_PS_ARGS=" $(ps -ww -o args= -p "$PPID" 2>/dev/null) " awk '
     BEGIN { a = ENVIRON["CABINET_PS_ARGS"]; gsub(/\\012/, " ", a); cc = ENVIRON["CABINET_PS_CC"]
       n = split(a, w, " "); for (k = 1; k <= n; k++) if (w[k] ~ /^--fil/ || w[k] ~ /^-[^-]*F/) stop = 1 }
     !stop && $0 != "" && index(cc, substr($0, 1, 1)) { stop = 1 }
@@ -89,20 +99,46 @@ if [ -n "$as" ] && amend "$@"; then
   exit 0
 fi
 
-[ "${CABINET_CREDIT:-}" = on ] || exit 0
+# Only a new commit is checked or credited: never a merge, squash or reused message, nor a replayed one.
 case "${2:-}" in ""|message|template) ;; *) exit 0 ;; esac
+dir="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
+for s in rebase-merge rebase-apply CHERRY_PICK_HEAD; do [ -e "$dir/$s" ] && exit 0; done
+role="${CABINET_AGENT:-}"
+if one "$role" '[a-z][a-z0-9-]*'; then
+  # The foreign lines of the ending, in message order. The three patterns are the three lines of foreign().
+  bad="$(CABINET_CC="$(comment_chars)" awk -v role="$role" '
+    function gw(l,  s, i) { s = tolower(l); while ((i = index(s, "generated with"))) { if (i == 1 || substr(s, i - 1, 1) !~ /[a-z]/) return 1; s = substr(s, i + 1) } return 0 }
+    function key(l) { return l ~ /^[A-Za-z0-9-]+: / ? tolower(substr(l, 1, index(l, ":") - 1)) : "" }
+    function foreign(l,  v) { v = substr(l, index(l, ":") + 2); sub(/[ \t\r]+$/, "", v)
+      if (key(l) == "co-authored-by" && v !~ ("^Cabinet " role " <[^<> ]+>$")) return 1
+      if (key(l) == "claude-session") return 1
+      if (gw(l)) return 1
+      return 0 }
+    BEGIN { cc = ENVIRON["CABINET_CC"] }
+    $0 != "" && index(cc, substr($0, 1, 1)) && substr($0, 2) == " ------------------------ >8 ------------------------" { exit }
+    $0 != "" && index(cc, substr($0, 1, 1)) { next }
+    { line[++n] = $0 }
+    END { for (k = n; k >= 1; k--) { l = line[k]; if (l !~ /^[ \t\r]*$/ && key(l) == "" && !gw(l)) break; if (foreign(l)) out[++m] = l }
+      for (k = m; k >= 1; k--) print out[k] }' "$1" 2>/dev/null)" || { echo "cabinet: commit refused: the message could not be read to check it for attribution." >&2; exit 1; }
+  if [ -n "$bad" ]; then
+    printf '%s\n' "$bad" | while IFS= read -r l; do
+      printf 'cabinet: commit refused: "%s" is attribution other than Cabinet'"'"'s own credit\n' "$l" >&2
+    done
+    echo "Commit again without it: Cabinet adds its own credit line." >&2
+    exit 1
+  fi
+fi
+
+[ "${CABINET_CREDIT:-}" = on ] || exit 0
 # email_for <role>: the one place in this hook the email of a role's line is chosen, into $email. Today
 # it is the same for every role: the address the run passes (run_agent picks it), else the Cabinet Team account's.
 email_for() {
   email="${CABINET_CREDIT_ADDRESS:-}"
   [ -n "$email" ] || email='350503452+cabinet-team@users.noreply.github.com'
 }
-role="${CABINET_AGENT:-}"
 one "$role" '[a-z][a-z0-9-]*' || exit 0
 email_for "$role"
 one "$email" '[0-9]+\+([a-z0-9]+(-[a-z0-9]+)*\[bot\]|[A-Za-z0-9]+(-[A-Za-z0-9]+)*)@users\.noreply\.github\.com' || exit 0
-dir="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
-for s in rebase-merge rebase-apply CHERRY_PICK_HEAD; do [ -e "$dir/$s" ] && exit 0; done
 # An empty message (comments aside) stays empty, so git still refuses it.
 has_text "$1" || exit 0
 git interpret-trailers --in-place --where end --if-exists addIfDifferent \
