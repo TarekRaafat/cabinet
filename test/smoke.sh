@@ -1098,7 +1098,7 @@ CD="$KIT/docs/commands.md"
 grep -qF "not a literal value" "$CD" && grep -qF "AGENT, PROMPT, COMMAND, WHEN, MINUTES, RESULT, AFTER, TIMEOUT, QUIET_DAYS, MODEL" "$CD" && grep -qF "skipped the local-only file" "$CD" \
   || fail "criterion 24: docs/commands.md"
 sk="$(awk "/^const SETTING_KEYS/,/\\];/" "$KIT/scripts/lib.js" | grep -o "\"CABINET_[A-Z_]*\"" | tr -d "\"" | sort -u)"
-[[ "$(grep -c . <<<"$sk")" == 26 ]] || fail "criterion 24: SETTING_KEYS in scripts/lib.js is not the 26 keys (23, and the three tiers of model per task): $sk"
+[[ "$(grep -c . <<<"$sk")" == 27 ]] || fail "criterion 24: SETTING_KEYS in scripts/lib.js is not the 27 keys (23, the three tiers of model per task, and CABINET_RUN_MCP_SERVERS of guardrails outside the shell): $sk"
 for k in $sk; do
   grep -qF "$k" "$CD" || fail "criterion 24: docs/commands.md does not list the cabinet.env key $k"
 done
@@ -4066,10 +4066,10 @@ AS="Act as the chief-of-staff role: read agents/chief-of-staff.md and follow it 
 exp() {
   local mo=""; [[ -z "$2" ]] || mo=" [--model] [$2]"
   case "$1" in
-    claude) echo "claude [-p] [--agent] [chief-of-staff] [--permission-mode] [auto] [--output-format] [json]$mo [$P]" ;;
+    claude) echo "claude [-p] [--agent] [chief-of-staff] [--permission-mode] [auto] [--output-format] [json] [--strict-mcp-config] [--mcp-config] [<cfg>]$mo [$P]" ;;
     codex) echo "codex [exec] [--json]$mo [$AS]" ;;
     antigravity) echo "agy$mo [-p] [$AS] [--output-format] [json] [--dangerously-skip-permissions]" ;;
-    qwen) echo "qwen [--approval-mode] [auto] [-o] [json]$mo [$AS]" ;;
+    qwen) echo "qwen [--approval-mode] [auto] [-o] [json] [--allowed-mcp-server-names] []$mo [$AS]" ;;
     grok) echo "grok$mo [-p] [$AS] [--permission-mode] [auto] [--output-format] [json]" ;;
     opencode) echo "opencode [run] [--format] [json]$mo [$AS]" ;;
     cursor) echo "cursor-agent [-p] [--force] [--output-format] [json]$mo [$AS]" ;;
@@ -4081,7 +4081,8 @@ for r in claude codex antigravity qwen grok opencode cursor; do
   for mm in "" m-1; do
     envline CABINET_MODEL "CABINET_MODEL=\"$mm\""; : > "$ML"
     m "$F" -C "$MW" job run brief >/dev/null 2>&1 || fail "job run brief with $r and the model '$mm'"
-    [[ "$(runs)" == "$(exp "$r" "$mm")" ]] || fail "$r with the model '$mm' got: $(runs) -- expected: $(exp "$r" "$mm")"
+    # The --mcp-config file has a new name each run (guardrails outside the shell): <cfg> here.
+    [[ "$(runs | sed -E 's/ \[--mcp-config\] \[[^]]*\]/ [--mcp-config] [<cfg>]/')" == "$(exp "$r" "$mm")" ]] || fail "$r with the model '$mm' got: $(runs) -- expected: $(exp "$r" "$mm")"
   done
 done
 envline CABINET_RUNNER 'CABINET_RUNNER="custom"'; envline CABINET_RUNNER_CMD "CABINET_RUNNER_CMD='printf %s \"\$CABINET_MODEL\" > model.out'"; approve "$MW" cabinet.env CABINET_RUNNER_CMD
@@ -4796,7 +4797,10 @@ SHIM
       if [[ "$ml" == absent ]]; then le "$LW" CABINET_MODEL_LIGHT; else le "$LW" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
       if [[ "$lr" == absent ]]; then le "$LW" CABINET_LIGHT_ROLES; else le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
       seven > "$T/l7-raw"; [[ "$(grep -cF " $cs]" "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the attribution sentence: $(cat "$T/l7-raw")"
-      awk -v s=" $cs]" '{ i = index($0, s); print i ? substr($0, 1, i - 1) "]" substr($0, i + length(s)) : $0 }' "$T/l7-raw" > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
+      # And the MCP arguments the baseline predates (guardrails outside the shell): once on each claude and qwen line.
+      case "$r" in claude|qwen) [[ "$(grep -cE -e ' \[--strict-mcp-config\] \[--mcp-config\] \[/[^]]*\] ' -e ' \[--allowed-mcp-server-names\] \[\] ' "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the MCP arguments: $(cat "$T/l7-raw")" ;; esac
+      awk -v s=" $cs]" '{ i = index($0, s); print i ? substr($0, 1, i - 1) "]" substr($0, i + length(s)) : $0 }' "$T/l7-raw" \
+        | sed -E 's/ \[--strict-mcp-config\] \[--mcp-config\] \[\/[^]]*\]//; s/ \[--allowed-mcp-server-names\] \[\]//' > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
     done; done
   done
 }
@@ -9419,7 +9423,7 @@ on "$(awk '/^6\. /{print; exit}' "$KIT/core/rules/builders.md")" 11 '--depends-o
 on "$(cat "$R")" 11 "not the default's entry"
 on "$(cat "$KIT/docs/concepts.md")" 12 'since decided'
 on "$(cat "$KIT/templates/workspace/OPERATIONS.md")" 12 'since decided'
-awk '/^## /{n++; next} n == 1' "$KIT/CHANGELOG.md" | grep -qiF 'silence default' || miss+="criterion 13: the top CHANGELOG.md section has no line about a silence default"$'\n'
+awk '/^## /{n = ($2 == "0.8.3"); next} n' "$KIT/CHANGELOG.md" | grep -qiF 'silence default' || miss+="criterion 13: CHANGELOG.md's 0.8.3 section has no line about a silence default"$'\n'
 on "$silence" 14 'only as far as local commits' 'Nothing is ever pushed, merged, deployed, published, spent or sent on silence'
 [[ -z "$miss" ]] || fail "silence defaults:"$'\n'"$miss"
   return 0
@@ -9538,9 +9542,278 @@ l="$(grep -F -- '- **Local git actions only' "$KIT/core/CABINET.md")"
 grep -qF 'CABINET_AGENT=<role> CABINET_CREDIT=on git commit' "$KIT/docs/concepts.md" && grep -qF 'never typed' "$KIT/docs/concepts.md" && ! grep -qF 'is not credited yet' "$KIT/docs/concepts.md" || m+=" concepts.md"
 l="$(grep -F -- '- **`prepare-commit-msg`**' "$KIT/docs/guardrails.md")"
 [[ "$l" == *Co-authored-by* && "$l" == *Claude-Session* && "$l" == *'Generated with'* ]] || m+=" guardrails.md"
-awk '/^## /{k++; next} k == 1' "$KIT/CHANGELOG.md" | grep -q attribution || m+=" CHANGELOG.md"
+awk '/^## /{k = ($2 == "0.8.3"); next} k' "$KIT/CHANGELOG.md" | grep -q attribution || m+=" CHANGELOG.md"
 [[ -z "$m" ]] || fail "criterion 16: the docs do not say it in:$m"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+}
+
+section "guardrails outside the shell" ""
+s131() {
+# specs/guardrails-outside-the-shell.md, part 1: the kit's runs load only the approved MCP servers (Rule 1) and
+# never start under another settings folder (Rule 4); the doctor names each tool's servers and the project
+# settings a clone can bring (Rule 5); repo add lists each repo's workflows as hard to undo (Rule 8); the docs and
+# the changelog say so (Rules 7, 9). Its own HOME, so the fixture configs are this section's alone. A job run sends
+# the agent's output to the job's log, so "stderr" below is the run's stderr and that log together.
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" GH="$T/go-home" GW="$T/go-ws" GF="$T/gofakes" GT="$T/go-tmp" GA="$T/go-args"
+local GL GP r st out ds n v p m pid jp i before S1
+mkdir -p "$GH" "$GF" "$GT"
+export HOME="$GH" GIT_CONFIG_GLOBAL="$GH/.gitconfig"
+printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+gsum() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+# One fake for claude, qwen, cursor-agent and codex. Each call's arguments go to $GA, one per line (the argument
+# log). Given --mcp-config, it copies that file to $GA.copy, its mode to $GA.mode and its path to $GA.path.
+# GO_SLEEP: it writes its process ID to $GA.pid, then sleeps that long (GO_DEAF: deaf to TERM). GO_EXIT: its status.
+cat > "$GF/fake" <<'FAKE'
+#!/bin/bash
+[[ -n "${GA:-}" ]] || { echo '{}'; exit 0; }
+printf '%s\n' "$@" >> "$GA"
+p=""; while (($#)); do [[ "$1" == --mcp-config ]] && p="${2:-}"; shift; done
+if [[ -n "$p" ]]; then
+  cp "$p" "$GA.copy"
+  if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$p"; else stat -c %a "$p"; fi > "$GA.mode"
+  printf '%s\n' "$p" > "$GA.path"
+fi
+if [[ -n "${GO_SLEEP:-}" ]]; then [[ -z "${GO_DEAF:-}" ]] || trap '' TERM; echo $$ > "$GA.pid"; exec sleep "$GO_SLEEP"; fi
+echo '{}'; exit "${GO_EXIT:-0}"
+FAKE
+chmod +x "$GF/fake"; for t in claude qwen cursor-agent codex; do ln -sf fake "$GF/$t"; done
+"$F" new "$GW" --yes --runner claude >/dev/null || fail "new for guardrails outside the shell"
+sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$GW/jobs/brief.job"
+GL="$GH/$LOGS/go-ws/brief.log"
+genv() { { grep -v "^$1=" "$GW/cabinet.env"; [[ -z "${2+x}" ]] || printf '%s=%s\n' "$1" "$2"; } > "$T/go.env"; mv "$T/go.env" "$GW/cabinet.env"; }
+gapprove() { approve "$GW" cabinet.env CABINET_RUN_MCP_SERVERS "$1"; }
+# grun [VAR=value]...: a run (bin/job.sh run brief) with the fakes first on PATH and TMPDIR=$GT; its stderr and the
+# job log's new lines in $T/go.err, its exit status in $st.
+grun() {
+  rm -f "$GA" "$GA".*; mkdir -p "$(dirname "$GL")"; : > "$GL"; st=0
+  env TMPDIR="$GT" GA="$GA" PATH="$GF:$PATH" "$@" "$GW/bin/job.sh" run brief >/dev/null 2>"$T/go.err" || st=$?
+  cat "$GL" >> "$T/go.err"
+}
+# grefused <words>...: the last run exited non-zero, said each of the words, and started no agent.
+noagent() { [[ ! -e "$GA" && "$(ls -A "$GT")" == "$before" ]]; }
+grefused() { local w; ((st)) || return 1; for w in "$@"; do grep -qF -- "$w" "$T/go.err" || return 1; done; noagent; }
+before="$(ls -A "$GT")"
+# Fixture configs: Claude Code's github (or the name given) and slack.
+fix_claude() { printf '{"mcpServers": {"%s": {"command": "true", "env": {"TOKEN": "fixture-marker-42"}}, "slack": {"command": "true"}}, "other": 1}\n' "${1:-github}" > "$GH/.claude.json"; }
+fix_claude
+# 1. Unset: --strict-mcp-config once, and an --mcp-config file with no servers, mode 600, gone after the run.
+grun
+[[ $st == 0 && "$(grep -cx -- --strict-mcp-config "$GA")" == 1 ]] || fail "criterion 1: exit $st, args: $(cat "$GA" 2>/dev/null); $(cat "$T/go.err")"
+p="$(grep -A1 -x -- --mcp-config "$GA" | sed -n 2p)"
+[[ "$p" == /* && "$(cat "$GA.path")" == "$p" ]] || fail "criterion 1: the value after --mcp-config is not a path: $p"
+[[ "$(j -c '$.mcpServers' "$GA.copy")" == '{}' && "$(cat "$GA.mode")" == 600 ]] || fail "criterion 1: copy $(cat "$GA.copy"), mode $(cat "$GA.mode")"
+sleep 2; [[ ! -e "$p" && "$(ls -A "$GT")" == "$before" ]] || fail "criterion 1: the --mcp-config file is left: $(ls -A "$GT")"
+# 2. One approved: exactly the fixture's entry, its token never on the command line; E1 with claude_ai_GitHub.
+for n in github claude_ai_GitHub; do
+  fix_claude "$n"; genv CABINET_RUN_MCP_SERVERS "\"$n\""; gapprove "$n"
+  grun
+  [[ $st == 0 ]] || fail "criterion 2 ($n): exit $st: $(cat "$T/go.err")"
+  j -e --arg n "$n" 'Object.keys($.mcpServers).join() == $n' "$GA.copy" >/dev/null || fail "criterion 2 ($n): $(cat "$GA.copy")"
+  [[ "$(j -c --arg n "$n" '$.mcpServers[$n]' "$GA.copy")" == "$(j -c --arg n "$n" '$.mcpServers[$n]' "$GH/.claude.json")" ]] || fail "criterion 2 ($n): the entry is not the fixture's"
+  ! grep -q fixture-marker-42 "$GA" && [[ "$(cat "$GA.mode")" == 600 ]] || fail "criterion 2 ($n): the token on the command line, or mode $(cat "$GA.mode")"
+  p="$(cat "$GA.path")"; sleep 2; [[ ! -e "$p" ]] || fail "criterion 2 ($n): $p is left"
+  grun GO_EXIT=1; p="$(cat "$GA.path")"; sleep 2; [[ $st != 0 && -n "$p" && ! -e "$p" ]] || fail "criterion 2 ($n): $p is left after a failed run (exit $st)"
+done
+fix_claude; genv CABINET_RUN_MCP_SERVERS '"github"'
+# 2 (E13). Stopped at the time limit: the file goes with the run.
+sedi '/^TIMEOUT=/d' "$GW/jobs/brief.job"; echo 'TIMEOUT="1"' >> "$GW/jobs/brief.job"
+grun CABINET_TEST_MINUTE=2 GO_SLEEP=30; p="$(cat "$GA.path" 2>/dev/null)"; sleep 2
+[[ $st != 0 ]] && grep -qF 'stopped after 1 min' "$T/go.err" && [[ -n "$p" && ! -e "$p" ]] || fail "criterion 2 (time limit): exit $st, $p: $(cat "$T/go.err")"
+# N4: a tool deaf to TERM is gone after the watchdog's KILL.
+grun CABINET_TEST_MINUTE=2 GO_SLEEP=60 GO_DEAF=1; pid="$(cat "$GA.pid" 2>/dev/null)"; p="$(cat "$GA.path" 2>/dev/null)"; sleep 2
+[[ $st != 0 && -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null && [[ ! -e "$p" ]] || { kill -9 "$pid" 2>/dev/null; fail "N4: the deaf tool $pid outlived the limit, or $p is left"; }
+# 2 (E13, B1). TERM to bin/job.sh, under a limit and with none: it returns within 5 seconds, the tool and the file gone.
+for v in 1 0; do
+  sedi 's/^TIMEOUT=.*/TIMEOUT="'$v'"/' "$GW/jobs/brief.job"
+  rm -f "$GA" "$GA".*; : > "$GL"
+  env TMPDIR="$GT" GA="$GA" PATH="$GF:$PATH" GO_SLEEP=60 "$GW/bin/job.sh" run brief >/dev/null 2>&1 & jp=$!
+  for i in $(seq 100); do [[ -s "$GA.pid" && -s "$GA.path" ]] && break; sleep 0.1; done
+  pid="$(cat "$GA.pid" 2>/dev/null)"; p="$(cat "$GA.path" 2>/dev/null)"; [[ -n "$pid" && -n "$p" ]] || fail "criterion 2 (TERM, limit $v): the fake did not start"
+  kill -TERM "$jp"; i=0; while kill -0 "$jp" 2>/dev/null && ((i < 50)); do sleep 0.1; i=$((i + 1)); done
+  ! kill -0 "$jp" 2>/dev/null || { kill -9 "$jp" "$pid" 2>/dev/null; fail "criterion 2 (TERM, limit $v): bin/job.sh still runs 5 seconds after TERM"; }
+  wait "$jp" 2>/dev/null || true; sleep 1
+  ! kill -0 "$pid" 2>/dev/null && [[ ! -e "$p" ]] || { kill -9 "$pid" 2>/dev/null; fail "criterion 2 (TERM, limit $v): the tool $pid or $p is left"; }
+  [[ "$(ls -A "$GT")" == "$before" ]] || fail "criterion 2 (TERM, limit $v): left in TMPDIR: $(ls -A "$GT")"
+done
+sedi '/^TIMEOUT=/d' "$GW/jobs/brief.job"
+# 3. An approved name Claude Code does not define: refused, nothing left in TMPDIR. B2: an unreadable file the same.
+genv CABINET_RUN_MCP_SERVERS '"jira"'; gapprove jira
+grun; grefused jira CABINET_RUN_MCP_SERVERS 'not configured' || fail "criterion 3: exit $st: $(cat "$T/go.err"); $(ls -A "$GT")"
+genv CABINET_RUN_MCP_SERVERS '"github"'; printf '{ "mcpServers": ' > "$GH/.claude.json"
+grun; grefused 'could not be read for CABINET_RUN_MCP_SERVERS' || fail "B2: exit $st: $(cat "$T/go.err")"
+fix_claude
+# 4, 5. Qwen Code gets the list as one argument, empty by default; Cursor never --approve-mcps.
+genv CABINET_RUNNER '"qwen"'; genv CABINET_RUN_MCP_SERVERS
+grun; [[ $st == 0 && "$(grep -cx -- --allowed-mcp-server-names "$GA")" == 1 ]] || fail "criterion 4 (unset): $(cat "$GA" 2>/dev/null)"
+[[ "$(sed -n "$(($(grep -nx -- --allowed-mcp-server-names "$GA" | cut -d: -f1) + 1))p" "$GA")" == "" ]] || fail "criterion 4: no empty argument after the flag: $(cat "$GA")"
+genv CABINET_RUN_MCP_SERVERS '"github,slack"'; gapprove github,slack
+grun; [[ $st == 0 && "$(grep -A1 -x -- --allowed-mcp-server-names "$GA" | sed -n 2p)" == github,slack ]] || fail "criterion 4 (github,slack): $(cat "$GA" 2>/dev/null)"
+genv CABINET_RUNNER '"cursor"'
+for v in set unset; do
+  [[ $v == set ]] || genv CABINET_RUN_MCP_SERVERS
+  grun; [[ $st == 0 && -e "$GA" ]] && ! grep -qx -- --approve-mcps "$GA" || fail "criterion 5 ($v): exit $st: $(cat "$GA" 2>/dev/null); $(cat "$T/go.err")"
+done
+genv CABINET_RUNNER '"claude"'
+# 6. Set and not approved, or changed since its approval: refused, no agent.
+genv CABINET_RUN_MCP_SERVERS '"slack"'
+grun; grefused 'CABINET_RUN_MCP_SERVERS in cabinet.env is not approved on this machine' || fail "criterion 6 (not approved): exit $st: $(cat "$T/go.err")"
+genv CABINET_RUN_MCP_SERVERS '"github"'; grun; [[ $st == 0 ]] || fail "criterion 6: github, approved earlier, did not run: $(cat "$T/go.err")"
+genv CABINET_RUN_MCP_SERVERS '"github,slack,x"'
+grun; grefused 'CABINET_RUN_MCP_SERVERS in cabinet.env is not approved on this machine' || fail "criterion 6 (changed): exit $st: $(cat "$T/go.err")"
+# 7. A name with a shell character: refused before anything runs.
+genv CABINET_RUN_MCP_SERVERS "'gh;touch pwned'"
+grun; grefused CABINET_RUN_MCP_SERVERS 'letters, digits, _, . and -' || fail "criterion 7 (run): exit $st: $(cat "$T/go.err")"
+genv CABINET_RUN_MCP_SERVERS
+# 8, 9. Each settings-folder variable: refused when it points elsewhere, a run when it points where bootstrap writes.
+mkdir -p "$T/other"
+for v in CLAUDE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG XDG_CONFIG_HOME; do
+  grun "$v=$T/other"; grefused "$v" || fail "criterion 8 ($v): exit $st: $(cat "$T/go.err")"
+done
+for v in "CLAUDE_CONFIG_DIR=$GH/.claude" "CODEX_HOME=$GH/.codex" "OPENCODE_CONFIG=$GH/.config/opencode/opencode.json" "XDG_CONFIG_HOME=$GH/.config"; do
+  grun "$v"; [[ $st == 0 && -e "$GA" ]] || fail "criterion 9 ($v): exit $st: $(cat "$T/go.err")"
+done
+[[ ! -e "$GW/pwned" && ! -e "$GH/pwned" && ! -e "$T/pwned" ]] || fail "criterion 7: a file pwned was made"
+
+# 10. The doctor: each tool's servers, the runner's note, and never a FIX.
+(PATH="$GF:$PATH" "$GW/bin/bootstrap.sh" >/dev/null 2>&1) || true
+# gdx: the doctor once, its JSON in $out and its exit status in $ds. mcp <text>: how many guardrails.mcp notes in
+# $out hold it; nofix <id>: no FIX for that check in $out.
+gdx() { ds=0; out="$(cd "$GW" && PATH="$GF:$PATH" "$F" doctor --json 2>/dev/null)" || ds=$?; }
+mcp() { j -r --arg w "$1" '$.results.filter((r) => r.id == "guardrails.mcp" && r.level == "note" && r.message.includes($w)).length' <<<"$out"; }
+nofix() { j -e --arg i "$1" '!$.results.some((r) => r.id == $i && r.level == "fix")' <<<"$out" >/dev/null; }
+rm -f "$GH/.claude.json"; mkdir -p "$GH/.codex"; touch "$GH/.codex/config.toml"; cp "$GH/.codex/config.toml" "$T/go.codex"; gdx; S1=$ds
+fix_claude; printf '\n[mcp_servers.github]\ncommand = "true"\n' >> "$GH/.codex/config.toml"
+gdx
+for m in "Claude Code: MCP server github in|the kit's runs do not load it" "Claude Code: MCP server slack in|the kit's runs do not load it" \
+         "Codex: MCP server github in|the kit's runs load every server this tool has configured (no switch)"; do
+  j -e --arg a "${m%%|*}" --arg b "${m#*|}" '$.results.some((r) => r.id == "guardrails.mcp" && r.level == "note" && r.message.includes($a) && r.message.includes($b))' <<<"$out" >/dev/null \
+    || fail "criterion 10: no note with $m: $(j -r '$.results.filter((r) => r.id == "guardrails.mcp").map((r) => r.message).join("\n")' <<<"$out")"
+done
+[[ "$(mcp 'account connectors are in no file the doctor can read')" == 1 && "$(mcp 'runs start with every MCP server its config holds')" == 0 ]] || fail "criterion 10: the connectors or runner note"
+[[ $ds == "$S1" ]] && nofix guardrails.mcp || fail "criterion 10: a FIX, or exit status $ds, not $S1 as with no fixture configs"
+genv CABINET_RUN_MCP_SERVERS '"github"'; gdx
+[[ "$(mcp "Claude Code: MCP server github in ~/.claude.json; the kit's runs load it (approved)")" == 1 && "$(mcp "Claude Code: MCP server slack in ~/.claude.json; the kit's runs do not load it")" == 1 ]] || fail "criterion 10: github approved"
+nofix guardrails.mcp && [[ $ds == "$S1" ]] || fail "criterion 10: a FIX, or exit status $ds, not $S1"
+for r in codex antigravity grok opencode custom cursor; do
+  genv CABINET_RUNNER "\"$r\""; gdx; S1=$ds
+  [[ "$(mcp "$r runs start with every MCP server its config holds (no switch)")" == 1 ]] || fail "criterion 10: no runner note for $r"
+  nofix guardrails.mcp || fail "criterion 10: a FIX with $r"
+  mv "$GH/.claude.json" "$T/go.cj"; cp "$GH/.codex/config.toml" "$T/go.cx"; cp "$T/go.codex" "$GH/.codex/config.toml"
+  gdx; mv "$T/go.cj" "$GH/.claude.json"; mv "$T/go.cx" "$GH/.codex/config.toml"
+  [[ "$S1" == "$ds" ]] || fail "criterion 10: the fixture configs changed the doctor's exit status with $r ($S1, $ds without)"
+done
+genv CABINET_RUNNER '"claude"'; genv CABINET_RUN_MCP_SERVERS
+# 11. An unreadable file: named, left as it is.
+printf '{ "mcpServers": ' > "$GH/.claude.json"; v="$(gsum "$GH/.claude.json")"; gdx
+[[ "$(mcp '.claude.json is unreadable; left as it is')" == 1 ]] && nofix guardrails.mcp && [[ "$(gsum "$GH/.claude.json")" == "$v" ]] || fail "criterion 11"
+fix_claude
+# 10, each other file the doctor reads (Rule 10's evidence): Qwen Code, Gemini CLI, opencode and Cursor, each with a
+# server named for it, added to what the file holds (bootstrap may have written it), and each file left as it was.
+for m in "Qwen Code|.qwen/settings.json|mcpServers|the kit's runs do not load it" "Gemini CLI|.gemini/settings.json|mcpServers|the kit's runs do not load it" \
+         "opencode|.config/opencode/opencode.json|mcp|the kit's runs load every server this tool has configured (no switch)" \
+         "Cursor|.cursor/mcp.json|mcpServers|the kit's runs load every server this tool has configured (no switch)"; do
+  IFS='|' read -r n p r v <<<"$m"; mkdir -p "$(dirname "$GH/$p")"; [[ -s "$GH/$p" ]] || echo '{}' > "$GH/$p"
+  node -e 'const fs = require("node:fs"), [f, k, s] = process.argv.slice(1), o = JSON.parse(fs.readFileSync(f, "utf8")); o[k] = { ...(o[k] || {}), [s]: { command: "true" } }; fs.writeFileSync(f, JSON.stringify(o, null, 2) + "\n");' "$GH/$p" "$r" "srv-$r-${p%%/*}"
+  S1="$(gsum "$GH/$p")"; gdx
+  [[ "$(mcp "$n: MCP server srv-$r-${p%%/*} in ~/$p; $v")" == 1 && "$(gsum "$GH/$p")" == "$S1" ]] && nofix guardrails.mcp || fail "criterion 10 ($n): $(j -r '$.results.filter((r) => r.id == "guardrails.mcp").map((r) => r.message).join("\n")' <<<"$out")"
+done
+# 12. Project settings a clone can bring: in the workspace and each repo it lists, never a folder it does not.
+git init -q "$GW/app"; printf 'app\t-\t-\tno\n' >> "$GW/repos.tsv"; mkdir -p "$GW/stray"; GP="$(cd "$GW" && pwd -P)"
+gcs() { j -r --arg w "$1" '$.results.filter((r) => r.id == "guardrails.clone-settings" && r.level == "note" && r.message.startsWith($w + " is ")).length' <<<"$out"; }
+for n in .mcp.json .claude/settings.json .claude/settings.local.json .codex/config.toml .gemini/settings.json .cursor/mcp.json .cursor/cli.json; do
+  for d in "$GW/app" "$GW" "$GW/stray"; do [[ ! -e "$d/$n" ]] || fail "criterion 12: $d/$n is there already"; mkdir -p "$(dirname "$d/$n")"; echo '{}' > "$d/$n"; done
+  [[ $n != .mcp.json ]] || echo '{}' > "$GW/app/opencode.json"
+  gdx
+  [[ "$(gcs "$GP/app/$n")" == 1 && "$(gcs "$GP/$n")" == 1 ]] || fail "criterion 12 ($n): $(j -r '$.results.filter((r) => r.id == "guardrails.clone-settings").map((r) => r.message).join("\n")' <<<"$out")"
+  j -e '!$.results.some((r) => r.message.includes("stray"))' <<<"$out" >/dev/null && j -e '!$.results.some((r) => r.id == "guardrails.clone-settings" && r.level == "fix")' <<<"$out" >/dev/null || fail "criterion 12 ($n): stray read, or a FIX"
+  [[ $n != .mcp.json ]] || { [[ "$(gcs "$GP/app/opencode.json")" == 1 ]] || fail "criterion 12: the opencode.json note beside .mcp.json"; rm -f "$GW/app/opencode.json"; }
+  for d in "$GW/app" "$GW" "$GW/stray"; do rm -f "$d/$n"; [[ "$n" != */* ]] || rmdir "$(dirname "$d/$n")" 2>/dev/null || true; done
+done
+rm -rf "$GW/app" "$GW/stray"; grep -v $'^app\t' "$GW/repos.tsv" > "$T/go.tsv"; mv "$T/go.tsv" "$GW/repos.tsv"
+
+# 13. repo add lists the repo's workflows under "Hard to undo", once, and never when the list is off.
+hsec() { awk '/^## / {h = ($0 == "## Hard to undo"); next} h' "$1/AGENTS.md"; }
+hn() { hsec "$1" | grep -cx -- "- \`$2/.github/workflows/\`" || true; }
+for r in app web; do mkdir -p "$T/gosrc"; git init -q "$T/gosrc/$r" && git -C "$T/gosrc/$r" commit -q --allow-empty -m init; done
+"$F" new "$T/go13" --yes >/dev/null; grep -qx -- '- none yet' "$T/go13/AGENTS.md" || fail "test setup: none yet"
+(cd "$T/go13" && "$F" repo add "$T/gosrc/app" --apply) >/dev/null 2>&1 || fail "criterion 13: repo add app"
+[[ "$(hn "$T/go13" app)" == 1 ]] && ! hsec "$T/go13" | grep -q 'none yet' || fail "criterion 13: $(hsec "$T/go13")"
+"$F" -C "$T/go13" config --yes --hard-to-undo "app/.github/workflows/" >/dev/null || fail "criterion 13: config --hard-to-undo app/.github/workflows/"
+"$F" -C "$T/go13" config --yes --hard-to-undo off >/dev/null && "$F" -C "$T/go13" config --yes --hard-to-undo "app/.github/workflows/" >/dev/null \
+  && [[ "$(hn "$T/go13" app)" == 1 ]] || fail "criterion 13: the path check refused app/.github/workflows/, which app does not have"
+(cd "$T/go13" && "$F" repo add "$T/gosrc/web" --apply) >/dev/null 2>&1 || fail "criterion 13: repo add web"
+[[ "$(hn "$T/go13" app)" == 1 && "$(hn "$T/go13" web)" == 1 ]] || fail "criterion 13 (web): $(hsec "$T/go13")"
+# repo remove takes out the line repo add wrote, and only that one.
+(cd "$T/go13" && "$F" repo remove web) >/dev/null && [[ "$(hn "$T/go13" web)" == 0 && "$(hn "$T/go13" app)" == 1 ]] || fail "repo remove left its workflows line: $(hsec "$T/go13")"
+"$F" new "$T/go13b" --yes >/dev/null
+sedi 's|^- none yet$|- `app/.github/workflows/`|' "$T/go13b/AGENTS.md"; git -C "$T/go13b" commit -qam "the owner's own line"
+(cd "$T/go13b" && "$F" repo add "$T/gosrc/app" --apply) >/dev/null 2>&1 || fail "criterion 13 (E8): repo add"
+grep -q $'^app\t' "$T/go13b/repos.tsv" && [[ "$(hn "$T/go13b" app)" == 1 ]] || fail "criterion 13 (E8, listed): $(hsec "$T/go13b")"
+"$F" new "$T/go13c" --yes >/dev/null; "$F" -C "$T/go13c" config --yes --hard-to-undo off >/dev/null; v="$(hsec "$T/go13c")"
+(cd "$T/go13c" && "$F" repo add "$T/gosrc/app" --apply) >/dev/null 2>&1 || fail "criterion 13 (E8, off): repo add"
+grep -q $'^app\t' "$T/go13c/repos.tsv" && [[ "$(hsec "$T/go13c")" == "$v" ]] || fail "criterion 13 (E8, off): $(hsec "$T/go13c")"
+mkdir -p "$T/go13/app/.github/workflows"; echo 'on: push' > "$T/go13/app/.github/workflows/ci.yml"
+out="$(printf '\n%.0s' $(seq 60) | CABINET_TTY=/dev/stdin "$F" -C "$T/go13" config --dry-run 2>&1)" || true
+grep 'Found in the repos:' <<<"$out" | grep -qF 'app/.github/workflows/' || fail "criterion 13: no suggestion: $(grep -F 'hard to undo' <<<"$out")"
+v="$(hsec "$KIT/templates/workspace")"; grep -qF 'cabinet config --hard-to-undo' <<<"$v" && grep -qF 'release config' <<<"$v" || fail "criterion 13: the template"
+# 14. A small task whose commit changes a listed workflow file: no PASS.
+git -C "$T/go13/app" add -A && git -C "$T/go13/app" commit -qm ci && n="$(git -C "$T/go13/app" rev-parse --short HEAD)"
+i="$("$T/go13/bin/handoff.sh" add --from chief-of-staff --to app --changed x --needed "Fix the CI" --small --evidence https://example.com/ci "CI")"; i="${i%% *}"
+mkdir -p "$T/go13/specs/qa" && echo ran > "$T/go13/specs/qa/s.md" && git -C "$T/go13" add specs/qa && git -C "$T/go13" commit -qm note
+out="$("$T/go13/bin/handoff.sh" record "$i" --role qa PASS --commits "$n" --note specs/qa/s.md 2>&1)" && fail "criterion 14: a PASS on a small task that changes a workflow"
+grep -qF "is marked small, but it changes app/.github/workflows/ci.yml" <<<"$out" || fail "criterion 14: $out"
+
+# 15. docs/guardrails.md, "Outside the shell": one grep per item.
+m=""; v="$(awk '/^## / {h = ($0 == "## Outside the shell"); next} h' "$KIT/docs/guardrails.md")"
+[[ -n "$v" ]] || fail "criterion 15: no section Outside the shell"
+for p in 1 2 3 4 5 6 7 8 9; do [[ "$(grep -o "\*\*P$p " <<<"$v" | wc -l | tr -d ' ')" == 1 ]] || m+=" P$p"; done
+for p in "Claude Code" Codex "Gemini CLI" "Qwen Code" Grok opencode Antigravity Cursor; do grep -q "^- \*\*$p\*\*" <<<"$v" || m+=" [$p]"; done
+for p in "branch protection" "token scopes" "trusted publishing" "MCP write denies" "file-tool denies" "admin settings file" 'sets its own `HOME`' "opencode 2.x" "cabinet config --hard-to-undo" "release config"; do
+  grep -qF -- "$p" <<<"$v" || m+=" [$p]"
+done
+[[ -z "$m" ]] || fail "criterion 15: the section lacks:$m"
+# 17. The changelog names each new name; no doctor check ID of 38b059a is gone.
+v="$(awk '/^## /{k++; next} k == 1' "$KIT/CHANGELOG.md")"; m=""
+for p in guardrails.mcp guardrails.clone-settings .mcp.json .claude/settings.json .claude/settings.local.json .codex/config.toml .gemini/settings.json \
+         .cursor/mcp.json .cursor/cli.json CABINET_RUN_MCP_SERVERS "is not approved on this machine" CLAUDE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG XDG_CONFIG_HOME; do
+  grep -qF -- "$p" <<<"$v" || m+=" [$p]"
+done
+[[ -z "$m" ]] || fail "criterion 17: the changelog lacks:$m"
+for p in agents.hard-to-undo areas.declared backups.dir-absolute backups.dir-outside backups.enabled backups.passphrase backups.recent \
+  backups.verified commands.approved credit.email credit.hook credit.setting deps.backups deps.node deps.required guardrails.agy guardrails.claim \
+  guardrails.claude guardrails.clone-settings guardrails.codex guardrails.codex-approval guardrails.cursor guardrails.cursor-editor guardrails.gemini \
+  guardrails.grok guardrails.hook-passthrough guardrails.opencode guardrails.push-gate guardrails.qwen guardrails.repo-hookspath guardrails.run-refusal \
+  guardrails.stale-claim guardrails.unguarded-tool guides.exists guides.listed handoffs.addressee handoffs.evidence handoffs.size handoffs.small \
+  handoffs.status handoffs.unique-ids handoffs.unread-verdicts handoffs.verdict-origin handoffs.verdicts jobs.name kit.claude-link kit.handoffs-file \
+  kit.newer kit.roles kit.unedited kit.version manual.complete manual.page model.name pipeline.ready repos.all repos.claude-link \
+  repos.instructions-excluded repos.local-file repos.local-file-tracked repos.local-path repos.present repos.snapshot roles.drafted roles.name \
+  roles.shadows roles.workflow roles.writes runner.custom-unguarded runner.found runner.node runs.estimates schedules.job schedules.job-loaded \
+  schedules.job-owner schedules.node schedules.off schedules.old-slug schedules.scheduler schedules.when secrets.hook secrets.none sessions.gone \
+  settings.literal settings.local-tracked settings.unknown skills.checked skills.plugin skills.skill specs.ready specs.released spend.budget \
+  spend.unreported team.nested team.reports-to team.single-owner tier.effort tier.exists work.no-commits work.uncommitted model.exists model-light.exists; do
+  grep -qF -- "$p" "$KIT/scripts/doctor.sh" || m+=" $p"
+done
+[[ -z "$m" ]] || fail "criterion 17: doctor check IDs gone:$m"
+
+# 7 (bootstrap). The bad list is never asked about; bootstrap installs everything else and exits 1: the files it
+# leaves equal those of the same bootstrap with no list (digits as #, cabinet.local.env aside), and no approval.
+gboot() {  # gboot <folder> <list or empty>: a home and a workspace in it, then bootstrap at a terminal answering y
+  local d="$1"; mkdir -p "$d/home"
+  export HOME="$d/home" GIT_CONFIG_GLOBAL="$d/home/.gitconfig"
+  printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
+  "$F" new "$d/ws" --yes --runner claude >/dev/null || fail "criterion 7: new in $d"
+  [[ -z "$2" ]] || { printf "CABINET_RUN_MCP_SERVERS='%s'\n" "$2" >> "$d/ws/cabinet.env"; git -C "$d/ws" commit -qam list; }
+  in_tty_typed "$(printf 'y\n%.0s' $(seq 20))" "$d/st" "$d/ws/bin/bootstrap.sh" > "$d/out" 2>&1
+  (cd "$d" && find home ws -path '*/.git' -prune -o -print | grep -v '/cabinet\.local\.env$' | sed 's/[0-9][0-9]*/#/g' | sort -u) > "$d/files"
+}
+gboot "$T/go7a" 'gh;touch pwned'; gboot "$T/go7b" ""
+[[ "$(cat "$T/go7a/st")" != 0 && "$(cat "$T/go7b/st")" == 0 ]] || fail "criterion 7 (bootstrap): exit $(cat "$T/go7a/st") with the bad list, $(cat "$T/go7b/st") without: $(tail -5 "$T/go7a/out")"
+grep -qF CABINET_RUN_MCP_SERVERS "$T/go7a/out" && grep -qF 'letters, digits, _, . and -' "$T/go7a/out" || fail "criterion 7 (bootstrap): $(grep -i mcp "$T/go7a/out")"
+! grep -F CABINET_RUN_MCP_SERVERS "$T/go7a/out" | grep -q 'Approve' || fail "criterion 7 (bootstrap): it asked about the list"
+diff "$T/go7a/files" "$T/go7b/files" >/dev/null || fail "criterion 7 (bootstrap): other files: $(diff "$T/go7a/files" "$T/go7b/files")"
+[[ -z "$(find "$T/go7a" "$T/go7b" -name pwned)" ]] && ! grep -q CABINET_APPROVED "$T/go7a/ws/cabinet.local.env" 2>/dev/null || fail "criterion 7 (bootstrap): pwned, or an approval written"
+export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
 }
 
 # The section list for test/shards.js: "<name><tab><needs>" per line.

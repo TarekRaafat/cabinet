@@ -96,6 +96,46 @@ Three settings are commands by design: `CABINET_RUNNER_CMD`, and a job's `COMMAN
 
 What this does not cover: a workspace's `bin/` and `.cabinet/` are code, and a shared workspace commits them with the rest. The workspace's own commands (`cabinet doctor`, `next`, `handoff`, `role`, `brief`) and the kit's own two commands run those scripts, so a pulled change to them runs on the next command or scheduled job. The doctor names a kit file that differs from the kit's (`kit.unedited`); read a pulled change to `bin/` or `.cabinet/` as code, before you run anything.
 
+## Outside the shell
+
+Every rule above is a shell rule, and the push gate sees only `git push`. An agent can also reach GitHub, npm or another service in ways that run no shell command, and the kit's own runs approve every tool call no rule denies, with no one there to stop one. These are the ways around the shell, what the kit covers for each, and what only your server-side settings can stop.
+
+The paths:
+
+- **P1 Connector and MCP tools.** A GitHub connector or MCP server can write files, push commits, open and merge pull requests and edit releases through the API with its own token; other servers deploy, send mail or take payments. No `git push` runs, so no hook runs.
+- **P2 The kit's own unattended runs.** A scheduled job, `cabinet handoff run` or `cabinet spec run` approves what no rule denies, so a P1 call in a run meets no one.
+- **P3 A host app or launcher with its own flags.** An app that starts the tool can pass flags that skip prompts or leave out the settings that hold the kit's rules.
+- **P4 A host app or launcher with another settings folder.** `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG`, `XDG_CONFIG_HOME` or another `HOME` make the tool read a folder bootstrap never wrote.
+- **P5 The agent edits its own guardrails with a file tool.** A file edit (not a shell command) on a tool's settings, the global hooks folder, `~/.gitconfig` or a repo's `.git/config`. The doctor finds most of it afterwards.
+- **P6 Code the agent writes, then runs.** A script that calls the GitHub or npm API with a token it can reach. A rule sees the command line, not what the script does.
+- **P7 A cloned project's tool settings.** A repo's `.mcp.json`, `.claude/settings.json`, `.codex/config.toml`, `.gemini/settings.json`, `.cursor/mcp.json` and the like add MCP servers, hooks or looser settings for that folder.
+- **P8 A publish arranged by a commit.** A commit adds a workflow under `.github/workflows/` that publishes or deploys on push or tag; your own push then publishes.
+- **P9 Tools with no kit rules.** The Cursor editor, aider, goose, amp, crush and a custom runner have the push gate only.
+
+What the kit does today:
+
+- **The kit's runs start with no MCP servers** unless you list them in `CABINET_RUN_MCP_SERVERS` in `cabinet.env` (server names joined by commas, each of letters, digits, `_`, `.` and `-`) and approve that exact text at a terminal with `cabinet bootstrap`, as a runner command is approved. A list that is not approved, or changed since, starts no agent (`CABINET_RUN_MCP_SERVERS in cabinet.env is not approved on this machine`); a name with any other character starts no agent and is never offered for approval. Only Claude Code and Qwen Code have a switch the kit uses; the others start with every server their config holds.
+- **A run never starts under another settings folder:** while `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG` or `XDG_CONFIG_HOME` points anywhere but where bootstrap writes that tool's rules (`~/.claude`, `~/.codex`, `~/.config/opencode/opencode.json`, `~/.config`), a run starts no agent and names the variable. This is for runs only: bootstrap and backups keep following `XDG_CONFIG_HOME`.
+- **The doctor lists MCP servers** each tool has in its own config files, and whether the kit's runs load each one (`guardrails.mcp`); account connectors are in no file it can read. It also names a cloned project's tool settings (`guardrails.clone-settings`). Both are notes.
+- **Workflow files are hard to undo:** `cabinet repo add` lists the repo's `.github/workflows/` under "Hard to undo" in `AGENTS.md`, so a small task never touches them and a review cannot pass one without a way back. A repo's release config has no one file name across release tools: add yours with `cabinet config --hard-to-undo`.
+
+Per tool:
+
+- **Claude Code**: runs get `--strict-mcp-config` and an `--mcp-config` file holding only the approved servers' entries from `~/.claude.json` (none by default), readable by you only and removed when the run ends, however it ends; an approved name it does not define starts no agent. The doctor reads `~/.claude.json`.
+- **Codex**: no switch the kit uses: runs start with every server in `~/.codex/config.toml`, which the doctor reads. `CODEX_HOME` elsewhere refuses a run.
+- **Gemini CLI**: the kit never starts it, so its servers never load in a run. The doctor reads `~/.gemini/settings.json`.
+- **Qwen Code**: runs get `--allowed-mcp-server-names` with the approved list (empty when none). The doctor reads `~/.qwen/settings.json`.
+- **Grok**: no switch the kit uses: runs start with every server its config holds. Where Grok keeps its server list is not confirmed, so the doctor does not read it yet.
+- **opencode**: no switch the kit uses: runs start with every server in its config. The doctor reads the `mcp` list in `~/.config/opencode/opencode.json`; on opencode 2.x it still cannot read the resolved settings.
+- **Antigravity**: no switch the kit uses: runs start with every server its config holds. Where it keeps its server list is not confirmed, so the doctor does not read it yet.
+- **Cursor**: runs never pass `--approve-mcps`; until a probe shows a server you approved in your own session stays unloaded in a run, the doctor counts Cursor as starting with every server in `~/.cursor/mcp.json`, which it reads.
+
+What no tool rule covers: code the agent writes and then runs (P6); how another app starts a tool, including a host app that sets its own `HOME` or settings folder (P3, P4); MCP servers and tools by name, since a server can be called anything; account connectors, which live in your login, not a file, and write with their own token; and a publish set up by a workflow file, which only review sees (P8).
+
+Planned next, not in this release: MCP write denies for the servers you list (GitHub first) in each tool's own format, file-tool denies for each tool's settings, the hooks folder and git config, and an admin settings file for Claude Code, Codex and Gemini CLI that bootstrap prints for you to install.
+
+The hard boundary is on the server side, under your accounts, and the kit cannot set it: GitHub branch protection or rulesets on the default branch (no direct writes, a review you give), connector and token scopes limited to read where a tool does not need to write, and npm two-factor for publish, or trusted publishing from CI only. With those, a write that gets past every rule here still cannot land.
+
 ## Known limits
 
 These are on the [roadmap](../ROADMAP.md):
@@ -103,7 +143,7 @@ These are on the [roadmap](../ROADMAP.md):
 - archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
-- opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
+- opencode agent-level and project-level configs, Qwen workspace settings, and the project files of Claude Code (`.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`), Codex (`.codex/config.toml`), Gemini CLI (`.gemini/settings.json`) and Cursor (`.cursor/mcp.json`, `.cursor/cli.json`), can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
 - on opencode 2.x the doctor cannot read the resolved rules.
 
 ## Undoing the guardrails

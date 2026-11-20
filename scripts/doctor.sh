@@ -290,13 +290,58 @@ if command -v opencode >/dev/null; then
     note guardrails.opencode "${ov:+$ov of }opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)"
   fi
 fi
+# MCP servers each tool has configured in its own user config files, and whether the kit's runs load them
+# (docs/guardrails.md, "Outside the shell"): a note per server and tool, never a FIX; each file read as it is
+# now (a tool set up after bootstrap too) and never changed. Names from the files are only printed.
+mcp_on=","
+run_mcp_ok "$CABINET_RUN_MCP_SERVERS" && approved cabinet.env CABINET_RUN_MCP_SERVERS "$CABINET_RUN_MCP_SERVERS" 2>/dev/null && mcp_on=",$CABINET_RUN_MCP_SERVERS,"
+mcp_tools=0
+for t in claude qwen gemini codex opencode grok agy; do command -v "$t" >/dev/null && mcp_tools=1; done
+cursor_bin >/dev/null && mcp_tools=1
+while IFS='|' read -r kind label file; do
+  [[ -f "$HOME/$file" ]] || continue
+  if ! names="$(node "$LIBJS" mcp-list "$kind" "$HOME/$file" 2>/dev/null)"; then
+    note guardrails.mcp "~/$file is unreadable; left as it is (the doctor could not list $label's MCP servers in it)"; continue
+  fi
+  while IFS= read -r n; do
+    [[ -n "$n" ]] || continue
+    case "$kind" in
+      claude|qwen) if [[ "$mcp_on" == *",$n,"* ]]; then how="the kit's runs load it (approved)"; else how="the kit's runs do not load it"; fi ;;
+      gemini) how="the kit's runs do not load it" ;;
+      *) how="the kit's runs load every server this tool has configured (no switch)" ;;
+    esac
+    sn="$(shown "$n")"; note guardrails.mcp "$label: MCP server $sn in ~/$file; $how"
+  done <<<"$names"
+done <<'EOF'
+claude|Claude Code|.claude.json
+qwen|Qwen Code|.qwen/settings.json
+gemini|Gemini CLI|.gemini/settings.json
+codex|Codex|.codex/config.toml
+opencode|opencode|.config/opencode/opencode.json
+cursor|Cursor|.cursor/mcp.json
+EOF
+((mcp_tools)) && note guardrails.mcp "account connectors are in no file the doctor can read: one added in a tool's app or account is not listed here, so check each tool's own list (docs/guardrails.md, \"Outside the shell\")"
+case "$CABINET_RUNNER" in
+  codex|antigravity|grok|opencode|cursor|custom) note guardrails.mcp "$CABINET_RUNNER runs start with every MCP server its config holds (no switch): take any server that can write out of that tool's config, or run with claude or qwen" ;;
+esac
 # Project settings a clone can bring that loosen a tool's global rules there (docs/guardrails.md, Known limits),
 # in the workspace and each repo it lists on this machine only: a note per file, never a FIX.
 while IFS= read -r d; do
   [[ -d "$d" ]] || continue
-  for f in opencode.json opencode.jsonc .opencode .qwen/settings.json; do
+  for f in opencode.json opencode.jsonc .opencode .qwen/settings.json .mcp.json .claude/settings.json .claude/settings.local.json \
+           .codex/config.toml .gemini/settings.json .cursor/mcp.json .cursor/cli.json; do
     [[ -e "$d/$f" ]] || continue
-    case "$f" in .qwen/*) t="Qwen Code workspace settings" tool="Qwen Code" ;; .opencode) t="an opencode project folder (agents and config)" tool=opencode ;; *) t="an opencode project config" tool=opencode ;; esac
+    case "$f" in
+      .qwen/*) t="Qwen Code workspace settings" tool="Qwen Code" ;;
+      .opencode) t="an opencode project folder (agents and config)" tool=opencode ;;
+      .mcp.json) t="a Claude Code project MCP server list" tool="Claude Code" ;;
+      .claude/*) t="Claude Code project settings" tool="Claude Code" ;;
+      .codex/*) t="a Codex project config" tool=Codex ;;
+      .gemini/*) t="Gemini CLI project settings" tool="Gemini CLI" ;;
+      .cursor/mcp.json) t="a Cursor project MCP server list" tool=Cursor ;;
+      .cursor/*) t="Cursor CLI project settings" tool=Cursor ;;
+      *) t="an opencode project config" tool=opencode ;;
+    esac
     shown="$(term_text <<<"$d/$f")"
     note guardrails.clone-settings "$shown is $t, which can loosen the kit's rules for $tool there: the doctor checks only the global rules, so read it before you run $tool in that folder"
   done

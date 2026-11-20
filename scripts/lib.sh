@@ -60,6 +60,25 @@ slug_ok "$CABINET_SLUG" || { echo "cabinet.env${SET_SLUG_LINE:+:$SET_SLUG_LINE}:
 CABINET_ROLES="${CABINET_ROLES:-}"
 CABINET_RUNNER="${CABINET_RUNNER:-claude}"
 CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
+# The MCP servers the kit's runs may load (docs/guardrails.md, "Outside the shell"): server names joined by
+# commas, none when empty. Used only once its exact text is approved on this machine, as CABINET_RUNNER_CMD is.
+CABINET_RUN_MCP_SERVERS="${CABINET_RUN_MCP_SERVERS:-}"
+run_mcp_ok() { local LC_ALL=C re='^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$'; [[ "$1" =~ $re ]]; }
+RUN_MCP_BAD="each server name must be letters, digits, _, . and - only, the names joined by commas with no spaces"
+# run_dirs_ok: false, naming it on stderr, when a variable that moves a tool's settings folder points anywhere but
+# where bootstrap writes that tool's rules, so a run would start with settings the kit did not write. Unset,
+# empty, or that same place (one trailing / aside) is fine.
+run_dirs_ok() {
+  local v tool want p
+  for v in "CLAUDE_CONFIG_DIR|Claude Code|.claude" "CODEX_HOME|Codex|.codex" \
+           "OPENCODE_CONFIG|opencode|.config/opencode/opencode.json" "XDG_CONFIG_HOME|opencode and other tools|.config"; do
+    want="$HOME/${v##*|}"; tool="${v#*|}"; tool="${tool%|*}"; v="${v%%|*}"
+    p="${!v-}"
+    [[ -z "$p" || "${p%/}" == "$want" || ( -e "$p" && "$p" -ef "$want" ) ]] && continue
+    echo "$v is $(shown "$p"), so $tool would read settings the kit did not write: no agent was started. Unset it for scheduled runs (the kit's rules are in $want)" >&2
+    return 1
+  done
+}
 CABINET_MODEL="${CABINET_MODEL:-}"   # the model every run asks for; empty: the tool's default
 CABINET_MODEL_LIGHT="${CABINET_MODEL_LIGHT:-}"   # the light model, for the roles in CABINET_LIGHT_ROLES; empty: none
 CABINET_LIGHT_ROLES="${CABINET_LIGHT_ROLES:-}"
@@ -316,6 +335,12 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   if [[ -n "$effort" ]]; then
     case "$CABINET_RUNNER" in claude|antigravity) eo=(--effort "$effort") ;; grok) eo=(--reasoning-effort "$effort") ;; esac
   fi
+  # Then the settings each tool reads, and the MCP servers it may load (docs/guardrails.md, "Outside the shell").
+  run_dirs_ok || return 2
+  if [[ -n "$CABINET_RUN_MCP_SERVERS" ]]; then
+    run_mcp_ok "$CABINET_RUN_MCP_SERVERS" || { echo "CABINET_RUN_MCP_SERVERS in cabinet.env is \"$(shown "$CABINET_RUN_MCP_SERVERS")\": $RUN_MCP_BAD. No agent was started" >&2; return 2; }
+    approved cabinet.env CABINET_RUN_MCP_SERVERS "$CABINET_RUN_MCP_SERVERS" || { not_approved cabinet.env CABINET_RUN_MCP_SERVERS >&2; return 1; }
+  fi
   run_note "$AGENT" "$model" "$effort"
   # Tools without cabinet's named agents get the role file as their first instruction.
   # Every runner's prompt ends with the attribution sentence: the credit hook refuses such a line, this says so first.
@@ -338,24 +363,48 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   has "$RUNNERS" "$CABINET_RUNNER" || { echo "unknown CABINET_RUNNER: $CABINET_RUNNER ($RUNNERS or custom)" >&2; return 2; }
   # Each built-in runner prints JSON, for the cost it reports: the reply goes on to the log as
   # before, the cost to $SPEND (spend_report).
-  local out st=0; out="$(mktemp)"
+  # rout, not out: a caller's EXIT trap (spec.sh) removes its own $out, which this name would hide.
+  local rout st=0 sp=""; rout="$(mktemp)"
+  # The run's subshell starts in the background and is waited on, so a TERM, INT or HUP to this shell is
+  # passed on at once, with or without a time limit, and the claude runner removes its --mcp-config file.
+  # Set before the subshell starts; the caller's EXIT trap (its lock) still runs on the exit.
+  trap 'kill -TERM "$sp" 2>/dev/null; wait "$sp" 2>/dev/null; rm -f "$rout"; exit 143' TERM INT HUP
   # In a subshell, so the caller keeps none of the run's variables. The model, when there is one, is its
   # own argument right after the tool's --model option, before the prompt (docs/agent-setup.md); the
   # effort likewise after the model. CABINET_EFFORT is for a custom runner only.
   ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"; unset CABINET_EFFORT
   case "$CABINET_RUNNER" in
-    claude)   claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$prompt" ;;
+    # Only the approved MCP servers (none by default), in a file readable by this user only, named by its
+    # path: a definition can hold a token. The file goes when the subshell ends, however it ends.
+    claude)
+      local cfg="" tp="" got ms=0
+      trap 'rm -f "$cfg"' EXIT
+      # On a signal: the file goes at once (the tool read it when it started), then the tool is waited for, so
+      # one that ignores TERM keeps the run alive until a time limit's KILL ends the whole group.
+      trap 'rm -f "$cfg"; [[ -z "$tp" ]] || { kill -TERM "$tp" 2>/dev/null; wait "$tp" 2>/dev/null; }; exit 143' TERM INT HUP
+      got="$(node "$LIBJS" mcp-config "$HOME/.claude.json" "$CABINET_RUN_MCP_SERVERS" 2>/dev/null)" || ms=$?
+      if ((ms == 3)); then
+        echo "CABINET_RUN_MCP_SERVERS names $(shown "$got"), which is not configured in ~/.claude.json: no agent was started. Add it to Claude Code, or take it off the list" >&2; exit 2
+      elif ((ms)) || [[ "$got" != /* ]]; then
+        echo "~/.claude.json could not be read for CABINET_RUN_MCP_SERVERS: no agent was started. Fix the file, or take the list off" >&2; exit 2
+      fi
+      cfg="$got"
+      claude -p --agent "$AGENT" --permission-mode auto --output-format json --strict-mcp-config --mcp-config "$cfg" ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$prompt" & tp=$!
+      wait "$tp" ;;
     codex)    codex exec --json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the
     # prompts keeps its deny rules, as the owner saw with a denied command (docs/guardrails.md).
     antigravity) agy ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} -p "$as_role" --output-format json --dangerously-skip-permissions ;;
-    qwen)     qwen --approval-mode auto -o json ${mo[@]+"${mo[@]}"} "$as_role" ;;
+    # Only the approved MCP servers: an empty value loads none.
+    qwen)     qwen --approval-mode auto -o json --allowed-mcp-server-names "$CABINET_RUN_MCP_SERVERS" ${mo[@]+"${mo[@]}"} "$as_role" ;;
     grok)     grok ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} -p "$as_role" --permission-mode auto --output-format json ;;
     opencode) opencode run --format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
-    # --force lets print mode write files (the brief); deny rules are the guardrail.
+    # --force lets print mode write files (the brief); deny rules are the guardrail. Never --approve-mcps.
     cursor)   "$(cursor_bin || echo cursor-agent)" -p --force --output-format json ${mo[@]+"${mo[@]}"} "$as_role" ;;
-  esac ) > "$out" || st=$?
-  spend_report "$out" "$model" "$effort"; rm -f "$out"; return "$st"
+  esac ) > "$rout" & sp=$!
+  wait "$sp" || st=$?
+  trap - TERM INT HUP
+  spend_report "$rout" "$model" "$effort"; rm -f "$rout"; return "$st"
 }
 
 # Claude Code keeps per-folder memory under the folder's path with every non-alphanumeric as "-".

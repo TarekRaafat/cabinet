@@ -139,6 +139,7 @@ What to tell the person it does ([guardrails](guardrails.md)):
 - **Deny rules in each agent tool it finds** (for example `~/.claude/settings.json`, `~/.codex/rules/default.rules`): push, merge, release and publish commands are blocked. Rules are only added, and a backup copy of each file is made first.
 - **Schedules:** the daily brief (and backups when they are on), through launchd on macOS or systemd or cron on Linux.
 - **A secrets check** before each commit in the workspace.
+- **No MCP servers in the kit's own runs**, unless they list some in `CABINET_RUN_MCP_SERVERS` in `cabinet.env` and approve that list at bootstrap's question. A connector that can write (GitHub, deploys) is reached through no shell command, so no deny rule sees it ([outside the shell](guardrails.md#outside-the-shell)).
 
 Then, if the person says yes:
 

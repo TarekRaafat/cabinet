@@ -1161,14 +1161,15 @@ hard_guesses() {
   local n d p
   while IFS=$'\t' read -r n d; do
     [[ -d "$d" ]] || continue
-    for p in migrations/ db/migrate/ prisma/migrations/ supabase/migrations/ alembic/versions/ openapi.yaml openapi.yml openapi.json; do
+    for p in migrations/ db/migrate/ prisma/migrations/ supabase/migrations/ alembic/versions/ openapi.yaml openapi.yml openapi.json .github/workflows/; do
       [[ -e "$d/${p%/}" ]] && printf '%s/%s ' "$n" "$p"
     done
   done < <(hard_dirs "$1")
   return 0
 }
 # hard_check <ws> <paths>: each is <repo>/<path> in safe characters, for a repo in repos.tsv, and exists
-# there when the repo is on this machine.
+# there when the repo is on this machine; <repo>/.github/workflows/ may not exist yet (repo add lists it for a
+# workflow an agent might add later).
 hard_check() {
   local x n p d
   for x in $2; do
@@ -1176,7 +1177,7 @@ hard_check() {
     n="${x%%/*}" p="${x#*/}"
     d="$(hard_dirs "$1" | awk -F'\t' -v n="$n" '$1 == n { print $2 }')"
     [[ -n "$d" ]] || die "'$x': no repo named $n in repos.tsv (cabinet repo list)"
-    [[ ! -d "$d" || -e "$d/${p%/}" ]] || die "'$x': $n has no ${p%/} (check the path; a folder ends with /)"
+    [[ ! -d "$d" || -e "$d/${p%/}" || "$p" == .github/workflows/ ]] || die "'$x': $n has no ${p%/} (check the path; a folder ends with /)"
   done
 }
 # hard_write <ws> <paths|off>: set the list under "Hard to undo", keeping the section's other lines;
@@ -1501,7 +1502,13 @@ cmd_config() {
     url_ok "$r" || die "'$r' is not a git URL (https://, ssh://, git@host:path or a local path)"
     rn="$(basename "$r" .git)"; name_ok "$rn" || die "'$r' gives the repo name '$rn', which is not a plain folder name"
     grep -qxF -- "$rn" < <(cut -f1 "$ws/repos.tsv" 2>/dev/null || true; printf '%s\n' ${newrows[@]+"${newrows[@]}"} | cut -f1) && { echo "  a repo named $rn is already listed, skipped $r"; continue; }
-    newrows+=("$rn"$'\t'"$r"$'\t-\tyes'); changes+=("add repo: $rn ($r)")
+    # Its workflow files are hard to undo (docs/guardrails.md, "Outside the shell"): listed once, unless the
+    # owner turned the list off. Said on the repo's own change line, so the commit subject stays "add repo".
+    local wf=""
+    if [[ "$hard" != off ]] && ! has "$hard" "$rn/.github/workflows/"; then
+      hard="${hard:+$hard }$rn/.github/workflows/"; wf=", $rn/.github/workflows/ listed as hard to undo"
+    fi
+    newrows+=("$rn"$'\t'"$r"$'\t-\tyes'); changes+=("add repo: $rn ($r)$wf")
   done
   # A runner command given here is approved on this machine, even one cabinet.env already holds (a teammate's).
   ((set_cmd)) && [[ -n "$runner_cmd" && "$runner_cmd" == "$o_cmd" ]] && changes+=("runner command: approved on this machine")

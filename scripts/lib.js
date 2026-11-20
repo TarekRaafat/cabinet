@@ -3,7 +3,7 @@
 //
 //   node lib.js <command> <args>...    (the scripts call it through js() in lib.sh)
 //
-// Commands: settings, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, build-commits, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-released, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
+// Commands: settings, mcp-config, mcp-list, runs, approval-id, show-command, ws-facts, delete-plan, verdict-origin, hard-write, handoff-entry, handoff-archive, handoff-rows, owner-case, readiness, build-commits, push-check, model-check, version-newer, release-latest, version-check, latest-write, spec-check, spec-released, spec-record, manual, inside-file, json, changelog-render, and the line edits and helpers below.
 "use strict";
 // Node 18 or newer (package.json, engines): an older Node cannot run the scripts' expressions, so
 // say so plainly instead of failing on a syntax error. CABINET_TEST_NODE_VERSION stands in for the
@@ -54,7 +54,8 @@ function hardWrite(file, ...given) {
   } else {
     const intro = "Paths where a change is hard to undo (migrations, public files, anything released): a small task never " +
       "touches them (`CABINET.md`, \"Ready to build\"), and `bin/handoff.sh record` refuses a PASS on one that does. " +
-      "Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.";
+      "Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder." +
+      " `cabinet repo add` lists each repo's `.github/workflows/` here; add a repo's release config (its file name depends on the release tool) with `cabinet config --hard-to-undo`.";
     let h = lines.indexOf("## House rules");
     if (h < 0) h = lines.length;
     lines.splice(h, 0, "## Hard to undo", "", intro, "", ...add, "");
@@ -2128,7 +2129,7 @@ function moveAside(from, to) {
 // double-quoted (\" \\ \$ \` give the second character, a backslash before a line break joins the
 // lines, any other backslash stays; an unescaped $ or ` is refused). In cabinet.env a value is one
 // line. Anything else is not a literal value, and the whole file is refused at that line.
-const SETTING_KEYS = ["CABINET_PROJECT", "CABINET_SLUG", "CABINET_ROLES", "CABINET_RUNNER", "CABINET_RUNNER_CMD", "CABINET_MODEL",
+const SETTING_KEYS = ["CABINET_PROJECT", "CABINET_SLUG", "CABINET_ROLES", "CABINET_RUNNER", "CABINET_RUNNER_CMD", "CABINET_RUN_MCP_SERVERS", "CABINET_MODEL",
   "CABINET_MODEL_LIGHT", "CABINET_LIGHT_ROLES", "CABINET_LAYOUT", "CABINET_VISIBILITY", "CABINET_BACKUP_DIR", "CABINET_BACKUP_TIME",
   "CABINET_BACKUP_KEEP", "CABINET_JOB_TIMEOUT", "CABINET_BUDGET", "CABINET_PRICE", "CABINET_PIPELINE", "CABINET_PIPELINE_LIMIT",
   "CABINET_CREDIT_ROLES", "CABINET_CREDIT_EMAIL", "CABINET_SKILLS", "CABINET_PLUGINS", "CABINET_UPDATE_CHECK",
@@ -2515,8 +2516,53 @@ function wsFacts(ws, logdir, dollars, tokens) {
   put(1, JSON.stringify({ project: set.CABINET_PROJECT || "", budget: set.CABINET_BUDGET || "", waiting, spent, doctor_problems: problems, doctor_checked: checked, doctor_shown: shown, agent_time: agent }) + "\n");
 }
 
+// MCP servers in the kit's runs (docs/guardrails.md, "Outside the shell"). CABINET_RUN_MCP_SERVERS is checked
+// (run_mcp_ok in lib.sh) and approved before either command below runs.
+// mcp-config <~/.claude.json> <names, comma-separated>: the --mcp-config file for a Claude Code run: each named
+// server's entry copied whole from the file's top-level mcpServers, matched by exact name, written as
+// {"mcpServers": {...}} to a new file under $TMPDIR with a random name, opened wx with mode 600 (a definition can
+// hold a token, and nothing planted there is followed), and its path printed. No names: no servers, the file not
+// read. Exit 3, printing the names the file does not define, before anything is written; 4 when it cannot be read.
+function mcpConfig(file, names) {
+  const want = (names || "").split(",").filter(Boolean), pick = {};
+  if (want.length) {
+    let all;
+    try { all = JSON.parse(fs.readFileSync(file, "utf8")).mcpServers; } catch (e) { die("", 4); }
+    const has = (k) => all && typeof all === "object" && !Array.isArray(all) && Object.prototype.hasOwnProperty.call(all, k);
+    const missing = want.filter((k) => !has(k));
+    if (missing.length) { process.stdout.write(missing.join(", ") + "\n"); die("", 3); }
+    for (const k of want) pick[k] = all[k];
+  }
+  const p = path.join(process.env.TMPDIR || require("node:os").tmpdir(), "cabinet-mcp-" + crypto.randomBytes(12).toString("hex") + ".json");
+  fs.writeFileSync(p, JSON.stringify({ mcpServers: pick }) + "\n", { flag: "wx", mode: 0o600 });
+  process.stdout.write(p + "\n");
+}
+// mcp-list <tool> <file>: the MCP server names a tool's config file defines, one per line, for the doctor:
+// mcpServers in JSON (claude, qwen, gemini, cursor), mcp in opencode's JSON, and the [mcp_servers.<name>] tables of
+// Codex's TOML (bare or quoted names, read line by line). Exit 4 when the file cannot be read or parsed.
+function mcpList(tool, file) {
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch (e) { die("", 4); }
+  let names = [];
+  if (tool === "codex") {
+    const seen = new Set();
+    for (const l of text.split(/\r?\n/)) {
+      const m = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*("([^"\\]*)"|'([^']*)'|([A-Za-z0-9_-]+))/.exec(l);
+      if (m) seen.add(m[2] ?? m[3] ?? m[4]);
+    }
+    names = [...seen];
+  } else {
+    let o;
+    try { o = JSON.parse(text); } catch (e) { die("", 4); }
+    const s = o && typeof o === "object" ? o[tool === "opencode" ? "mcp" : "mcpServers"] : undefined;
+    if (s !== undefined && (s === null || typeof s !== "object" || Array.isArray(s))) die("", 4);
+    names = Object.keys(s || {});
+  }
+  if (names.length) process.stdout.write(names.join("\n") + "\n");
+}
+
 const COMMANDS = {
-  settings, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
+  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,

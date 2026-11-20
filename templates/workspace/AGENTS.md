@@ -36,7 +36,7 @@ For work without code, or with one repo, write `none` in place of `TBD`. A chang
 
 ## Hard to undo
 
-Paths where a change is hard to undo (migrations, public files, anything released): a small task never touches them (`.cabinet/rules/ready-to-build.md`), and `bin/handoff.sh record` refuses a PASS on one that does. Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder.
+Paths where a change is hard to undo (migrations, public files, anything released): a small task never touches them (`.cabinet/rules/ready-to-build.md`), and `bin/handoff.sh record` refuses a PASS on one that does. Set with `cabinet config --hard-to-undo`, or one per line as `` `<repo>/<path>` ``; a path ending in `/` covers its folder. `cabinet repo add` lists each repo's `.github/workflows/` here; add a repo's release config (its file name depends on the release tool) with `cabinet config --hard-to-undo`.
 
 - none yet
 

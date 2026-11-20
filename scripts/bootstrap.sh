@@ -422,10 +422,13 @@ echo "== Commands in the workspace's files"
 # terminal, then asked. Without one (an agent's shell, a schedule, a file of answers) nothing is approved.
 asking=0
 if ((DRY == 0)) && [[ -t 0 ]] && { exec 4<>/dev/tty; } 2>/dev/null; then asking=1; fi
-cmd_review() {  # cmd_review <file> <KEY> <text>
+# CABINET_RUN_MCP_SERVERS is approved the same way: a list of servers, not a command (its fourth argument: list).
+cmd_review() {  # cmd_review <file> <KEY> <text> [list]
   approved "$1" "$2" "$3" 2>/dev/null && return 0
+  local what="this command, which would run on this machine" no="so it does not run on this machine"
+  [[ "${4:-}" != list ]] || what="the MCP servers the kit's runs would load" no="so the kit's runs start no agent until it is approved"
   if ((asking)); then
-    { echo "  $2 in $1 is this command, which would run on this machine:"; printf '%s' "$3" | node "$LIBJS" show-command; printf '  Approve it on this machine? [y/N]: '; } >&4
+    { echo "  $2 in $1 is $what:"; printf '%s' "$3" | node "$LIBJS" show-command; printf '  Approve it on this machine? [y/N]: '; } >&4
     local ans="" h
     read -r -u 4 ans || true
     if [[ "$ans" == y || "$ans" == Y ]] && h="$(approval_id "$1" "$2" "$3")" && [[ -n "$h" ]]; then
@@ -433,10 +436,17 @@ cmd_review() {  # cmd_review <file> <KEY> <text>
       printf 'CABINET_APPROVED="%s"\n' "$h" >> "$LOCAL_ENV"; echo "  approved $2 in $1 on this machine"; return 0
     fi
   fi
-  echo "  not approved: $2 in $1, so it does not run on this machine. Its text:"; printf '%s' "$3" | node "$LIBJS" show-command
+  echo "  not approved: $2 in $1, $no. Its text:"; printf '%s' "$3" | node "$LIBJS" show-command
 }
 reviewed=0
 [[ "$CABINET_RUNNER" != custom || -z "$CABINET_RUNNER_CMD" ]] || { cmd_review cabinet.env CABINET_RUNNER_CMD "$CABINET_RUNNER_CMD"; reviewed=1; }
+# A list with a name the kit does not accept is never shown for approval: named here, and bootstrap exits 1 at the
+# end, once everything else is installed.
+if [[ -n "$CABINET_RUN_MCP_SERVERS" ]]; then
+  reviewed=1
+  if run_mcp_ok "$CABINET_RUN_MCP_SERVERS"; then cmd_review cabinet.env CABINET_RUN_MCP_SERVERS "$CABINET_RUN_MCP_SERVERS" list
+  else echo "  CABINET_RUN_MCP_SERVERS in cabinet.env is \"$(shown "$CABINET_RUN_MCP_SERVERS")\": $RUN_MCP_BAD. Not approved, so the kit's runs start no agent until it is fixed"; failures=1; fi
+fi
 for jf in "$WS"/jobs/*.job; do
   j="$(basename "$jf" .job)"
   [[ -f "$jf" ]] && job_name_ok "$j" && ! job_bad "$j" >/dev/null || continue

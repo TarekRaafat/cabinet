@@ -35,10 +35,12 @@ p_remove() {
   for a in "$@"; do case "$a" in --dry-run) dry=1 ;; -*) echo "usage: bin/repo.sh remove <name> [--dry-run]" >&2; exit 2 ;; *) name="$a" ;; esac; done
   [[ -n "$name" ]] || { echo "usage: bin/repo.sh remove <name> [--dry-run]" >&2; exit 2; }
   grep -qxF -- "$name" < <(repos | cut -f1) || { echo "no repo named $name in repos.tsv (bin/repo.sh list)" >&2; exit 1; }
-  if ((dry)); then echo "would remove $name from repos.tsv and the team table of AGENTS.md; its folder is left as is"; return 0; fi
+  if ((dry)); then echo "would remove $name from repos.tsv and the team table of AGENTS.md, and its workflows line from Hard to undo; its folder is left as is"; return 0; fi
   N="$name" node "$LIBJS" drop "$WS/repos.tsv" '/^${N}\t/'
   N="$name" node "$LIBJS" drop "$WS/AGENTS.md" '/^\| `${N}` \|/'
-  echo "Removed $name from repos.tsv and the team table of AGENTS.md. Its folder, history and local/$name/ are left as they are."
+  # The line repo add wrote under "Hard to undo", exactly, so the list never names a repo that is gone.
+  N="$name" node "$LIBJS" drop "$WS/AGENTS.md" '/^- `${N}\/\.github\/workflows\/`$/'
+  echo "Removed $name from repos.tsv and the team table of AGENTS.md, and its workflows line from Hard to undo. Its folder, history and local/$name/ are left as they are."
   echo "Open handoffs addressed to it are reported by bin/doctor.sh. Commit: git -C \"$WS\" commit -am \"repos: remove $name\""
 }
 
