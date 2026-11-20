@@ -2538,7 +2538,7 @@ function mcpConfig(file, names) {
   process.stdout.write(p + "\n");
 }
 // mcp-list <tool> <file>: the MCP server names a tool's config file defines, one per line, for the doctor:
-// mcpServers in JSON (claude, qwen, gemini, cursor), mcp in opencode's JSON, and the [mcp_servers.<name>] tables of
+// mcpServers in JSON (claude, qwen, gemini, cursor) and the [mcp_servers.<name>] tables of
 // Codex's TOML (bare or quoted names, read line by line). Exit 4 when the file cannot be read or parsed.
 function mcpList(tool, file) {
   let text;
@@ -2554,7 +2554,7 @@ function mcpList(tool, file) {
   } else {
     let o;
     try { o = JSON.parse(text); } catch (e) { die("", 4); }
-    const s = o && typeof o === "object" ? o[tool === "opencode" ? "mcp" : "mcpServers"] : undefined;
+    const s = o && typeof o === "object" ? o.mcpServers : undefined;
     if (s !== undefined && (s === null || typeof s !== "object" || Array.isArray(s))) die("", 4);
     names = Object.keys(s || {});
   }

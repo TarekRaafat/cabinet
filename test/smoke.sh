@@ -4066,7 +4066,7 @@ AS="Act as the chief-of-staff role: read agents/chief-of-staff.md and follow it 
 exp() {
   local mo=""; [[ -z "$2" ]] || mo=" [--model] [$2]"
   case "$1" in
-    claude) echo "claude [-p] [--agent] [chief-of-staff] [--permission-mode] [auto] [--output-format] [json] [--strict-mcp-config] [--mcp-config] [<cfg>]$mo [$P]" ;;
+    claude) echo "claude [-p] [--agent] [chief-of-staff] [--permission-mode] [auto] [--output-format] [json]$mo [$P] [--strict-mcp-config] [--mcp-config] [<cfg>]" ;;
     codex) echo "codex [exec] [--json]$mo [$AS]" ;;
     antigravity) echo "agy$mo [-p] [$AS] [--output-format] [json] [--dangerously-skip-permissions]" ;;
     qwen) echo "qwen [--approval-mode] [auto] [-o] [json] [--allowed-mcp-server-names] []$mo [$AS]" ;;
@@ -4798,7 +4798,7 @@ SHIM
       if [[ "$lr" == absent ]]; then le "$LW" CABINET_LIGHT_ROLES; else le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
       seven > "$T/l7-raw"; [[ "$(grep -cF " $cs]" "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the attribution sentence: $(cat "$T/l7-raw")"
       # And the MCP arguments the baseline predates (guardrails outside the shell): once on each claude and qwen line.
-      case "$r" in claude|qwen) [[ "$(grep -cE -e ' \[--strict-mcp-config\] \[--mcp-config\] \[/[^]]*\] ' -e ' \[--allowed-mcp-server-names\] \[\] ' "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the MCP arguments: $(cat "$T/l7-raw")" ;; esac
+      case "$r" in claude|qwen) [[ "$(grep -cE -e ' \[--strict-mcp-config\] \[--mcp-config\] \[/[^]]*\]$' -e ' \[--allowed-mcp-server-names\] \[\] ' "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the MCP arguments: $(cat "$T/l7-raw")" ;; esac
       awk -v s=" $cs]" '{ i = index($0, s); print i ? substr($0, 1, i - 1) "]" substr($0, i + length(s)) : $0 }' "$T/l7-raw" \
         | sed -E 's/ \[--strict-mcp-config\] \[--mcp-config\] \[\/[^]]*\]//; s/ \[--allowed-mcp-server-names\] \[\]//' > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
     done; done
@@ -9567,7 +9567,16 @@ cat > "$GF/fake" <<'FAKE'
 #!/bin/bash
 [[ -n "${GA:-}" ]] || { echo '{}'; exit 0; }
 printf '%s\n' "$@" >> "$GA"
-p=""; while (($#)); do [[ "$1" == --mcp-config ]] && p="${2:-}"; shift; done
+# As the real Claude Code does, --mcp-config takes every word after it up to the next option or --, so a prompt
+# placed after the file is read as a second config file: refused, exit 1.
+p=""; while (($#)); do
+  if [[ "$1" == --mcp-config ]]; then
+    p="${2:-}"; shift 2 || shift
+    [[ $# == 0 || "$1" == -* ]] || { echo "Error: Invalid MCP configuration: \"$1\" was read as a value of --mcp-config, not as a prompt" >&2; exit 1; }
+    continue
+  fi
+  shift
+done
 if [[ -n "$p" ]]; then
   cp "$p" "$GA.copy"
   if [[ "$(uname)" == Darwin ]]; then stat -f %Lp "$p"; else stat -c %a "$p"; fi > "$GA.mode"
@@ -9671,9 +9680,13 @@ for v in -y a,--yolo .x; do
 done
 genv CABINET_RUNNER '"claude"'; genv CABINET_RUN_MCP_SERVERS
 # 8, 9. Each settings-folder variable: refused when it points elsewhere, a run when it points where bootstrap writes.
+# OPENCODE_CONFIG and XDG_CONFIG_HOME are docs only (the owner's opencode probe did not hold): a run, not a refusal.
 mkdir -p "$T/other"
-for v in CLAUDE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG XDG_CONFIG_HOME; do
+for v in CLAUDE_CONFIG_DIR CODEX_HOME; do
   grun "$v=$T/other"; grefused "$v" || fail "criterion 8 ($v): exit $st: $(cat "$T/go.err")"
+done
+for v in OPENCODE_CONFIG XDG_CONFIG_HOME; do
+  grun "$v=$T/other"; [[ $st == 0 && -e "$GA" ]] || fail "criterion 8, docs only ($v): exit $st: $(cat "$T/go.err")"
 done
 for v in "CLAUDE_CONFIG_DIR=$GH/.claude" "CODEX_HOME=$GH/.codex" "OPENCODE_CONFIG=$GH/.config/opencode/opencode.json" "XDG_CONFIG_HOME=$GH/.config"; do
   grun "$v"; [[ $st == 0 && -e "$GA" ]] || fail "criterion 9 ($v): exit $st: $(cat "$T/go.err")"
@@ -9713,16 +9726,18 @@ genv CABINET_RUNNER '"claude"'; genv CABINET_RUN_MCP_SERVERS
 printf '{ "mcpServers": ' > "$GH/.claude.json"; v="$(gsum "$GH/.claude.json")"; gdx
 [[ "$(mcp '.claude.json is unreadable; left as it is')" == 1 ]] && nofix guardrails.mcp && [[ "$(gsum "$GH/.claude.json")" == "$v" ]] || fail "criterion 11"
 fix_claude
-# 10, each other file the doctor reads (Rule 10's evidence): Qwen Code, Gemini CLI, opencode and Cursor, each with a
+# 10, each other file the doctor reads (Rule 10's evidence): Qwen Code, Gemini CLI and Cursor, each with a
 # server named for it, added to what the file holds (bootstrap may have written it), and each file left as it was.
 for m in "Qwen Code|.qwen/settings.json|mcpServers|the kit's runs do not load it" "Gemini CLI|.gemini/settings.json|mcpServers|the kit's runs do not load it" \
-         "opencode|.config/opencode/opencode.json|mcp|the kit's runs load every server this tool has configured (no switch)" \
          "Cursor|.cursor/mcp.json|mcpServers|the kit's runs load every server this tool has configured (no switch)"; do
   IFS='|' read -r n p r v <<<"$m"; mkdir -p "$(dirname "$GH/$p")"; [[ -s "$GH/$p" ]] || echo '{}' > "$GH/$p"
   node -e 'const fs = require("node:fs"), [f, k, s] = process.argv.slice(1), o = JSON.parse(fs.readFileSync(f, "utf8")); o[k] = { ...(o[k] || {}), [s]: { command: "true" } }; fs.writeFileSync(f, JSON.stringify(o, null, 2) + "\n");' "$GH/$p" "$r" "srv-$r-${p%%/*}"
   S1="$(gsum "$GH/$p")"; gdx
   [[ "$(mcp "$n: MCP server srv-$r-${p%%/*} in ~/$p; $v")" == 1 && "$(gsum "$GH/$p")" == "$S1" ]] && nofix guardrails.mcp || fail "criterion 10 ($n): $(j -r '$.results.filter((r) => r.id == "guardrails.mcp").map((r) => r.message).join("\n")' <<<"$out")"
 done
+# opencode's file is docs only (the owner's probe did not hold): a server in it gets no note.
+mkdir -p "$GH/.config/opencode"; printf '{"mcp": {"srv-oc": {"type": "local", "command": ["true"]}}}\n' > "$GH/.config/opencode/opencode.json"; gdx
+[[ "$(mcp srv-oc)" == 0 ]] || fail "criterion 10: opencode's file is read, though docs only"
 # 12. Project settings a clone can bring: in the workspace and each repo it lists, never a folder it does not.
 git init -q "$GW/app"; printf 'app\t-\t-\tno\n' >> "$GW/repos.tsv"; mkdir -p "$GW/stray"; GP="$(cd "$GW" && pwd -P)"
 gcs() { j -r --arg w "$1" '$.results.filter((r) => r.id == "guardrails.clone-settings" && r.level == "note" && r.message.startsWith($w + " is ")).length' <<<"$out"; }
@@ -9774,14 +9789,15 @@ m=""; v="$(awk '/^## / {h = ($0 == "## Outside the shell"); next} h' "$KIT/docs/
 [[ -n "$v" ]] || fail "criterion 15: no section Outside the shell"
 for p in 1 2 3 4 5 6 7 8 9; do [[ "$(grep -o "\*\*P$p " <<<"$v" | wc -l | tr -d ' ')" == 1 ]] || m+=" P$p"; done
 for p in "Claude Code" Codex "Gemini CLI" "Qwen Code" Grok opencode Antigravity Cursor; do grep -q "^- \*\*$p\*\*" <<<"$v" || m+=" [$p]"; done
-for p in "branch protection" "token scopes" "trusted publishing" "MCP write denies" "file-tool denies" "admin settings file" 'sets its own `HOME`' "opencode 2.x" "cabinet config --hard-to-undo" "release config"; do
+for p in "branch protection" "token scopes" "trusted publishing" "MCP write denies" "file-tool denies" "admin settings file" 'sets its own `HOME`' "opencode 2.x" "cabinet config --hard-to-undo" "release config" \
+         "Not enforced, docs only: \`OPENCODE_CONFIG\` and \`XDG_CONFIG_HOME\`" "without it"; do
   grep -qF -- "$p" <<<"$v" || m+=" [$p]"
 done
 [[ -z "$m" ]] || fail "criterion 15: the section lacks:$m"
 # 17. The changelog names each new name; no doctor check ID of 38b059a is gone.
 v="$(awk '/^## /{k++; next} k == 1' "$KIT/CHANGELOG.md")"; m=""
 for p in guardrails.mcp guardrails.clone-settings .mcp.json .claude/settings.json .claude/settings.local.json .codex/config.toml .gemini/settings.json \
-         .cursor/mcp.json .cursor/cli.json CABINET_RUN_MCP_SERVERS "is not approved on this machine" CLAUDE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG XDG_CONFIG_HOME; do
+         .cursor/mcp.json .cursor/cli.json CABINET_RUN_MCP_SERVERS "is not approved on this machine" CLAUDE_CONFIG_DIR CODEX_HOME; do
   grep -qF -- "$p" <<<"$v" || m+=" [$p]"
 done
 [[ -z "$m" ]] || fail "criterion 17: the changelog lacks:$m"

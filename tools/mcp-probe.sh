@@ -64,7 +64,11 @@ run() {
   (cd "$W" && node "$KIT/scripts/lib.js" run-limited 120 "$@") > "$out/$n-$row.log" 2>&1 || st=$?
   for s in "$M"/*; do [[ -e "$s" ]] && got+="${got:+ }${s##*/}"; done
   local res="started: ${got:-none} (exit $st)"
-  [[ "$want" == - ]] || { [[ "$got" == "$want" ]] && res+="; as expected" || res+="; NOT as expected (wanted ${want// /, })"; }
+  # A tool that exits non-zero or prints an error may have stopped before it loaded anything: never a pass.
+  if [[ "$want" == - ]]; then :
+  elif ((st)) || grep -qiE '^(error|fatal)' "$out/$n-$row.log"; then res+="; unclear (the tool failed: see $n-$row.log)"
+  elif [[ "$got" == "$want" ]]; then res+="; as expected"
+  else res+="; NOT as expected (wanted ${want// /, })"; fi
   printf '%s\t%s\t%s\t%s\n' "$row" "${ver:-unknown}" "$(said "$*")" "$res" >> "$out/probe.tsv"
 }
 # said <command>: the command as written to the results, the key replaced by <key>.
@@ -87,7 +91,7 @@ for t in "${tools[@]}"; do
       printf '{"mcpServers": {"standin": %s}}\n' "$(srv standin)" > "$H/.claude.json"
       printf '{"mcpServers": {}}\n' > "$R/empty.json"; mkdir -p "$H/.claude"; printf '{"mcpServers": {"decoy": %s}}\n' "$(srv decoy)" > "$H/.claude/decoy.json"
       ANTHROPIC_API_KEY="$key" run claude-flag-control claude standin claude -p "$P"
-      ANTHROPIC_API_KEY="$key" run claude-flag claude "" claude -p --strict-mcp-config --mcp-config "$R/empty.json" "$P"
+      ANTHROPIC_API_KEY="$key" run claude-flag claude "" claude -p "$P" --strict-mcp-config --mcp-config "$R/empty.json"
       ANTHROPIC_API_KEY="$key" run claude-config-dir claude "" env CLAUDE_CONFIG_DIR="$O" claude -p "$P"
       lists claude-list claude standin decoy claude mcp list ;;
     qwen)
@@ -128,8 +132,9 @@ Results: $out/probe.tsv (one log per command beside it).
 
 Two steps need your own account, so this script does not run them. Each only reads:
 1. Account connectors (Claude Code): in your own terminal, in an empty folder,
-   claude -p --strict-mcp-config --mcp-config '{"mcpServers":{}}' "Name every MCP tool you can call, or say NONE."
-   and the same without the two flags. The first should name none of your account's connectors.
+   claude -p "Name every MCP tool you can call, or say NONE." --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+   and the same without the two flags (the prompt first: Claude Code reads every word after --mcp-config as a
+   config file). The first should name none of your account's connectors.
 2. Cursor: approve the stand-in (or any read-only server) in your own Cursor session, then in an empty folder
    cursor-agent -p --force "Name every MCP tool you can call, or say NONE."
    It should name none of them, since the kit never passes --approve-mcps.

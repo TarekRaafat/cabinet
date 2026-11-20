@@ -68,11 +68,11 @@ run_mcp_ok() { local LC_ALL=C re='^[A-Za-z0-9_][A-Za-z0-9_.-]*(,[A-Za-z0-9_][A-Z
 RUN_MCP_BAD="each server name must be letters, digits, _, . and - only, not starting with - or ., the names joined by commas with no spaces"
 # run_dirs_ok: false, naming it on stderr, when a variable that moves a tool's settings folder points anywhere but
 # where bootstrap writes that tool's rules, so a run would start with settings the kit did not write. Unset,
-# empty, or that same place (one trailing / aside) is fine.
+# empty, or that same place (one trailing / aside) is fine. OPENCODE_CONFIG and XDG_CONFIG_HOME are not checked: the
+# owner's probe of opencode 2.3.2 did not confirm where it reads its config (docs/guardrails.md, "Outside the shell").
 run_dirs_ok() {
   local v tool want p
-  for v in "CLAUDE_CONFIG_DIR|Claude Code|.claude" "CODEX_HOME|Codex|.codex" \
-           "OPENCODE_CONFIG|opencode|.config/opencode/opencode.json" "XDG_CONFIG_HOME|opencode and other tools|.config"; do
+  for v in "CLAUDE_CONFIG_DIR|Claude Code|.claude" "CODEX_HOME|Codex|.codex"; do
     want="$HOME/${v##*|}"; tool="${v#*|}"; tool="${tool%|*}"; v="${v%%|*}"
     p="${!v-}"
     [[ -z "$p" || "${p%/}" == "$want" || ( -e "$p" && "$p" -ef "$want" ) ]] && continue
@@ -390,7 +390,8 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
         echo "~/.claude.json could not be read for CABINET_RUN_MCP_SERVERS: no agent was started. Fix the file, or take the list off" >&2; exit 2
       fi
       cfg="$got"
-      claude -p --agent "$AGENT" --permission-mode auto --output-format json --strict-mcp-config --mcp-config "$cfg" ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$prompt" & tp=$!
+      # The prompt before --mcp-config: Claude Code reads every word after that option as another config file.
+      claude -p --agent "$AGENT" --permission-mode auto --output-format json ${mo[@]+"${mo[@]}"} ${eo[@]+"${eo[@]}"} "$prompt" --strict-mcp-config --mcp-config "$cfg" & tp=$!
       wait "$tp" ;;
     codex)    codex exec --json ${mo[@]+"${mo[@]}"} "$as_role" ;;
     # Headless agy denies what it cannot ask (--mode auto needs a plan that has it); skipping the

@@ -317,7 +317,6 @@ claude|Claude Code|.claude.json
 qwen|Qwen Code|.qwen/settings.json
 gemini|Gemini CLI|.gemini/settings.json
 codex|Codex|.codex/config.toml
-opencode|opencode|.config/opencode/opencode.json
 cursor|Cursor|.cursor/mcp.json
 EOF
 ((mcp_tools)) && note guardrails.mcp "account connectors are in no file the doctor can read: one added in a tool's app or account is not listed here, so check each tool's own list (docs/guardrails.md, \"Outside the shell\")"
