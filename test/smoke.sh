@@ -6594,10 +6594,11 @@ st=0; o="$(L delete-plan folder "$SS/o1/vendor/lib" 2>/dev/null)" || st=$?
 ((st == 3)) && [[ "$o" == $'keep\tunpushed\t./' ]] || fail "an unborn HEAD hid the unpushed commits: $st, $o"
 # A found repo's own clean or process filter never runs: git status there is skipped and the repo is
 # kept as uncommitted. filt <repo> <clean|process>: the filter, applied to every file, a tracked file
-# touched so status would rehash it; this git runs it there, or the test proves nothing.
+# touched so status would rehash it; this git runs it there, or the test proves nothing. The file is
+# touched before that check too: a status more than a second after the commit rehashes nothing.
 filt() {
   local a; a="$(git -C "$1" rev-parse --path-format=absolute --git-path info/attributes)"; mkdir -p "${a%/*}"
-  git -C "$1" config "filter.x.$2" "$T/dr-flt"; echo '* filter=x' > "$a"
+  git -C "$1" config "filter.x.$2" "$T/dr-flt"; echo '* filter=x' > "$a"; touch "$1/l"
   git -C "$1" status >/dev/null 2>&1; [[ -e "$T/dr-mark" ]] || fail "this git does not run a $2 filter, so the test proves nothing"
   rm -f "$T/dr-mark"; touch "$1/l"
 }
