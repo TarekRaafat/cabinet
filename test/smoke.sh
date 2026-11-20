@@ -2293,7 +2293,7 @@ if [[ "${0##*/}" == codex ]]; then
   case "$1 ${2:-}" in "debug models") echo '{"models":[{"slug":"m-std"}]}'; exit 0 ;; esac
   [[ "${1:-}" == exec ]] || { echo '{}'; exit 0; }
 fi
-while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model|--effort) shift 2 ;; -p|exec|--json) shift ;; *) prompt="$1"; shift ;; esac; done
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model|--effort|--mcp-config) shift 2 ;; -p|exec|--json|--strict-mcp-config) shift ;; *) prompt="$1"; shift ;; esac; done
 if [[ "${0##*/}" == codex ]]; then agent="$(printf '%s' "$prompt" | sed -n 's/^Act as the \([a-z-]*\) role: .*/\1/p')"; prompt="${prompt#*follow it as your instructions. }"; fi
 [[ -z "${FAKE_SLEEP:-}" ]] || { echo $$ > "$FS/fake.pid"; sleep "$FAKE_SLEEP"; }
 printf '%s\n' "$prompt" >> "$FS/prompts"
@@ -6030,7 +6030,7 @@ sed '/^## Open$/q' "$HW/HANDOFFS.md" > "$T/hr-head"
 cat > "$T/hrfakes/claude" <<'FAKE'
 #!/bin/bash
 agent="" prompt=""
-while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format) shift 2 ;; -p) shift ;; *) prompt="$1"; shift ;; esac; done
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--mcp-config) shift 2 ;; -p|--strict-mcp-config) shift ;; *) prompt="$1"; shift ;; esac; done
 printf '%s\n' "$prompt" | tr '\n' ' ' >> "$HC"; echo >> "$HC"
 id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
 if [[ -f "$HC.build" && "$agent" == backend && "$prompt" == "Pick up handoff"* ]]; then
