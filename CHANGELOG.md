@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.8.3 - Unreleased
+## 0.8.3 - 20 Nov 2026
 
 - A commit an agent makes as its role no longer carries another tool's attribution. The credit hook refuses a new commit made with `CABINET_AGENT` set when its last lines hold a `Co-authored-by` line other than Cabinet's own for that role, a `Claude-Session` line, or a line holding `Generated with`, in any case, and prints each line it refused; your own commits are never checked. Every run's prompt now ends by saying so, and `CABINET.md` tells an agent outside a run to commit as `CABINET_AGENT=<role> git commit` (with `CABINET_CREDIT=on` while credit roles are on) and never to type the credit line. Run `cabinet bootstrap` after updating, which installs the new credit hook (v9) in place of the earlier one (a hook of your own is left as it is).
 
