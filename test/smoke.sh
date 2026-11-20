@@ -3296,7 +3296,7 @@ cmp -s "$T/credit-mine" "$HK/prepare-commit-msg" || fail "bootstrap replaced the
 out="$(HOME="$CH" "$CW/bin/bootstrap.sh" 2>&1 || true)"
 cmp -s "$T/credit-v08" "$HK/prepare-commit-msg" && [[ -z "$(ls "$HK" | grep cabinet-v)" ]] || fail "bootstrap changed a credit hook whose version line is v08: $(ls "$HK")"
 grep -qF "differs, left as is: $HK/prepare-commit-msg" <<<"$out" && ! grep -q "bootstrap.sh: line" <<<"$out" || fail "bootstrap on a v08 credit hook: $(grep -F -e prepare-commit-msg -e 'bootstrap.sh: line' <<<"$out")"
-out="$( (cd "$CW" && "$F" doctor --json) 2>&1 >/dev/null)"; ! grep -q "doctor.sh: line" <<<"$out" || fail "the doctor on a v08 credit hook: $out"
+out="$( (cd "$CW" && "$F" doctor --json) 2>&1 >/dev/null || true)"; ! grep -q "doctor.sh: line" <<<"$out" || fail "the doctor on a v08 credit hook: $out"
 # A prepare-commit-msg that is a symlink to another file: bootstrap leaves the link and its target as they are.
 printf '#!/bin/sh
 # linked
@@ -4787,12 +4787,16 @@ SHIM
     seven > "$T/l7-$mm"; [[ "$(wc -l < "$T/l7-$mm" | tr -d ' ')" == 5 ]] || fail "the baseline with $r: $(cat "$T/l7-$mm")"
   done
   cp "$T/l-lib.sh" "$LW/bin/lib.sh"
+  # Today's prompts end with the attribution sentence the baseline predates (foreign-attribution, Rule 6): each of
+  # the five run lines has it once, and the rest of the line is the baseline's.
+  local cs='Commit with no Co-authored-by, Generated with or other attribution line: Cabinet adds its own credit line.'
   for mm in "" m-main; do
     if [[ -n "$mm" ]]; then le "$LW" CABINET_MODEL "CABINET_MODEL=\"$mm\""; else le "$LW" CABINET_MODEL; fi
     for ml in absent ""; do for lr in absent chief-of-staff; do
       if [[ "$ml" == absent ]]; then le "$LW" CABINET_MODEL_LIGHT; else le "$LW" CABINET_MODEL_LIGHT 'CABINET_MODEL_LIGHT=""'; fi
       if [[ "$lr" == absent ]]; then le "$LW" CABINET_LIGHT_ROLES; else le "$LW" CABINET_LIGHT_ROLES "CABINET_LIGHT_ROLES=\"$lr\""; fi
-      seven > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
+      seven > "$T/l7-raw"; [[ "$(grep -cF " $cs]" "$T/l7-raw")" == 5 ]] || fail "the run lines with $r lack the attribution sentence: $(cat "$T/l7-raw")"
+      awk -v s=" $cs]" '{ i = index($0, s); print i ? substr($0, 1, i - 1) "]" substr($0, i + length(s)) : $0 }' "$T/l7-raw" > "$T/l7-now"; cmp -s "$T/l7-$mm" "$T/l7-now" || fail "the run lines with $r, model '$mm', light model $ml, roles $lr: $(diff "$T/l7-$mm" "$T/l7-now")"
     done; done
   done
 }
