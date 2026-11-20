@@ -127,7 +127,7 @@ The brief starts with the sign-off queue: each decision only you can make, as a 
 
 ## 8. Ship
 
-When qa and security have recorded PASS on a piece of work, you push it from your own terminal. The push gate asks you to confirm. No agent can push, merge, release or publish.
+When qa and security have recorded PASS on a piece of work, you push it from your own terminal. The push gate asks you to confirm. No command an agent runs can push, merge, release or publish.
 
 ## Where next
 

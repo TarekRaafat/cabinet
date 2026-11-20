@@ -86,9 +86,9 @@ for t in "${tools[@]}"; do
     claude)
       printf '{"mcpServers": {"standin": %s}}\n' "$(srv standin)" > "$H/.claude.json"
       printf '{"mcpServers": {}}\n' > "$R/empty.json"; mkdir -p "$H/.claude"; printf '{"mcpServers": {"decoy": %s}}\n' "$(srv decoy)" > "$H/.claude/decoy.json"
-      run claude-flag-control claude standin env ANTHROPIC_API_KEY="$key" claude -p "$P"
-      run claude-flag claude "" env ANTHROPIC_API_KEY="$key" claude -p --strict-mcp-config --mcp-config "$R/empty.json" "$P"
-      run claude-config-dir claude "" env ANTHROPIC_API_KEY="$key" CLAUDE_CONFIG_DIR="$O" claude -p "$P"
+      ANTHROPIC_API_KEY="$key" run claude-flag-control claude standin claude -p "$P"
+      ANTHROPIC_API_KEY="$key" run claude-flag claude "" claude -p --strict-mcp-config --mcp-config "$R/empty.json" "$P"
+      ANTHROPIC_API_KEY="$key" run claude-config-dir claude "" env CLAUDE_CONFIG_DIR="$O" claude -p "$P"
       lists claude-list claude standin decoy claude mcp list ;;
     qwen)
       mkdir -p "$H/.qwen"; printf '{"mcpServers": {"a": %s, "b": %s, "c": %s}}\n' "$(srv a)" "$(srv b)" "$(srv c)" > "$H/.qwen/settings.json"

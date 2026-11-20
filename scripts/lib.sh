@@ -63,8 +63,9 @@ CABINET_RUNNER_CMD="${CABINET_RUNNER_CMD:-}"
 # The MCP servers the kit's runs may load (docs/guardrails.md, "Outside the shell"): server names joined by
 # commas, none when empty. Used only once its exact text is approved on this machine, as CABINET_RUNNER_CMD is.
 CABINET_RUN_MCP_SERVERS="${CABINET_RUN_MCP_SERVERS:-}"
-run_mcp_ok() { local LC_ALL=C re='^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$'; [[ "$1" =~ $re ]]; }
-RUN_MCP_BAD="each server name must be letters, digits, _, . and - only, the names joined by commas with no spaces"
+# A name starting with - or . is refused: after --allowed-mcp-server-names, a word starting with - is the next option.
+run_mcp_ok() { local LC_ALL=C re='^[A-Za-z0-9_][A-Za-z0-9_.-]*(,[A-Za-z0-9_][A-Za-z0-9_.-]*)*$'; [[ "$1" =~ $re ]]; }
+RUN_MCP_BAD="each server name must be letters, digits, _, . and - only, not starting with - or ., the names joined by commas with no spaces"
 # run_dirs_ok: false, naming it on stderr, when a variable that moves a tool's settings folder points anywhere but
 # where bootstrap writes that tool's rules, so a run would start with settings the kit did not write. Unset,
 # empty, or that same place (one trailing / aside) is fine.
@@ -375,7 +376,7 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   ( export CABINET_AGENT="$AGENT" CABINET_CREDIT="$credit" CABINET_CREDIT_ADDRESS="$address"; unset CABINET_EFFORT
   case "$CABINET_RUNNER" in
     # Only the approved MCP servers (none by default), in a file readable by this user only, named by its
-    # path: a definition can hold a token. The file goes when the subshell ends, however it ends.
+    # path: a definition can hold a token. The file goes when the subshell ends or is stopped.
     claude)
       local cfg="" tp="" got ms=0
       trap 'rm -f "$cfg"' EXIT

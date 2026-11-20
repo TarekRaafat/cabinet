@@ -84,7 +84,7 @@ module.exports = {
         ["Independent review", "qa and security check the work. The role that built it never verifies it, and either one can hold it back."],
         ["Your morning brief", "Every decision only you can make waits in one sign-off queue: a plain question, the options, the experts' recommendations, and whether it can be undone."],
         ["One line from you", "You answer in one message. The team puts each answer where it belongs and carries on."],
-        ["Only you push", "No agent command can push, merge on GitHub, release or publish. In your Cabinet workspace and the repos it lists, the push gate asks you at your own terminal."],
+        ["Only you push", "No command an agent runs can push, merge on GitHub, release or publish. In your Cabinet workspace and the repos it lists, the push gate asks you at your own terminal."],
       ],
       verdicts: [
         "- Verdict: qa PASS 2026-10-22 8a71d04 specs/qa/2026-10-22-checkout.md",

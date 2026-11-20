@@ -4574,7 +4574,7 @@ grep -qF "$am It never runs in an unattended run, where the hooks refuse it." <<
   && grep -qF 'Once a handoff or verdict names a commit, a fix is a new commit: a commit that fails review is reverted, or fixed in a follow-up commit, never amended.' <<<"$c" \
   && grep -qF "$am Once a handoff or verdict names a commit, a fix is a new commit." "$KIT/AGENTS.md" || fail "the amend rule is not in core/CABINET.md and the kit's rule 12"
 for f in docs/guardrails.md docs/concepts.md CHANGELOG.md; do grep -qF 'CABINET_AMEND_AS=<role> git commit --amend' "$KIT/$f" || fail "$f does not name CABINET_AMEND_AS"; done
-grep -qxF '4. **You push** what has passed review, from your own terminal. No agent can push, merge on GitHub, release or publish.' "$KIT/README.md" || fail "README step 4 is not the owner's sentence"
+grep -qxF '4. **You push** what has passed review, from your own terminal. No command an agent runs can push, merge on GitHub, release or publish.' "$KIT/README.md" || fail "README step 4 is not the owner's sentence"
 n="$(tr '\n' ' ' < "$KIT/docs/concepts.md")"
 grep -qF 'One exception: an agent may amend its own newest commit without asking, while it is not pushed and no handoff, verdict or note names it; once one does, a fix is a new commit.' <<<"$n" \
   && grep -qF 'an amend with anything staged that is not its own) needs your explicit ask' <<<"$n" && grep -qF 'refuse every amend and every rebase there' <<<"$n" || fail "docs/concepts.md does not carry the amend rule"
@@ -9663,7 +9663,13 @@ grun; grefused 'CABINET_RUN_MCP_SERVERS in cabinet.env is not approved on this m
 # 7. A name with a shell character: refused before anything runs.
 genv CABINET_RUN_MCP_SERVERS "'gh;touch pwned'"
 grun; grefused CABINET_RUN_MCP_SERVERS 'letters, digits, _, . and -' || fail "criterion 7 (run): exit $st: $(cat "$T/go.err")"
-genv CABINET_RUN_MCP_SERVERS
+# S1: a name starting with - would be read as a Qwen Code option after --allowed-mcp-server-names, so it is refused.
+genv CABINET_RUNNER '"qwen"'
+for v in -y a,--yolo .x; do
+  genv CABINET_RUN_MCP_SERVERS "'$v'"; gapprove "$v"
+  grun; grefused CABINET_RUN_MCP_SERVERS 'not starting with - or .' || fail "criterion 7 ($v, run): exit $st: $(cat "$T/go.err")"
+done
+genv CABINET_RUNNER '"claude"'; genv CABINET_RUN_MCP_SERVERS
 # 8, 9. Each settings-folder variable: refused when it points elsewhere, a run when it points where bootstrap writes.
 mkdir -p "$T/other"
 for v in CLAUDE_CONFIG_DIR CODEX_HOME OPENCODE_CONFIG XDG_CONFIG_HOME; do
@@ -9689,7 +9695,7 @@ for m in "Claude Code: MCP server github in|the kit's runs do not load it" "Clau
   j -e --arg a "${m%%|*}" --arg b "${m#*|}" '$.results.some((r) => r.id == "guardrails.mcp" && r.level == "note" && r.message.includes($a) && r.message.includes($b))' <<<"$out" >/dev/null \
     || fail "criterion 10: no note with $m: $(j -r '$.results.filter((r) => r.id == "guardrails.mcp").map((r) => r.message).join("\n")' <<<"$out")"
 done
-[[ "$(mcp 'account connectors are in no file the doctor can read')" == 1 && "$(mcp 'runs start with every MCP server its config holds')" == 0 ]] || fail "criterion 10: the connectors or runner note"
+[[ "$(j -r '$.results.filter((r) => r.message.includes("account connectors are in no file the doctor can read")).length' <<<"$out")" == 1 && "$(mcp 'runs start with every MCP server its config holds')" == 0 ]] || fail "criterion 10: the connectors or runner note"
 [[ $ds == "$S1" ]] && nofix guardrails.mcp || fail "criterion 10: a FIX, or exit status $ds, not $S1 as with no fixture configs"
 genv CABINET_RUN_MCP_SERVERS '"github"'; gdx
 [[ "$(mcp "Claude Code: MCP server github in ~/.claude.json; the kit's runs load it (approved)")" == 1 && "$(mcp "Claude Code: MCP server slack in ~/.claude.json; the kit's runs do not load it")" == 1 ]] || fail "criterion 10: github approved"
@@ -9797,21 +9803,40 @@ done
 
 # 7 (bootstrap). The bad list is never asked about; bootstrap installs everything else and exits 1: the files it
 # leaves equal those of the same bootstrap with no list (digits as #, cabinet.local.env aside), and no approval.
-gboot() {  # gboot <folder> <list or empty>: a home and a workspace in it, then bootstrap at a terminal answering y
-  local d="$1"; mkdir -p "$d/home"
+gboot() {  # gboot <folder> <list or empty> [answer]: a home and a workspace in it, then bootstrap at a terminal answering y (or the answer)
+  local d="$1" a="${3:-y}"; mkdir -p "$d/home"
   export HOME="$d/home" GIT_CONFIG_GLOBAL="$d/home/.gitconfig"
   printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
   "$F" new "$d/ws" --yes --runner claude >/dev/null || fail "criterion 7: new in $d"
   [[ -z "$2" ]] || { printf "CABINET_RUN_MCP_SERVERS='%s'\n" "$2" >> "$d/ws/cabinet.env"; git -C "$d/ws" commit -qam list; }
-  in_tty_typed "$(printf 'y\n%.0s' $(seq 20))" "$d/st" "$d/ws/bin/bootstrap.sh" > "$d/out" 2>&1
+  in_tty_typed "$(for i in $(seq 20); do echo "$a"; done)" "$d/st" "$d/ws/bin/bootstrap.sh" > "$d/out" 2>&1
   (cd "$d" && find home ws -path '*/.git' -prune -o -print | grep -v '/cabinet\.local\.env$' | sed 's/[0-9][0-9]*/#/g' | sort -u) > "$d/files"
 }
 gboot "$T/go7a" 'gh;touch pwned'; gboot "$T/go7b" ""
 [[ "$(cat "$T/go7a/st")" != 0 && "$(cat "$T/go7b/st")" == 0 ]] || fail "criterion 7 (bootstrap): exit $(cat "$T/go7a/st") with the bad list, $(cat "$T/go7b/st") without: $(tail -5 "$T/go7a/out")"
 grep -qF CABINET_RUN_MCP_SERVERS "$T/go7a/out" && grep -qF 'letters, digits, _, . and -' "$T/go7a/out" || fail "criterion 7 (bootstrap): $(grep -i mcp "$T/go7a/out")"
-! grep -F CABINET_RUN_MCP_SERVERS "$T/go7a/out" | grep -q 'Approve' || fail "criterion 7 (bootstrap): it asked about the list"
+[[ "$(grep -o '\[y/N\]' "$T/go7a/out" | wc -l)" == "$(grep -o '\[y/N\]' "$T/go7b/out" | wc -l)" ]] || fail "criterion 7 (bootstrap): it asked about the list"
 diff "$T/go7a/files" "$T/go7b/files" >/dev/null || fail "criterion 7 (bootstrap): other files: $(diff "$T/go7a/files" "$T/go7b/files")"
 [[ -z "$(find "$T/go7a" "$T/go7b" -name pwned)" ]] && ! grep -q CABINET_APPROVED "$T/go7a/ws/cabinet.local.env" 2>/dev/null || fail "criterion 7 (bootstrap): pwned, or an approval written"
+# S1 at bootstrap: a name starting with - is never asked about either, and bootstrap exits non-zero.
+gboot "$T/go7e" 'a,--yolo'
+[[ "$(cat "$T/go7e/st")" != 0 ]] && grep -qF 'not starting with - or .' "$T/go7e/out" && ! grep -q CABINET_APPROVED "$T/go7e/ws/cabinet.local.env" 2>/dev/null \
+  && [[ "$(grep -o '\[y/N\]' "$T/go7e/out" | wc -l)" == "$(grep -o '\[y/N\]' "$T/go7b/out" | wc -l)" ]] || fail "criterion 7 (a,--yolo, bootstrap): exit $(cat "$T/go7e/st"): $(tail -5 "$T/go7e/out")"
+# The owner's one way to approve a list: bootstrap's question at a terminal. y writes one approval and a run then
+# loads github; n writes none and a run is refused.
+gboot "$T/go7c" github; gboot "$T/go7d" github n
+for d in go7c go7d; do grep -qF "CABINET_RUN_MCP_SERVERS in cabinet.env is the MCP servers the kit's runs would load:" "$T/$d/out" || fail "the list question ($d): $(tail -5 "$T/$d/out")"; done
+[[ "$(grep -c '^CABINET_APPROVED=' "$T/go7c/ws/cabinet.local.env" 2>/dev/null)" == 1 ]] && grep -qF 'approved CABINET_RUN_MCP_SERVERS in cabinet.env on this machine' "$T/go7c/out" || fail "the list approved: $(tail -5 "$T/go7c/out")"
+grep -qF "not approved: CABINET_RUN_MCP_SERVERS in cabinet.env, so the kit's runs start no agent until it is approved" "$T/go7d/out" && ! grep -q CABINET_APPROVED "$T/go7d/ws/cabinet.local.env" 2>/dev/null || fail "the list not approved: $(tail -5 "$T/go7d/out")"
+v="$GW"; p="$GL"; m="$GH"
+for d in go7c go7d; do
+  GH="$T/$d/home" GW="$T/$d/ws" GL="$T/$d/home/$LOGS/ws/brief.log"; export HOME="$GH" GIT_CONFIG_GLOBAL="$GH/.gitconfig"
+  fix_claude; sedi 's/^QUIET_DAYS=.*/QUIET_DAYS="0"/' "$GW/jobs/brief.job"; grun
+  if [[ $d == go7c ]]; then
+    [[ $st == 0 ]] && j -e 'Object.keys($.mcpServers).join() == "github"' "$GA.copy" >/dev/null || fail "the list approved at bootstrap: exit $st: $(cat "$GA.copy" 2>/dev/null); $(cat "$T/go.err")"
+  else grefused 'CABINET_RUN_MCP_SERVERS in cabinet.env is not approved on this machine' || fail "the list not approved at bootstrap: exit $st: $(cat "$T/go.err")"; fi
+done
+GW="$v"; GL="$p"; GH="$m"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
   return 0   # a last "check && fail" line must not end the run
 }

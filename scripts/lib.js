@@ -2524,7 +2524,7 @@ function wsFacts(ws, logdir, dollars, tokens) {
 // hold a token, and nothing planted there is followed), and its path printed. No names: no servers, the file not
 // read. Exit 3, printing the names the file does not define, before anything is written; 4 when it cannot be read.
 function mcpConfig(file, names) {
-  const want = (names || "").split(",").filter(Boolean), pick = {};
+  const want = (names || "").split(",").filter(Boolean), pick = Object.create(null);
   if (want.length) {
     let all;
     try { all = JSON.parse(fs.readFileSync(file, "utf8")).mcpServers; } catch (e) { die("", 4); }
