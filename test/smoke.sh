@@ -5526,9 +5526,9 @@ local KEYT="probe-test-$RANDOM$RANDOM-$(date +%s)$RANDOM"
 mkdir -p "$PB" "$T/gp-tmp"
 for m in claude grok; do cat > "$PB/$m" <<'FAKE'
 #!/bin/bash
-# The prompt: the word after -p (grok), else the last word (claude).
-p="" prev=""; for a in "$@"; do [[ "$prev" == -p ]] && p="$a"; prev="$a"; done
-[[ -n "$p" && "$p" != --* ]] || p="${*: -1}"
+# The prompt: the word after -p (grok), else the last word that is neither an option nor --mcp-config's value (claude).
+p="" prev="" last=""; for a in "$@"; do [[ "$prev" == -p ]] && p="$a"; [[ "$a" == -* || "$prev" == --mcp-config ]] || last="$a"; prev="$a"; done
+[[ -n "$p" && "$p" != --* ]] || p="$last"
 # FAKE_INSPECT: bash lists a skipped command rule, read only a skipped file rule, drop loads nothing, text is not JSON.
 case "$1" in --version) echo "fake $(basename "$0") 1.0"; exit 0 ;;
   inspect) case "${FAKE_INSPECT:-}" in
