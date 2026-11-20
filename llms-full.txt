@@ -2591,7 +2591,7 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `guardrails.clone-settings` also names a cloned project's `.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`, `.codex/config.toml`, `.gemini/settings.json`, `.cursor/mcp.json` and `.cursor/cli.json`, in the workspace and each repo it lists. Still a note.
 - `cabinet repo add` lists the repo's `.github/workflows/` under "Hard to undo" in `AGENTS.md` (once, and not when you turned the list off), since a workflow can publish on your next push. `cabinet config` suggests it for a repo that has that folder and accepts it for one that does not yet. A release config has no one file name across tools: add yours with `cabinet config --hard-to-undo`. New workspaces say so under "Hard to undo". `cabinet repo remove` takes that line out again.
 - The guardrails page has a new section, "Outside the shell": each way an agent can reach GitHub, npm or another service without a shell command, what the kit covers for each tool, what no rule covers, and the server-side settings that are the hard boundary (branch protection or rulesets, read-only token scopes, npm two-factor or trusted publishing).
-- A run stopped by a signal (TERM, INT or HUP) passes it on to the agent tool at once, with or without a time limit.
+- A run stopped by a signal (TERM, INT or HUP) passes it on to the agent tool at once, with or without a time limit, and leaves no temporary file behind, also when the tool ignores TERM until the time limit ends it.
 
 ## 0.8.3 - 20 Nov 2026
 

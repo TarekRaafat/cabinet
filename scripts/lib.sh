@@ -368,8 +368,10 @@ run_agent() {  # run_agent [<model> <the file that set it>]: a job's MODEL, else
   local rout st=0 sp=""; rout="$(mktemp)"
   # The run's subshell starts in the background and is waited on, so a TERM, INT or HUP to this shell is
   # passed on at once, with or without a time limit, and the claude runner removes its --mcp-config file.
-  # Set before the subshell starts; the caller's EXIT trap (its lock) still runs on the exit.
-  trap 'kill -TERM "$sp" 2>/dev/null; wait "$sp" 2>/dev/null; rm -f "$rout"; exit 143' TERM INT HUP
+  # Set before the subshell starts; the caller's EXIT trap (its lock) still runs on the exit. The file goes
+  # first: under set -e (job.sh) a wait that returns the run's status ends the shell, and a tool deaf to TERM
+  # keeps the wait going until the time limit's KILL.
+  trap 'rm -f "$rout"; kill -TERM "$sp" 2>/dev/null; wait "$sp" 2>/dev/null || true; exit 143' TERM INT HUP
   # In a subshell, so the caller keeps none of the run's variables. The model, when there is one, is its
   # own argument right after the tool's --model option, before the prompt (docs/agent-setup.md); the
   # effort likewise after the model. CABINET_EFFORT is for a custom runner only.

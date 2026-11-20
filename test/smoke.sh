@@ -9629,9 +9629,11 @@ fix_claude; genv CABINET_RUN_MCP_SERVERS '"github"'
 sedi '/^TIMEOUT=/d' "$GW/jobs/brief.job"; echo 'TIMEOUT="1"' >> "$GW/jobs/brief.job"
 grun CABINET_TEST_MINUTE=2 GO_SLEEP=30; p="$(cat "$GA.path" 2>/dev/null)"; sleep 2
 [[ $st != 0 ]] && grep -qF 'stopped after 1 min' "$T/go.err" && [[ -n "$p" && ! -e "$p" ]] || fail "criterion 2 (time limit): exit $st, $p: $(cat "$T/go.err")"
+[[ "$(ls -A "$GT")" == "$before" ]] || fail "criterion 2 (time limit): left in TMPDIR: $(ls -A "$GT")"
 # N4: a tool deaf to TERM is gone after the watchdog's KILL.
 grun CABINET_TEST_MINUTE=2 GO_SLEEP=60 GO_DEAF=1; pid="$(cat "$GA.pid" 2>/dev/null)"; p="$(cat "$GA.path" 2>/dev/null)"; sleep 2
 [[ $st != 0 && -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null && [[ ! -e "$p" ]] || { kill -9 "$pid" 2>/dev/null; fail "N4: the deaf tool $pid outlived the limit, or $p is left"; }
+[[ "$(ls -A "$GT")" == "$before" ]] || fail "N4: left in TMPDIR: $(ls -A "$GT")"
 # 2 (E13, B1). TERM to bin/job.sh, under a limit and with none: it returns within 5 seconds, the tool and the file gone.
 for v in 1 0; do
   sedi 's/^TIMEOUT=.*/TIMEOUT="'$v'"/' "$GW/jobs/brief.job"
