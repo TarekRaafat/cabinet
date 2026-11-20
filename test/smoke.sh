@@ -9794,6 +9794,10 @@ for p in "branch protection" "token scopes" "trusted publishing" "MCP write deni
   grep -qF -- "$p" <<<"$v" || m+=" [$p]"
 done
 [[ -z "$m" ]] || fail "criterion 15: the section lacks:$m"
+# No doc still says a run is refused for OPENCODE_CONFIG or XDG_CONFIG_HOME (docs only since fb82f21).
+v="$(cd "$KIT" && grep -nE '`(OPENCODE_CONFIG|XDG_CONFIG_HOME)`[^.]*points anywhere' docs/*.md README.md llms-full.txt site/copy.js)" && fail "criterion 8, docs only: a doc still refuses them: ${v:0:200}"
+grep -qF "Not enforced, docs only: \`OPENCODE_CONFIG\` and \`XDG_CONFIG_HOME\`" "$KIT/docs/commands.md" || fail "criterion 8, docs only: docs/commands.md does not say so"
+grep -qF "Codex and Cursor runs load every server they have" "$KIT/docs/troubleshooting.md" || fail "criterion 10: troubleshooting's guardrails.mcp row still names opencode"
 # 17. The changelog names each new name; no doctor check ID of 38b059a is gone.
 v="$(awk '/^## /{k++; next} k == 1' "$KIT/CHANGELOG.md")"; m=""
 for p in guardrails.mcp guardrails.clone-settings .mcp.json .claude/settings.json .claude/settings.local.json .codex/config.toml .gemini/settings.json \
