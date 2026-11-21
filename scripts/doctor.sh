@@ -589,6 +589,20 @@ done < <(cd "$WS" && awk '
 ' <<<"$htext" 2>/dev/null)
 [[ -z "$notsmall" ]] && ok handoffs.small "every small task that passed stayed small" \
   || bad handoffs.small "handoffs marked small that were not: $notsmall (route the work again from a spec)"
+# Work handoff run takes for a role that is not a builder, done with no review entry though its commits change
+# a critical area (readiness's unreviewed; HANDOFFS.md only, never the archives). A note: the role hands on.
+unrev=""
+if [[ -n "$(critical_areas)" ]]; then
+  while IFS=$'\t' read -r sid sareas; do
+    [[ -n "$sid" ]] || continue
+    sareas="$(tr ',' '\n' <<<"$sareas" | while IFS= read -r a; do
+      critical_areas | awk -F'\t' -v a="$a" '$1 == a { r = $3; gsub(/ /, ", ", r); print a ": " r; exit }'; done | paste -sd ';' - | sed 's/;/; /g')"
+    unrev="${unrev:+$unrev, }$sid ($sareas)"
+  done < <(readiness 2>/dev/null | json -r --each 'Object.keys($).filter((i) => !$[i].archived && ($[i].unreviewed ?? []).length).sort(idOrder).map((i) => i + "\t" + $[i].unreviewed.join(","))' 2>/dev/null)
+  unrev="$(shown "$unrev")"
+fi
+[[ -z "$unrev" ]] && ok handoffs.unreviewed "no done work skips the review its critical area asks for" \
+  || note handoffs.unreviewed "done with no review, though their commits change a critical area: $unrev (the role that did it hands on with bin/handoff.sh add --to <reviewers> --depends-on <ID>)"
 [[ -z "$vnev" ]] && ok handoffs.evidence "every qa PASS has evidence" \
   || bad handoffs.evidence "qa PASS on handoffs with no evidence: $vnev (the builder adds an Evidence line, or qa changes its verdict to BLOCK)"
 

@@ -49,6 +49,8 @@ Each repo has one owning agent, listed in the team table in `AGENTS.md`, and so 
 
 Some parts of a project cost more when they go wrong: payments, personal data, a public API, data imports, a store listing, a pricing page. The kit does not know which; you declare them under "Critical areas" in `AGENTS.md`, each with its paths, the reviewers it needs as well as the usual ones, the evidence they must see, and optionally a check, a script of your own in `tools/` that proves what a script can (a replay of saved inputs, an API comparison, a load test). Work touching an area, by its commits or by its spec's `areas`, is not ready to push until those reviewers pass, and a reviewer's PASS counts only when the check passes; its output is kept as evidence. Nothing changes for a project that declares none.
 
+An area can cover the workspace's own files too, with a `workspace/...` path, so work that is not code gets the review you want: `` | design | `workspace/specs/design/` | qa | the draft | none | `` asks qa to review design-lead's drafts. `cabinet handoff add --small` to a role whose area it covers says so when it is filed, `cabinet handoff run` stops such work when it is done with no review depending on it, `cabinet handoff archive` keeps it under Open, and `cabinet doctor` notes it (`handoffs.unreviewed`) until the role that did it hands it on with `--depends-on <ID>`.
+
 | Project | Area | Also reviewed by | Evidence | Check |
 |---|---|---|---|---|
 | SaaS with payments | billing | security, finance | a test payment in the sandbox | a sandbox script |

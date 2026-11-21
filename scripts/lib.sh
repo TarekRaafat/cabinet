@@ -577,11 +577,14 @@ readiness() {
   local -a arch
   arch=(); for n in "$WS"/handoffs/archive-*.md; do [[ -f "$n" ]] && arch+=("$n"); done
   # Critical areas, only when the project declares any: each named in the specs, and the areas the
-  # commits of open entries' verdicts change.
+  # commits of open entries' verdicts change, and those of each word on a "- Status: done" line that is 7
+  # to 40 hex characters not joined to a letter, digit or - (buildCommits' rule: an ID or a date is never
+  # one, and a word that is no commit gives no row).
   local areas="" touch="" sareas="" c a
   areas="$(critical_areas)"
   if [[ -n "$areas" ]]; then
-    for c in $(grep -hoE '^- Verdict: [a-z0-9-]+ [A-Z]+ [0-9-]+ [0-9a-f]+(,[0-9a-f]+)*' "$WS/HANDOFFS.md" 2>/dev/null | awk '{ print $NF }' | tr ',' '\n' | sort -u); do
+    for c in $( { grep -hoE '^- Verdict: [a-z0-9-]+ [A-Z]+ [0-9-]+ [0-9a-f]+(,[0-9a-f]+)*' "$WS/HANDOFFS.md" 2>/dev/null | awk '{ print $NF }' | tr ',' '\n'
+        grep -h '^- Status: done' "$WS/HANDOFFS.md" 2>/dev/null | tr -c '0-9A-Za-z-' '\n' | grep -xE '[0-9a-f]{7,40}'; } | sort -u); do
       while IFS= read -r a; do [[ -n "$a" ]] && touch+="$c"$'\t'"$a"$'\n'; done < <(areas_hit "$c")
     done
     for n in "$WS"/specs/*.md; do
@@ -594,12 +597,19 @@ readiness() {
 # repo_dirs: each repo's main folder, one per line, where the branch the owner pushes is checked out
 # (readiness, and build_commits; sessions: lib.js readiness).
 repo_dirs() { local name url files link path; while IFS=$'\t' read -r name url files link path; do printf '%s\n' "$(repo_dir "$path")"; done < <(repos 2>/dev/null); }
-# build_commits <ID>: the commits a build's status line names, and the ones no ready open review of it
-# covers, as {"named": [...], "uncovered": [...]}, with readiness's JSON on stdin (lib.js build-commits).
+# build_commits <ID> [workspace]: the commits a build's status line names, and the ones no ready open review
+# of it covers, as {"named": [...], "uncovered": [...]}, with readiness's JSON on stdin (lib.js build-commits).
+# With workspace (work for a role that is not a builder), the workspace's commits count too, and the output
+# gains "workspace": the named commits that are the workspace's.
 build_commits() {
-  local n; local -a arch
+  local n dirs; local -a arch
   arch=(); for n in "$WS"/handoffs/archive-*.md; do [[ -f "$n" ]] && arch+=("$n"); done
-  REPODIRS="$(repo_dirs)" node "$LIBJS" build-commits "$1" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+  dirs="$(repo_dirs)"
+  if [[ "${2:-}" == workspace ]]; then
+    REPODIRS="$WS"$'\n'"$dirs" WSDIR="$WS" node "$LIBJS" build-commits "$1" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+  else
+    REPODIRS="$dirs" WSDIR="" node "$LIBJS" build-commits "$1" "$WS/HANDOFFS.md" ${arch[@]+"${arch[@]}"}
+  fi
 }
 # builds_repos <name>: true when the name is a repo in repos.tsv, a kit builder, or the owning agent of
 # a repo in the team table: whoever it is, work sent to it is built (.cabinet/rules/ready-to-build.md).
@@ -611,9 +621,9 @@ builds_repos() {
       a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (index(names, " " a " ")) print o
     }' "$WS/AGENTS.md" 2>/dev/null)
 }
-# run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused or ready to
-# push), or nothing; for handoff run --scheduled and spec run.
-run_result() { grep -E '^(Stopped|Paused|.* is ready to push)' | tail -1; }
+# run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused, ready to
+# push, or done for work with nothing to push), or nothing; for handoff run --scheduled and spec run.
+run_result() { grep -E '^(Stopped|Paused|.* is ready to push|H-[0-9]+-[0-9]+ is done[:;])' | tail -1; }
 # Run estimates (lib.js estimate): worked out from the log folder each time one is shown; nothing is stored,
 # and a failure here prints nothing and never stops a run. A run's log gains "run started" before its first
 # step and "<role> took <D>" after each; an Expected line goes into the log as it is, with no "=== ", so it is

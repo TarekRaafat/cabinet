@@ -112,6 +112,10 @@ const ownerCase = (to) => to.replace(OWNER_RE, (m, a, b) => a + b.toLowerCase())
 // Depends on. handoff run takes the open ones; the tier's step up counts the BLOCK and CHANGES on all of them.
 const reviewsOf = (rd, id) => Object.keys(rd).filter((k) => k != id && !rd[k].small && rd[k].builder === null
   && new RegExp("(^|[^0-9A-Za-z-])" + id + "($|[^0-9])").test(rd[k].depends_on));
+// statusWords(rest): each word of a status line's text of 7 to 40 characters, all 0-9a-f and not joined to a
+// letter, digit or - (so an ID's or a date's digits are never one), once each, as written (buildCommits,
+// readiness; readiness() in lib.sh splits the same way).
+const statusWords = (rest) => [...new Set([...(rest || "").matchAll(/(?<![0-9A-Za-z-])[0-9a-f]{7,40}(?![0-9A-Za-z-])/g)].map((m) => m[0]))];
 // covers(have, want): every commit in want is one in have, short and long hashes matching (readiness, build-commits).
 const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h) || h.startsWith(w)));
 // build-commits <ID> <HANDOFFS.md> [<archive>...]: what handoff run and spec run check before ready to push,
@@ -120,7 +124,10 @@ const covers = (have, want) => want.every((w) => have.some((h) => w.startsWith(h
 // all 0-9a-f and not joined to a letter, digit or - (so an ID's or a date's digits are never one), that git
 // finds as a commit in a product repo, as written: git rev-parse resolves it to an object ID that starts
 // with the word, so a branch or tag named in hex (deadbeef, 2026111) is no commit; uncovered: the named ones
-// no ready open review of it covers. Each word goes to git as one argument, never through a shell.
+// no ready open review of it covers. Each word goes to git as one argument, never through a shell. With WSDIR
+// set (work for a role that is not a builder, the workspace first in REPODIRS), also workspace: the named
+// commits that are the workspace's, by commit_files' rule in lib.sh: a commit belongs to the first folder with
+// a local branch that contains it, else to the first that has it.
 function buildCommits(id, ...files) {
   const rd = JSON.parse(fs.readFileSync(0, "utf8"));
   let rest = "";
@@ -128,12 +135,18 @@ function buildCommits(id, ...files) {
     const e = handoffEntries(read(file).split("\n"), n > 0).find((x) => x.id === id);
     if (e && !rest) rest = statusOf(e.lines).rest;
   });
-  const dirs = env("REPODIRS").split("\n").filter(Boolean), named = [];
-  for (const [w] of rest.matchAll(/(?<![0-9A-Za-z-])[0-9a-f]{7,40}(?![0-9A-Za-z-])/g)) {
-    if (!named.includes(w) && dirs.some((d) => (spawnSync("git", ["-C", d, "rev-parse", "--verify", "--quiet", w + "^{commit}"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).stdout || "").startsWith(w))) named.push(w);
+  const dirs = env("REPODIRS").split("\n").filter(Boolean), named = [], ws = env("WSDIR"), inWs = [];
+  const sh = (d, ...a) => spawnSync("git", ["-C", d, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  for (const w of statusWords(rest)) {
+    const has = dirs.filter((d) => (sh(d, "rev-parse", "--verify", "--quiet", w + "^{commit}").stdout || "").startsWith(w));
+    if (!has.length) continue;
+    named.push(w);
+    if (ws && (has.find((d) => sh(d, "for-each-ref", "--count=1", "--contains", w, "refs/heads").stdout) || has[0]) === ws) inWs.push(w);
   }
   const have = reviewsOf(rd, id).filter((k) => !statusClosed(rd[k].status_now) && rd[k].ready === true).flatMap((k) => rd[k].verdicts.flatMap((v) => v.commits));
-  process.stdout.write(JSON.stringify({ named, uncovered: named.filter((c) => !covers(have, [c])) }) + "\n");
+  const o = { named, uncovered: named.filter((c) => !covers(have, [c])) };
+  if (ws) o.workspace = inWs;
+  process.stdout.write(JSON.stringify(o) + "\n");
 }
 // idOrder(a, b): IDs by their date (the eight digits), then their number as a number: H-20261107-100
 // after H-20261107-99. Anything else by its text.
@@ -213,8 +226,10 @@ function handoffEntry(file, hid, mode, ...args) {
 // ID's month (only a known done or rejected: handoffEntries, statusOf); prints how many moved, then each
 // archive file it wrote, from the workspace. HANDOFFS.md is left untouched when none did. A "## " section
 // after "## Open" (other than a legacy "## Archive", whose heading is dropped and its entries sorted like
-// the rest) stays where it is, byte for byte.
+// the rest) stays where it is, byte for byte. An ID in CABINET_KEEP (space separated: done work that no
+// review depends on though its commits change a critical area, readiness's unreviewed) stays under Open.
 function handoffArchive(ws) {
+  const hold = new Set(words(env("CABINET_KEEP")));
   const file = path.join(ws, "HANDOFFS.md");
   const lines = read(file).split("\n");
   const open = lines.indexOf("## Open");
@@ -226,7 +241,7 @@ function handoffArchive(ws) {
   const keep = [], moved = {};
   es.forEach((e, k) => {
     const t = text(e.start, e.end), m = e.id.match(/^H-(\d{4})(\d{2})/), st = statusOf(e.lines).word;
-    if (m && statusClosed(st)) (moved[m[1] + "-" + m[2]] = moved[m[1] + "-" + m[2]] || []).push(t);
+    if (m && statusClosed(st) && !hold.has(e.id)) (moved[m[1] + "-" + m[2]] = moved[m[1] + "-" + m[2]] || []).push(t);
     else keep.push(t);
     const gap = text(e.end, k + 1 < es.length ? es[k + 1].start : tail);  // a "### " block that is no entry stays
     if (gap) keep.push(gap);
@@ -349,6 +364,11 @@ function readiness(spend, ...files) {
     for (const sp of [specOf[e.id] || ""].concat(depIds.map((x) => specOf[x] || ""))) for (const a of specAreas[sp] || []) areas.add(a);
     areas = [...areas].filter((a) => a in areaReviewers).sort();
     for (const a of areas) for (const r of areaReviewers[a]) if (!needs.includes(r)) needs.push(r);  // even off the team: the doctor says why
+    // The areas the commits its own "- Status: done" line names change (TOUCH has rows for those lines'
+    // words): in areas, after needs, so they ask no reviewer of this entry (Rule 3 asks for a review entry).
+    const sw = statusOf(e.lines).word === "done" ? statusWords(statusOf(e.lines).rest) : [];
+    const doneAreas = [...new Set(touch.filter(([c]) => covers(sw, [c])).map((t) => t[1]))].filter((a) => a in areaReviewers).sort();
+    areas = [...new Set(areas.concat(doneAreas))].sort();
     const last = {};
     for (const v of vs) last[v.role] = v;
     const blocking = Object.keys(last).filter((r) => last[r].verdict !== "PASS");
@@ -384,11 +404,21 @@ function readiness(spend, ...files) {
     const ml = e.lines.find((l) => l.startsWith("- Model: ")), mt = ml === undefined ? null : ml.slice(9).replace(/\s+$/, "");
     const mw = mt === null ? null : mt.split(" ")[0], mr = mt === null ? null : mt.slice(mw.length).trim().replace(/^\((.*)\)$/, "$1");
     out[e.id] = {
-      builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: statusOf(e.lines).word,
+      addressees: names(to), done_areas: doneAreas, builder: bs.length === 1 ? bs[0] : null, session_branch: sessionBranch, areas, archived: e.archived, depends_on: field(e, "- Depends on:"), status_now: statusOf(e.lines).word,
       small: e.lines.some((l) => l.trim() === "- Size: small"), spec: field(e, "- Spec:"),
       cost_usd: e.id in cost ? Math.round(cost[e.id] * 1e6) / 1e6 : null, verdicts: vs, blocks, needs, missing, blocking, stale,
       ready, unread_verdicts: unread, model_word: mw, model_reason: mr,
     };
+  }
+  // unreviewed: for work in the shape handoff run takes for a role that is not a builder (one addressee on
+  // the team, not the owner, filed --small or --spec, not itself a review), done, with no entry at all that
+  // reviews it: the areas its status line's commits change; else []. Builder work is left out (run stops it).
+  for (const [id, o] of Object.entries(out)) {
+    const deps = o.depends_on.match(/H-\d{8}-\d+/g) || [];
+    const shaped = !o.archived && o.status_now === "done" && o.builder === null && o.addressees.length === 1 && team.has(o.addressees[0])
+      && !ownerIn(o.addressees[0]) && (o.small || o.spec !== "") && !deps.some((d) => d in out && reviewsOf(out, d).includes(id));
+    o.unreviewed = shaped && !reviewsOf(out, id).length ? o.done_areas : [];
+    delete o.done_areas;
   }
   process.stdout.write(JSON.stringify(out) + "\n");
 }

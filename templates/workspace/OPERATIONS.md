@@ -73,7 +73,7 @@ git -C <repo> push
 | `bin/spec.sh record <spec> --role qa\|architect PASS\|BLOCK --note <file>` | Records qa's review of a spec's acceptance criteria, or architect's of its plan. |
 | `cabinet config --pipeline small\|all --pipeline-limit <dollars>` | Turns on the scheduled runner (`jobs/pipeline.job`): it moves ready work through build and review while you are away, within that much a run, and writes what it did to `PIPELINE.md`. Off by default. |
 | `bin/spec.sh run <spec>` | Moves a ready spec through routing, plans and each of its handoffs with agent runs, until all its work is ready to push or something needs you. It may cost money. |
-| `bin/handoff.sh run <ID>` | Moves one piece of work through build, review and fixes with agent runs, and stops when it is ready to push or needs you. It may cost money. |
+| `bin/handoff.sh run <ID>` | Moves one piece of work (a build, or work for another role on the team) through the work, review and fixes with agent runs, and stops when it is ready to push, done with nothing to push, or needs you. It may cost money. |
 | `bin/handoff.sh archive` | Moves closed handoffs to `handoffs/archive-YYYY-MM.md` and commits the move. |
 | `bin/role.sh draft <role>` | Drafts a role you added with `cabinet role add`, from your brief and the project (it runs the agent tool). |
 | `bin/manual.sh build [--check]` | Writes `OPERATIONS.html`, this manual as one page with contents, search and tick boxes for the daily and weekly lists. The doctor says when it is older than this file. |

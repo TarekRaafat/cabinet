@@ -10,7 +10,10 @@
 #       finds the spec ready or building with nothing missing (.cabinet/rules/ready-to-build.md). --small
 #       marks it a small task ("- Size: small"). Work for a repo, or for a role that builds one, needs
 #       one of the two. --small with a --depends-on holding a handoff ID, for a reviewer, is refused:
-#       run does not count a --small entry as a review. --way-back says how to undo the change once pushed, released or published
+#       run does not count a --small entry as a review. --small to a role whose rows in the team table hold
+#       a path of a critical area in AGENTS.md (specs/design/ under workspace/specs/design/) files it as
+#       usual and says on stderr, once per area, which reviewers it needs and that the role hands on with
+#       --depends-on <ID>. --way-back says how to undo the change once pushed, released or published
 #       (or why there is none), on a "- Way back:" line; one line, never empty.
 #       An entry to a role (not owner or founder) gets "- Model: <tier> (<reason>)", the tier handoff run
 #       uses: strong for a spec with a critical area in AGENTS.md (critical area: <areas>), else light when
@@ -24,13 +27,14 @@
 #       --needed-file and --way-back-file read the value from a file byte for byte (one trailing
 #       newline dropped), so the text never reaches a shell; each is refused with its plain twin.
 #   bin/handoff.sh attach <ID> [<file or URL>...] [--way-back "..."|--way-back-file <file>] --from <name>
-#       The entry's sender adds evidence later (after a BLOCK, a fix, a missed screen): files copied
+#       The entry's sender, or a name on its To: line, adds evidence later (after a BLOCK, a fix, a missed
+#       screen, or the work a role was asked for): files copied
 #       to specs/evidence/<ID>/ and every link added to the entry's Evidence line, then committed.
 #       --way-back adds the entry's "- Way back:" line, or replaces it, before its first verdict.
 #   bin/handoff.sh record <ID> --role <role> <PASS|BLOCK|CHANGES> --commits <hash,...>|none --note <file>
 #       A reviewer's verdict: writes (or replaces) its "- Verdict:" line with today's date, then
 #       commits. The note must be committed under specs/. Refuses a verdict by the entry's own
-#       sender, a qa PASS on an entry with no evidence, and a PASS on a small task whose commits
+#       sender, a qa PASS on an entry with no evidence (naming its sender and each addressee, who attach it), and a PASS on a small task whose commits
 #       span repos or change a path AGENTS.md guards (small_problems in lib.sh), and a PASS on commits
 #       that change a path under "Hard to undo" in AGENTS.md while the entry has no "- Way back:"
 #       line (hard_hit in lib.sh). A PASS from a
@@ -47,13 +51,18 @@
 #       age_days, from, to, title; with a name, each entry's full text too), with its readiness:
 #       verdicts, needs (the reviewers it needs), missing, blocking, stale (a PASS that does not
 #       cover every commit a verdict names), ready (true, false, or null when it needs no review),
-#       builder (the one addressee that builds, else null) and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read;
+#       builder (the one addressee that builds, else null), addressees (the names on To:, lower case),
+#       areas (the critical areas its verdicts' commits, its spec or, once done, its status line's commits
+#       change), unreviewed (for done work run takes for a role that is not a builder with no review entry,
+#       the areas its status line's commits change; else []) and unread_verdicts (PASS, BLOCK or CHANGES written outside a "- Verdict:" line, not read;
 #       the title and the sender's lines (From, Changed, Needed, Depends on, Way back, Evidence, Spec, Size) are not read, so a line asking for a verdict is not one).
 #       --ready: only the entries ready for the owner to push.
 #   bin/handoff.sh run <ID> [--retries <n>] [--dry-run]
-#       Move one piece of work (a handoff to one builder, filed --small or --spec) through the steps
-#       the team already has, each an agent run, until it is ready to push or needs the owner: the
-#       builder builds it and hands it on for review with --depends-on <ID>; each reviewer missing or
+#       Move one piece of work (a handoff to one builder, or to one role on the team that is not a
+#       builder, filed --small or --spec) through the steps the team already has, each an agent run,
+#       until it is ready to push, done with nothing to push, or needs the owner: the builder builds it
+#       (a role that is not a builder works on it, its commits in the workspace or a repo) and hands it
+#       on for review with --depends-on <ID>; each reviewer missing or
 #       stale verifies and records (one asked again is told its last verdict's commits and the ones
 #       since, in each repo, or to read the whole change when that cannot be told:
 #       .cabinet/rules/reviews.md, "A re-review"); after a BLOCK the builder fixes it and the
@@ -62,7 +71,12 @@
 #       it stops for the owner before another round. It decides nothing: it reads the state
 #       (handoff list --json) and stops when an agent fails, leaves no trace, or the work is ready:
 #       when every open review of it is (each entry that depends on it, not --small and not to a
-#       builder, --spec or not).
+#       builder, --spec or not). Work of a role that is not a builder ends "<ID> is done: every reviewer
+#       passed <reviews>; its commits are in the workspace, so there is nothing to push" (ready to push
+#       when a commit is in a repo), or "<ID> is done; no review is expected for it" when no review
+#       depends on it and its commits change no critical area; when they do, it stops. Refused before
+#       any agent: an entry to the owner, to more than one name, to a name not on the team, and a review
+#       of another entry ("<ID> is a review of <work ID>: run <work ID>").
 #       Each agent runs at the tier on the work's "- Model:" line (cabinet config --tier), one tier up for
 #       each BLOCK or CHANGES on the work and its reviews (blocks in list --json), never above strong; a
 #       reviewer in CABINET_LIGHT_ROLES runs at light. Before each agent, the log says "Model: <tier>
@@ -80,7 +94,8 @@
 #       run stopped for the owner, until the owner runs it by hand.
 #   bin/handoff.sh archive
 #       Move every committed closed entry (done or rejected) to handoffs/archive-YYYY-MM.md (month of
-#       its ID) and commit the move; chief-of-staff runs it daily. Refuses while HANDOFFS.md has
+#       its ID) and commit the move; chief-of-staff runs it daily. Done work that list --json marks
+#       unreviewed stays under Open, each named with why, until a review entry depends on it. Refuses while HANDOFFS.md has
 #       uncommitted lines, so no agent's unsaved update is lost. An unknown status word stays, and so
 #       does a "## " section after the entries; it commits only HANDOFFS.md and the archives it wrote.
 set -euo pipefail
@@ -93,6 +108,17 @@ names_of() {
     n="$(lc "$(printf '%s' "$n" | sed 's/^ *//; s/ *$//')")"
     [[ -z "$n" ]] || echo "$n"
   done
+}
+# area_who: the critical areas on stdin, one per line, each with its reviewers from AGENTS.md, in the
+# table's order: "design (qa), copy (qa, security)", control characters shown as ? (shown).
+area_who() {
+  local want a p r e c out=""
+  want="$(cat)"
+  while IFS=$'\t' read -r a p r e c; do
+    grep -qxF -- "$a" <<<"$want" || continue
+    out+="${out:+, }$a (${r// /, })"
+  done < <(critical_areas)
+  shown "$out"
 }
 # way_back <text>: the text of a "- Way back:" line, or exit 2: never empty, never more than one line.
 way_back() {
@@ -358,6 +384,32 @@ mv "$K/handoffs.new" "$1"
 }
 own_change HANDOFFS.md
 
+# Work filed --small to a role whose area in the team table is in a critical area: say up front which review
+# it needs (the paths compared whole part by part, either one under the other; a row's path is the
+# workspace's unless its first part is a repo).
+if [[ -n "$small" ]]; then
+  local roles rnames n tp full a p r e c x seen
+  roles="$(team_roles)" rnames="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
+  under() { local a="${1%/}" b="${2%/}"; [[ "$a" == "$b" || "$a" == "$b/"* ]]; }
+  while IFS= read -r n; do
+    has "$roles" "$n" || continue
+    seen=""
+    while IFS= read -r tp; do
+      full="workspace/$tp"; has "$rnames" "${tp%%/*}" && full="$tp"
+      while IFS=$'\t' read -r a p r e c; do
+        ! grep -qxF -- "$a" <<<"$seen" || continue
+        for x in $p; do
+          under "$full" "$x" || under "$x" "$full" || continue
+          seen+="$a"$'\n'
+          printf '%s\n' "$(shown "$n's work under $tp is in critical area $a, reviewed by ${r// /, }: $n hands on with --depends-on $id")" >&2
+          break
+        done
+      done < <(critical_areas)
+    done < <(awk -F'|' -v n="$n" '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 && $2 ~ /`/ {
+        a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (a != "" && o == n) print a }' AGENTS.md 2>/dev/null)
+  done < <(names_of "$to")
+fi
+
 paths=(HANDOFFS.md); [[ -d "specs/evidence/$id" ]] && paths+=("specs/evidence/$id")
 save "$id filed for $to" "handoffs: $id $title" "${paths[@]}"
 }
@@ -380,8 +432,11 @@ done
 [[ "$id" =~ ^H-[0-9]{8}-[0-9]+$ && -n "$from" && ( ${#ev[@]} -gt 0 || -n "$back" ) ]] || { echo "an entry ID, --from and at least one file or URL, or --way-back. $usage" >&2; exit 2; }
 lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
-sender="${info%%$'\t'*}"
-[[ "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds evidence or a way back (a reviewer links its own in its note)" >&2; exit 1; }
+sender="${info%%$'\t'*}" to="${info##*$'\t'}"
+# The sender, or a name on its To: line: the role that did the work, or the reviewer a review is addressed to.
+if [[ "$(lc "$from")" != "$(lc "$sender")" ]] && ! names_of "$to" | grep -qxF -- "$(lc "$from")"; then
+  echo "$id was filed by $sender to $to: only its sender or an addressee adds evidence or a way back" >&2; exit 1
+fi
 for e in ${ev[@]+"${ev[@]}"}; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
 own_change() {
   [[ -z "$evline" ]] || node "$LIBJS" handoff-entry "$1" "$id" evidence "$evline" || return 1
@@ -459,7 +514,8 @@ if [[ "$commits" == none ]]; then
 fi
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }
 if [[ "$role" == qa && "$verdict" == PASS && -z "$hasev" ]]; then
-  echo "$id has no evidence, so qa cannot pass it: record BLOCK naming what is missing; its sender adds it with bin/handoff.sh attach $id <file or URL> --from $sender" >&2; exit 1
+  x=""; while IFS= read -r n; do [[ "$n" == "$(lc "$sender")" ]] || x+=" or --from $n"; done < <(names_of "$to")
+  echo "$id has no evidence, so qa cannot pass it: record BLOCK naming what is missing; its sender or an addressee adds it with bin/handoff.sh attach $id <file or URL> --from $sender$x" >&2; exit 1
 fi
 if [[ "$size" == small && "$verdict" == PASS && "$commits" != none ]]; then
   why="$(small_problems "$commits")"
@@ -565,9 +621,18 @@ fi
 
 # The count, then each archive file it wrote: only those and HANDOFFS.md are committed, by path, never
 # the handoffs/ folder, which may hold someone else's draft (kit rule 12).
-local out n f
+local out n f keep="" k i a
 local -a files
-out="$(node "$LIBJS" handoff-archive "$WS")"
+# Done work no review depends on, though its commits change a critical area (readiness's unreviewed): it
+# stays under Open, where the doctor reads it, until a review entry depends on it.
+if [[ -n "$(critical_areas)" ]]; then
+  k="$(readiness | json -r --each 'Object.keys($).filter((i) => ($[i].unreviewed ?? []).length).sort(idOrder).flatMap((i) => $[i].unreviewed.map((a) => i + "\t" + a))')"
+  for i in $(cut -f1 <<<"$k" | awk 'NF && !s[$0]++'); do
+    keep+="${keep:+ }$i"
+    echo "$i stays under Open: done, its commits change $(awk -F'\t' -v i="$i" '$1 == i { print $2 }' <<<"$k" | area_who), and no review handoff depends on it"
+  done
+fi
+out="$(CABINET_KEEP="$keep" node "$LIBJS" handoff-archive "$WS")"
 n="$(head -1 <<<"$out")" files=()
 while IFS= read -r f; do [[ -z "$f" ]] || files+=("$f"); done < <(tail -n +2 <<<"$out")
 
@@ -626,7 +691,7 @@ report ${lines[@]+"${lines[@]}"} "" "Spent \$$spent of the \$$limit limit for on
 h_run() {
 usage="usage: bin/handoff.sh run <ID> [--retries <n>] [--dry-run]"
 [[ "${1:-}" != --scheduled ]] || { (($# == 1)) || { echo "--scheduled takes nothing else. usage: bin/handoff.sh run --scheduled" >&2; exit 2; }; h_scheduled; exit $?; }
-local id="" retries=2 dry=0 builder rounds=0 fixed=0 built=0 step=0 rd w v vs r todo x before ag st bc u
+local id="" retries=2 dry=0 builder worker="" rounds=0 fixed=0 built=0 step=0 rd w v vs r todo x before ag st bc u
 while (($#)); do
   case "$1" in
     --retries) (($# >= 2)) || { echo "$1 needs a value. $usage" >&2; exit 2; }; retries="$2"; shift 2 ;;
@@ -644,7 +709,16 @@ w="$(json -c --arg i "$id" '$[$i] ?? undefined' <<<"$rd")"
 # One builder, and work that is ready to build: what the steps start from.
 # readiness's builder, as spec run reads it (ADR-006).
 builder="$(json -r '$.builder ?? ""' <<<"$w")"
-[[ -n "$builder" ]] || { echo "$id is not work for one builder: run takes a handoff to one repo or builder" >&2; exit 1; }
+# Work for one role on the team that is not a builder: that role is the worker of the same steps (Rule 1).
+if [[ -z "$builder" ]]; then
+  x="$(json -r '$.addressees.join(", ")' <<<"$w")"
+  ! json -e '$.addressees.some((n) => ownerIn(n))' <<<"$w" >/dev/null || { echo "$id is addressed to the owner: run takes work for one role on the team" >&2; exit 1; }
+  [[ "$(json '$.addressees.length' <<<"$w")" == 1 ]] || { echo "$id is addressed to $(shown "$x"): run takes work for one role" >&2; exit 1; }
+  has "$(team_roles)" "$x" || { echo "$id is addressed to $(shown "$x"), which is not a role on the team" >&2; exit 1; }
+  r="$(json -r --arg i "$id" '($[$i].depends_on.match(/H-[0-9]{8}-[0-9]+/g) ?? []).find((d) => d in $ && reviewsOf($, d).includes($i)) ?? ""' <<<"$rd")"
+  [[ -z "$r" ]] || { echo "$id is a review of $r: run $r" >&2; exit 1; }
+  builder="$x" worker=1
+fi
 has "$(team_roles)" "$builder" || builder="$(owner_of "$builder")"
 [[ -n "$builder" ]] || { echo "$id: no role owns its repo in the team table of AGENTS.md" >&2; exit 1; }
 [[ "$(json -r '$.small' <<<"$w")" == true || -n "$(json -r '$.spec' <<<"$w")" ]] || { echo "$id is neither --small nor --spec: only work that is ready to build is run (.cabinet/rules/ready-to-build.md)" >&2; exit 1; }
@@ -782,11 +856,16 @@ again() {
 }
 # build: the builder's step. After it, a build whose status line still names no commit stops (Rule 4),
 # unless the builder sent it back, which the next step says.
+# For a role that is not a builder the step is "<role>: works on <ID>", its prompt the same in its role's terms.
 build() {
-  agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done, naming on its status line each commit you made. If it is not ready to build, set $id to rejected with what is missing instead."
+  if [[ -n "$worker" ]]; then
+    agent "$builder" "works on $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and do it as your role says. When it is done and committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer a critical area in AGENTS.md, or AGENTS.md itself, names for it> --depends-on $id, with its evidence, when any is named; then set $id to done, naming on its status line each commit you made. If it is not ready to do, set $id to rejected with what is missing instead."
+  else
+    agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done, naming on its status line each commit you made. If it is not ready to build, set $id to rejected with what is missing instead."
+  fi
   built=1
   rd="$(readiness)"
-  [[ "$(json -r --arg i "$id" '$[$i].status_now' <<<"$rd")" == rejected || "$(build_commits "$id" <<<"$rd" | json '$.named.length')" != 0 ]] \
+  [[ "$(json -r --arg i "$id" '$[$i].status_now' <<<"$rd")" == rejected || "$(build_commits "$id" ${worker:+workspace} <<<"$rd" | json '$.named.length')" != 0 ]] \
     || stop "$builder ran but $id's status line names no commit: the builder sets it to done naming each commit it made"
 }
 while :; do
@@ -815,10 +894,19 @@ while :; do
         && !statusClosed($[k].status_now))' <<<"$rd")"
       [[ -z "$x" ]] || stop "$id is done, but $x, which depends on it, does not count as a review because it was filed --small: the builder hands on with --depends-on $id, without --small"
     fi
-    bc="$(build_commits "$id" <<<"$rd")"
+    bc="$(build_commits "$id" ${worker:+workspace} <<<"$rd")"
     if [[ "$(json '$.named.length' <<<"$bc")" == 0 ]]; then
+      [[ "$st" != done || -z "$worker" ]] || stop "$id is done but its status line names no commit, so nothing was made to review"
       [[ "$st" != done ]] || stop "$id is done but its status line names no commit in a product repo, so nothing was built to push"
       build; continue
+    fi
+    # Done work of a role that is not a builder, with no review: finished unless its commits change a
+    # critical area (Rule 3).
+    if [[ -z "$vs" && -n "$worker" && "$st" == done ]]; then
+      x="$(areas_hit "$(json -r '$.named.join(",")' <<<"$bc")" | area_who)"
+      [[ -z "$x" ]] || stop "$id is done, its commits change $x, and no review handoff depends on it: $builder hands on with --depends-on $id"
+      say "$(ended "$id is done; no review is expected for it")"
+      rm -f "$mark"; exit 0
     fi
     if [[ -z "$vs" ]]; then
       [[ "$st" != done ]] || stop "$id is done, but no review handoff depends on it: the builder hands on with --depends-on $id"
@@ -829,6 +917,10 @@ while :; do
     [[ -n "$x" ]] || stop "${vs// /, } needs no review, so there is nothing to run"
     u="$(json -r '$.uncovered.join(", ")' <<<"$bc")"
     [[ -z "$u" ]] || stop "$id names $u, which no passed review covers: the builder hands on with --depends-on $id"
+    if [[ -n "$worker" && "$(json '$.workspace.length == $.named.length' <<<"$bc")" == true ]]; then
+      say "$(ended "$id is done: every reviewer passed $x; its commits are in the workspace, so there is nothing to push")"
+      rm -f "$mark"; exit 0
+    fi
     say "$(ended "$id is ready to push: every reviewer passed $x$(spent). Push it from your terminal; chief-of-staff closes $x once it is pushed.")"
     rm -f "$mark"; exit 0
   fi

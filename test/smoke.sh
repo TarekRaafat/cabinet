@@ -507,7 +507,7 @@ out="$(cd "$W/specs/qa" && "$F" handoff record "$v" --role qa pass --commits a1b
 echo "$out" | grep -q "bin/handoff.sh attach $v <file or URL> --from web" || fail "the no-evidence refusal does not say how to add it: $out"
 out="$("$W/bin/handoff.sh" record "$v" --role qa block --commits "A1B2C3D, e4f5a6b" --note specs/qa/r.md)" && [[ "$out" == "$v: qa BLOCK recorded and committed" ]] || fail "record BLOCK: $out"
 grep -qxF -- "- Verdict: qa BLOCK $(date +%F) a1b2c3d,e4f5a6b specs/qa/r.md" "$W/HANDOFFS.md" && [[ -z "$(git -C "$W" status --porcelain)" ]] || fail "the recorded verdict line, or its commit"
-"$W/bin/handoff.sh" attach "$v" "$T/run.txt" --from qa >/dev/null 2>&1 && fail "attach let someone other than the sender add evidence"
+"$W/bin/handoff.sh" attach "$v" "$T/run.txt" --from security >/dev/null 2>&1 && fail "attach let someone other than the sender or an addressee add evidence"
 (cd "$T" && "$F" -C "$W" handoff attach "$v" "$T/run.txt" https://example.com/v --from Web) | grep -q "$v: evidence attached and committed" || fail "attach"
 "$W/bin/handoff.sh" list qa --json | j -e --arg id "$v" '$.find((h) => h.id == $id).text.includes("- Evidence: [run.txt](specs/evidence/" + $id + "/run.txt), <https://example.com/v>\n- Verdict: qa BLOCK")' >/dev/null \
   && [[ -f "$W/specs/evidence/$v/run.txt" && -z "$(git -C "$W" status --porcelain)" ]] || fail "attached evidence: not before the verdicts, or not committed"
@@ -9814,7 +9814,7 @@ for p in agents.hard-to-undo areas.declared backups.dir-absolute backups.dir-out
   backups.verified commands.approved credit.email credit.hook credit.setting deps.backups deps.node deps.required guardrails.agy guardrails.claim \
   guardrails.claude guardrails.clone-settings guardrails.codex guardrails.codex-approval guardrails.cursor guardrails.cursor-editor guardrails.gemini \
   guardrails.grok guardrails.hook-passthrough guardrails.opencode guardrails.push-gate guardrails.qwen guardrails.repo-hookspath guardrails.run-refusal \
-  guardrails.stale-claim guardrails.unguarded-tool guides.exists guides.listed handoffs.addressee handoffs.evidence handoffs.size handoffs.small \
+  guardrails.stale-claim guardrails.unguarded-tool guides.exists guides.listed handoffs.addressee handoffs.evidence handoffs.size handoffs.small handoffs.unreviewed \
   handoffs.status handoffs.unique-ids handoffs.unread-verdicts handoffs.verdict-origin handoffs.verdicts jobs.name kit.claude-link kit.handoffs-file \
   kit.newer kit.roles kit.unedited kit.version manual.complete manual.page model.name pipeline.ready repos.all repos.claude-link \
   repos.instructions-excluded repos.local-file repos.local-file-tracked repos.local-path repos.present repos.snapshot roles.drafted roles.name \
@@ -9863,6 +9863,185 @@ for d in go7c go7d; do
 done
 GW="$v"; GL="$p"; GH="$m"
 export HOME="$oh" GIT_CONFIG_GLOBAL="$og"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "work for roles that are not builders" ""
+s132() {
+local NW NF NL out err rc a b u r x c h pm ur s1 a14 rv15 rv16 t0
+# nb_ws <name> [<roles>] [noapp]: the fixture of specs for this section (H-20261111-15 and -16): a workspace with
+# design-lead, qa and security (backend with the repo app, unless noapp), the critical area design over
+# workspace/specs/design/ reviewed by qa (check none), and a committed note specs/qa/n.md. NW, NF (the fake's
+# state folder) and NL (the log folder).
+nb_ws() { NW="$T/$1" NF="$T/$1-state" NL="$HOME/$LOGS/$1"; mkdir -p "$NF"
+  "$F" new "$NW" --yes --runner claude --roles "${2:-design-lead qa security}" >/dev/null || fail "new for $1"
+  if [[ "${3:-}" != noapp ]]; then
+    git init -q "$NW/app" && echo x > "$NW/app/a.txt" && git -C "$NW/app" add -A && git -C "$NW/app" commit -qm init
+    printf 'app\t-\t-\tno\n' >> "$NW/repos.tsv"
+    L before "$NW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app` | The app | backend |'
+  fi
+  L before "$NW/AGENTS.md" '/^\| none yet \|/' '| design | `workspace/specs/design/` | qa | the draft | none |'
+  mkdir -p "$NW/specs/qa" && echo checked > "$NW/specs/qa/n.md" && git -C "$NW" add -A && git -C "$NW" commit -qm fixture
+  grep -q '^| `specs/design/` .* design-lead |$' "$NW/AGENTS.md" || fail "test setup: no specs/design/ row for design-lead in $1"; }
+# The fake agent tool, by role: design-lead commits specs/design/x.html in the workspace (notes/x.md with
+# $FS/notes, docs/x.md in app with $FS/inapp), files a review to qa with it as evidence (a link for app; none
+# with $FS/noreview) and sets the work done naming the commit (no commit with $FS/nocommit); any other role
+# records PASS on the entry it is asked to verify, naming the work's commit. Each call's role goes to $FS/calls.
+mkdir -p "$T/nbfakes"
+cat > "$T/nbfakes/claude" <<'FAKE'
+#!/bin/bash
+agent="" prompt=""
+while (($#)); do case "$1" in --agent) agent="$2"; shift 2 ;; --permission-mode|--output-format|--model|--effort|--mcp-config) shift 2 ;; -p|--json|--strict-mcp-config) shift ;; *) prompt="$1"; shift ;; esac; done
+echo "$agent" >> "$FS/calls"; printf '%s\n' "$prompt" >> "$FS/prompts"
+id="$(printf '%s' "$prompt" | grep -oE 'H-[0-9]{8}-[0-9]+' | head -1)"
+st() { sed -i.bak "/^### $id:/,/^### /s/^- Status: open.*/- Status: $1/" HANDOFFS.md && rm HANDOFFS.md.bak; git commit -qm "status of $id" -- HANDOFFS.md; }
+if [[ -z "$id" ]]; then :
+elif [[ "$agent" == design-lead && "$prompt" == "Pick up handoff"* ]]; then
+  d=. f=specs/design/x.html ev=specs/design/x.html
+  [[ ! -f "$FS/notes" ]] || f=notes/x.md
+  [[ ! -f "$FS/inapp" ]] || { d=app f=docs/x.md ev=https://example.com/x; }
+  if [[ -f "$FS/nocommit" ]]; then st "done ($(date +%F))"
+  else
+    mkdir -p "$d/$(dirname "$f")"; echo "$id" >> "$d/$f"; git -C "$d" add -- "$f"; git -C "$d" commit -qm "work on $id" -- "$f"
+    c="$(git -C "$d" rev-parse --short HEAD)"; echo "$c" > "$FS/commits-$id"
+    [[ -f "$FS/noreview" ]] || bin/handoff.sh add --from design-lead --to qa --changed made --needed verify --depends-on "$id" --evidence "$ev" "Review $id" >/dev/null
+    st "done ($(date +%F)) Made $c."
+  fi
+else
+  w="$(sed -n "/^### $id:/,/^### /s/^- Depends on: //p" HANDOFFS.md | head -1)"
+  bin/handoff.sh record "$id" --role "$agent" PASS --commits "$(cat "$FS/commits-$w")" --note specs/qa/n.md >/dev/null
+fi
+echo '{"type":"result","result":"done","total_cost_usd":0.01}'
+FAKE
+chmod +x "$T/nbfakes/claude"
+run() { FS="$NF" PATH="$T/nbfakes:$PATH" unest "$F" -C "$NW" handoff run "$@"; }
+hs() { (cd "$NW" && bin/handoff.sh "$@"); }
+idof() { printf '%s' "${1%% *}"; }
+steps() { grep -E '^[a-z][a-z-]*: ' <<<"$1"; }
+# nbstop <output> <line>: the stop line (the last before a final "Log: " line) is the line.
+nbstop() { local o="$1"; [[ "$(tail -1 <<<"$o")" == "Log: "* ]] && o="$(sed '$d' <<<"$o")"; [[ "$(tail -1 <<<"$o")" == "$2" ]]; }
+setst() { sedi "/^### $1:/,/^### /s/^- Status: .*/- Status: $2/" "$NW/HANDOFFS.md"; git -C "$NW" commit -qm "status of $1" -- HANDOFFS.md; }
+rvof() { (cd "$NW" && bin/handoff.sh list --json) | j -r --arg i "$1" '$.find((h) => h.title == "Review " + $i)?.id ?? ""'; }
+rdy() { bash -c 'cd "$0" && source bin/lib.sh && readiness' "$NW"; }
+doc() { (cd "$NW" && bin/doctor.sh --json) || true; }
+sha() { node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+nb_ws nb
+# Criterion 1: add --small to design-lead says which review its critical area needs; to backend, or with no
+# area row, nothing.
+out="$(hs add --small --from owner --to design-lead --changed x --needed y "Draft the wireframes" 2>"$T/nb.err")" || fail "criterion 1: $out $(cat "$T/nb.err")"
+a="$(idof "$out")"; grep -q "^### $a: Draft the wireframes$" "$NW/HANDOFFS.md" || fail "criterion 1: the entry"
+[[ "$(cat "$T/nb.err")" == "design-lead's work under specs/design/ is in critical area design, reviewed by qa: design-lead hands on with --depends-on $a" ]] || fail "criterion 1: $(cat "$T/nb.err")"
+hs add --small --from owner --to backend --changed x --needed y "An endpoint" >/dev/null 2>"$T/nb.err" && [[ ! -s "$T/nb.err" ]] || fail "criterion 1, backend: $(cat "$T/nb.err")"
+cp "$NW/AGENTS.md" "$T/nb-agents"; sedi '/^| design |/d' "$NW/AGENTS.md"
+hs add --small --from owner --to design-lead --changed x --needed y "No area" >/dev/null 2>"$T/nb.err" && [[ ! -s "$T/nb.err" ]] || fail "criterion 1, no area row: $(cat "$T/nb.err")"
+cp "$T/nb-agents" "$NW/AGENTS.md"
+# Criterion 3: run takes it: design-lead works, qa verifies its review, and it ends done with nothing to push.
+out="$(run "$a")" || fail "criterion 3: $out"; r="$(rvof "$a")"
+[[ -n "$r" && "$(steps "$out")" == "design-lead: works on $a"$'\n'"qa: verifies $r" ]] || fail "criterion 3, steps: $out"
+tail -1 <<<"$out" | grep -qF "$a is done: every reviewer passed $r; its commits are in the workspace, so there is nothing to push" && ! grep -q 'ready to push' <<<"$out" || fail "criterion 3, the end: $out"
+[[ -f "$NL/run-$a.log" ]] && awk -F'\t' -v i="$a" '$2 == i { n++ } END { exit !n }' "$NL/spend.tsv" || fail "criterion 3: no run log or spend row"
+grep -q "and do it as your role says" "$NF/prompts" || fail "criterion 3: the worker's prompt"
+[[ "$(bash -c 'source "$0/bin/lib.sh"; run_result' "$NW" <<<"$out")" == "$(tail -1 <<<"$out")" ]] || fail "criterion 3: run_result"
+# Criterion 17: a review filed --small is still refused (E5).
+rc=0; err="$(hs add --small --from design-lead --to qa --changed x --needed y --depends-on "$a" "Small review" 2>&1)" || rc=$?
+[[ $rc == 2 ]] && grep -qF "qa reviews: a review entry is not a small task, so file it again without --small" <<<"$err" || fail "criterion 17: $err"
+# Criterion 8: refused, with no agent started: the owner, the founder, a name not on the team, two names,
+# neither --small nor --spec, and a review.
+for x in owner founder ux-researcher "design-lead and qa"; do
+  b="$(idof "$(hs add --small --from chief-of-staff --to "$x" --changed x --needed y "To $x" 2>/dev/null)")"
+  rm -f "$NF/calls"; rc=0; out="$(run "$b")" || rc=$?
+  [[ $rc != 0 && ! -e "$NF/calls" ]] && grep -qF "$b" <<<"$out" || fail "criterion 8, to $x (exit $rc): $out"
+done
+grep -qF "is addressed to the owner: run takes work for one role on the team" <<<"$(run "$(idof "$(hs add --small --from chief-of-staff --to owner --changed x --needed y "Owner again")")" 2>&1)" || fail "criterion 8: the owner's words"
+b="$(idof "$(hs add --from owner --to design-lead --changed x --needed y "Plain" 2>/dev/null)")"
+rm -f "$NF/calls"; rc=0; out="$(run "$b")" || rc=$?
+[[ $rc != 0 && ! -e "$NF/calls" ]] && grep -qF "$b is neither --small nor --spec" <<<"$out" || fail "criterion 8, neither: $out"
+rm -f "$NF/calls"; rc=0; out="$(run "$r")" || rc=$?
+[[ $rc != 0 && ! -e "$NF/calls" ]] && grep -qxF "$r is a review of $a: run $a" <<<"$out" || fail "criterion 8, a review (exit $rc): $out"
+# Criterion 5: a commit in no area, no review: done, with no review step (E1).
+touch "$NF/notes" "$NF/noreview"; b="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "A note" 2>/dev/null)")"
+out="$(run "$b")" || fail "criterion 5: $out"
+[[ "$(tail -1 <<<"$out")" == "$b is done; no review is expected for it." ]] && ! grep -q '^qa: ' <<<"$out" || fail "criterion 5: $out"
+rm -f "$NF/notes" "$NF/noreview"
+# Criterion 7: done, naming no commit: build()'s stop.
+touch "$NF/nocommit"; b="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "Nothing made" 2>/dev/null)")"
+rc=0; out="$(run "$b")" || rc=$?
+[[ $rc == 1 ]] && nbstop "$out" "Stopped: design-lead ran but $b's status line names no commit: the builder sets it to done naming each commit it made" || fail "criterion 7 (exit $rc): $out"
+rc=0; out="$(run "$b")" || rc=$?
+[[ $rc == 1 ]] && nbstop "$out" "Stopped: $b is done but its status line names no commit, so nothing was made to review" || fail "criterion 7, run again (exit $rc): $out"
+rm -f "$NF/nocommit"
+# Criterion 11: the commit is in app, where design-lead owns docs/ (E2): qa and security verify, and it is ready to push.
+L before "$NW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app/docs/` | The app'"'"'s docs | design-lead |'; git -C "$NW" commit -qam "app/docs/, design-lead's"
+touch "$NF/inapp"; b="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "App docs" 2>/dev/null)")"
+out="$(run "$b")" || fail "criterion 11: $out"; r="$(rvof "$b")"
+[[ "$(steps "$out")" == "design-lead: works on $b"$'\n'"qa: verifies $r"$'\n'"security: verifies $r" ]] && tail -1 <<<"$out" | grep -q "^$b is ready to push: every reviewer passed $r" || fail "criterion 11: $out"
+rm -f "$NF/inapp"
+# Criterion 6: specs/design/x.html with no review: run stops, and readiness (list --json's fields) gives its areas.
+touch "$NF/noreview"; u="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "Unreviewed" 2>/dev/null)")"
+rc=0; out="$(run "$u")" || rc=$?
+[[ $rc == 1 ]] && nbstop "$out" "Stopped: $u is done, its commits change design (qa), and no review handoff depends on it: design-lead hands on with --depends-on $u" || fail "criterion 6 (exit $rc): $out"
+rm -f "$NF/noreview"; c="$(cat "$NF/commits-$u")"
+rdy | j -e --arg i "$u" 'JSON.stringify($[$i].areas) == "[\"design\"]" && JSON.stringify($[$i].unreviewed) == "[\"design\"]" && JSON.stringify($[$i].addressees) == "[\"design-lead\"]"' >/dev/null || fail "criterion 6: readiness $(rdy | j -c --arg i "$u" '$[$i]')"
+hs list --json | j -e '$.length > 0 && $.every((h) => Array.isArray(h.addressees) && Array.isArray(h.unreviewed) && typeof h.to == "string")' >/dev/null || fail "criterion 6: list --json fields"
+# N1's control: an entry not in the shape run takes (product-manager to chief-of-staff, no Size or Spec line),
+# done naming the same commit, is never unreviewed.
+pm="$(idof "$(hs add --from product-manager --to chief-of-staff --changed x --needed y "Route it")")"; setst "$pm" "done ($(date +%F)) Routed, see $c."
+# Criterion 12: the doctor's note, never a FIX; none for an archived entry (E7).
+out="$(doc)"
+j -e --arg i "$u" --arg p "$pm" '((r) => r.length == 1 && r[0].level == "note" && r[0].message.includes($i + " (design: qa)") && !r[0].message.includes($p))($.results.filter((r) => r.id == "handoffs.unreviewed"))' <<<"$out" >/dev/null \
+  || fail "criterion 12: $(j -c '$.results.filter((r) => r.id == "handoffs.unreviewed")' <<<"$out")"
+h="$(git -C "$NW" rev-parse HEAD)"; x="handoffs/archive-$(date +%Y-%m).md"; mkdir -p "$NW/handoffs"
+{ printf '# Closed handoffs\n\n'; awk -v i="### $u:" 'index($0, i) == 1 { on = 1; print; next } on && /^##/ { on = 0 } on' "$NW/HANDOFFS.md"; } > "$NW/$x"
+awk -v i="### $u:" 'index($0, i) == 1 { on = 1; next } on && /^##/ { on = 0 } !on' "$NW/HANDOFFS.md" > "$T/nb.h" && cp "$T/nb.h" "$NW/HANDOFFS.md"
+git -C "$NW" add -A && git -C "$NW" commit -qm "E7: archived by hand"
+doc | j -e '$.results.some((r) => r.id == "handoffs.unreviewed" && r.level == "ok")' >/dev/null || fail "criterion 12, E7: $(doc | j -c '$.results.filter((r) => r.id == "handoffs.unreviewed")')"
+git -C "$NW" reset -q --hard "$h"
+# Criterion 13: archive keeps it under Open, saying why, and moves the rest (N1's control too); once a review
+# depends on it, both move.
+out="$(hs archive)" || fail "criterion 13: $out"
+grep -q "^$u stays under Open: done, its commits change design (qa), and no review handoff depends on it$" <<<"$out" && grep -q "no review" <<<"$out" || fail "criterion 13: $out"
+sed -n '/^## Open$/,$p' "$NW/HANDOFFS.md" | grep -q "^### $u:" && ! grep -q "^### $pm:" "$NW/HANDOFFS.md" && grep -qh "^### $pm:" "$NW"/handoffs/archive-*.md || fail "criterion 13: what moved"
+ur="$(idof "$(hs add --from design-lead --to qa --changed x --needed y --depends-on "$u" "Review $u")")"
+doc | j -e '$.results.some((r) => r.id == "handoffs.unreviewed" && r.level == "ok")' >/dev/null || fail "criterion 12: the note stays once a review depends on it"
+setst "$ur" "done ($(date +%F))"; out="$(hs archive)" || fail "criterion 13, again: $out"
+! grep -q "^### $u:\|^### $ur:" "$NW/HANDOFFS.md" && grep -qh "^### $u:" "$NW"/handoffs/archive-*.md && grep -qh "^### $ur:" "$NW"/handoffs/archive-*.md && ! grep -q 'stays under Open' <<<"$out" || fail "criterion 13, again: $out"
+# Criterion 14: attach by the sender or an addressee (E4); anyone else is refused and nothing changes.
+a14="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "Screens" 2>/dev/null)")"
+echo png > "$T/shot.png"; echo png2 > "$T/shot2.png"; h="$(git -C "$NW" rev-parse HEAD)"
+hs attach "$a14" "$T/shot.png" --from design-lead >/dev/null && [[ -f "$NW/specs/evidence/$a14/shot.png" && "$(git -C "$NW" rev-parse HEAD)" != "$h" ]] \
+  && sed -n "/^### $a14:/,/^### /p" "$NW/HANDOFFS.md" | grep -q "^- Evidence: .*](specs/evidence/$a14/shot.png)" || fail "criterion 14: attach by the addressee"
+hs attach "$a14" "$T/shot2.png" --from owner >/dev/null || fail "criterion 14: attach by the sender"
+s1="$(sha "$NW/HANDOFFS.md")"; rc=0; err="$(hs attach "$a14" "$T/shot.png" --from security 2>&1)" || rc=$?
+[[ $rc == 1 && "$(sha "$NW/HANDOFFS.md")" == "$s1" ]] && grep -qF "$a14 was filed by owner to design-lead: only its sender or an addressee adds evidence or a way back" <<<"$err" || fail "criterion 14, security (exit $rc): $err"
+# Criterion 15: the reviewer a review is addressed to attaches what qa's PASS needs.
+mkdir -p "$NW/specs/design" && echo y > "$NW/specs/design/y.html" && git -C "$NW" add specs/design/y.html && git -C "$NW" commit -qm "y" -- specs/design/y.html; c="$(git -C "$NW" rev-parse --short HEAD)"
+rv15="$(idof "$(hs add --from owner --to qa --changed x --needed y --depends-on "$a14" "Check the screens")")"
+rc=0; err="$(hs record "$rv15" --role qa PASS --commits "$c" --note specs/qa/n.md 2>&1)" || rc=$?
+[[ $rc == 1 ]] && grep -qF -- "--from owner" <<<"$err" && grep -qF -- "--from qa" <<<"$err" || fail "criterion 15 (exit $rc): $err"
+echo note > "$T/note.md"; hs attach "$rv15" "$T/note.md" --from qa >/dev/null && hs record "$rv15" --role qa PASS --commits "$c" --note specs/qa/n.md >/dev/null || fail "criterion 15: attach, then PASS"
+# Criterion 16: who verifies is unchanged.
+rv16="$(idof "$(hs add --from design-lead --to qa --changed x --needed y --depends-on "$a14" --evidence "$T/shot.png" "Check them again")")"
+rc=0; err="$(hs record "$rv16" --role design-lead PASS --commits "$c" --note specs/qa/n.md 2>&1)" || rc=$?
+[[ $rc == 1 ]] && grep -qF "the builder never verifies its own work" <<<"$err" || fail "criterion 16 (exit $rc): $err"
+# Criteria 2 and 4: a second area over the same path: two lines at add, and both areas' reviewers verify (E3).
+nb_ws nb2
+L before "$NW/AGENTS.md" '/^\| none yet \|/' '| copy | `workspace/specs/design/` | security | the copy | none |'; git -C "$NW" commit -qam "copy area"
+out="$(hs add --small --from owner --to design-lead --changed x --needed y "Two areas" 2>"$T/nb.err")" || fail "criterion 2: $out"; a="$(idof "$out")"
+[[ "$(cat "$T/nb.err")" == "design-lead's work under specs/design/ is in critical area design, reviewed by qa: design-lead hands on with --depends-on $a"$'\n'"design-lead's work under specs/design/ is in critical area copy, reviewed by security: design-lead hands on with --depends-on $a" ]] || fail "criterion 2: $(cat "$T/nb.err")"
+out="$(run "$a")" || fail "criterion 4: $out"; r="$(rvof "$a")"
+[[ "$(steps "$out")" == "design-lead: works on $a"$'\n'"qa: verifies $r"$'\n'"security: verifies $r" ]] && tail -1 <<<"$out" | grep -qF "$a is done: every reviewer passed $r; its commits are in the workspace" || fail "criterion 4: $out"
+# Criterion 10: a workspace with no builder at all (E6).
+nb_ws nb3 "design-lead qa" noapp
+a="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "No builders" 2>/dev/null)")"
+out="$(run "$a")" || fail "criterion 10: $out"; r="$(rvof "$a")"
+[[ "$(steps "$out")" == "design-lead: works on $a"$'\n'"qa: verifies $r" ]] && tail -1 <<<"$out" | grep -qF "$a is done: every reviewer passed $r; its commits are in the workspace, so there is nothing to push" || fail "criterion 10: $out"
+# Criterion 18: the docs.
+x="$(awk '/^\*\*`run`\*\*/ && !n++ { on = 1 } /^\*\*`run --scheduled`\*\*/ { on = 0 } on' "$KIT/docs/commands.md")"
+grep -q 'not a builder' <<<"$x" && grep -q 'nothing to push' <<<"$x" || fail "criterion 18: commands.md, handoff run"
+grep '^\*\*`attach`\*\*' "$KIT/docs/commands.md" | grep -q addressee || fail "criterion 18: commands.md, attach"
+grep -q 'handoffs.unreviewed' "$KIT/docs/concepts.md" && grep -q 'handoffs.unreviewed' "$KIT/docs/troubleshooting.md" || fail "criterion 18: concepts or troubleshooting"
+x="$(awk '/^## / { n++ } n == 1' "$KIT/CHANGELOG.md")"
+[[ "$x" == "## "*Unreleased* ]] && for w in "handoff run" "handoff attach" "handoff archive" handoffs.unreviewed; do grep -qF "$w" <<<"$x" || fail "criterion 18: CHANGELOG names $w"; done
   return 0   # a last "check && fail" line must not end the run
 }
 
