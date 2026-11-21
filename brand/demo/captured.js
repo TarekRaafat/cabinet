@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.8.2).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.8.4).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -108,7 +108,7 @@ var CAPTURED = {
  "06-doctor": {
   "cmd": "cabinet doctor",
   "lines": [
-   "All good. 3 note(s) below.",
+   "All good. 4 note(s) below.",
    "",
    "<span class=\"b\">Tools</span>",
    "  <span class=\"green\">ok   </span> the tools cabinet needs are here (git, node, npm)",
@@ -118,7 +118,7 @@ var CAPTURED = {
    "<span class=\"b\">Product repos</span>",
    "  <span class=\"green\">ok   </span> product repos checked",
    "<span class=\"b\">Kit and roles</span>",
-   "  <span class=\"green\">ok   </span> cabinet 0.8.2",
+   "  <span class=\"green\">ok   </span> cabinet 0.8.4",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -140,6 +140,7 @@ var CAPTURED = {
    "  <span class=\"blue\">note </span> the Cursor editor keeps its agent's command rules in its own settings, which the kit does not set: only the git push gate applies there",
    "  <span class=\"green\">ok   </span> Grok loads the Claude Code rules",
    "  <span class=\"blue\">note </span> v2.2.0 of opencode cannot be checked from here: confirm its permission settings by hand (the kit's rules are in ~/.config/opencode/opencode.json)",
+   "  <span class=\"blue\">note </span> account connectors are in no file the doctor can read: one added in a tool's app or account is not listed here, so check each tool's own list (docs/guardrails.md, \"Outside the shell\")",
    "  <span class=\"green\">ok   </span> scheduled jobs run with claude (/opt/homebrew/bin/claude)",
    "  <span class=\"green\">ok   </span> scheduled jobs find node",
    "<span class=\"b\">Credit roles</span>",
@@ -160,6 +161,7 @@ var CAPTURED = {
    "  <span class=\"green\">ok   </span> no verdict is written outside a Verdict line",
    "  <span class=\"green\">ok   </span> every verdict line was written by bin/handoff.sh record or bin/spec.sh record",
    "  <span class=\"green\">ok   </span> every small task that passed stayed small",
+   "  <span class=\"green\">ok   </span> no done work skips the review its critical area asks for",
    "  <span class=\"green\">ok   </span> every qa PASS has evidence",
    "<span class=\"b\">Critical areas</span>",
    "  <span class=\"green\">ok   </span> no critical areas declared",
@@ -191,7 +193,7 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "               cabinet 0.8.2",
+   "               cabinet 0.8.4",
    "⬤              One person, a whole team.",
    "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
@@ -201,13 +203,13 @@ var CAPTURED = {
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261119-01 filed for qa and committed"
+   "H-20261121-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261119-01 </span>  qa                        Checkout screens ready"
+   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261121-01 </span>  qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -220,7 +222,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.8.2).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.8.4).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",
