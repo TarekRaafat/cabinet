@@ -8,6 +8,9 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `backup restore` refuses, writing nothing, an archive whose top is not exactly one folder, one whose slug or stamp differs from its file name, and a target folder whose `cabinet.env` names another workspace (read as text, never run): restore into an empty folder instead. It now needs the archive's own file name, `<slug>-YYYYMMDD-HHMMSS.tar.gz.enc`, where 0.8.4 took a slug from any name; a renamed archive is refused with the name to give it back. `backup verify` reports an archive made for another workspace, or with another stamp than its file name, as a problem.
 - Archives made before 0.8.5 still restore, as before, and restore says once that the archive is `not authenticated`. `backup verify` reports one as a problem, `made before 0.8.5`: back up again; its repos are still checked. Nothing to do by hand: the next scheduled backup writes the new format.
 - Every `.env` file is now in the backup, at any depth: 0.8.4 left out any more than three folders deep (`apps/web/api/.env`). `node_modules`, `.git`, nested repos and `*.example` files are still left out.
+- `cabinet bootstrap` with `CABINET_RUNNER=antigravity` looks for `agy`, the program Antigravity installs, as the doctor and scheduled jobs already did: before, it said scheduled jobs would not find `antigravity` and exited 1 with `agy` installed.
+- The deny rules for Claude Code, Grok, Qwen Code, opencode, Cursor CLI, Antigravity and Codex also refuse `git credential`, which can print a password or token git has stored. `cabinet bootstrap` adds the rule; until then each tool's guardrails check in `cabinet doctor` says a rule is missing.
+- `guardrails.clone-settings` also names Antigravity's project folders, `.agents/`, `.agent/` and `.antigravity/`, in the workspace and each repo it lists.
 
 ## 0.8.4 - 21 Nov 2026
 

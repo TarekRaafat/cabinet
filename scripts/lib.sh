@@ -745,6 +745,17 @@ cursor_bin() {
   [[ "$(readlink -f "$b" 2>/dev/null || echo "$b")" == *[Cc]ursor* ]] && echo "$b"
 }
 
+# The program CABINET_RUNNER starts, by name: one mapping for bootstrap, the doctor and job_path. A custom runner's
+# is the first word of CABINET_RUNNER_CMD, Cursor's the name cursor_bin finds, Antigravity's agy.
+runner_prog() {
+  case "$CABINET_RUNNER" in
+    custom) printf '%s' "${CABINET_RUNNER_CMD%% *}" ;;
+    cursor) basename "$(cursor_bin || echo cursor-agent)" ;;
+    antigravity) printf agy ;;
+    *) printf '%s' "$CABINET_RUNNER" ;;
+  esac
+}
+
 # mine <schedule file>: the schedule runs a script of this workspace.
 mine() { [[ "$(sched_ws "$1")" == "$WS" ]]; }
 
@@ -752,9 +763,7 @@ mine() { [[ "$(sched_ws "$1")" == "$WS" ]]; }
 # runner, node (for tools that are node scripts) and the kit's own tools.
 job_path() {
   local p="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" t d
-  local runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
-  [[ "$runner" == cursor ]] && runner="$(cursor_bin || echo cursor-agent)"
-  [[ "$runner" == antigravity ]] && runner=agy
+  local runner; runner="$(runner_prog)"
   for t in "$runner" node git openssl; do
     d="$(command -v "$t" 2>/dev/null)" || continue
     [[ "$d" == /* ]] || continue

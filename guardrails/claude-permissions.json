@@ -54,6 +54,7 @@
       "Bash(security dump-keychain*)",
       "Bash(secret-tool lookup*)",
       "Bash(secret-tool search*)",
+      "Bash(*git credential*)",
       "Bash(*cabinet/passphrases*)"
     ],
     "ask": [

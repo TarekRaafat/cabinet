@@ -2592,6 +2592,44 @@ function mcpList(tool, file) {
   if (names.length) process.stdout.write(names.join("\n") + "\n");
 }
 
+// hook-merge claude|agy <settings file> <matcher> <gate path> [--check]: the kit's PreToolUse entry for the MCP gate
+// (guardrails/cabinet-mcp-gate.js), added beside every hook already there. Claude Code keeps hooks.PreToolUse in
+// settings.json; Antigravity's hooks.json holds named hooks, the kit's under "cabinet-mcp-gate". The command is built
+// here, the path quoted for sh -c, so a missing node or gate refuses too: Claude Code takes exit 2 as a refusal,
+// Antigravity a deny decision on stdout. --check exits 0 when the entry is there and 1 when not; otherwise the file
+// is printed with the entry added (unchanged when it is there). A missing file is {}. Exit 4: not JSON, or a shape
+// the kit does not expect (hooks or PreToolUse of another type, "cabinet-mcp-gate" holding something else).
+function hookMerge(kind, file, matcher, gate, check) {
+  const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+  if ((kind !== "claude" && kind !== "agy") || matcher === undefined || !gate) die("usage: node lib.js hook-merge claude|agy <file> <matcher> <gate path> [--check]", 2);
+  const q = "'" + gate.replace(/'/g, "'\\''") + "'";
+  const command = kind === "agy"
+    ? `node ${q} agy || echo '{"decision": "deny", "reason": "cabinet: the MCP gate could not run, so it refuses"}'`
+    : `node ${q} claude || exit 2`;
+  let o = {};
+  if (fs.existsSync(file)) { try { o = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { die("", 4); } }
+  if (!isObj(o)) die("", 4);
+  const ours = (e) => isObj(e) && Array.isArray(e.hooks) && e.hooks.some((h) => isObj(h) && h.command === command);
+  const entry = { matcher, hooks: [{ type: "command", command }] };
+  // The list the entry belongs in, and how to put it back: Claude Code's under hooks, Antigravity's under its name.
+  let list, put;
+  if (kind === "claude") {
+    if (o.hooks !== undefined && !isObj(o.hooks)) die("", 4);
+    const h = o.hooks || {};
+    if (h.PreToolUse !== undefined && !Array.isArray(h.PreToolUse)) die("", 4);
+    list = h.PreToolUse || [];
+    put = (l) => ({ ...o, hooks: { ...h, PreToolUse: l } });
+  } else {
+    const named = o["cabinet-mcp-gate"];
+    if (named !== undefined && !(isObj(named) && Array.isArray(named.PreToolUse) && named.PreToolUse.some(ours))) die("", 4);
+    list = named ? named.PreToolUse : [];
+    put = (l) => ({ ...o, "cabinet-mcp-gate": { PreToolUse: l } });
+  }
+  const there = list.some(ours);
+  if (check === "--check") process.exit(there ? 0 : 1);
+  process.stdout.write(JSON.stringify(there ? o : put([...list, entry]), null, 2) + "\n");
+}
+
 // The backup archive format from 0.8.5 (docs/backups.md): CBNTBAK1, a 16-byte salt and a 12-byte IV,
 // then the payload (a tar.gz) in AES-256-GCM with the key from PBKDF2-SHA-256, and the 16-byte tag
 // last, over the ciphertext with the first 36 bytes as additional data. An archive made before 0.8.5
@@ -2666,7 +2704,7 @@ function backupOpen(archive, out) {
 
 const COMMANDS = {
   "backup-seal": backupSeal, "backup-open": backupOpen,
-  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
+  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "hook-merge": hookMerge, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,

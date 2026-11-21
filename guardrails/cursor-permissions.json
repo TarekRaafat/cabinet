@@ -51,7 +51,8 @@
       "Shell(security:find-generic-password*)",
       "Shell(security:dump-keychain*)",
       "Shell(secret-tool:lookup*)",
-      "Shell(secret-tool:search*)"
+      "Shell(secret-tool:search*)",
+      "Shell(git:credential*)"
     ]
   }
 }

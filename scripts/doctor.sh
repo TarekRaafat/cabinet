@@ -328,7 +328,7 @@ esac
 while IFS= read -r d; do
   [[ -d "$d" ]] || continue
   for f in opencode.json opencode.jsonc .opencode .qwen/settings.json .mcp.json .claude/settings.json .claude/settings.local.json \
-           .codex/config.toml .gemini/settings.json .cursor/mcp.json .cursor/cli.json; do
+           .codex/config.toml .gemini/settings.json .cursor/mcp.json .cursor/cli.json .agents .agent .antigravity; do
     [[ -e "$d/$f" ]] || continue
     case "$f" in
       .qwen/*) t="Qwen Code workspace settings" tool="Qwen Code" ;;
@@ -339,6 +339,7 @@ while IFS= read -r d; do
       .gemini/*) t="Gemini CLI project settings" tool="Gemini CLI" ;;
       .cursor/mcp.json) t="a Cursor project MCP server list" tool=Cursor ;;
       .cursor/*) t="Cursor CLI project settings" tool=Cursor ;;
+      .agents|.agent|.antigravity) t="Antigravity project settings" tool=Antigravity ;;
       *) t="an opencode project config" tool=opencode ;;
     esac
     shown="$(term_text <<<"$d/$f")"
@@ -351,9 +352,7 @@ for t in aider goose amp crush; do
 done
 # The runner must be found with the PATH scheduled jobs really get: the one written
 # into an installed schedule when there is one, else the one bootstrap would write.
-c="$CABINET_RUNNER"; [[ "$c" == custom ]] && c="${CABINET_RUNNER_CMD%% *}"
-[[ "$c" == cursor ]] && c="$(basename "$(cursor_bin || echo cursor-agent)")"
-[[ "$c" == antigravity ]] && c=agy
+c="$(runner_prog)"
 jp=""
 for pl in "$SCHED_DIR/$LABEL".*"$SCHED_EXT"; do
   [[ -f "$pl" ]] && mine "$pl" && [[ "$pl" != *".backup$SCHED_EXT" ]] || continue

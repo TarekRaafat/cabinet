@@ -4,6 +4,7 @@ core/rules/ready-to-build.md
 core/rules/reviews.md
 core/rules/seats.md
 guardrails/agy-permissions.json
+guardrails/cabinet-mcp-gate.js
 guardrails/cabinet-push-gate.js
 guardrails/claude-permissions.json
 guardrails/codex-default.rules

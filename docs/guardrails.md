@@ -56,20 +56,20 @@ The rule formats differ, so the coverage does too.
 
 - push, `git send-pack` (which pushes without hooks), merge, release, `gh api` writes, publishing (npm, npx, bun, pnpm, yarn, also with options before `publish`);
 - the ways around the gate: `-c core.hooksPath` in common spellings, `GIT_CONFIG_*` variables, `env -i` and `env -u`, a push behind a `HOME=` override (caught because `git push` is matched anywhere), `--no-verify` and its abbreviations, faking a terminal (`script`, `expect`, `unbuffer`, Python's `pty.spawn`);
-- printing the GitHub token, and reading the keychain, the Linux secret store (`secret-tool lookup` and `search`) or the backup passphrase file (any command naming `cabinet/passphrases`).
+- printing the GitHub token, and reading the keychain, the Linux secret store (`secret-tool lookup` and `search`), git's stored credentials (`git credential`) or the backup passphrase file (any command naming `cabinet/passphrases`).
 
 Side effects: some harmless commands are refused too, such as an npm script named like `publish-docs`, or any command that mentions `git push` (for example in an `echo`).
 
 **Gemini CLI** (regular expressions): the same list, with the hooks path matched in any letter case and `git push` matched anywhere in a command.
 
-**Cursor CLI** (the command's first word plus an arguments pattern): push, `send-pack`, hook-path and `--no-verify` arguments to git, the terminal fakers, merges, releases, `gh api` writes, publishing, the GitHub token and the keychain. Probed live on Cursor CLI 2026.10.16 with harmless stand-ins:
+**Cursor CLI** (the command's first word plus an arguments pattern): push, `send-pack`, hook-path and `--no-verify` arguments to git, the terminal fakers, merges, releases, `gh api` writes, publishing, the GitHub token, the keychain and `git credential`. Probed live on Cursor CLI 2026.10.16 with harmless stand-ins:
 
 - argument patterns match at the start and in the middle; first-word rules match;
 - chained commands (`a && b`) are checked;
 - a leading variable (`HOME=... git push`) is dropped before matching, so the git rules still catch it;
 - wrappers are not looked through, so the kit denies `env`, `bash -c`, `sh -c`, `zsh -c`, `nohup`, `xargs`, `sudo`, `exec`, `command`, `nice` and `stdbuf` outright, and `timeout` or `time` with push, publish or `send-pack`. Any other wrapper is not caught.
 
-**Codex and Antigravity** (rules match only how a command starts): push, `send-pack`, `env -i` and `env -u`, merge, release, publish and the terminal fakers are denied; `git -c ...` and `gh api` ask first. A bypass that does not start the command, such as `HOME=... git push` or `--no-verify` after other words, is not caught; nor is a push with `PATH=` pointing at a fake `node`, `NODE_OPTIONS=--require <file>`, or, on Linux, `XDG_STATE_HOME=` pointing at a made-up log folder, each of which can make the gate's helper say a repo is not Cabinet's. Tools that match `git push` anywhere in a command catch all of these.
+**Codex and Antigravity** (rules match only how a command starts): push, `send-pack`, `env -i` and `env -u`, merge, release, publish, the terminal fakers and `git credential` are denied; `git -c ...` and `gh api` ask first. A bypass that does not start the command, such as `HOME=... git push` or `--no-verify` after other words, is not caught; nor is a push with `PATH=` pointing at a fake `node`, `NODE_OPTIONS=--require <file>`, or, on Linux, `XDG_STATE_HOME=` pointing at a made-up log folder, each of which can make the gate's helper say a repo is not Cabinet's. Tools that match `git push` anywhere in a command catch all of these.
 
 **Not caught by any tool's rules:** git config keys in unusual letter case (except in Gemini), an agent editing `.git/config` with its file tools (the doctor reports a repo's own `core.hooksPath` afterwards), an agent removing a repo's row from `repos.tsv` or deleting a workspace's record in the log folder, which takes that repo out of the gate (the workspace's git history shows a `repos.tsv` change; the doctor's `guardrails.claim` shows a missing record), and other ways of faking a terminal.
 
@@ -108,7 +108,7 @@ The paths:
 - **P4 A host app or launcher with another settings folder.** `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG`, `XDG_CONFIG_HOME` or another `HOME` make the tool read a folder bootstrap never wrote.
 - **P5 The agent edits its own guardrails with a file tool.** A file edit (not a shell command) on a tool's settings, the global hooks folder, `~/.gitconfig` or a repo's `.git/config`. The doctor finds most of it afterwards.
 - **P6 Code the agent writes, then runs.** A script that calls the GitHub or npm API with a token it can reach. A rule sees the command line, not what the script does.
-- **P7 A cloned project's tool settings.** A repo's `.mcp.json`, `.claude/settings.json`, `.codex/config.toml`, `.gemini/settings.json`, `.cursor/mcp.json` and the like add MCP servers, hooks or looser settings for that folder.
+- **P7 A cloned project's tool settings.** A repo's `.mcp.json`, `.claude/settings.json`, `.codex/config.toml`, `.gemini/settings.json`, `.cursor/mcp.json`, Antigravity's `.agents/` and the like add MCP servers, hooks or looser settings for that folder.
 - **P8 A publish arranged by a commit.** A commit adds a workflow under `.github/workflows/` that publishes or deploys on push or tag; your own push then publishes.
 - **P9 Tools with no kit rules.** The Cursor editor, aider, goose, amp, crush and a custom runner have the push gate only.
 
@@ -143,7 +143,7 @@ These are on the [roadmap](../ROADMAP.md):
 - an archive made before 0.8.5 is encrypted with AES-256-CBC and no separate integrity check, so a change to one shows only as an unreadable archive: it still restores, saying it is not authenticated, and `backup verify` asks you to back up again ([backups](backups.md#what-a-backup-holds));
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
-- opencode agent-level and project-level configs, Qwen workspace settings, and the project files of Claude Code (`.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`), Codex (`.codex/config.toml`), Gemini CLI (`.gemini/settings.json`) and Cursor (`.cursor/mcp.json`, `.cursor/cli.json`), can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
+- opencode agent-level and project-level configs, Qwen workspace settings, and the project files of Claude Code (`.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`), Codex (`.codex/config.toml`), Gemini CLI (`.gemini/settings.json`), Cursor (`.cursor/mcp.json`, `.cursor/cli.json`) and Antigravity (the `.agents/`, `.agent/` and `.antigravity/` folders), can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
 - on opencode 2.x the doctor cannot read the resolved rules.
 
 ## Undoing the guardrails

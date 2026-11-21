@@ -5238,15 +5238,16 @@ out="$(dp "$FP" --json)"
 rm -f "$GS/codex-forbids"; out="$(dp "$FP" --json)"
 res "$out" guardrails.codex | grep -q '^fix ' || fail "criterion 10: codex no longer forbidding git push: $(res "$out" guardrails.codex)"
 # Criterion 11: older files, and the kit's files less one rule.
-c11() {  # c11 <what>: each FIX names 1 missing rule and its file, and says run cabinet bootstrap
+c11() {  # c11 <what> [<Codex's count>]: each FIX names the missing rules (1, unless given) and its file, and says run cabinet bootstrap
   local out; out="$(dp "$CP" --json)"
-  res "$out" guardrails.codex | grep -qxF 'fix Codex is missing 1 kit rule(s) in ~/.codex/rules/default.rules (run cabinet bootstrap)' \
+  res "$out" guardrails.codex | grep -qxF "fix Codex is missing ${2:-1} kit rule(s) in ~/.codex/rules/default.rules (run cabinet bootstrap)" \
     && res "$out" guardrails.gemini | grep -qxF 'fix Gemini CLI is missing 1 kit rule(s) in ~/.gemini/policies/owner-control.toml (run cabinet bootstrap)' \
     && res "$out" guardrails.agy | grep -qxF 'fix agy is missing 1 deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)' \
     && [[ "$(dp "$CP" | tail -1)" != "All good"* ]] || fail "criterion 11, $1: $(three "$out")"
 }
 j '({...$, permissions: {...$.permissions, deny: $.permissions.deny.slice(1)}})' "$KIT/guardrails/agy-permissions.json" > "$AG"
-cp "$FX/codex-default.rules" "$CX"; cp "$FX/gemini-owner-control.toml" "$GM"; c11 "the 0.1.0 files"
+# The 0.1.0 Codex file lacks two: secret-tool (0.1.1) and git credential (0.8.5).
+cp "$FX/codex-default.rules" "$CX"; cp "$FX/gemini-owner-control.toml" "$GM"; c11 "the 0.1.0 files" 2
 grep -v 'gh", "release' "$KIT/guardrails/codex-default.rules" > "$CX"
 awk 'BEGIN { RS = ""; ORS = "\n\n" } !/commandPrefix = "gh release"/' "$KIT/guardrails/gemini-owner-control.toml" > "$GM"; c11 "the kit's files less one rule"
 cp "$KIT/guardrails/agy-permissions.json" "$AG"
@@ -5256,7 +5257,7 @@ own_g=$'\n[[rule]]\ntoolName = "run_shell_command"\ncommandPrefix = "make deploy
 { cat "$FX/codex-default.rules"; echo "$own_c"; } > "$GS/c12"; { cat "$FX/gemini-owner-control.toml"; printf '%s' "$own_g"; } > "$GS/g12"
 bk() { ls "$(dirname "$1")" | grep -c "^$(basename "$1")\.bak\." || true; }
 c12() {  # c12 <codex file> <gemini file>: the result of criterion 12 in each
-  [[ "$(head -c "$(wc -c < "$GS/c12")" "$1")" == "$(cat "$GS/c12")" ]] && [[ "$(tail -n +"$(($(wc -l < "$GS/c12") + 1))" "$1")" == "$(printf '%s\n%s' '# Added by cabinet bootstrap: rules from a newer Cabinet kit' "$(grep secret-tool "$KIT/guardrails/codex-default.rules")")" ]] \
+  [[ "$(head -c "$(wc -c < "$GS/c12")" "$1")" == "$(cat "$GS/c12")" ]] && [[ "$(tail -n +"$(($(wc -l < "$GS/c12") + 1))" "$1")" == "$(printf '%s\n%s' '# Added by cabinet bootstrap: rules from a newer Cabinet kit' "$(grep -e secret-tool -e '"git", "credential"' "$KIT/guardrails/codex-default.rules")")" ]] \
     && cmp -s <(head -c "$(wc -c < "$GS/g12")" "$2") "$GS/g12" && [[ "$(tail -n +"$(($(wc -l < "$GS/g12") + 1))" "$2" | head -1)" == '# Added by cabinet bootstrap: rules from a newer Cabinet kit' ]] \
     && tail -n +"$(($(wc -l < "$GS/g12") + 2))" "$2" | head -1 | grep -qx '\[\[rule\]\]' && tail -4 "$2" | grep -qF 'cabinet/passphrases'
 }
@@ -5264,7 +5265,7 @@ cp "$GS/c12" "$CX"; cp "$GS/g12" "$GM"; rm -f "$CX".bak.* "$GM".bak.*
 PATH="$CP" "$GW/bin/bootstrap.sh" > "$GS/boot12.out" 2>&1 || true
 c12 "$CX" "$GM" || { cat "$CX" "$GM"; fail "criterion 12: the files are not the owner's bytes, a comment line, then the missing rule"; }
 [[ "$(bk "$CX")" == 1 && "$(bk "$GM")" == 1 ]] && cmp -s "$CX".bak.* "$GS/c12" && cmp -s "$GM".bak.* "$GS/g12" || fail "criterion 12: not exactly one backup equal to the file before"
-grep -qF "added 1 kit rule(s) to $CX" "$GS/boot12.out" && grep -qF "added 1 kit rule(s) to $GM" "$GS/boot12.out" || fail "criterion 12: bootstrap did not say what it added: $(cat "$GS/boot12.out")"
+grep -qF "added 2 kit rule(s) to $CX" "$GS/boot12.out" && grep -qF "added 1 kit rule(s) to $GM" "$GS/boot12.out" || fail "criterion 12: bootstrap did not say what it added: $(cat "$GS/boot12.out")"
 out="$(dp "$CP" --json)"; res "$out" guardrails.codex | grep -q '^ok ' && res "$out" guardrails.gemini | grep -q '^ok ' || fail "criterion 12: the doctor after bootstrap: $(three "$out")"
 cp "$CX" "$GS/c12-after"; cp "$GM" "$GS/g12-after"
 PATH="$CP" "$GW/bin/bootstrap.sh" >/dev/null 2>&1 || true
@@ -10267,6 +10268,122 @@ st=0; node "$W/bin/lib.js" backup-open "$A" "$T/ba-none/x" 3<<<fixture-pass-1 2>
 ((st == 2)) && ! grep -q 'changed or damaged' "$T/ba-err" || fail "B1: exit $st, $(cat "$T/ba-err")"
 HOME="$H" wsrm "$W"; HOME="$H" wsrm "$W2"
   return 0   # a last "check && fail" line must not end the run
+}
+
+section "guardrails outside the shell, part 2" ""
+s135() {
+# specs/guardrails-outside-the-shell-2.md: the verb hook's script (Rule 3, criterion 4), its merge into a hook file
+# (Rule 10, E2, E6, E10), the runner's program (Rule 8, criterion 6), Antigravity's project settings (Rule 7,
+# criterion 8), the git credential deny in every shell rules file (Rule 4), Gemini CLI left as it was (criterion 12)
+# and the doctor's IDs (criterion 16). The rows of Rule 1 that the owner's probes confirm come with step 2.
+local PH="$T/p2-home" PB="$T/p2-bin" PT="$T/p2-tools" P W out st n f c o i k ids m
+local GATE="$KIT/guardrails/cabinet-mcp-gate.js"
+psum() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+mkdir -p "$PH" "$PB" "$PT"
+
+# 4. The gate on each input. Refused: exit 2 for Claude Code, a deny decision on stdout (exit 0) for Antigravity.
+# Let through: exit 0 and no output. Claude Code's input form, then Antigravity's (toolCall.name, from its hook docs).
+gate() { st=0; o="$(printf '%s' "$2" | node "$GATE" "$1" 2>/dev/null)" || st=$?; }
+refused() { if [[ $1 == claude ]]; then ((st == 2)) && [[ -z "$o" ]]; else ((st == 0)) && j -e '$.decision == "deny"' <<<"$o" >/dev/null; fi; }
+through() { ((st == 0)) && [[ -z "$o" ]]; }
+form() { if [[ $1 == claude ]]; then printf '{"tool_name": "%s", "tool_input": {}}' "$2"; else printf '{"toolCall": {"id": "t1", "name": "%s", "args": {}}}' "$2"; fi; }
+for k in claude agy; do
+  for n in mcp__x__merge_pull_request mcp__x__push_files mcp__x__create_or_update_file mcp__x__delete_branch mcp__x__create_release \
+           mcp__x__publish_package mcp__x__deploy_site mcp__x__send_email mcp__x__MergePullRequest mcp__x__list_releases mcp__pushover__list_items; do
+    gate $k "$(form $k $n)"; refused $k || fail "criterion 4 ($k): $n was not refused (exit $st, $o)"
+  done
+  for n in mcp__x__get_file_contents mcp__x__list_issues; do gate $k "$(form $k $n)"; through || fail "criterion 4 ($k): $n was not let through (exit $st, $o)"; done
+  for i in 'not json' '' '{}'; do gate $k "$i"; refused $k || fail "criterion 4 ($k): input [$i] was not refused (exit $st, $o)"; done
+done
+gate other '{"tool_name": "mcp__x__list_issues"}'; ((st == 2)) || fail "criterion 4: the gate without its tool let a call through"
+
+# Rule 10 (E2, E10, E6): hook-merge keeps every hook there, adds the kit's once, and leaves a file it cannot read.
+f="$T/p2-settings.json" P="$T/it's here/gate.js"
+printf '%s\n' '{"permissions": {"allow": ["mcp__github__merge_pull_request"]}, "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}]}}' > "$f"
+L hook-merge claude "$f" 'mcp__.*' "$P" > "$f.new" || fail "hook-merge claude"
+j -e '$.permissions.allow[0] == "mcp__github__merge_pull_request" && $.hooks.PreToolUse.length == 2 && $.hooks.PreToolUse[0].matcher == "Bash"
+  && $.hooks.PreToolUse[0].hooks[0].command == "true" && $.hooks.PreToolUse[1].matcher == "mcp__.*"' "$f.new" >/dev/null || fail "E2: $(cat "$f.new")"
+L hook-merge claude "$f.new" 'mcp__.*' "$P" --check || fail "E10: the kit's entry is not found once added"
+! L hook-merge claude "$f" 'mcp__.*' "$P" --check || fail "E10: the entry is found where it is not"
+L hook-merge claude "$f.new" 'mcp__.*' "$P" > "$f.2"; [[ "$(j -c '$' "$f.new")" == "$(j -c '$' "$f.2")" ]] || fail "E10: a second merge changed the file"
+# The command written: the path quoted for sh -c; with no node, or no gate, it still refuses.
+c="$(j -r '$.hooks.PreToolUse[1].hooks[0].command' "$f.new")"
+st=0; form claude mcp__x__list_issues | sh -c "$c" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 4: the command with no gate file gave $st"
+mkdir -p "$(dirname "$P")"; cp "$GATE" "$P"
+st=0; form claude mcp__x__list_issues | sh -c "$c" >/dev/null 2>&1 || st=$?; ((st == 0)) || fail "criterion 4: the command did not let a read through ($st): $c"
+st=0; form claude mcp__x__list_issues | PATH=/nowhere /bin/sh -c "$c" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 4: with no node the command gave $st"
+L hook-merge agy "$T/p2-none.json" 'mcp_.*' "$P" > "$f.agy" || fail "hook-merge agy"
+c="$(j -r '$["cabinet-mcp-gate"].PreToolUse[0].hooks[0].command' "$f.agy")"
+o="$(form agy view_file | PATH=/nowhere /bin/sh -c "$c" 2>/dev/null)"; j -e '$.decision == "deny"' <<<"$o" >/dev/null || fail "criterion 4: agy's command with no node: $o"
+o="$(form agy mcp_x_push | sh -c "$c" 2>/dev/null)"; [[ "$(j -c '$.decision' <<<"$o")" == '"deny"' ]] || fail "criterion 4: agy's command printed: $o"
+o="$(form agy view_file | sh -c "$c" 2>/dev/null)"; [[ -z "$o" ]] || fail "criterion 4: agy's command printed for a read: $o"
+for i in '{ "hooks": ' '{"hooks": []}' '{"hooks": {"PreToolUse": {}}}' '[]'; do
+  printf '%s' "$i" > "$f.bad"; st=0; L hook-merge claude "$f.bad" 'mcp__.*' /g.js >/dev/null 2>&1 || st=$?; ((st == 4)) || fail "E6: [$i] gave exit $st"
+done
+printf '{"cabinet-mcp-gate": {"PreToolUse": []}}' > "$f.bad"; st=0; L hook-merge agy "$f.bad" x /g.js >/dev/null 2>&1 || st=$?
+((st == 4)) || fail "E6: a cabinet-mcp-gate the kit did not write gave exit $st"
+
+# Rule 4: every shell rules file the kit ships for a tool it still develops denies git credential.
+j -e '$.permissions.deny.includes("Bash(*git credential*)")' "$KIT/guardrails/claude-permissions.json" >/dev/null \
+  && j -e '$.permissions.deny.includes("Shell(git:credential*)")' "$KIT/guardrails/cursor-permissions.json" >/dev/null \
+  && j -e '$.permissions.deny.includes("command(git credential)")' "$KIT/guardrails/agy-permissions.json" >/dev/null \
+  && grep -qF 'prefix_rule(pattern = ["git", "credential"], decision = "forbidden"' "$KIT/guardrails/codex-default.rules" || fail "Rule 4: a shell rules file lacks git credential"
+
+# 6. CABINET_RUNNER=antigravity finds agy: bootstrap, the doctor and job_path share one mapping. A PATH of the
+# suite's fakes, node and git, and /usr/bin:/bin; job_path adds the usual places, so none may hold an agy.
+for d in /opt/homebrew/bin /usr/local/bin /usr/bin /bin; do [[ ! -e "$d/agy" ]] || fail "criterion 6 needs no agy in $d"; done
+ln -sf "$(command -v node)" "$PT/node"; ln -sf "$(command -v git)" "$PT/git"
+printf '#!/bin/sh\necho "{}"\n' > "$PB/agy"; chmod +x "$PB/agy"
+HOME="$PH" "$F" new "$T/p2-ws" --yes --runner antigravity >/dev/null || fail "new for part 2"
+W="$(cd "$T/p2-ws" && pwd -P)"
+st=0; out="$(cd "$W" && HOME="$PH" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+((st == 0)) && [[ "$out" != *"will not find"* ]] || fail "criterion 6: bootstrap with agy: exit $st, $out"
+out="$(cd "$W" && HOME="$PH" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
+j -e '$.results.some((r) => r.id == "runner.found" && r.level == "ok" && r.message.includes("agy")) && !$.results.some((r) => r.id.startsWith("runner.") && r.level == "fix")' <<<"$out" >/dev/null \
+  || fail "criterion 6: the doctor: $(j -r '$.results.filter((r) => r.id.startsWith("runner.")).map((r) => r.level + " " + r.message).join("\n")' <<<"$out")"
+o="$(cd "$W" && HOME="$PH" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bash -c 'source bin/lib.sh; job_path')"
+[[ ":$o:" == *":$PB:"* ]] || fail "criterion 6: job_path: $o"
+# Rule 4 after bootstrap: the deny reached agy's own settings file.
+j -e '$.permissions.deny.includes("command(git credential)")' "$PH/.gemini/antigravity-cli/settings.json" >/dev/null || fail "Rule 4: agy's settings lack git credential"
+st=0; out="$(cd "$W" && HOME="$PH" PATH="$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+((st != 0)) && [[ "$out" == *"will not find 'agy'"* ]] || fail "criterion 6: bootstrap with no agy: exit $st, $out"
+
+# 8. Antigravity's project settings in the workspace and each repo it lists, never a folder it does not list.
+git init -q "$W/app"; printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"; mkdir -p "$W/stray"
+for n in .agents .agent .antigravity; do
+  for d in "$W/app" "$W" "$W/stray"; do [[ ! -e "$d/$n" ]] || fail "criterion 8: $d/$n is there already"; mkdir "$d/$n"; done
+  out="$(cd "$W" && HOME="$PH" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
+  for d in "$W/app" "$W"; do
+    [[ "$(j -r --arg w "$d/$n is Antigravity project settings" '$.results.filter((r) => r.id == "guardrails.clone-settings" && r.level == "note" && r.message.startsWith($w)).length' <<<"$out")" == 1 ]] \
+      || fail "criterion 8 ($d/$n): $(j -r '$.results.filter((r) => r.id == "guardrails.clone-settings").map((r) => r.message).join("\n")' <<<"$out")"
+  done
+  j -e '!$.results.some((r) => r.message.includes("stray")) && !$.results.some((r) => r.id == "guardrails.clone-settings" && r.level == "fix")' <<<"$out" >/dev/null \
+    || fail "criterion 8 ($n): stray read, or a FIX"
+  for d in "$W/app" "$W" "$W/stray"; do rmdir "$d/$n"; done
+done
+
+# 12. Gemini CLI as it was at 4539550 (H-20261120-23): its policy file and bootstrap's block, 18 lines there.
+[[ "$(psum "$KIT/guardrails/gemini-owner-control.toml")" == 71ef1e1164056cbedb917235ad55509386030f9385f6cea1c6888d9e5e8fbac1 ]] || fail "criterion 12: gemini-owner-control.toml changed"
+awk '/^echo "== Gemini CLI"/ {on = 1; print; next} on && /^echo "== / {exit} on' "$KIT/scripts/bootstrap.sh" > "$T/p2-gemini"
+[[ "$(psum "$T/p2-gemini")" == 703582ed0e7a138a17c0e3e31b1f8eb80a15e4dbba3a349d23bf7a7c6abe6b21 ]] || fail "criterion 12: bootstrap's Gemini CLI block changed"
+
+# 16. Part 1's IDs (its criterion 17), and guardrails.mcp, are all still in the doctor.
+ids="agents.hard-to-undo areas.declared backups.dir-absolute backups.dir-outside backups.enabled backups.passphrase backups.recent
+  backups.verified commands.approved credit.email credit.hook credit.setting deps.backups deps.node deps.required guardrails.agy guardrails.claim
+  guardrails.claude guardrails.clone-settings guardrails.codex guardrails.codex-approval guardrails.cursor guardrails.cursor-editor guardrails.gemini
+  guardrails.grok guardrails.hook-passthrough guardrails.opencode guardrails.push-gate guardrails.qwen guardrails.repo-hookspath guardrails.run-refusal
+  guardrails.stale-claim guardrails.unguarded-tool guides.exists guides.listed handoffs.addressee handoffs.evidence handoffs.size handoffs.small handoffs.unreviewed
+  handoffs.status handoffs.unique-ids handoffs.unread-verdicts handoffs.verdict-origin handoffs.verdicts jobs.name kit.claude-link kit.handoffs-file
+  kit.newer kit.roles kit.unedited kit.version manual.complete manual.page model.name pipeline.ready repos.all repos.claude-link
+  repos.instructions-excluded repos.local-file repos.local-file-tracked repos.local-path repos.present repos.snapshot roles.drafted roles.name
+  roles.shadows roles.workflow roles.writes runner.custom-unguarded runner.found runner.node runs.estimates schedules.job schedules.job-loaded
+  schedules.job-owner schedules.node schedules.off schedules.old-slug schedules.scheduler schedules.when secrets.hook secrets.none sessions.gone
+  settings.literal settings.local-tracked settings.unknown skills.checked skills.plugin skills.skill specs.ready specs.released spend.budget
+  spend.unreported team.nested team.reports-to team.single-owner tier.effort tier.exists work.no-commits work.uncommitted model.exists model-light.exists guardrails.mcp"
+m=""; for i in $ids; do grep -qF -- "$i" "$KIT/scripts/doctor.sh" || m+=" $i"; done
+[[ -z "$m" ]] || fail "criterion 16: gone from the doctor:$m"
+HOME="$PH" wsrm "$W"
+  return 0
 }
 
 # The section list for test/shards.js: "<name><tab><needs>" per line.

@@ -509,8 +509,7 @@ if [[ "$SCHEDULER" == none ]]; then
   echo "  no scheduler found (a running systemd user session, or cron): install cron, or run cabinet job run <job> by hand"
 else
   # Every job runs the runner with this PATH: say so now if it cannot find it there.
-  runner="$CABINET_RUNNER"; [[ "$runner" == custom ]] && runner="${CABINET_RUNNER_CMD%% *}"
-  [[ "$runner" == cursor ]] && runner="$(basename "$(cursor_bin || echo cursor-agent)")"
+  runner="$(runner_prog)"
   if [[ -n "$runner" ]] && ! env -i HOME="$HOME" PATH="$JOB_PATH" /bin/sh -c 'command -v "$0"' "$runner" >/dev/null 2>&1; then
     echo "  scheduled jobs will not find '$runner' (install it, or run bin/bootstrap.sh from a shell where it is on PATH)"; failures=1
   fi
