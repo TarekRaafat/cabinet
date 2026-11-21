@@ -22,6 +22,44 @@
 set -euo pipefail
 usage="usage: bin/backup.sh create [dest-dir] | verify [dest-dir] [--json] | restore <archive> [dir] [--force]"
 
+# open_archive <archive> <tmp>: the archive checked whole (node lib.js backup-open), then its payload
+# extracted into <tmp>/p, a folder nothing else uses. An archive made before 0.8.5 has no tag and
+# opens with openssl as it did, with old=1. On a failure it returns 1 with the reason in why, and
+# writes nothing outside <tmp>. Reads the passphrase from $pass, on fd 3 only.
+open_archive() {
+  local a=$1 t=$2 rc=0
+  old=0 why=""
+  mkdir -p "$t/p"
+  node "$LIBJS" backup-open "$a" "$t/payload.tgz" 3<<<"$pass" 2>"$t/open-err" || rc=$?
+  case "$rc" in
+    0) ;;
+    1) why="the archive is changed or damaged, or the passphrase is wrong"; return 1 ;;
+    3) old=1
+       openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass fd:3 3<<<"$pass" < "$a" > "$t/payload.tgz" 2>"$t/open-err" \
+         || { why="the archive does not open (a wrong passphrase, or a damaged file): $(head -1 "$t/open-err")"; return 1; } ;;
+    *) why="the archive could not be opened here: $(head -1 "$t/open-err" | sed 's/^backup-open: //')"; return 1 ;;
+  esac
+  tar -C "$t/p" -xzf "$t/payload.tgz" 2>"$t/open-err" || { why="the archive's contents do not unpack: $(head -1 "$t/open-err")"; return 1; }
+  rm -f "$t/payload.tgz"
+}
+# payload_id <tmp>: what an opened archive says it is. pdir is the one folder at its top (empty, with
+# why set, when the top is not exactly one folder); pslug and pstamp are what backup.json records in
+# it (empty in an archive made before 0.8.5). backup.json is read as JSON, never sourced, and a
+# missing or unreadable one in a new archive returns 1, since only the passphrase holder made it.
+payload_id() {
+  local t=$1 top
+  pdir="" pslug="" pstamp="" why=""
+  top="$(ls -A "$t/p")"
+  if [[ -z "$top" || "$top" == *$'\n'* || ! -d "$t/p/$top" || -L "$t/p/$top" ]]; then
+    why="the archive does not hold exactly one folder at its top"; return 1
+  fi
+  pdir=$top
+  ((old)) && return 0
+  read -r pslug pstamp < <(json -r '$.format === 2 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test($.slug) && /^[0-9]{8}-[0-9]{6}$/.test($.stamp) ? $.slug + " " + $.stamp : ""' \
+    "$t/p/$pdir/backup.json" 2>/dev/null) || true
+  [[ -n "$pslug" && -n "$pstamp" ]] || { why="the archive is changed or damaged, or the passphrase is wrong (it records no slug and stamp)"; return 1; }
+}
+
 # Restore from an archive written by bin/backup.sh. Never loses a file:
 # - a repo that already exists gets the archive's branches under refs/remotes/backup/
 #   to compare and merge by hand;
@@ -53,13 +91,35 @@ for a in "$@"; do
 done
 [[ -n "$archive" ]] || { echo "$rusage" >&2; exit 2; }
 target="${target:-$(cd "$(dirname "$0")/.." && pwd)}"
-slug="$(basename "$archive")"; slug="${slug%.tar.gz.enc}"; slug="${slug%-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*}"
+local base re='^([a-z0-9]+(-[a-z0-9]+)*)-([0-9]{8}-[0-9]{6})\.tar\.gz\.enc$'
+base="$(basename "$archive")"
+[[ "$base" =~ $re ]] || { echo "the archive's file name must be <slug>-YYYYMMDD-HHMMSS.tar.gz.enc, as backup create named it, not $(printf '%s\n' "$base" | term_text): give it back its name, then restore again" >&2; exit 1; }
+slug="${BASH_REMATCH[1]}" stamp="${BASH_REMATCH[3]}"
 pass="${CABINET_BACKUP_PASSPHRASE:-$(pass_get "cabinet.$slug.backup" || true)}"
 [[ -n "$pass" ]] || { echo "no passphrase: set CABINET_BACKUP_PASSPHRASE or add cabinet.$slug.backup to the $PASS_STORE: $(pass_add_cmd "cabinet.$slug.backup")" >&2; exit 1; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass fd:3 3<<<"$pass" < "$archive" | tar -C "$tmp" -xzf -
-src="$(echo "$tmp"/"$slug"-*)"
+# Everything below is checked before anything is written: the whole archive (Rule 1), then, in this
+# order, its shape, that its folder and backup.json name the file name's slug and stamp, and that the
+# target is not another workspace (its cabinet.env read as text, never sourced).
+open_archive "$archive" "$tmp" || { echo "$why, so nothing was restored" >&2; exit 1; }
+((old == 0)) || echo "this archive was made before 0.8.5 and is not authenticated: it opens, but nothing proves it was not changed; back up again (bin/backup.sh create) once it is restored" >&2
+payload_id "$tmp" || { echo "$why, so nothing was restored" >&2; exit 1; }
+if [[ "$pdir" != "$slug-$stamp" ]]; then
+  if [[ "$pdir" == *-"$stamp" ]]; then echo "the archive was made for $(printf '%s\n' "${pdir%-"$stamp"}" | term_text), but its file name says $slug, so nothing was restored" >&2
+  else echo "the archive's stamp ($(printf '%s\n' "${pdir#"$slug"-}" | term_text)) differs from its file name's ($stamp), so nothing was restored" >&2; fi
+  exit 1
+fi
+if ((old == 0)); then
+  [[ "$pslug" == "$slug" ]] || { echo "the archive was made for $pslug, but its file name says $slug, so nothing was restored" >&2; exit 1; }
+  [[ "$pstamp" == "$stamp" ]] || { echo "the archive's stamp ($pstamp) differs from its file name's ($stamp), so nothing was restored" >&2; exit 1; }
+fi
+if [[ -f "$target/cabinet.env" ]]; then
+  # The last CABINET_SLUG= line, one pair of surrounding quotes removed, nothing expanded.
+  tslug="$(awk '{ sub(/\r$/, "") } /^[ \t]*(export[ \t]+)?CABINET_SLUG=/ { v = $0; sub(/^[ \t]*(export[ \t]+)?CABINET_SLUG=/, "", v); if (v ~ /^".*"$/ || v ~ /^'\''.*'\''$/) v = substr(v, 2, length(v) - 2); s = v; f = 1 } END { if (f) print s }' "$target/cabinet.env")"
+  [[ "$tslug" == "$slug" ]] || { echo "$(printf '%s\n' "$target" | term_text) holds the workspace $(printf '%s\n' "${tslug:-(no CABINET_SLUG)}" | term_text), not $slug, so nothing was restored: restore into an empty folder instead (bin/backup.sh restore <archive> <empty folder>)" >&2; exit 1; }
+fi
+src="$tmp/p/$pdir"
 # Nothing is created before the question: a folder is named as it will be (its deepest existing
 # parent resolved, the rest as given), and a missing one reads as empty.
 real() {
@@ -362,10 +422,21 @@ if ((verify)); then
   }
   problem() { say "$1" problem "$2"; problems=$((problems + 1)); }
   : > "$tmp/results"
-  if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass fd:3 3<<<"$pass" < "$dest/$file" 2>"$tmp/err" | tar -C "$tmp" -xzf - 2>>"$tmp/err"; then
-    problem "" "the archive does not open (a wrong passphrase, or a damaged file): $(head -1 "$tmp/err")"
+  # The archive's own identity first: an archive that does not open, or was made for another workspace
+  # or at another time than its name says, gets no repo checks. One made before 0.8.5 is a problem
+  # (nothing proves it was not changed), and its repos are still checked.
+  idok=0
+  if ! open_archive "$dest/$file" "$tmp"; then problem "" "$why"
   else
-    src="$tmp/$CABINET_SLUG-$stamp"
+    ((old == 0)) || problem "" "made before 0.8.5, so it is not authenticated: back up again (bin/backup.sh create)"
+    if ! payload_id "$tmp"; then problem "" "$why"
+    elif ((old == 0)) && [[ "$pslug" != "$CABINET_SLUG" ]]; then problem "" "made for $pslug, not this workspace ($CABINET_SLUG)"
+    elif ((old == 0)) && [[ "$pstamp" != "$stamp" ]]; then problem "" "its stamp ($pstamp) differs from the file name ($stamp)"
+    elif [[ "$pdir" != "$CABINET_SLUG-$stamp" ]]; then problem "" "its folder ($(printf '%s\n' "${pdir//$'\t'/ }" | term_text)) is not named for this workspace and the file name's stamp ($CABINET_SLUG-$stamp)"
+    else idok=1; fi
+  fi
+  if ((idok)); then
+    src="$tmp/p/$pdir"
     # Files that differ between two folders, over what git sees in either (tracked, and untracked not ignored).
     differ() {
       { git -C "$1" ls-files -co --exclude-standard; git -C "$2" ls-files -co --exclude-standard; } | sort -u | while IFS= read -r f; do
@@ -426,6 +497,9 @@ fi
 stamp="$(date +%Y%m%d-%H%M%S)"
 out="$tmp/$CABINET_SLUG-$stamp"
 mkdir -p "$out" "$dest"
+# What the archive is, inside its one folder: restore and verify check it against the file name and
+# the workspace. Both values are checked already (slug_ok in lib.sh, digits from date).
+printf '%s' "{\"format\":2,\"slug\":\"$CABINET_SLUG\",\"stamp\":\"$stamp\"}" > "$out/backup.json"
 
 # The archive holds workspace/, repos/<name>/ and claude/, so no repo name collides.
 save_repo() {
@@ -448,9 +522,10 @@ save_repo() {
     git -C "$repo" stash show -p --include-untracked --binary "stash@{$n}" > "$o/stash-$n.patch" 2>/dev/null || true
     n=$((n + 1))
   done
-  # .env files are ignored by git, so nothing else keeps them.
-  # Stops at nested repos, so the workspace never captures a product repo's files.
-  (cd "$repo" && find . -mindepth 1 -maxdepth 3 \( -type d \( -name node_modules -o -exec test -e '{}/.git' \; \) -prune \) \
+  # .env files are ignored by git, so nothing else keeps them: every one, at any depth. Stops at
+  # node_modules, .git and nested repos, so the workspace never captures a product repo's files.
+  # ponytail: one test process per folder visited; a walk in lib.js (one node start) if a real project is slow.
+  (cd "$repo" && find . -mindepth 1 \( -type d \( -name node_modules -o -name .git -o -exec test -e '{}/.git' \; \) -prune \) \
     -o \( -name '.env*' ! -name '*.example' -type f -print0 \) \
     | tar --null -T - -cf "$o/env.tar" 2>/dev/null) || true
   echo "  $name: $(git -C "$repo" rev-list --count --all) commits, $n stashes"
@@ -485,7 +560,8 @@ mem="$HOME/.claude/projects/$CLAUDE_SLUG/memory"
 [[ -f "$HOME/.claude/settings.json" ]] && mkdir -p "$out/claude" && cp -p "$HOME/.claude/settings.json" "$out/claude/settings.json" && echo "  settings"
 
 file="$dest/$CABINET_SLUG-$stamp.tar.gz.enc"
-tar -C "$tmp" -czf - "$CABINET_SLUG-$stamp" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass fd:3 3<<<"$pass" > "$file.part"
+# Sealed with authenticated encryption (node lib.js backup-seal): a changed archive never opens.
+tar -C "$tmp" -czf - "$CABINET_SLUG-$stamp" | node "$LIBJS" backup-seal "$file.part" 3<<<"$pass"
 mv "$file.part" "$file"
 echo "== Wrote $file ($(du -h "$file" | cut -f1))"
 

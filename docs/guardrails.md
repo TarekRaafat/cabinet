@@ -140,7 +140,7 @@ The hard boundary is on the server side, under your accounts, and the kit cannot
 
 These are on the [roadmap](../ROADMAP.md):
 
-- archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
+- an archive made before 0.8.5 is encrypted with AES-256-CBC and no separate integrity check, so a change to one shows only as an unreadable archive: it still restores, saying it is not authenticated, and `backup verify` asks you to back up again ([backups](backups.md#what-a-backup-holds));
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
 - opencode agent-level and project-level configs, Qwen workspace settings, and the project files of Claude Code (`.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`), Codex (`.codex/config.toml`), Gemini CLI (`.gemini/settings.json`) and Cursor (`.cursor/mcp.json`, `.cursor/cli.json`), can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;

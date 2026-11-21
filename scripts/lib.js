@@ -2592,7 +2592,80 @@ function mcpList(tool, file) {
   if (names.length) process.stdout.write(names.join("\n") + "\n");
 }
 
+// The backup archive format from 0.8.5 (docs/backups.md): CBNTBAK1, a 16-byte salt and a 12-byte IV,
+// then the payload (a tar.gz) in AES-256-GCM with the key from PBKDF2-SHA-256, and the 16-byte tag
+// last, over the ciphertext with the first 36 bytes as additional data. An archive made before 0.8.5
+// starts with openssl's Salted__ and has no tag. The passphrase is read on fd 3, up to its first
+// newline, as openssl -pass fd:3 reads it, so it never appears in a command's arguments.
+const BK_MAGIC = Buffer.from("CBNTBAK1"), BK_OLD = Buffer.from("Salted__"), BK_HEAD = 36, BK_TAG = 16, BK_ITER = 600000;
+const bkKey = (salt) => {
+  const p = fs.readFileSync(3), n = p.indexOf(10);
+  return crypto.pbkdf2Sync(n < 0 ? p : p.subarray(0, n), salt, BK_ITER, 32, "sha256");
+};
+const writeAll = (fd, b) => { for (let at = 0; at < b.length;) at += fs.writeSync(fd, b, at, b.length - at); };
+const dropOut = (fd, out) => {
+  try { fs.closeSync(fd); } catch (x) { /* closed */ }
+  try { fs.unlinkSync(out); } catch (x) { /* gone */ }
+};
+// backup-seal <out>: the payload on stdin sealed into <out> (made new, mode 600). Exit 0, or 1 with
+// nothing left at <out>.
+async function backupSeal(out) {
+  let fd = null;
+  try {
+    const salt = crypto.randomBytes(16), iv = crypto.randomBytes(12), head = Buffer.concat([BK_MAGIC, salt, iv]);
+    const c = crypto.createCipheriv("aes-256-gcm", bkKey(salt), iv);
+    c.setAAD(head);
+    fd = fs.openSync(out, "wx", 0o600);
+    writeAll(fd, head);
+    for await (const chunk of process.stdin) writeAll(fd, c.update(chunk));
+    writeAll(fd, c.final());
+    writeAll(fd, c.getAuthTag());
+    fs.closeSync(fd);
+  } catch (e) {
+    if (fd !== null) dropOut(fd, out);
+    die("backup-seal: " + e.message);
+  }
+}
+// backup-open <archive> <out>: a sealed archive's payload written to <out> (made new, mode 600), and
+// kept only once its tag checks. Exit 0 done; 1 the archive is wrong (changed, cut short, a wrong
+// passphrase, or not an archive), printing nothing; 2 anything else (reading it, writing <out>, a full
+// disk), with Node's message; 3 an archive made before 0.8.5, nothing written. On 1 or 2 nothing is
+// left at <out>.
+function backupOpen(archive, out) {
+  let fd, size, got;
+  const head = Buffer.alloc(BK_HEAD);
+  try { fd = fs.openSync(archive, "r"); size = fs.fstatSync(fd).size; got = fs.readSync(fd, head, 0, BK_HEAD, 0); }
+  catch (e) { die("backup-open: " + e.message, 2); }
+  if (got >= 8 && head.subarray(0, 8).equals(BK_OLD)) process.exit(3);
+  if (got < 8 || !head.subarray(0, 8).equals(BK_MAGIC) || size < BK_HEAD + BK_TAG) process.exit(1);
+  let ofd = null, wrong = false;
+  try {
+    const tag = Buffer.alloc(BK_TAG);
+    fs.readSync(fd, tag, 0, BK_TAG, size - BK_TAG);
+    const d = crypto.createDecipheriv("aes-256-gcm", bkKey(head.subarray(8, 24)), head.subarray(24, BK_HEAD));
+    d.setAAD(head);
+    d.setAuthTag(tag);
+    ofd = fs.openSync(out, "wx", 0o600);
+    const buf = Buffer.alloc(1 << 20), end = size - BK_TAG;
+    for (let at = BK_HEAD; at < end;) {
+      const n = fs.readSync(fd, buf, 0, Math.min(buf.length, end - at), at);
+      if (n <= 0) throw new Error("the archive ended early while it was read");
+      writeAll(ofd, d.update(buf.subarray(0, n)));
+      at += n;
+    }
+    let last;
+    try { last = d.final(); } catch (e) { wrong = true; throw e; }
+    writeAll(ofd, last);
+    fs.closeSync(ofd);
+  } catch (e) {
+    if (ofd !== null) dropOut(ofd, out);
+    if (wrong) process.exit(1);
+    die("backup-open: " + e.message, 2);
+  }
+}
+
 const COMMANDS = {
+  "backup-seal": backupSeal, "backup-open": backupOpen,
   settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,

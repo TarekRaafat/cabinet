@@ -291,7 +291,7 @@ These send data out of the machine or depend on outside services, so each starts
 
 ## Later, when a project needs it
 
-- **Hardening found in review:** archives use AES-256-CBC without a MAC (tampering shows only as a tar or gzip error); the keychain item can be read without a prompt by any process of the user (deny rules stop agents in the guarded tools; creating the item to always ask would need a decision for scheduled backups); the passphrase file used with cron is denied to agents only in shell commands that name its folder (a file reader, Cursor, Codex and Antigravity can still read it); opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules (`bin/doctor.sh` checks only the global result); folder names without Latin letters or digits need `--slug`; on opencode 2.x, `bin/doctor.sh` cannot read the resolved permission rules (its debug commands need opencode's background service), so its guardrails are unverified there.
+- **Hardening found in review:** archives made before 0.8.5 use AES-256-CBC without a MAC (tampering shows only as a tar or gzip error; newer archives are authenticated), and they open until a later release drops them; the keychain item can be read without a prompt by any process of the user (deny rules stop agents in the guarded tools; creating the item to always ask would need a decision for scheduled backups); the passphrase file used with cron is denied to agents only in shell commands that name its folder (a file reader, Cursor, Codex and Antigravity can still read it); opencode agent-level and project-level configs, and Qwen workspace settings, can loosen the global rules (`bin/doctor.sh` checks only the global result); folder names without Latin letters or digits need `--slug`; on opencode 2.x, `bin/doctor.sh` cannot read the resolved permission rules (its debug commands need opencode's background service), so its guardrails are unverified there.
 
 - **Linux beyond Debian:** the kit is tested on Debian only. Done when: the suite passes on Fedora and Arch too.
 
@@ -2046,7 +2046,7 @@ The hard boundary is on the server side, under your accounts, and the kit cannot
 
 These are on the [roadmap](../ROADMAP.md):
 
-- archives are encrypted with AES-256-CBC and no separate integrity check, so tampering shows only as an unreadable archive;
+- an archive made before 0.8.5 is encrypted with AES-256-CBC and no separate integrity check, so a change to one shows only as an unreadable archive: it still restores, saying it is not authenticated, and `backup verify` asks you to back up again ([backups](backups.md#what-a-backup-holds));
 - any process of your user can read the backup passphrase from the keychain or secret store without a prompt (the deny rules stop agents in the tools above);
 - the backup passphrase file, used where cron runs the schedules, is denied only to shell commands that name its folder, in Claude Code, Grok, Qwen Code, opencode and Gemini CLI: a tool's own file reader, a command that reaches it another way, and the other tools can still read it;
 - opencode agent-level and project-level configs, Qwen workspace settings, and the project files of Claude Code (`.mcp.json`, `.claude/settings.json`, `.claude/settings.local.json`), Codex (`.codex/config.toml`), Gemini CLI (`.gemini/settings.json`) and Cursor (`.cursor/mcp.json`, `.cursor/cli.json`), can loosen the global rules, and the doctor checks only the global result: it names each such file in the workspace and the repos it lists on this machine (`guardrails.clone-settings`), as a note;
@@ -2076,13 +2076,13 @@ An encrypted daily archive of everything a lost machine would take with it, and 
 
 - the full git history: every branch and unpushed commit;
 - uncommitted changes, untracked files and stashes;
-- `.env` files (git ignores them, so nothing else keeps them);
+- every .env file (`.env`, `.env.local` and the like), at any depth (git ignores them, so nothing else keeps them), except those in `node_modules`, in a nested repo, and `*.example` files;
 - the branch it was on, or that HEAD was detached;
 - each [session](concepts.md#sessions) of a repo: its uncommitted changes and untracked files (its commits are in the repo's history, on its `session/<name>` branch). A session whose folder was deleted by hand is named in the output and left out.
 
 It also includes Claude Code's memory for the workspace and `~/.claude/settings.json`. A repo with no commits yet (for example a workspace made without an owner identity) is kept as its files.
 
-Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc`, encrypted with AES-256-CBC (PBKDF2, 200000 iterations), readable only by you (mode 600). The newest `CABINET_BACKUP_KEEP` (default 14) of this workspace's archives are kept, newest by the time in their names, never by when the file was last modified (which a synced drive or a copy changes); the archive a backup has just written is never deleted, and another workspace's archives in the same folder are never touched.
+Archives are named `<slug>-<YYYYMMDD>-<HHMMSS>.tar.gz.enc` and readable only by you (mode 600). Each is sealed with authenticated encryption, AES-256-GCM with a key from PBKDF2-SHA-256 (600000 iterations), so an archive that was changed, cut short or opened with the wrong passphrase never opens. It starts with the bytes `CBNTBAK1`, and inside it records the workspace's slug and the time it was made, so a restore can tell where it belongs without trusting the file name. The newest `CABINET_BACKUP_KEEP` (default 14) of this workspace's archives are kept, newest by the time in their names, never by when the file was last modified (which a synced drive or a copy changes); the archive a backup has just written is never deleted, and another workspace's archives in the same folder are never touched.
 
 ## Setting it up
 
@@ -2104,7 +2104,7 @@ bin/bootstrap.sh                      # then guardrails, links and schedules
 bin/doctor.sh
 ```
 
-On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file. It reads the whole archive before it writes anything: each repo's folder comes from the `repos.tsv` in the archive, never the one in the folder being restored over (a path there can be absolute or under `~`), and an archive member with an absolute path or a `..` part, or a `.env` file whose name starts with `-`, stops it, naming the member, with nothing written. Then:
+On a new machine, put the passphrase in the keychain or secret store first, then run `backup.sh restore` from a copy of the kit (or a clone of the workspace's repo). Restore never loses a file, and it acts only on an archive it can prove is this workspace's. Before it writes anything, it refuses, writing nothing, an archive that is `changed or damaged, or the passphrase is wrong` (checked whole, before anything is unpacked); a file not named `<slug>-YYYYMMDD-HHMMSS.tar.gz.enc` (give it back its name); an archive that does not hold exactly one folder; one whose slug or stamp differs from its file name's; and a folder that holds another workspace (its `cabinet.env` names another `CABINET_SLUG`, read as text, never run): restore into an empty folder instead. An archive made before 0.8.5 has no seal: it still restores as before, saying once that it is `not authenticated`. Back up again once it is restored. It reads the whole archive before it writes anything: each repo's folder comes from the `repos.tsv` in the archive, never the one in the folder being restored over (a path there can be absolute or under `~`), and an archive member with an absolute path or a `..` part, or a `.env` file whose name starts with `-`, stops it, naming the member, with nothing written. Then:
 
 - **A repo that already exists** gets the archive's branches under `refs/remotes/backup/*`, to compare and merge by hand. Its patches are copied to `recovered/`.
 - **A missing repo, or an empty folder,** is restored with its uncommitted work, on the branch it was on (or detached, as it was).
@@ -2127,7 +2127,7 @@ Inside a project with the private layout, the pointer files (`CLAUDE.local.md` a
 cabinet backup verify      # or bin/backup.sh verify [folder]
 ```
 
-It restores the newest archive of this workspace (by the time in its name) into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace, each repo and each session it holds it prints one line (a session as `<repo> session <name>`, with its worktree rebuilt on its branch and its changes applied): restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that does not open (a wrong passphrase, or a damaged file), a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
+It restores the newest archive of this workspace (by the time in its name) into a temporary folder, as `backup.sh restore` would, and deletes that copy when it is done (it holds your secrets). For the workspace, each repo and each session it holds it prints one line (a session as `<repo> session <name>`, with its worktree rebuilt on its branch and its changes applied): restores exactly as it is now, restores with so many files or commits changed since the backup (work done after it), or a problem. A problem is an archive that is changed or damaged, or opened with the wrong passphrase; one made for another workspace, or whose stamp differs from its file name; one made before 0.8.5, which is not authenticated (its repos are still checked: back up again); a history that does not rebuild, uncommitted changes that do not apply, files that do not unpack, or a repo that is not in the archive. Any problem makes it exit 1: back up again, then verify that archive. It never touches the workspace, its repos or your settings, and does not check Claude Code's memory or settings. A good result is recorded in `~/Library/Logs/cabinet/<slug>/backup-verified`, and `bin/doctor.sh` notes when none is recorded or the last is older than 92 days.
 
 
 ========================================================================
@@ -2587,6 +2587,13 @@ File: CHANGELOG.md
 # Changelog
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
+
+## 0.8.5 - Unreleased
+
+- A new backup archive format: `cabinet backup create` seals each archive with authenticated encryption (AES-256-GCM, from Node's own crypto, with a key from PBKDF2-SHA-256), starting with the bytes `CBNTBAK1`, and records the workspace's slug and the archive's stamp inside it. `backup verify` and `backup restore` check the whole archive before anything is unpacked: one that was changed, cut short or opened with the wrong passphrase is refused as `changed or damaged, or the passphrase is wrong`, and restore writes nothing. The passphrase still never appears in a command's arguments.
+- `backup restore` refuses, writing nothing, an archive whose top is not exactly one folder, one whose slug or stamp differs from its file name, and a target folder whose `cabinet.env` names another workspace (read as text, never run): restore into an empty folder instead. It now needs the archive's own file name, `<slug>-YYYYMMDD-HHMMSS.tar.gz.enc`, where 0.8.4 took a slug from any name; a renamed archive is refused with the name to give it back. `backup verify` reports an archive made for another workspace, or with another stamp than its file name, as a problem.
+- Archives made before 0.8.5 still restore, as before, and restore says once that the archive is `not authenticated`. `backup verify` reports one as a problem, `made before 0.8.5`, so the doctor asks you to back up again; its repos are still checked. Nothing to do by hand: the next scheduled backup writes the new format.
+- Every `.env` file is now in the backup, at any depth: 0.8.4 left out any more than three folders deep (`apps/web/api/.env`). `node_modules`, `.git`, nested repos and `*.example` files are still left out.
 
 ## 0.8.4 - 21 Nov 2026
 

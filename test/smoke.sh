@@ -1607,7 +1607,7 @@ out="$(bk verify)" && echo "$out" | grep -q 'acme-app: restores ([0-9]* commits)
   && echo "$out" | grep -q 'workspace: restores ([0-9]* commits); 1 file(s) changed since the backup' || fail "work since the backup: $out"
 rm "$C/specs/draft.md"
 out="$(PW=wrong bk verify)" && fail "a wrong passphrase verified"
-echo "$out" | grep -q 'PROBLEM the archive does not open' || fail "a wrong passphrase was not named: $out"
+echo "$out" | grep -q 'PROBLEM the archive is changed or damaged, or the passphrase is wrong' || fail "a wrong passphrase was not named: $out"
 # A damaged archive: some bytes in the middle overwritten.
 a="$VB/$(ls "$VB")"; cp -p "$a" "$T/good.enc"
 printf 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | dd of="$a" bs=1 seek=$(( $(wc -c < "$a") / 2 )) conv=notrunc 2>/dev/null
@@ -4551,9 +4551,9 @@ o="$(bk create "$BK" 2>&1)" || fail "backup with sessions: $o"
 grep -q 'the folder of session busy is gone' <<<"$o" && grep -q 'app: session kept' <<<"$o" || fail "backup create did not say which sessions it saved and which are gone: $o"
 o="$(bk verify "$BK" 2>&1)" && grep -q '^  app session kept: restores on session/kept' <<<"$o" || fail "verify did not check the session: $o"
 arc="$(ls "$BK")"; x="$T/ps-x"; mkdir -p "$x" "$T/ps-bk2"
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass pass:t < "$BK/$arc" | tar -C "$x" -xzf -
+node "$PW/bin/lib.js" backup-open "$BK/$arc" "$T/ps-open.tgz" 3<<<t && tar -C "$x" -xzf "$T/ps-open.tgz" && rm "$T/ps-open.tgz"
 printf 'diff --git a/nothere b/nothere\n--- a/nothere\n+++ b/nothere\n@@ -1 +1 @@\n-a\n+b\n' > "$(echo "$x"/*/repos/app/sessions/kept)/worktree.patch"
-tar -C "$x" -czf - "$(ls "$x")" | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass pass:t > "$T/ps-bk2/$arc"
+tar -C "$x" -czf - "$(ls "$x")" | node "$PW/bin/lib.js" backup-seal "$T/ps-bk2/$arc" 3<<<t
 st=0; o="$(bk verify "$T/ps-bk2" 2>&1)" || st=$?; ((st)) && grep -q 'PROBLEM app session kept' <<<"$o" || fail "a damaged session patch verified: $o"
 bk verify "$BK" >/dev/null 2>&1 || fail "the owner's archive was changed by the damage test"
 R="$T/ps-restore"; o="$(bk restore "$BK/$arc" "$R" 2>&1)" || fail "restore: $o"
@@ -6866,12 +6866,12 @@ rs "$A" "$T/r33"
 # 35. Archive paths that leave the target: a member ../outside-<n>.txt, and one at an absolute path.
 for x in rel abs; do
   bk="$T/rr-x-$x"; rm -rf "$bk"; mkdir -p "$bk/open" "$bk/m/a" "$bk/arch"
-  CABINET_BACKUP_PASSPHRASE=t openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:CABINET_BACKUP_PASSPHRASE < "$A" | tar -C "$bk/open" -xzf -
+  node "$W/bin/lib.js" backup-open "$A" "$bk/open.tgz" 3<<<t && tar -C "$bk/open" -xzf "$bk/open.tgz" && rm "$bk/open.tgz"
   o="$(ls "$bk/open")"
   if [[ "$x" == rel ]]; then printf o > "$bk/m/outside-$n.txt"; (cd "$bk/m/a" && tar -P -cf "$bk/open/$o/workspace/untracked.tar" "../outside-$n.txt"); rm "$bk/m/outside-$n.txt"
   else printf a > "$T/abs-$n.txt"; tar -P -cf "$bk/open/$o/workspace/untracked.tar" "$T/abs-$n.txt"; rm "$T/abs-$n.txt"; fi
   AX="$bk/arch/${A##*/}"
-  tar -C "$bk/open" -czf - "$o" | CABINET_BACKUP_PASSPHRASE=t openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:CABINET_BACKUP_PASSPHRASE > "$AX"
+  tar -C "$bk/open" -czf - "$o" | node "$W/bin/lib.js" backup-seal "$AX" 3<<<t
   fresh r35; printf k > "$T/r35/keepme"; b4="$(dsnap "$T/r35")"
   st=0; (cd "$T" && CABINET_BACKUP_PASSPHRASE=t "$F" backup restore "$AX" "$T/r35") >/dev/null 2>"$ef" || st=$?
   ((st == 1)) && [[ ! -e "$T/outside-$n.txt" && ! -e "$T/r35/../outside-$n.txt" && ! -e "$T/abs-$n.txt" && "$(dsnap "$T/r35")" == "$b4" ]] \
@@ -6887,10 +6887,10 @@ done
 # craft <name> <command run in the opened archive's workspace folder>: AX, A repacked after the command.
 craft() {
   bk="$T/rr-$1"; rm -rf "$bk"; mkdir -p "$bk/open" "$bk/m" "$bk/arch"
-  CABINET_BACKUP_PASSPHRASE=t openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:CABINET_BACKUP_PASSPHRASE < "$A" | tar -C "$bk/open" -xzf -
+  node "$W/bin/lib.js" backup-open "$A" "$bk/open.tgz" 3<<<t && tar -C "$bk/open" -xzf "$bk/open.tgz" && rm "$bk/open.tgz"
   o="$(ls "$bk/open")"; (cd "$bk/open/$o/workspace" && eval "$2")
   AX="$bk/arch/${A##*/}"
-  tar -C "$bk/open" -czf - "$o" | CABINET_BACKUP_PASSPHRASE=t openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:CABINET_BACKUP_PASSPHRASE > "$AX"
+  tar -C "$bk/open" -czf - "$o" | node "$W/bin/lib.js" backup-seal "$AX" 3<<<t
 }
 craft dash '(cd "$bk/m" && printf d > "-dash-$n.env" && tar -cf "$OLDPWD/env.tar" -- "-dash-$n.env")'
 fresh r35; printf k > "$T/r35/keepme"; b4="$(dsnap "$T/r35")"
@@ -10124,6 +10124,148 @@ n="$(rargs)"; rc=0; out="$(rb spec run specs/rev.md)" || rc=$?
 grep -qxF "architect: reviews the plan in specs/rev.md" <<<"$out" && [[ "$(tail -n "+$((n + 1))" "$T/rs.args" | grep -cF "[--agent] [architect]")" == 1 ]] \
   && (cd "$RW" && bin/spec.sh check specs/rev.md --json) | j -e '$[0].plan_review == "PASS"' >/dev/null || fail "(3) the changed plan goes back to the architect (exit $rc): $out"
 wsrm "$RW"
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "backups authenticated: changed, swapped and misplaced archives are refused, every .env is kept" ""
+s134() {
+# Criteria 1 to 11 of specs/backups-authenticated.md, then ADR-029 B1. HOME is $H, the passphrase a test one.
+local H="$T/ba-home" BK="$T/ba-bk" R="$T/ba-r" W W2 A B an size c p o js hb rb st ss
+local -a fx
+mkdir -p "$H"
+HOME="$H" "$F" new "$T/ba-acme" --slug acme --yes --backup-dir off >/dev/null || fail "new acme"
+W="$(cd "$T/ba-acme" && pwd -P)"
+sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$BK\"|" "$W/cabinet.env"; grep -q "^CABINET_BACKUP_DIR=\"$BK\"$" "$W/cabinet.env" || fail "backup dir"
+# The fixture: repo app, its first commit ignoring .env*, node_modules/ and vendor/, and .env files at depths 1, 3, 4 and 6.
+p="$W/app"; mkdir -p "$p"; git -C "$p" init -q -b main
+printf '.env*\nnode_modules/\nvendor/\n' > "$p/.gitignore"; git -C "$p" add .gitignore; git -C "$p" commit -qm one
+echo x > "$p/f"; git -C "$p" add f; git -C "$p" commit -qm two
+fx=(.env a/b/.env a/b/c/.env a/b/c/d/e/.env)
+for c in "${fx[@]}"; do mkdir -p "$(dirname "$p/$c")"; printf '%s' "app/$c" > "$p/$c"; done
+echo ex > "$p/a/b/c/.env.example"; mkdir -p "$p/node_modules/x" "$p/vendor/lib"; echo n > "$p/node_modules/x/.env"
+git -C "$p/vendor/lib" init -q; echo v > "$p/vendor/lib/.env"
+printf 'app\t-\t-\tno\n' >> "$W/repos.tsv"
+bk() { HOME="$H" CABINET_BACKUP_PASSPHRASE="${PP:-fixture-pass-1}" "${VW:-$W}/bin/backup.sh" "$@"; }
+# tree <folder>: each file under it with its SHA-256, sorted; nothing for a missing folder.
+tree() {
+  [[ -d "$1" ]] || return 0
+  (cd "$1" && find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r c; do
+    if command -v shasum >/dev/null; then shasum -a 256 "$c"; else sha256sum "$c"; fi 2>/dev/null || echo "link $c"; done)
+}
+# rs <archive> [target]: restore into the target (default R), st its exit, stdout in ba-out, stderr in ba-err.
+rs() { hb="$(tree "$H")"; st=0; bk restore "$1" "${2:-$R}" > "$T/ba-out" 2> "$T/ba-err" || st=$?; }
+refused() { ((st != 0)) || return 1; local w; for w in "$@"; do grep -qF -- "$w" "$T/ba-err" || return 1; done; }
+nothing() { [[ -z "$(find "$R" -type f 2>/dev/null)" && "$(tree "$H")" == "$hb" ]]; }
+# vprob <words>...: verify exits 1 with a PROBLEM line, and --json has a problem result whose text holds the words.
+vprob() {
+  local o; o="$(bk verify 2>&1)" && return 1
+  grep -q PROBLEM <<<"$o" || return 1
+  o="$(bk verify --json 2>/dev/null)" || true
+  j -e '$.ok === false && $.results.some((r) => r.result == "problem" && $args.every((w) => r.text.includes(w)))' --args "$@" <<<"$o" >/dev/null
+}
+alone() { rm -rf "$BK"; mkdir -p "$BK"; cp -p "$1" "$BK/${2:-$an}"; }
+
+bk create >/dev/null || fail "backup create"
+an="$(ls "$BK")"; A="$T/ba-good/$an"; mkdir -p "$T/ba-good"; cp -p "$BK/$an" "$A"
+[[ "$(head -c 8 "$A")" == CBNTBAK1 ]] || fail "a new archive does not start with its format bytes"
+# 1. Every .env at any depth, not node_modules, nested repos or *.example.
+rs "$A"; ((st == 0)) || fail "criterion 1: restore: $(cat "$T/ba-err")"
+for c in "${fx[@]}"; do cmp -s "$W/app/$c" "$R/app/$c" || fail "criterion 1: $c was not restored as it was"; done
+[[ ! -e "$R/app/a/b/c/.env.example" && -z "$(find "$R/app" -path '*/node_modules/*' -name '.env*' 2>/dev/null)" && ! -e "$R/app/vendor/lib/.env" ]] \
+  || fail "criterion 1: a .env that is not collected was restored: $(find "$R/app" -name '.env*')"
+rm -rf "$R"
+# 2. The kit's own verify opens it, and --json keeps its fields.
+o="$(bk verify 2>&1)" && [[ "$(tail -1 <<<"$o")" == Verified:* ]] || fail "criterion 2: verify: $o"
+bk verify --json | j -e '$.ok === true && Object.keys($).sort().join() == "archive,backed_up,ok,problems,results" && $.results.length > 0
+  && $.results.every((r) => Object.keys(r).sort().join() == "repo,result,text")' >/dev/null || fail "criterion 2: verify --json: $(bk verify --json)"
+# 3. One byte changed after the 8 format bytes, in the middle and at the end; the last 16 bytes cut.
+size="$(wc -c < "$A" | tr -d ' ')"
+for c in 8 $((size / 2)) $((size - 1)) cut; do
+  if [[ "$c" == cut ]]; then head -c $((size - 16)) "$A" > "$T/ba-copy"
+  else node -e 'const fs = require("fs"), [a, o, at] = process.argv.slice(1), b = fs.readFileSync(a); b[+at] ^= 1; fs.writeFileSync(o, b)' "$A" "$T/ba-copy" "$c"; fi
+  alone "$T/ba-copy"
+  vprob "changed or damaged" || fail "criterion 3 ($c): verify: $(bk verify 2>&1)"
+  rm -rf "$R"; rs "$BK/$an"; refused "changed or damaged" && nothing || fail "criterion 3 ($c): restore: exit $st, $(cat "$T/ba-err")"
+done
+# 4. The wrong passphrase.
+alone "$A"
+PP=wrong-pass vprob "changed or damaged, or the passphrase is wrong" || fail "criterion 4: verify: $(PP=wrong-pass bk verify 2>&1)"
+PP=wrong-pass rs "$A"; refused "changed or damaged, or the passphrase is wrong" && nothing || fail "criterion 4: restore: exit $st, $(cat "$T/ba-err")"
+# 5. The passphrase is in no command's arguments.
+mkdir -p "$T/ba-wrap"; : > "$T/ba-args"
+for c in openssl node; do
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexec %q "$@"\n' "$T/ba-args" "$(command -v "$c")" > "$T/ba-wrap/$c"; chmod +x "$T/ba-wrap/$c"
+done
+rm -rf "$BK"
+PATH="$T/ba-wrap:$PATH" bk create >/dev/null || fail "criterion 5: create"
+PATH="$T/ba-wrap:$PATH" bk verify >/dev/null || fail "criterion 5: verify"
+PATH="$T/ba-wrap:$PATH" rs "$BK/$(ls "$BK")"; ((st == 0)) || fail "criterion 5: restore: $(cat "$T/ba-err")"
+grep -q backup-seal "$T/ba-args" && grep -q backup-open "$T/ba-args" || fail "criterion 5: the wrappers did not run: $(cat "$T/ba-args")"
+! grep -qF fixture-pass-1 "$T/ba-args" || fail "criterion 5: the passphrase was on a command line: $(grep -F fixture-pass-1 "$T/ba-args")"
+rm -rf "$R"
+# 6. Renamed to another slug, verified in that workspace, or given another stamp.
+mkdir -p "$T/ba-bk2"; B="$T/ba-bk2/beta-${an#acme-}"; cp -p "$A" "$B"
+rs "$B"; refused acme beta && nothing || fail "criterion 6 (slug): restore: exit $st, $(cat "$T/ba-err")"
+HOME="$H" "$F" new "$T/ba-beta" --slug beta --yes --backup-dir off >/dev/null || fail "new beta"
+W2="$(cd "$T/ba-beta" && pwd -P)"; sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$T/ba-bk2\"|" "$W2/cabinet.env"
+VW="$W2" vprob "made for acme" || fail "criterion 6 (slug): verify: $(VW="$W2" bk verify 2>&1)"
+ss="${an%.tar.gz.enc}"; ss="${ss: -2}"; B="${an%??.tar.gz.enc}$(printf '%02d' $((10#$ss + 1))).tar.gz.enc"
+alone "$A" "$B"
+rs "$BK/$B"; refused stamp && nothing || fail "criterion 6 (stamp): restore: exit $st, $(cat "$T/ba-err")"
+vprob stamp || fail "criterion 6 (stamp): verify: $(bk verify 2>&1)"
+# 7. A target that holds another workspace, and one whose CABINET_SLUG is shell text.
+for c in 'CABINET_SLUG="beta"' "CABINET_SLUG=\"\$(touch $T/ba-pwned)\""; do
+  rm -rf "$R"; mkdir -p "$R"; printf '%s\n' "$c" > "$R/cabinet.env"; rb="$(tree "$R")"
+  rs "$A"
+  if [[ "$c" == *beta* ]]; then refused beta acme "empty folder" || fail "criterion 7 (beta): exit $st, $(cat "$T/ba-err")"
+  else refused "empty folder" && [[ ! -e "$T/ba-pwned" ]] || fail "criterion 7 (shell text): exit $st, $(cat "$T/ba-err")"; fi
+  [[ "$(tree "$R")" == "$rb" && "$(tree "$H")" == "$hb" ]] || fail "criterion 7: a refused restore changed a file ($c)"
+done
+rm -rf "$R"
+# 8. Payloads made by hand: no folder around them, two folders, one folder with another stamp.
+for c in 1 2 3; do
+  p="$T/ba-p$c"; rm -rf "$p"; mkdir -p "$p/src"
+  case "$c" in
+    1) mkdir -p "$p/src/workspace" "$p/src/repos"; printf '{"format":2,"slug":"acme","stamp":"20261121-100000"}' > "$p/src/backup.json" ;;
+    *) for ss in 20261121-100000 20261121-100001; do
+         [[ "$c" == 3 && "$ss" == 20261121-100000 ]] && continue
+         mkdir -p "$p/src/acme-$ss/workspace" "$p/src/acme-$ss/repos"; printf '{"format":2,"slug":"acme","stamp":"%s"}' "$ss" > "$p/src/acme-$ss/backup.json"
+       done ;;
+  esac
+  tar -C "$p/src" -czf - . | node "$W/bin/lib.js" backup-seal "$p/acme-20261121-100000.tar.gz.enc" 3<<<fixture-pass-1 || fail "criterion 8: seal $c"
+  rs "$p/acme-20261121-100000.tar.gz.enc"
+  if [[ "$c" == 3 ]]; then refused stamp; else refused "exactly one folder"; fi && nothing || fail "criterion 8 (payload $c): exit $st, $(cat "$T/ba-err")"
+done
+# And the record itself: the right folder whose backup.json names another stamp, or another slug, or is missing.
+for c in '{"format":2,"slug":"acme","stamp":"20261121-100001"}' '{"format":2,"slug":"beta","stamp":"20261121-100000"}' ''; do
+  p="$T/ba-p4"; rm -rf "$p"; mkdir -p "$p/src/acme-20261121-100000/workspace"
+  [[ -z "$c" ]] || printf '%s' "$c" > "$p/src/acme-20261121-100000/backup.json"
+  tar -C "$p/src" -czf - . | node "$W/bin/lib.js" backup-seal "$p/acme-20261121-100000.tar.gz.enc" 3<<<fixture-pass-1 || fail "criterion 8: seal ($c)"
+  rs "$p/acme-20261121-100000.tar.gz.enc"
+  case "$c" in *100001*) refused stamp ;; *beta*) refused acme beta ;; *) refused "changed or damaged" ;; esac && nothing || fail "criterion 8 (backup.json $c): exit $st, $(cat "$T/ba-err")"
+done
+# 10. An archive made as 0.8.4 made one: restored, saying not authenticated once; verify asks for a new backup.
+p="$T/ba-old/acme-20261101-120000"; mkdir -p "$p/workspace" "$p/repos/app"
+git -C "$W/app" bundle create "$p/repos/app/repo.bundle" --all 2>/dev/null; git -C "$W/app" symbolic-ref --short HEAD > "$p/repos/app/branch"
+: > "$p/repos/app/worktree.patch"; tar -C "$W/app" -cf "$p/repos/app/env.tar" ./.env
+rm -rf "$BK"; mkdir -p "$BK"
+tar -C "$T/ba-old" -czf - acme-20261101-120000 | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass fd:3 3<<<fixture-pass-1 > "$BK/acme-20261101-120000.tar.gz.enc"
+rs "$BK/acme-20261101-120000.tar.gz.enc"; ((st == 0)) || fail "criterion 10: restore an old archive: $(cat "$T/ba-err")"
+while IFS= read -r c; do cmp -s "$W/app/$c" "$R/app/$c" || fail "criterion 10: $c"; done < <(git -C "$W/app" ls-files; echo .env)
+[[ "$(cat "$T/ba-out" "$T/ba-err" | grep -o 'not authenticated' | wc -l | tr -d ' ')" == 1 ]] || fail "criterion 10: not authenticated, once: $(cat "$T/ba-out" "$T/ba-err")"
+vprob "made before 0.8.5" "back up again" || fail "criterion 10: verify: $(bk verify 2>&1)"
+rm -rf "$R"
+# 9. Into the workspace it was made from: works as before.
+rs "$A" "$W"; ((st == 0)) && grep -qF 'app exists: archive branches fetched to refs/remotes/backup/*' "$T/ba-out" \
+  && git -C "$W/app" branch -r | grep -qx "  backup/main" || fail "criterion 9: exit $st, $(cat "$T/ba-out" "$T/ba-err")"
+# 11. The docs and the changelog say so.
+for c in 'changed or damaged' 'empty folder' 'every .env' 'before 0.8.5'; do grep -qF "$c" "$KIT/docs/backups.md" || fail "criterion 11: docs/backups.md lacks: $c"; done
+o="$(awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md")"
+head -1 <<<"$o" | grep -q Unreleased && grep -qF 'archive format' <<<"$o" && grep -qF 'before 0.8.5' <<<"$o" || fail "criterion 11: the top Unreleased section of CHANGELOG.md"
+# ADR-029 B1: an open that fails for another reason than the archive (here a missing folder) is exit 2, not "changed or damaged".
+st=0; node "$W/bin/lib.js" backup-open "$A" "$T/ba-none/x" 3<<<fixture-pass-1 2> "$T/ba-err" || st=$?
+((st == 2)) && ! grep -q 'changed or damaged' "$T/ba-err" || fail "B1: exit $st, $(cat "$T/ba-err")"
+HOME="$H" wsrm "$W"; HOME="$H" wsrm "$W2"
   return 0   # a last "check && fail" line must not end the run
 }
 
