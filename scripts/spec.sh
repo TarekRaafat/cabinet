@@ -227,7 +227,15 @@ while :; do
       say "$w is done and names no commit, with no review: nothing to build or push, passed over"; continue
     fi
     ran+="$w"$'\n'
-    if ((dry)); then "$WS/bin/handoff.sh" run "$w" --dry-run; exit 0; fi
+    # A dry run prints each entry's next step in turn: one ready to push (or done) goes on to the next,
+    # any other stops the run there, as the real run would stop or run that step.
+    if ((dry)); then
+      x=0; r="$("$WS/bin/handoff.sh" run "$w" --dry-run)" || x=$?
+      [[ -z "$r" ]] || printf '%s\n' "$r"
+      ((x == 0)) || exit "$x"
+      grep -Eq "^$w is (ready to push: |done[:;] )" <<<"$r" || exit 0
+      continue
+    fi
     est_begin "$log" specrun
     say "running $w"
     run_note "" "" ""   # the handoff run's own lock says who runs now; this one names no agent meanwhile
@@ -245,7 +253,7 @@ while :; do
   # What it cost: routing, plans and review under the spec, each handoff's runs under its ID.
   total="$(awk -F'\t' -v l=" $spec $(printf '%s' "$ran" | tr '\n' ' ') " 'index(l, " " $2 " ") { t += $4 } END { printf "%.6f", t }' "$SPEND" 2>/dev/null || echo 0)"
   say "$(ended "$spec is ready to push: all its work ($(printf '%s' "$ran" | paste -sd ' ' - | sed 's/ /, /g')) passed review$(awk -v t="$total" 'BEGIN { if (t > 0) printf ", $%.2f in all", t }'). Push it from your terminal.")"
-  rm -f "$mark"; exit 0
+  ((dry)) || rm -f "$mark"; exit 0
 done
 }
 

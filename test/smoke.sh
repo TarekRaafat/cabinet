@@ -8410,7 +8410,7 @@ x="$(hs list --json | j -r --arg w "$W" '$.find((h) => h.title == "Review " + $w
 [[ "$(head -1 <<<"$out")" == "web: builds $W" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " \
   && tail -1 <<<"$out" | grep -q "$r1" && tail -1 <<<"$out" | grep -q "$x" || fail "criterion 2: $out"
 sed -n "/^### $W:/,/^### /p" "$BW/HANDOFFS.md" | grep -q "^- Status: done ($today) Built in app $c\.$" || fail "criterion 2: the status line: $(sed -n "/^### $W:/,/^### /p" "$BW/HANDOFFS.md" | grep Status)"
-tail -n "+$((n + 1))" "$T/bn.args" | grep -F "[--agent] [web]" | grep -qF "then set $W to done, naming on its status line each commit you made." || fail "criterion 10: $(tail -n "+$((n + 1))" "$T/bn.args" | grep -F '[web]')"
+tail -n "+$((n + 1))" "$T/bn.args" | grep -F "[--agent] [web]" | grep -qF "then set $W to done, naming on its status line each commit you made, and no commit the work did not make, such as a base it built on." || fail "criterion 10: $(tail -n "+$((n + 1))" "$T/bn.args" | grep -F '[web]')"
 # Criterion 3: a passed review of a spec's wording by product-manager is no review of the build.
 W="$(work "Criterion 3")"
 r="$(hs add --from chief-of-staff --to product-manager --changed x --needed y --depends-on "$W" --evidence https://example.com/p "Wording of $W")"; r="${r%% *}"
@@ -8420,11 +8420,11 @@ out="$(run "$W" --dry-run)" && [[ "$out" == "web: builds $W" ]] || fail "criteri
 # Criterion 4: a commit on the status line that no passed review covers.
 W="$(work "Criterion 4")"; c="$(cm c4 app)"; setst "$W" "done ($today) Built in app $c."; rev "$W" "$S" >/dev/null
 n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
-[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 4 (exit $rc): $out"
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c, which no passed review covers: the builder hands on with --depends-on $W; a commit this work did not make, such as a base it built on, comes off its status line" || fail "criterion 4 (exit $rc): $out"
 # Criterion 5: two commits, one covered; both covered; both only on a session branch; acknowledged with one.
 W="$(work "Criterion 5")"; c1="$(cm c5a app)"; c2="$(cm c5b app)"; setst "$W" "done ($today) Built in app $c1, $c2."; rev "$W" "$c1" >/dev/null
 n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
-[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c2, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 5, one covered: $out"
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c2, which no passed review covers: the builder hands on with --depends-on $W; a commit this work did not make, such as a base it built on, comes off its status line" || fail "criterion 5, one covered: $out"
 W="$(work "Criterion 5, both")"; c1="$(cm c5c app)"; c2="$(cm c5d app)"; setst "$W" "done ($today) Built in app $c1, $c2."; rev "$W" "$c1,$c2" >/dev/null
 n="$(args)"; out="$(run "$W")" && [[ "$(args)" == "$n" ]] && tail -1 <<<"$out" | grep -q "^$W is ready to push: every reviewer passed " || fail "criterion 5, both covered: $out"
 h="$(git -C "$BW/app" symbolic-ref --short HEAD)"; git -C "$BW/app" checkout -qb session/x
@@ -8434,7 +8434,7 @@ n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
 [[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $r is not ready, and no reviewer is waiting: see bin/handoff.sh list --json" || fail "criterion 5, a session branch: $out"
 W="$(work "Criterion 5, acknowledged")"; c1="$(cm c5g app)"; setst "$W" "acknowledged ($today) First part in app $c1."; rev "$W" "$S" >/dev/null
 n="$(args)"; rc=0; out="$(run "$W")" || rc=$?
-[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c1, which no passed review covers: the builder hands on with --depends-on $W" || fail "criterion 5, acknowledged: $out"
+[[ $rc == 1 && "$(args)" == "$n" ]] && stops "$out" "Stopped: $W names $c1, which no passed review covers: the builder hands on with --depends-on $W; a commit this work did not make, such as a base it built on, comes off its status line" || fail "criterion 5, acknowledged: $out"
 # Criterion 6: an ID and a date on the line are no commits; a short hash matches the verdict's full one; a
 # word that is no commit, or a workspace commit, is none.
 W="$(work "Criterion 6")"; c="$(cm c6 app)"; cf="$(git -C "$BW/app" rev-parse HEAD)"; [[ ${#c} == 7 ]] || fail "criterion 6: the short hash $c"
@@ -10055,6 +10055,75 @@ grep '^\*\*`attach`\*\*' "$KIT/docs/commands.md" | grep -q addressee || fail "cr
 grep -q 'handoffs.unreviewed' "$KIT/docs/concepts.md" && grep -q 'handoffs.unreviewed' "$KIT/docs/troubleshooting.md" || fail "criterion 18: concepts or troubleshooting"
 x="$(awk '/^## / { n++ } n == 1' "$KIT/CHANGELOG.md")"
 [[ "$x" == "## "*Unreleased* ]] && for w in "handoff run" "handoff attach" "handoff archive" handoffs.unreviewed; do grep -qF "$w" <<<"$x" || fail "criterion 18: CHANGELOG names $w"; done
+  return 0   # a last "check && fail" line must not end the run
+}
+
+section "run stops: a base commit, the spec dry run's last line, a revised plan" ""
+s133() {
+local RW RS RL out rc a b c0 c1 r1 r2 b1 b2 X n x h st exp last today
+RW="$T/rstop" RS="$T/rstop-state" RL="$HOME/$LOGS/rstop"
+pipe_setup "$RW" "$RS"; pipe_spec "$RW"; : > "$T/rs.args"; today="$(date +%F)"
+mkdir -p "$RW/specs/adr"; echo ok > "$RW/specs/adr/plan.md"; git -C "$RW" add specs/adr/plan.md; git -C "$RW" commit -qm note -- specs/adr/plan.md
+rb() { FS="$RS" FAKE_ARGS="$T/rs.args" PATH="$T/pfakes:$PATH" unest "$F" -C "$RW" "$@"; }
+rhs() { (cd "$RW" && bin/handoff.sh "$@"); }
+rargs() { wc -l < "$T/rs.args" | tr -d ' '; }
+rcm() { echo "$1" >> "$RW/$2/a.txt"; git -C "$RW/$2" commit -qam "$1"; git -C "$RW/$2" rev-parse --short HEAD; }
+rst() { sedi "/^### $1:/,/^### /s/^- Status: .*/- Status: $2/" "$RW/HANDOFFS.md"; git -C "$RW" commit -qm "status of $1" -- HANDOFFS.md; }
+# rwork <title> [<repo> [<spec>]]: work for the repo's builder, filed --spec <spec>, or --small without one; prints its ID.
+rwork() { local i k=(--small); [[ -z "${3:-}" ]] || k=(--spec "$3"); i="$(rhs add --from chief-of-staff --to "${2:-app}" "${k[@]}" --changed "Nothing yet." --needed "$1" "$1")" || fail "add: $i"; echo "${i%% *}"; }
+# rrev <W> <commits>: a review of W on which every reviewer it needs records PASS naming the commits; prints its ID.
+rrev() { local i x; i="$(rhs add --from web --to "qa, security" --changed built --needed verify --depends-on "$1" --evidence https://example.com/p "Review $1")" || fail "add a review: $i"; i="${i%% *}"
+  for x in $(rhs list --json | j -r --arg v "$i" '$.find((h) => h.id == $v).needs.join(" ")'); do
+    rhs record "$i" --role "$x" PASS --commits "$2" --note specs/adr/plan.md >/dev/null || fail "record $x PASS on $i"
+  done; echo "$i"; }
+# rplans <spec>: a plan for app and api, committed.
+rplans() { L sub-all "$RW/$1" '/(## Plan\n\n.*?\n)(\n## Reviews)/s' "\$1"$'\n'"### app"$'\n\n'"- the app change"$'\n\n'"### api"$'\n\n'"- the api change"$'\n'"\$2"; git -C "$RW" commit -qm "plans of $1" -- "$1"; }
+# (1) The build prompt names only the work's own commits.
+a="$(rwork "Own commits")"; out="$(rb handoff run "$a")" || fail "(1) a run: $out"
+grep -qF "then set $a to done, naming on its status line each commit you made, and no commit the work did not make, such as a base it built on." "$RS/prompts" || fail "(1) the prompt: $(tail -1 "$RS/prompts")"
+# A base commit c0 only another entry's review passed, on the status line beside the work's own c1.
+b="$(rwork "The base")"; c0="$(rcm base app)"; rst "$b" "done ($today) Built in app $c0."; rrev "$b" "$c0" >/dev/null
+a="$(rwork "On the base")"; c1="$(rcm own app)"; rst "$a" "done ($today) Built in app $c1 on $c0."; rrev "$a" "$c1" >/dev/null
+n="$(rargs)"; rc=0; out="$(rb handoff run "$a")" || rc=$?
+[[ $rc == 1 && "$(rargs)" == "$n" && "$(grep -v '^Log: ' <<<"$out" | tail -1)" == "Stopped: $a names $c0, which no passed review covers: the builder hands on with --depends-on $a; a commit this work did not make, such as a base it built on, comes off its status line" ]] \
+  || fail "(1) the stop (exit $rc): $out"
+x="$(awk '/^\*\*`run`\*\*/ && !n++ { on = 1 } /^\*\*`run --scheduled`\*\*/ { on = 0 } on' "$KIT/docs/commands.md")"
+grep -qF "no commit it did not make, such as a base it built on" <<<"$x" && grep -qF "comes off its status line" <<<"$x" || fail "(1) docs/commands.md, handoff run"
+# (2) A spec whose work is all ready to push, with a done entry naming no commit passed over.
+rplans specs/login.md; (cd "$RW" && bin/spec.sh record specs/login.md --role architect PASS --note specs/adr/plan.md >/dev/null) || fail "(2) architect PASS"
+b1="$(rwork "Login screen" app specs/login.md)"; b2="$(rwork "Login endpoint" api specs/login.md)"; X="$(rwork "Plan fix" api specs/login.md)"
+c1="$(rcm s1 app)"; rst "$b1" "done ($today) Built in app $c1."; r1="$(rrev "$b1" "$c1")"
+c0="$(rcm s2 api)"; rst "$b2" "done ($today) Built in api $c0."; r2="$(rrev "$b2" "$c0")"; rst "$X" "done ($today) Plan fix, no code."
+h="$(git -C "$RW" rev-parse HEAD)"; st="$(git -C "$RW" status --porcelain)"; x="$(ls -la "$RL" 2>/dev/null || true)"
+exp="$(rb handoff run "$b1" --dry-run)"$'\n'"$(rb handoff run "$b2" --dry-run)"$'\n'"$X is done and names no commit, with no review: nothing to build or push, passed over"
+n="$(rargs)"; rc=0; out="$(rb spec run specs/login.md --dry-run)" || rc=$?; last="$(tail -1 <<<"$out")"
+[[ $rc == 0 && "$(rargs)" == "$n" && "$out" == "$exp"$'\n'"$last" && "$last" == "specs/login.md is ready to push: all its work ($b1, $b2) passed review. Push it from your terminal." ]] || fail "(2) the dry run (exit $rc): $out"
+[[ "$(head -1 <<<"$exp")" == "$b1 is ready to push: "* && "$(sed -n 2p <<<"$exp")" == "$b2 is ready to push: "* ]] || fail "(2) the handoff dry runs: $exp"
+[[ "$(git -C "$RW" rev-parse HEAD)" == "$h" && "$(git -C "$RW" status --porcelain)" == "$st" && "$(ls -la "$RL" 2>/dev/null || true)" == "$x" ]] || fail "(2) the dry run wrote to the workspace or the log folder"
+out="$(rb spec run specs/login.md)" && [[ "$(rargs)" == "$n" && "$(tail -1 <<<"$out")" == "$last" ]] || fail "(2) the real run's last line: $out"
+# The second entry still to build: the dry run ends on its step.
+rst "$b2" "open ($today)"; h="$(git -C "$RW" rev-parse HEAD)"; st="$(git -C "$RW" status --porcelain)"; x="$(ls -la "$RL")"
+rc=0; out="$(rb spec run specs/login.md --dry-run)" || rc=$?
+[[ $rc == 0 && "$(rargs)" == "$n" && "$(head -1 <<<"$out")" == "$b1 is ready to push: "* && "$(tail -1 <<<"$out")" == "backend: builds $b2" ]] || fail "(2) a step left (exit $rc): $out"
+[[ "$(git -C "$RW" rev-parse HEAD)" == "$h" && "$(git -C "$RW" status --porcelain)" == "$st" && "$(ls -la "$RL")" == "$x" ]] || fail "(2) the dry run with a step left wrote to the workspace or the log folder"
+# (3) An architect BLOCK holds for the plan it reviewed only.
+sed "s/^feature: login\$/feature: rev/" "$RW/specs/login.md" | grep -v '^- Verdict:' > "$RW/specs/rev.md"; git -C "$RW" add specs/rev.md; git -C "$RW" commit -qm "rev spec" -- specs/rev.md
+(cd "$RW" && bin/spec.sh record specs/rev.md --role qa PASS --note specs/adr/plan.md >/dev/null && bin/spec.sh record specs/rev.md --role design-lead PASS --note specs/adr/plan.md >/dev/null) || fail "(3) setup"
+rplans specs/rev.md; (cd "$RW" && bin/spec.sh record specs/rev.md --role architect BLOCK --note specs/adr/plan.md >/dev/null) || fail "(3) architect BLOCK"
+X="$(rwork "Rev fix" app specs/rev.md)"; rst "$X" "done ($today) Plan fix, no code."
+(cd "$RW" && bin/spec.sh check specs/rev.md --json) | j -e '$[0].plan_review == "BLOCK"' >/dev/null || fail "(3) BLOCK on the plan it reviewed"
+n="$(rargs)"; rc=0; out="$(rb spec run specs/rev.md)" || rc=$?
+[[ $rc == 1 && "$(rargs)" == "$n" && "$(grep -v '^Log: ' <<<"$out" | tail -1)" == "Stopped: architect blocked the plan in specs/rev.md: the builders revise it (its note says why), then run again" ]] || fail "(3) an unchanged plan (exit $rc): $out"
+sedi 's/^- the app change$/- the app change, revised/' "$RW/specs/rev.md"; git -C "$RW" commit -qm "plan revised" -- specs/rev.md
+(cd "$RW" && bin/spec.sh check specs/rev.md --json) | j -e '$[0].plan_review == "changed"' >/dev/null || fail "(3) plan_review after the plan changed: $(cd "$RW" && bin/spec.sh check specs/rev.md --json)"
+sedi 's/^status: ready$/status: building/' "$RW/specs/rev.md"
+(cd "$RW" && bin/spec.sh check specs/rev.md --json) | j -e '$[0].status == "building" && $[0].plan_review == "changed"' >/dev/null || fail "(3) plan_review in building"
+git -C "$RW" checkout -q -- specs/rev.md
+out="$(rb spec run specs/rev.md --dry-run)" && [[ "$(tail -1 <<<"$out")" == "architect: reviews the plan in specs/rev.md" ]] || fail "(3) the dry run's step: $out"
+n="$(rargs)"; rc=0; out="$(rb spec run specs/rev.md)" || rc=$?
+grep -qxF "architect: reviews the plan in specs/rev.md" <<<"$out" && [[ "$(tail -n "+$((n + 1))" "$T/rs.args" | grep -cF "[--agent] [architect]")" == 1 ]] \
+  && (cd "$RW" && bin/spec.sh check specs/rev.md --json) | j -e '$[0].plan_review == "PASS"' >/dev/null || fail "(3) the changed plan goes back to the architect (exit $rc): $out"
+wsrm "$RW"
   return 0   # a last "check && fail" line must not end the run
 }
 

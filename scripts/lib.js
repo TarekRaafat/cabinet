@@ -484,7 +484,8 @@ function specTools(ws) {
   const planState = (text) => {
     const [fm, secs] = parse(text);
     const rs = repos(fm), parts = plan(sec(secs, "Plan")), a = verdicts(sec(secs, "Reviews")).architect;
-    const review = !a ? "none" : a[0] !== "PASS" ? a[0] : a[1] === fingerprint(sec(secs, "Plan")) ? "PASS" : "changed";
+    // A PASS or BLOCK counts only for the plan it reviewed: once the plan changes, it needs a new review.
+    const review = !a ? "none" : a[1] === fingerprint(sec(secs, "Plan")) ? a[0] : "changed";
     return { repos: rs, missing_plans: rs.filter((r) => !(parts[r] && parts[r].length)), plan_review_needed: needsArchitect(fm), plan_review: review };
   };
   const problems = (text) => {

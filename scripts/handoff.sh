@@ -863,9 +863,9 @@ again() {
 # For a role that is not a builder the step is "<role>: works on <ID>", its prompt the same in its role's terms.
 build() {
   if [[ -n "$worker" ]]; then
-    agent "$builder" "works on $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and do it as your role says. When it is done and committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer a critical area in AGENTS.md, or AGENTS.md itself, names for it> --depends-on $id, with its evidence, when any is named; then set $id to done, naming on its status line each commit you made. If it is not ready to do, set $id to rejected with what is missing instead."
+    agent "$builder" "works on $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and do it as your role says. When it is done and committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer a critical area in AGENTS.md, or AGENTS.md itself, names for it> --depends-on $id, with its evidence, when any is named; then set $id to done, naming on its status line each commit you made, and no commit the work did not make, such as a base it built on. If it is not ready to do, set $id to rejected with what is missing instead."
   else
-    agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done, naming on its status line each commit you made. If it is not ready to build, set $id to rejected with what is missing instead."
+    agent "$builder" "builds $id" "Pick up handoff $id, addressed to you (bin/handoff.sh list $builder), and build it as .cabinet/rules/builders.md says. When its checks pass and it is committed, hand it on for review with bin/handoff.sh add --from $builder --to <every reviewer its subject needs> --depends-on $id, with its evidence, then set $id to done, naming on its status line each commit you made, and no commit the work did not make, such as a base it built on. If it is not ready to build, set $id to rejected with what is missing instead."
   fi
   built=1
   rd="$(readiness)"
@@ -921,7 +921,7 @@ while :; do
     x="$(json -r --arg v "$vs" '$v.split(" ").filter((k) => $[k].ready === true).join(", ")' <<<"$rd")"
     [[ -n "$x" ]] || stop "${vs// /, } needs no review, so there is nothing to run"
     u="$(json -r '$.uncovered.join(", ")' <<<"$bc")"
-    [[ -z "$u" ]] || stop "$id names $u, which no passed review covers: the builder hands on with --depends-on $id"
+    [[ -z "$u" ]] || stop "$id names $u, which no passed review covers: the builder hands on with --depends-on $id; a commit this work did not make, such as a base it built on, comes off its status line"
     if [[ -n "$worker" && "$(json '$.workspace.length == $.named.length' <<<"$bc")" == true ]]; then
       say "$(ended "$id is done: every reviewer passed $x; its commits are in the workspace, so there is nothing to push")"
       rm -f "$mark"; exit 0

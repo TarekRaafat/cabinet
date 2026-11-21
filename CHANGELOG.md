@@ -16,6 +16,9 @@ Each version says what changed and anything a workspace must do by hand after `n
 - `cabinet handoff attach` accepts the entry's sender or an addressee, so the role that did the work, or the reviewer a review is addressed to, attaches its own evidence. A way back (`--way-back`) still comes from the sender only. `cabinet handoff record`'s refusal of a qa PASS with no evidence names both.
 - `cabinet handoff archive` leaves done work under Open, saying why, while its commits change a critical area and no review entry depends on it.
 - New doctor check `handoffs.unreviewed`, a note: each such done entry in `HANDOFFS.md`, with its areas and reviewers. `cabinet handoff list --json` gains `addressees` (the names on `To:`) and `unreviewed`, which is `[]` for every entry it lists, since `list` shows no done entry.
+- `cabinet handoff run` asks the builder to name on the work's status line only the commits it made, never a base it built on, and the stop for a commit no passed review covers now ends `; a commit this work did not make, such as a base it built on, comes off its status line`.
+- `cabinet spec run --dry-run` goes through all the spec's work, printing each entry's dry run line in turn, and stops at the first with a step to take; with all of it ready to push it ends with the real run's last line (`<spec> is ready to push: ...`), without the run time. Before, it printed only the first entry's line.
+- An architect BLOCK on a spec's plan holds only for the plan it reviewed: once the plan changes, `cabinet spec check --json` gives `plan_review` `changed` and `cabinet spec run` asks the architect again, where before it stopped with `architect blocked the plan`.
 
 ## 0.8.3 - 20 Nov 2026
 
