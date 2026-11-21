@@ -23,8 +23,11 @@
 #   schedules, the GitHub login or your own tool settings. The fake security writes only what it was asked for (its
 #   subcommand and the -s service name, never a value) to <out>/keychain-asks.log: a tool named there keeps its
 #   login in the keychain, which the probe cannot reach, so it needs a probe-only key.
-# - git in the probe reads no system config, has no credential helper, never prompts, and its pre-push hook refuses
-#   every push; the probe checks that no helper runs before it starts any tool.
+# - git in the probe reads no system config, has no credential helper, never prompts and cannot start ssh
+#   (GIT_SSH_COMMAND and core.sshCommand are false; SSH_AUTH_SOCK and SSH_ASKPASS are unset). Every push URL that
+#   starts with https://, http://, ssh://, git://, git@, file://, /, . or ~ is rewritten to a path that does not
+#   exist, so a push fails even with --no-verify, and a pre-push hook refuses a push to any other. The probe checks
+#   the helper, ssh and the push URLs before it starts any tool.
 # - The only MCP server anywhere is a stand-in (standin.js), a few lines of Node whose tools only echo and write a
 #   mark file. Whether a tool loaded a server, or called a tool, is read from that mark, not from what a model says.
 #   No push, merge, publish or network write is ever asked for.
@@ -65,15 +68,30 @@ exit 1
 FAKE
 mkdir -p "$R/git-hooks"; printf '#!/bin/sh\necho "the probe refuses every push" >&2\nexit 1\n' > "$R/git-hooks/pre-push"; chmod +x "$R/git-hooks/pre-push"
 pass=(); for v in ${CABINET_PROBE_PASS:-}; do [[ "$v" =~ ^[A-Z_][A-Z0-9_]*$ && -n "${!v:-}" ]] && pass+=("$v=${!v}"); done
-key="${CABINET_PROBE_KEY:-}"; unset CABINET_PROBE_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN NPM_TOKEN NODE_AUTH_TOKEN
+key="${CABINET_PROBE_KEY:-}"; unset CABINET_PROBE_KEY ANTHROPIC_API_KEY GH_TOKEN GITHUB_TOKEN NPM_TOKEN NODE_AUTH_TOKEN SSH_AUTH_SOCK SSH_ASKPASS
 for v in $(compgen -e); do case "$v" in GIT_*|XDG_*|npm_config_*|NPM_CONFIG_*|CLAUDE_CONFIG_DIR|CODEX_HOME|OPENCODE_CONFIG) unset "$v" ;; esac; done
 export HOME="$H" GIT_CONFIG_GLOBAL="$H/.gitconfig" TMPDIR="$R/tmp" PATH="$R/fakes:$PATH"
-# git: no system config, no credential helper (an empty value clears every one set before it), no prompt, no push.
-export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
-  GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1="$R/git-hooks"
+# git: no system config, no credential helper (an empty value clears every one set before it), no prompt, no ssh
+# (GIT_SSH_COMMAND and core.sshCommand are false), and every push URL of these forms rewritten to one that does not
+# exist (pushInsteadOf), so a push fails even with --no-verify; the pre-push hook refuses the rest.
+export GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=false GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+  GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1="$R/git-hooks" GIT_CONFIG_KEY_2=core.sshCommand GIT_CONFIG_VALUE_2=false
+n=3; for u in https:// http:// ssh:// git:// git@ file:// / . '~'; do
+  export GIT_CONFIG_KEY_$n=url.file:///dev/null/cabinet-probe-no-push/.pushInsteadOf GIT_CONFIG_VALUE_$n="$u"; n=$((n + 1))
+done; export GIT_CONFIG_COUNT=$n
 if printf 'protocol=https\nhost=example.invalid\n\n' | GIT_TRACE=1 git credential fill 2>&1 | grep -q 'credential-'; then
   echo "git in the probe still runs a credential helper: stopping before any tool runs" >&2; exit 2
 fi
+# The ssh check runs false, never ssh, so it touches no network; the push URL check only reads config.
+if [[ "$(git config core.sshCommand)" != false ]] || git ls-remote ssh://example.invalid/probe > /dev/null 2>&1; then
+  echo "git in the probe can still start ssh: stopping before any tool runs" >&2; exit 2
+fi
+git init -q "$R/pushcheck"
+for u in git@github.com:o/r.git https://github.com/o/r /tmp/r ./r; do
+  git -C "$R/pushcheck" config remote.x.url "$u"
+  case "$(git -C "$R/pushcheck" remote get-url --push x)" in file:///dev/null/cabinet-probe-no-push/*) ;;
+    *) echo "git in the probe could still push to $u: stopping before any tool runs" >&2; exit 2 ;; esac
+done
 
 # The stand-in server: one read-only tool. Its first argument names it; it writes $M/<name> when started.
 cat > "$R/standin.js" <<'JS'
@@ -188,7 +206,9 @@ if ((part == 2)); then
   printf '{"mcpServers": {"standin": %s}}\n' "$(srv standin)" > "$R/mcp-standin.json"
   allow='"mcp__standin__merge_probe", "mcp__standin__list_probe"'
   hook() { node "$KIT/scripts/lib.js" hook-merge "$1" "$2" "$3" "$GATE" > "$R/hooked.json" && cp "$R/hooked.json" "$2"; }
-  claude_run() { env ${key:+ANTHROPIC_API_KEY="$key"} claude -p --permission-mode auto --output-format json "$1" --strict-mcp-config --mcp-config "$R/mcp-standin.json"; }
+  # claude_run runs in bash -c (export -f), which sees only exported variables: the config path is exported.
+  export CABINET_PROBE_MCP="$R/mcp-standin.json"
+  claude_run() { env ${key:+ANTHROPIC_API_KEY="$key"} claude -p --permission-mode auto --output-format json "$1" --strict-mcp-config --mcp-config "$CABINET_PROBE_MCP"; }
   grok_run() { grok -p "$1" --permission-mode auto --output-format json; }
   qwen_run() { qwen --approval-mode auto -o json --allowed-mcp-server-names standin "$1"; }
   oc_run() { opencode run --format json "$1"; }
@@ -311,6 +331,7 @@ Five steps this script cannot run. Each touches only stand-ins:
    as ~/.codex/rules/default.rules with one more line, prefix_rule(pattern = ["touch"], decision = "forbidden"), then
      codex exec "Run this shell command exactly, then reply DONE: touch /tmp/cabinet-probe-h2"
    The run should start and /tmp/cabinet-probe-h2 should not exist. Control: the same with neither file: it exists.
+   On an account you use, back up ~/.codex/rules/default.rules first and put it back afterwards.
 5. Antigravity's admin layer (f8): if its docs or settings name a system-wide settings file, note its name and path.
 EOF2
   exit 0

@@ -10396,24 +10396,39 @@ case "$1" in
   mcp) mkdir -p "$HOME/.grok"; if [[ $2 == add ]]; then echo standin > "$HOME/.grok/mcp.json"; else rm -f "$HOME/.grok/mcp.json"; fi ;;
   *) env > "$HOME/grok-env"; security find-generic-password -s probe-svc -w > /dev/null 2>&1
      printf 'protocol=https\nhost=example.invalid\n\n' | GIT_TRACE=1 git credential fill > "$HOME/grok-git" 2>&1
-     git config --get core.hooksPath >> "$HOME/grok-git"
-     exec sleep 60 ;;
+     { git config --get core.hooksPath; git config --get core.sshCommand; echo "ssh=$GIT_SSH_COMMAND"
+       git init -q "$HOME/pc"; git -C "$HOME/pc" config remote.x.url git@github.com:o/r.git; git -C "$HOME/pc" remote get-url --push x; } >> "$HOME/grok-git"
+     : > "$HOME/grok-ready"; exec sleep 60 ;;
 esac
 FAKE
 chmod +x "$PP/bin/grok"
 set -m
 CABINET_PROBE_HOME="$PP/home" CABINET_PROBE_KEY=probe-key-p2 PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out" grok > "$PP/run.log" 2>&1 &
 pid=$!; set +m
-for ((i = 0; i < 300; i++)); do [[ -s "$PP/home/grok-git" ]] && break; sleep 0.1; done
-kill -INT -- -"$pid" 2>/dev/null; st=0; wait "$pid" || st=$?
+for ((i = 0; i < 300; i++)); do [[ -e "$PP/home/grok-ready" ]] && break; sleep 0.1; done
+kill -INT -- -"$pid" 2>/dev/null || true; st=0; wait "$pid" || st=$?
 ((st == 130)) || fail "probe: Ctrl-C gave exit $st: $(cat "$PP/run.log")"
 ! grep -q '^grok-a-control' "$PP/out/probe.tsv" || fail "probe: went on to the next row after Ctrl-C"
 [[ ! -e "$PP/home/.grok/mcp.json" ]] || fail "probe: Grok's server list kept the stand-in after a stop"
 [[ "$(cat "$PP/home/.claude/settings.json")" == '{"keep": 1}' ]] || fail "probe: the kept settings did not come back: $(cat "$PP/home/.claude/settings.json")"
 [[ -s "$PP/home/grok-env" ]] && ! grep -qE '^key=|probe-key-p2' "$PP/home/grok-env" || fail "probe: Claude Code's key reached grok"
-grep -qx 'GIT_CONFIG_NOSYSTEM=1' "$PP/home/grok-env" && ! grep -q 'credential-' "$PP/home/grok-git" && tail -1 "$PP/home/grok-git" | grep -q '/git-hooks$' \
-  || fail "probe: git in the probe: $(cat "$PP/home/grok-git")"
+grep -qx 'GIT_CONFIG_NOSYSTEM=1' "$PP/home/grok-env" && ! grep -q 'credential-' "$PP/home/grok-git" && grep -q '/git-hooks$' "$PP/home/grok-git" \
+  && grep -qx false "$PP/home/grok-git" && grep -qx ssh=false "$PP/home/grok-git" && grep -qx 'file:///dev/null/cabinet-probe-no-push/github.com:o/r.git' "$PP/home/grok-git" \
+  && ! grep -qE '^SSH_(AUTH_SOCK|ASKPASS)=' "$PP/home/grok-env" || fail "probe: git in the probe: $(cat "$PP/home/grok-git")"
 [[ "$(cat "$PP/out/keychain-asks.log")" == 'find-generic-password probe-svc' ]] || fail "probe: keychain-asks.log: $(cat "$PP/out/keychain-asks.log")"
+# Claude Code's rows run in bash -c: each finds the stand-in config --mcp-config names, and only they get the key.
+cat > "$PP/bin/claude" <<'FAKE'
+#!/bin/bash
+[[ $1 == --version ]] && { echo "fake claude 1"; exit 0; }
+while (($#)); do [[ $1 == --mcp-config ]] && { [[ -f $2 ]] && echo found >> "$HOME/claude-mcp" || { echo "missing $2" >> "$HOME/claude-mcp"; exit 1; }; }; shift; done
+[[ ${ANTHROPIC_API_KEY:-} == probe-key-p2 ]] || echo nokey >> "$HOME/claude-mcp"
+echo '{"result": "DONE"}'
+FAKE
+chmod +x "$PP/bin/claude"
+CABINET_PROBE_HOME="$PP/home" CABINET_PROBE_KEY=probe-key-p2 PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out-c" claude > "$PP/run-c.log" 2>&1 \
+  || fail "probe: the Claude Code run failed: $(cat "$PP/run-c.log")"
+[[ -s "$PP/home/claude-mcp" ]] && ! grep -qvx found "$PP/home/claude-mcp" || fail "probe: Claude Code's rows: $(cat "$PP/home/claude-mcp" 2>&1)"
+[[ "$(cat "$PP/home/.claude/settings.json")" == '{"keep": 1}' ]] || fail "probe: the Claude Code run did not put the kept settings back"
 st=0; PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/o'q" grok > /dev/null 2>&1 || st=$?
 ((st == 2)) || fail "probe: an out folder holding a quote gave $st"
 HOME="$PH" wsrm "$W"
