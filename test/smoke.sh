@@ -706,7 +706,9 @@ rm -f "$W/runner.out"
 # The agent sleeps for a time only this suite uses (its own PID in it), so another suite's sleep, like the
 # decoy below, is never taken for one this run left; a decoy plain sleep 323 stands in for one.
 SL="323.$$"; echo "CABINET_RUNNER_CMD='sleep $SL; :'" >> "$W/cabinet.env"; HOME="$H" approve "$W" cabinet.env CABINET_RUNNER_CMD
-left() { pgrep -f "sleep 323\.$$([^0-9]|\$)" >/dev/null; }
+# A stop is TERM to the agent's group and no wait, so on a loaded machine a signalled sleep can still be listed
+# for a moment: left waits up to 5 seconds for it to go (the agent's own sleep lasts 323).
+left() { local i; for i in $(seq 50); do pgrep -f "sleep 323\.$$([^0-9]|\$)" >/dev/null || return 1; sleep 0.1; done; }
 sleep 323 & decoy=$!
 cp "$W/jobs/brief.job" "$T/brief.bak"; sedi 's/^TIMEOUT=.*/TIMEOUT="2"/' "$W/jobs/brief.job"
 s=$SECONDS; st=0; HOME="$H" CABINET_TEST_MINUTE=1 "$W/bin/job.sh" run brief >/dev/null 2>&1 || st=$?
