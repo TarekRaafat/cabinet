@@ -74,7 +74,8 @@
 #       builder, --spec or not). Work of a role that is not a builder ends "<ID> is done: every reviewer
 #       passed <reviews>; its commits are in the workspace, so there is nothing to push" (ready to push
 #       when a commit is in a repo), or "<ID> is done; no review is expected for it" when no review
-#       depends on it and its commits change no critical area; when they do, it stops. Refused before
+#       depends on it and its commits are all in the workspace and change no critical area; when they
+#       change one, or one is in a repo, it stops. Refused before
 #       any agent: an entry to the owner, to more than one name, to a name not on the team, and a review
 #       of another entry ("<ID> is a review of <work ID>: run <work ID>").
 #       Each agent runs at the tier on the work's "- Model:" line (cabinet config --tier), one tier up for
@@ -437,6 +438,9 @@ sender="${info%%$'\t'*}" to="${info##*$'\t'}"
 if [[ "$(lc "$from")" != "$(lc "$sender")" ]] && ! names_of "$to" | grep -qxF -- "$(lc "$from")"; then
   echo "$id was filed by $sender to $to: only its sender or an addressee adds evidence or a way back" >&2; exit 1
 fi
+# The Way back line is the sender's word for a Hard to undo guardrail, not evidence: an addressee (a reviewer)
+# writing it would lift that guardrail on its own PASS.
+[[ -z "$back" || "$(lc "$from")" == "$(lc "$sender")" ]] || { echo "$id was filed by $sender: only its sender adds a way back" >&2; exit 1; }
 for e in ${ev[@]+"${ev[@]}"}; do evline="${evline:+$evline, }$(ev_link "$id" "$e")"; done
 own_change() {
   [[ -z "$evline" ]] || node "$LIBJS" handoff-entry "$1" "$id" evidence "$evline" || return 1
@@ -900,9 +904,10 @@ while :; do
       [[ "$st" != done ]] || stop "$id is done but its status line names no commit in a product repo, so nothing was built to push"
       build; continue
     fi
-    # Done work of a role that is not a builder, with no review: finished unless its commits change a
-    # critical area (Rule 3).
-    if [[ -z "$vs" && -n "$worker" && "$st" == done ]]; then
+    # Done work of a role that is not a builder, with no review, all of it in the workspace: finished unless
+    # its commits change a critical area (Rule 3). A commit in a product repo always needs a review, as a
+    # builder's does (E2), so it falls through to the builder's stop.
+    if [[ -z "$vs" && -n "$worker" && "$st" == done && "$(json '$.workspace.length == $.named.length' <<<"$bc")" == true ]]; then
       x="$(areas_hit "$(json -r '$.named.join(",")' <<<"$bc")" | area_who)"
       [[ -z "$x" ]] || stop "$id is done, its commits change $x, and no review handoff depends on it: $builder hands on with --depends-on $id"
       say "$(ended "$id is done; no review is expected for it")"

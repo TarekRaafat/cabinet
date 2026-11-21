@@ -9975,14 +9975,19 @@ L before "$NW/AGENTS.md" '/^\| workspace \(this folder\)/' '| `app/docs/` | The 
 touch "$NF/inapp"; b="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "App docs" 2>/dev/null)")"
 out="$(run "$b")" || fail "criterion 11: $out"; r="$(rvof "$b")"
 [[ "$(steps "$out")" == "design-lead: works on $b"$'\n'"qa: verifies $r"$'\n'"security: verifies $r" ]] && tail -1 <<<"$out" | grep -q "^$b is ready to push: every reviewer passed $r" || fail "criterion 11: $out"
-rm -f "$NF/inapp"
+# Security S2: the same app commit with no review stops as a build does; a commit in a repo always gets a review.
+touch "$NF/noreview"; b="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "App docs, no review" 2>/dev/null)")"
+rc=0; out="$(run "$b")" || rc=$?
+[[ $rc == 1 ]] && nbstop "$out" "Stopped: $b is done, but no review handoff depends on it: the builder hands on with --depends-on $b" || fail "S2, a repo commit with no review (exit $rc): $out"
+rm -f "$NF/inapp" "$NF/noreview"
 # Criterion 6: specs/design/x.html with no review: run stops, and readiness (list --json's fields) gives its areas.
 touch "$NF/noreview"; u="$(idof "$(hs add --small --from owner --to design-lead --changed x --needed y "Unreviewed" 2>/dev/null)")"
 rc=0; out="$(run "$u")" || rc=$?
 [[ $rc == 1 ]] && nbstop "$out" "Stopped: $u is done, its commits change design (qa), and no review handoff depends on it: design-lead hands on with --depends-on $u" || fail "criterion 6 (exit $rc): $out"
 rm -f "$NF/noreview"; c="$(cat "$NF/commits-$u")"
 rdy | j -e --arg i "$u" 'JSON.stringify($[$i].areas) == "[\"design\"]" && JSON.stringify($[$i].unreviewed) == "[\"design\"]" && JSON.stringify($[$i].addressees) == "[\"design-lead\"]"' >/dev/null || fail "criterion 6: readiness $(rdy | j -c --arg i "$u" '$[$i]')"
-hs list --json | j -e '$.length > 0 && $.every((h) => Array.isArray(h.addressees) && Array.isArray(h.unreviewed) && typeof h.to == "string")' >/dev/null || fail "criterion 6: list --json fields"
+hs list --json | j -e --arg i "$u" '$.length > 0 && $.every((h) => Array.isArray(h.addressees) && Array.isArray(h.unreviewed) && typeof h.to == "string")
+  && !$.some((h) => h.id == $i) && $.every((h) => h.unreviewed.length == 0)' >/dev/null || fail "criterion 6: list --json fields, and no done entry listed"
 # N1's control: an entry not in the shape run takes (product-manager to chief-of-staff, no Size or Spec line),
 # done naming the same commit, is never unreviewed.
 pm="$(idof "$(hs add --from product-manager --to chief-of-staff --changed x --needed y "Route it")")"; setst "$pm" "done ($(date +%F)) Routed, see $c."
@@ -10019,6 +10024,14 @@ rv15="$(idof "$(hs add --from owner --to qa --changed x --needed y --depends-on 
 rc=0; err="$(hs record "$rv15" --role qa PASS --commits "$c" --note specs/qa/n.md 2>&1)" || rc=$?
 [[ $rc == 1 ]] && grep -qF -- "--from owner" <<<"$err" && grep -qF -- "--from qa" <<<"$err" || fail "criterion 15 (exit $rc): $err"
 echo note > "$T/note.md"; hs attach "$rv15" "$T/note.md" --from qa >/dev/null && hs record "$rv15" --role qa PASS --commits "$c" --note specs/qa/n.md >/dev/null || fail "criterion 15: attach, then PASS"
+# Security S1: an addressee adds evidence, never a way back (with or without a file); the sender still does.
+s1="$(sha "$NW/HANDOFFS.md")"; h="$(git -C "$NW" rev-parse HEAD)"
+for x in "" "$T/shot2.png"; do
+  rc=0; err="$(hs attach "$rv15" $x --way-back "revert it" --from qa 2>&1)" || rc=$?
+  [[ $rc == 1 && "$(sha "$NW/HANDOFFS.md")" == "$s1" && "$(git -C "$NW" rev-parse HEAD)" == "$h" && ! -e "$NW/specs/evidence/$rv15/shot2.png" ]] \
+    && grep -qxF "$rv15 was filed by owner: only its sender adds a way back" <<<"$err" || fail "S1, way back from qa ${x:+with a file }(exit $rc): $err"
+done
+hs attach "$rv15" --way-back "revert it" --from owner >/dev/null && sed -n "/^### $rv15:/,/^### /p" "$NW/HANDOFFS.md" | grep -qxF -- "- Way back: revert it" || fail "S1: the sender's way back"
 # Criterion 16: who verifies is unchanged.
 rv16="$(idof "$(hs add --from design-lead --to qa --changed x --needed y --depends-on "$a14" --evidence "$T/shot.png" "Check them again")")"
 rc=0; err="$(hs record "$rv16" --role design-lead PASS --commits "$c" --note specs/qa/n.md 2>&1)" || rc=$?
