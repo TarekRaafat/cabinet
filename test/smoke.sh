@@ -10382,6 +10382,40 @@ ids="agents.hard-to-undo areas.declared backups.dir-absolute backups.dir-outside
   spend.unreported team.nested team.reports-to team.single-owner tier.effort tier.exists work.no-commits work.uncommitted model.exists model-light.exists guardrails.mcp"
 m=""; for i in $ids; do grep -qF -- "$i" "$KIT/scripts/doctor.sh" || m+=" $i"; done
 [[ -z "$m" ]] || fail "criterion 16: gone from the doctor:$m"
+
+# The owner probe, tools/mcp-probe.sh --part2 (H-20261121-25): with a fake grok that hangs, Ctrl-C stops the whole
+# probe; the kept HOME and Grok's server list come back as they were; Claude Code's key reaches no other tool; git
+# in the probe runs no credential helper and has the refusing pre-push hook; the fake security notes only what
+# was asked for. An out folder holding a quote is refused.
+local PP="$T/p2-probe" pid
+mkdir -p "$PP/bin" "$PP/home/.claude"; printf '{"keep": 1}\n' > "$PP/home/.claude/settings.json"
+cat > "$PP/bin/grok" <<'FAKE'
+#!/bin/bash
+case "$1" in
+  --version) echo "fake grok 1" ;;
+  mcp) mkdir -p "$HOME/.grok"; if [[ $2 == add ]]; then echo standin > "$HOME/.grok/mcp.json"; else rm -f "$HOME/.grok/mcp.json"; fi ;;
+  *) env > "$HOME/grok-env"; security find-generic-password -s probe-svc -w > /dev/null 2>&1
+     printf 'protocol=https\nhost=example.invalid\n\n' | GIT_TRACE=1 git credential fill > "$HOME/grok-git" 2>&1
+     git config --get core.hooksPath >> "$HOME/grok-git"
+     exec sleep 60 ;;
+esac
+FAKE
+chmod +x "$PP/bin/grok"
+set -m
+CABINET_PROBE_HOME="$PP/home" CABINET_PROBE_KEY=probe-key-p2 PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out" grok > "$PP/run.log" 2>&1 &
+pid=$!; set +m
+for ((i = 0; i < 300; i++)); do [[ -s "$PP/home/grok-git" ]] && break; sleep 0.1; done
+kill -INT -- -"$pid" 2>/dev/null; st=0; wait "$pid" || st=$?
+((st == 130)) || fail "probe: Ctrl-C gave exit $st: $(cat "$PP/run.log")"
+! grep -q '^grok-a-control' "$PP/out/probe.tsv" || fail "probe: went on to the next row after Ctrl-C"
+[[ ! -e "$PP/home/.grok/mcp.json" ]] || fail "probe: Grok's server list kept the stand-in after a stop"
+[[ "$(cat "$PP/home/.claude/settings.json")" == '{"keep": 1}' ]] || fail "probe: the kept settings did not come back: $(cat "$PP/home/.claude/settings.json")"
+[[ -s "$PP/home/grok-env" ]] && ! grep -qE '^key=|probe-key-p2' "$PP/home/grok-env" || fail "probe: Claude Code's key reached grok"
+grep -qx 'GIT_CONFIG_NOSYSTEM=1' "$PP/home/grok-env" && ! grep -q 'credential-' "$PP/home/grok-git" && tail -1 "$PP/home/grok-git" | grep -q '/git-hooks$' \
+  || fail "probe: git in the probe: $(cat "$PP/home/grok-git")"
+[[ "$(cat "$PP/out/keychain-asks.log")" == 'find-generic-password probe-svc' ]] || fail "probe: keychain-asks.log: $(cat "$PP/out/keychain-asks.log")"
+st=0; PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/o'q" grok > /dev/null 2>&1 || st=$?
+((st == 2)) || fail "probe: an out folder holding a quote gave $st"
 HOME="$PH" wsrm "$W"
   return 0
 }
