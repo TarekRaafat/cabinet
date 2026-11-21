@@ -9804,7 +9804,7 @@ v="$(cd "$KIT" && grep -nE '`(OPENCODE_CONFIG|XDG_CONFIG_HOME)`[^.]*points anywh
 grep -qF "Not enforced, docs only: \`OPENCODE_CONFIG\` and \`XDG_CONFIG_HOME\`" "$KIT/docs/commands.md" || fail "criterion 8, docs only: docs/commands.md does not say so"
 grep -qF "Codex and Cursor runs load every server they have" "$KIT/docs/troubleshooting.md" || fail "criterion 10: troubleshooting's guardrails.mcp row still names opencode"
 # 17. The changelog names each new name; no doctor check ID of 38b059a is gone.
-v="$(awk '/^## /{k++; next} k == 1' "$KIT/CHANGELOG.md")"; m=""
+v="$(awk '/^## /{on = /^## 0\.8\.4 /; next} on' "$KIT/CHANGELOG.md")"; m=""
 for p in guardrails.mcp guardrails.clone-settings .mcp.json .claude/settings.json .claude/settings.local.json .codex/config.toml .gemini/settings.json \
          .cursor/mcp.json .cursor/cli.json CABINET_RUN_MCP_SERVERS "is not approved on this machine" CLAUDE_CONFIG_DIR CODEX_HOME; do
   grep -qF -- "$p" <<<"$v" || m+=" [$p]"
@@ -10053,8 +10053,8 @@ x="$(awk '/^\*\*`run`\*\*/ && !n++ { on = 1 } /^\*\*`run --scheduled`\*\*/ { on 
 grep -q 'not a builder' <<<"$x" && grep -q 'nothing to push' <<<"$x" || fail "criterion 18: commands.md, handoff run"
 grep '^\*\*`attach`\*\*' "$KIT/docs/commands.md" | grep -q addressee || fail "criterion 18: commands.md, attach"
 grep -q 'handoffs.unreviewed' "$KIT/docs/concepts.md" && grep -q 'handoffs.unreviewed' "$KIT/docs/troubleshooting.md" || fail "criterion 18: concepts or troubleshooting"
-x="$(awk '/^## / { n++ } n == 1' "$KIT/CHANGELOG.md")"
-[[ "$x" == "## "*Unreleased* ]] && for w in "handoff run" "handoff attach" "handoff archive" handoffs.unreviewed; do grep -qF "$w" <<<"$x" || fail "criterion 18: CHANGELOG names $w"; done
+x="$(awk '/^## / { on = /^## 0\.8\.4 / } on' "$KIT/CHANGELOG.md")"
+for w in "handoff run" "handoff attach" "handoff archive" handoffs.unreviewed; do grep -qF "$w" <<<"$x" || fail "criterion 18: CHANGELOG names $w"; done
   return 0   # a last "check && fail" line must not end the run
 }
 
@@ -10260,8 +10260,8 @@ rs "$A" "$W"; ((st == 0)) && grep -qF 'app exists: archive branches fetched to r
   && git -C "$W/app" branch -r | grep -qx "  backup/main" || fail "criterion 9: exit $st, $(cat "$T/ba-out" "$T/ba-err")"
 # 11. The docs and the changelog say so.
 for c in 'changed or damaged' 'empty folder' 'every .env' 'before 0.8.5'; do grep -qF "$c" "$KIT/docs/backups.md" || fail "criterion 11: docs/backups.md lacks: $c"; done
-o="$(awk '/^## /{n++} n == 1' "$KIT/CHANGELOG.md")"
-head -1 <<<"$o" | grep -q Unreleased && grep -qF 'archive format' <<<"$o" && grep -qF 'before 0.8.5' <<<"$o" || fail "criterion 11: the top Unreleased section of CHANGELOG.md"
+o="$(awk '/^## /{on = /^## 0\.8\.5 /} on' "$KIT/CHANGELOG.md")"
+grep -qF 'archive format' <<<"$o" && grep -qF 'before 0.8.5' <<<"$o" || fail "criterion 11: the top Unreleased section of CHANGELOG.md"
 # ADR-029 B1: an open that fails for another reason than the archive (here a missing folder) is exit 2, not "changed or damaged".
 st=0; node "$W/bin/lib.js" backup-open "$A" "$T/ba-none/x" 3<<<fixture-pass-1 2> "$T/ba-err" || st=$?
 ((st == 2)) && ! grep -q 'changed or damaged' "$T/ba-err" || fail "B1: exit $st, $(cat "$T/ba-err")"
