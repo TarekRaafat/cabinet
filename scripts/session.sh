@@ -42,7 +42,7 @@ current() { git -C "$1" symbolic-ref -q --short HEAD 2>/dev/null || git -C "$1" 
 started() { git -C "$1" reflog show --date=unix --format=%gd "refs/heads/$2" -- 2>/dev/null | tail -1 | sed -n 's/.*@{\([0-9][0-9]*\)}$/\1/p'; }
 
 s_start() {
-  local name="" repo="" n url files link path d dir="" b ws_dirty
+  local name="" repo="" n url files link path d dir="" rurl="" b ws_dirty
   local -a names
   names=()
   while (($#)); do
@@ -55,16 +55,17 @@ s_start() {
   if [[ -n "$name" ]] && ! name_ok "$name"; then
     echo "'$(shown "$name")' is not a session name: 1 to 40 lower-case letters, digits and hyphens, starting with a letter or digit" >&2; exit 2
   fi
-  while IFS=$'\t' read -r n url files link path; do names+=("$n"); [[ "$n" == "$repo" ]] && dir="$(abspath "$(repo_dir "$path")")"; done < <(repos 2>/dev/null)
+  while IFS=$'\t' read -r n url files link path; do names+=("$n"); [[ "$n" == "$repo" ]] && { dir="$(abspath "$(repo_dir "$path")")"; rurl="$url"; }; done < <(repos 2>/dev/null)
   if [[ -z "$repo" ]]; then
     case ${#names[@]} in
       0) echo "no repo in repos.tsv to start a session in: add one first (cabinet repo add <git url>)" >&2; exit 1 ;;
-      1) repo="${names[0]}"; dir="$(abspath "$(repo_dir "$(repos | cut -f5)")")" ;;
+      1) repo="${names[0]}"; dir="$(abspath "$(repo_dir "$(repos | cut -f5)")")"; rurl="$(repos | cut -f2)" ;;
       *) echo "this workspace has ${#names[@]} repos: say which with --repo ($(printf '%s ' "${names[@]}" | sed 's/ $//; s/ /, /g'))" >&2; exit 2 ;;
     esac
   elif [[ -z "$dir" ]]; then
     echo "'$(shown "$repo")' is not a repo in repos.tsv (cabinet repo list): ${names[*]+${names[*]}}" >&2; exit 1
   fi
+  ! no_git "$dir" "$rurl" || { echo "$repo is a folder without git: sessions need git" >&2; exit 1; }
   [[ -e "$dir/.git" ]] || { echo "$repo is not a git repo at $dir, so it cannot have sessions (cabinet bootstrap clones the repos in repos.tsv)" >&2; exit 1; }
   git -C "$dir" rev-parse -q --verify HEAD >/dev/null || { echo "$repo has no commit yet: commit once, then start a session" >&2; exit 1; }
   if [[ -z "$name" ]]; then

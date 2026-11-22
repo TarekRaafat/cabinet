@@ -499,7 +499,20 @@ abspath() {
 # within <path> <folder>: true when path is the folder or inside it.
 within() { local a b; a="$(abspath "$1")" b="$(abspath "$2")"; [[ "$a" == "$b" || "$a" == "$b"/* ]]; }
 
-# Every folder the workspace holds data in: itself, its repos, and the project around it.
+# no_git <folder> <clone URL>: true for a project folder without git: the folder is there with no .git, and
+# holds anything at all, or its URL is -, or its URL is a local path to the folder itself, both resolved
+# (cabinet repo add <path> writes that; a folder never clones into itself). A missing folder, or one with a
+# .git (no commits included), is never one. The one test bootstrap, the doctor, repo, session, push-check,
+# backup and handoff record ask (docs/layouts.md, "Folders without git").
+no_git() {
+  local d="$1" u="$2"
+  [[ -d "$d" && ! -e "$d/.git" ]] || return 1
+  [[ -n "$(ls -A "$d" 2>/dev/null)" || "$u" == - ]] && return 0
+  case "$u" in /*|"~/"*) ;; ./*|../*) u="$WS/$u" ;; *) return 1 ;; esac
+  [[ "$(abspath "$u")" == "$(abspath "$d")" ]]
+}
+
+# The folders the workspace holds data in: itself, its repos, and the project around it.
 data_dirs() {
   local name url files link path d
   { echo "$WS"; [[ -n "$HOST" ]] && echo "$HOST"
@@ -620,6 +633,21 @@ builds_repos() {
   grep -qxF -- "$n" < <(awk -F'|' -v names=" $names " '/^## / {on = ($0 ~ /^## The team/)} on && NF >= 4 {
       a = $2; o = $4; gsub(/[ `]/, "", a); gsub(/^ +| +$/, "", o); if (index(names, " " a " ")) print o
     }' "$WS/AGENTS.md" 2>/dev/null)
+}
+# builds_git <name>: true when work sent to the name has commits to name (record --commits none): a repo in
+# repos.tsv that is not a folder without git (no_git), a role owning a team-table repo that is not one, or a
+# name that builds (builds_repos) and owns no team-table repo at all, a kit builder included. A repo not on
+# this machine counts as git.
+builds_git() {
+  local n=$1 name url files link path a o mine="" owns=0
+  builds_repos "$n" || return 1
+  while IFS=$'\t' read -r a o; do [[ "$o" == "$n" ]] && mine+=" $a"; done < <(team_rows)
+  while IFS=$'\t' read -r name url files link path; do
+    [[ "$name" == "$n" ]] || has "$mine" "$name" || continue
+    owns=1
+    no_git "$(repo_dir "$path")" "$url" || return 0
+  done < <(repos 2>/dev/null)
+  ((owns == 0))
 }
 # run_result: from a run's output on stdin, the line that says how it ended (Stopped, Paused, ready to
 # push, or done for work with nothing to push), or nothing; for handoff run --scheduled and spec run.

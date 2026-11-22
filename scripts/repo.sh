@@ -22,11 +22,12 @@ p_list() {
   for a in "$@"; do case "$a" in --json) json=1 ;; *) echo "usage: bin/repo.sh list [--json]" >&2; exit 2 ;; esac; done
   while IFS=$'\t' read -r name url files link path; do
     dir="$(repo_dir "$path")"
-    printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$dir" "$([[ -e "$dir/.git" ]] && echo yes || echo no)" "$(owner_of "$name" || true)" "$url"
+    # yes: a repo; nogit: a folder without git (no_git in lib.sh), there but with no git; no: missing.
+    printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$dir" "$(if [[ -e "$dir/.git" ]]; then echo yes; elif no_git "$dir" "$url"; then echo nogit; else echo no; fi)" "$(owner_of "$name" || true)" "$url"
   done < <(repos) | if ((json)); then
-    json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], path: r[1], present: r[2] == "yes", owner: r[3] == "TBD" ? null : str(r[3]), url: r[4] == "-" ? null : r[4]}))'
+    json -R '$.map((l) => l.split("\t")).map((r) => ({name: r[0], path: r[1], present: r[2] != "no", git: r[2] == "yes", owner: r[3] == "TBD" ? null : str(r[3]), url: r[4] == "-" ? null : r[4]}))'
   else
-    awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-20s %-16s %-8s %s\n", $1, ($4 == "" ? "TBD" : $4), ($3 == "yes" ? "here" : "missing"), $2} END {if (!n) print "No repos in repos.tsv. Add one: cabinet repo add <git url>"}' | term_text
+    awk -F'\t' 'BEGIN {n = 0} {n++; printf "%-20s %-16s %-8s %s\n", $1, ($4 == "" ? "TBD" : $4), ($3 == "yes" ? "here" : $3 == "nogit" ? "no git" : "missing"), $2} END {if (!n) print "No repos in repos.tsv. Add one: cabinet repo add <git url>"}' | term_text
   fi
 }
 
@@ -62,7 +63,7 @@ copy_if() {
 
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  [[ -e "$repo/.git" ]] || { echo "skip $name: not at $repo"; continue; }
+  [[ -e "$repo/.git" ]] || no_git "$repo" "$url" || { echo "skip $name: not at $repo"; continue; }
   dest="$WS/local/$name"
   if [[ "${files:--}" != "-" ]]; then
     set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files
