@@ -9,7 +9,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance",
    "== Committed the new workspace as Maya",
    "",
-   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.8.4).",
+   "Created Acme at /Users/maya/acme (slug acme, cabinet 0.8.5).",
    "Next:",
    "  - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme: npm install (downloads the pinned kit and locks its version).",
@@ -76,23 +76,23 @@ var CAPTURED = {
    "== Secrets check",
    "  placed /Users/maya/acme/.git/hooks/pre-commit",
    "== Claude Code",
-   "  added 64 permission rule(s) to /Users/maya/.claude/settings.json",
+   "  added 65 permission rule(s) to /Users/maya/.claude/settings.json",
    "== Codex",
    "  placed /Users/maya/.codex/rules/default.rules",
    "  created /Users/maya/.codex/config.toml with approval_policy = \"on-request\" (Codex asks before commands outside its sandbox)",
    "== Antigravity CLI (agy)",
-   "  added 30 permission rule(s) to /Users/maya/.gemini/antigravity-cli/settings.json",
+   "  added 31 permission rule(s) to /Users/maya/.gemini/antigravity-cli/settings.json",
    "== Gemini CLI",
    "  placed /Users/maya/.gemini/policies/owner-control.toml",
    "  placed /Users/maya/.gemini/settings.json",
    "== Qwen Code",
-   "  added 64 permission rule(s) to /Users/maya/.qwen/settings.json",
+   "  added 65 permission rule(s) to /Users/maya/.qwen/settings.json",
    "== Cursor CLI",
-   "  added 51 permission rule(s) to /Users/maya/.cursor/cli-config.json",
+   "  added 52 permission rule(s) to /Users/maya/.cursor/cli-config.json",
    "== Grok",
    "  covered by the Claude Code rules (bin/doctor.sh checks with grok inspect)",
    "== opencode",
-   "  added or reordered 64 bash rule(s) in /Users/maya/.config/opencode/opencode.json",
+   "  added or reordered 65 bash rule(s) in /Users/maya/.config/opencode/opencode.json",
    "== Commands in the workspace's files",
    "== Schedules (launchd)",
    "  installed ai.cabinet.acme.brief (7:00 AM)",
@@ -118,7 +118,7 @@ var CAPTURED = {
    "<span class=\"b\">Product repos</span>",
    "  <span class=\"green\">ok   </span> product repos checked",
    "<span class=\"b\">Kit and roles</span>",
-   "  <span class=\"green\">ok   </span> cabinet 0.8.4",
+   "  <span class=\"green\">ok   </span> cabinet 0.8.5",
    "  <span class=\"green\">ok   </span> kit files unedited",
    "  <span class=\"green\">ok   </span> CLAUDE.md links to AGENTS.md",
    "  <span class=\"green\">ok   </span> HANDOFFS.md present",
@@ -193,7 +193,7 @@ var CAPTURED = {
    "",
    "      ⬤",
    "  ⬤       ⬤",
-   "               cabinet 0.8.4",
+   "               cabinet 0.8.5",
    "⬤              One person, a whole team.",
    "               Build anything with AI agents, and stay in charge.",
    "  ⬤       ⬤",
@@ -203,13 +203,13 @@ var CAPTURED = {
  "08-handoff": {
   "cmd": "cabinet handoff add --from design-lead --to qa --changed Checkout screens: cart, address, payment --needed Verify against the spec's acceptance criteria Checkout screens ready",
   "lines": [
-   "H-20261121-01 filed for qa and committed"
+   "H-20261122-01 filed for qa and committed"
   ]
  },
  "09-handoffs": {
   "cmd": "cabinet handoff list",
   "lines": [
-   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261121-01 </span>  qa                        Checkout screens ready"
+   "<span class=\"d\">  0d</span>  open          <span class=\"d\">H-20261122-01 </span>  qa                        Checkout screens ready"
   ]
  },
  "10-init": {
@@ -222,7 +222,7 @@ var CAPTURED = {
    "roles: chief-of-staff product-manager architect qa security design-lead finance code-reviewer",
    "== Committed the new workspace as Maya",
    "",
-   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.8.4).",
+   "Created acme-app at /Users/maya/acme-app/cabinet (slug acme-app, cabinet 0.8.5).",
    "Next:",
    "  - Fill the TBDs in cabinet/AGENTS.md: what acme-app is, its product rules, how to test, the repo rows.",
    "  - In /Users/maya/acme-app/cabinet: npm install (downloads the pinned kit and locks its version).",
