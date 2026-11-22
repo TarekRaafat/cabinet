@@ -10535,8 +10535,24 @@ CABINET_PROBE_HOME="$PP/home" CABINET_PROBE_KEY=probe-key-p2 PATH="$PP/bin:$PATH
   || fail "probe: the Claude Code run failed: $(cat "$PP/run-c.log")"
 [[ -s "$PP/home/claude-mcp" ]] && ! grep -qvx found "$PP/home/claude-mcp" || fail "probe: Claude Code's rows: $(cat "$PP/home/claude-mcp" 2>&1)"
 [[ "$(cat "$PP/home/.claude/settings.json")" == '{"keep": 1}' ]] || fail "probe: the Claude Code run did not put the kept settings back"
+# The printed session steps (security S1, H-20261122-18): no $PWD, the kit's gate by its full path, and each line run
+# as printed works: the merge keeps the file's own keys and adds the hook, and the session starts in an empty folder
+# under the kept HOME with no credential helper, no ssh, no system config and no GitHub token or ssh agent.
+! grep -q 'PWD' "$PP/run-c.log" && grep -qF "'$KIT/guardrails/cabinet-mcp-gate.js'" "$PP/run-c.log" \
+  && grep -q 'approve no git command' "$PP/run-c.log" || fail "probe: the printed session steps: $(sed -n '/^Five steps/,$p' "$PP/run-c.log")"
+local merge sess ph; ph="$(cd "$PP/home" && pwd -P)"
+merge="$(grep -m1 'hook-merge claude' "$PP/run-c.log")"; sess="$(grep -m1 ' claude$' "$PP/run-c.log")"
+bash -c "$merge" && node -e 'const o = require(process.argv[1]); process.exit(o.keep === 1 && /cabinet-mcp-gate/.test(JSON.stringify(o.hooks.PreToolUse)) ? 0 : 1)' "$PP/home/.claude/settings.json" \
+  || fail "probe: printed step 1's merge: $(cat "$PP/home/.claude/settings.json")"
+printf '{"keep": 1}\n' > "$PP/home/.claude/settings.json"
+GH_TOKEN=gh-p2 SSH_AUTH_SOCK=/tmp/agent-p2 bash -c "${sess% claude} bash -c 'env; pwd -P; ls -A | wc -l; printf \"protocol=https\nhost=example.invalid\n\n\" | GIT_TRACE=1 git credential fill 2>&1; git config core.sshCommand'" > "$PP/sess.log" 2>&1
+grep -qx "HOME=$ph" "$PP/sess.log" && grep -qx "$ph/probe/session" "$PP/sess.log" && grep -qx ' *0' "$PP/sess.log" \
+  && grep -qx 'GIT_CONFIG_NOSYSTEM=1' "$PP/sess.log" && grep -qx 'GIT_SSH_COMMAND=false' "$PP/sess.log" && grep -qx false "$PP/sess.log" \
+  && ! grep -qE '^(GH_TOKEN|SSH_AUTH_SOCK)=|credential-' "$PP/sess.log" || fail "probe: printed step 1's session: $(cat "$PP/sess.log")"
 st=0; PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/o'q" grok > /dev/null 2>&1 || st=$?
 ((st == 2)) || fail "probe: an out folder holding a quote gave $st"
+st=0; CABINET_PROBE_HOME="$PP/h'q" PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out-q" grok > /dev/null 2>&1 || st=$?
+((st == 2)) && [[ ! -e "$PP/h'q" ]] || fail "probe: a kept HOME holding a quote gave $st"
 HOME="$PH" wsrm "$W"
   return 0
 }

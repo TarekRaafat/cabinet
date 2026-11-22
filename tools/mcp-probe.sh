@@ -48,6 +48,8 @@ out="${1:?usage: tools/mcp-probe.sh [--part2] <out folder> [tool]...}"; shift
 mkdir -p "$out" && out="$(cd "$out" && pwd -P)" || exit 2
 case "$out" in *[\'\"\\\$\`]*) echo "the out folder's path cannot hold a quote, a backslash, \$ or a backtick" >&2; exit 2 ;; esac
 KIT="$(cd "$(dirname "$0")/.." && pwd -P)"
+# The printed session steps (--part2) name the kit and the kept HOME in single quotes, so neither may hold a quote.
+case "$KIT${CABINET_PROBE_HOME:-}" in *[\'\"\\\$\`]*) echo "the kit's path and CABINET_PROBE_HOME cannot hold a quote, a backslash, \$ or a backtick" >&2; exit 2 ;; esac
 R="$(mktemp -d)"; trap 'rm -rf "$R"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 # sig <status>: a command stopped by Ctrl-C (or TERM, HUP) stops the probe, and the EXIT trap puts every file back.
 sig() { case "$1" in 129|130|143) echo "stopped (exit $1)" >&2; exit "$1" ;; esac; }
@@ -313,17 +315,29 @@ if ((part == 2)); then
       *) echo "unknown tool: $t" >&2 ;;
     esac
   done
+  # The session steps: paths already expanded, the merge written to another file and moved into place (a > onto the
+  # file it reads would empty it first), and each session started in an empty folder with git's safety in front, since
+  # this script's own git safety and push hook end with it (security S1, H-20261122-18).
+  F="${CABINET_PROBE_HOME:+$H}"; F="${F:-<folder>}"
+  S="mkdir -p '$F/probe/session' && cd '$F/probe/session' && env -u GH_TOKEN -u GITHUB_TOKEN -u SSH_AUTH_SOCK GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=false GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= GIT_CONFIG_KEY_1=core.sshCommand GIT_CONFIG_VALUE_1=false HOME='$F'"
   cat <<EOF2
 Results: $out/probe.tsv (one log per command beside it; Antigravity's hook input in agy-hook-input.jsonl).
 
-Five steps this script cannot run. Each touches only stand-ins:
+Five steps this script cannot run. Each touches only stand-ins. Steps 1 and 2 run in a session of your own, without
+this script's git safety: the commands below start it in an empty folder with git's credentials and ssh off, but
+the kit's pre-push hook is not there, so approve no git command in these sessions.
 1. Claude Code's hook in a session (line b): this script puts every file back when it ends, so in the HOME you kept
-   (CABINET_PROBE_HOME), print the settings with the kit's entry added and save them as <folder>/.claude/settings.json:
-     node scripts/lib.js hook-merge claude <folder>/.claude/settings.json 'mcp__.*' "\$PWD/guardrails/cabinet-mcp-gate.js"
-   then HOME=<folder> claude, add an echo-only stand-in server (claude mcp add), ask it to call a tool named
-   merge_probe, and note whether the hook refused it. Take the entry out of that file afterwards.
-2. Antigravity in a session (f1 to f5): the same, with HOME=<folder> agy, for each of the rules in the rows agy-f1,
-   agy-f1-prefix and agy-f2 to agy-f5 (f5: node scripts/lib.js hook-merge agy <folder>/.gemini/config/hooks.json '' "\$PWD/guardrails/cabinet-mcp-gate.js").
+   (CABINET_PROBE_HOME), add the kit's entry to its settings:
+     mkdir -p '$F/probe' && node '$KIT/scripts/lib.js' hook-merge claude '$F/.claude/settings.json' 'mcp__.*' '$KIT/guardrails/cabinet-mcp-gate.js' > '$F/probe/s.json' && mv '$F/probe/s.json' '$F/.claude/settings.json'
+   then start the session:
+     $S claude
+   add an echo-only stand-in server (claude mcp add), ask it to call a tool named merge_probe, and note whether the
+   hook refused it. Take the entry out of that file afterwards.
+2. Antigravity in a session (f1 to f5): the same, for each of the rules in the rows agy-f1, agy-f1-prefix and
+   agy-f2 to agy-f5, in a session started with
+     $S agy
+   For f5, add the kit's hook first:
+     mkdir -p '$F/probe' '$F/.gemini/config' && node '$KIT/scripts/lib.js' hook-merge agy '$F/.gemini/config/hooks.json' '' '$KIT/guardrails/cabinet-mcp-gate.js' > '$F/probe/h.json' && mv '$F/probe/h.json' '$F/.gemini/config/hooks.json'
 3. Claude Code's admin file (h1), on a test account or in a container: put a managed-settings.json holding the kit's
    denies, a deny of the stand-in "Bash(*cabinet-probe-h1*)", and "disableBypassPermissionsMode": "disable" under
    "permissions", at /Library/Application Support/ClaudeCode/ (macOS) or /etc/claude-code/ (Linux), then
