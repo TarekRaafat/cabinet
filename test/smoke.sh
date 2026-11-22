@@ -4217,18 +4217,19 @@ section "release notice: a newer Cabinet is said in next, status and the doctor,
 s67() {
 # Its own HOME, the notice on (the rest of the suite runs with it off), and a fake npm first on PATH
 # before the first command: no request ever reaches the registry. Restored at the end.
-local oh="$HOME" og="$GIT_CONFIG_GLOBAL" NP="$T/rn-npm" NL="$T/rn-npm.log" RW="$T/rn-ws" LR V c i o p q st t0 off on pid ppid cmd SP SPH
+local oh="$HOME" og="$GIT_CONFIG_GLOBAL" NP="$T/rn-npm" NL="$T/rn-npm.log" RW="$T/rn-ws" LR V c i o p q st off on pid ppid cmd SP SPH
 export HOME="$T/rn-home" GIT_CONFIG_GLOBAL="$T/rn-home/.gitconfig"; unset CABINET_UPDATE_CHECK NO_UPDATE_NOTIFIER CI
 mkdir -p "$HOME" "$NP"; printf '[user]\n\tname = Test\n\temail = test@example.com\n' > "$GIT_CONFIG_GLOBAL"
 LR="$HOME/$LOGS"
-# The fake npm: logs "<arguments>|<folder>", writes its PID and its parent's, sleeps $NP/sleep seconds,
-# fails when $NP/fail exists, else prints $NP/answer as it is.
+# The fake npm: logs "<arguments>|<folder>", writes its PID and its parent's; when $NP/sleep holds a
+# number it becomes a sleep of that many seconds (same PID) and never answers; else it fails when $NP/fail
+# exists, or prints $NP/answer as it is.
 cat > "$NP/npm" <<'FAKE'
 #!/bin/bash
 d="$(dirname "$0")"
 printf '%s|%s\n' "$*" "$(pwd -P)" >> "$d/../rn-npm.log"
 echo "$$ $PPID" > "$d/pid"
-[[ -s "$d/sleep" ]] && sleep "$(cat "$d/sleep")"
+[[ -s "$d/sleep" ]] && exec sleep "$(cat "$d/sleep")"
 [[ -e "$d/fail" ]] && exit 1
 cat "$d/answer"
 FAKE
@@ -4289,15 +4290,16 @@ SP="$T/rn-proj"; mkdir -p "$SP"; git -C "$SP" init -q; printf '{"name": "p", "de
 (cd "$SP" && "$F" init --inside --shared --yes) >/dev/null 2>&1 || fail "init --inside --shared for the notice"
 SPH="$(cd "$SP" && pwd -P)"; put 9.9.9
 four "$SP/cabinet" "npm install @tarekraafat/cabinet@latest && npx cabinet update" "$SPH"
-# 3. Never waits: with npm hanging, each command returns in its off time (plus 5 seconds), with its off output.
-echo 60 > "$NP/sleep"
+# 3. Never waits: with an npm that never answers, each command returns with its off output while that npm
+# still runs. Told by the fake npm's own PID, not by seconds: a command that waits for the check returns
+# only once the check's 30-second stop has killed it, so it is gone.
+echo 600 > "$NP/sleep"
 for c in next status doctor; do
-  clean; t0=$SECONDS; off="$(offout $c)"; t0=$((SECONDS - t0)); printf '%s\n' "$off" > "$T/rn-off-$c"
-  i=$SECONDS; on="$(out $c)"; i=$((SECONDS - i))
+  clean; off="$(offout $c)"; printf '%s\n' "$off" > "$T/rn-off-$c"
+  on="$(out $c)"
   [[ "$on" == "$off" ]] || fail "$c with a hanging check printed something else: $(diff <(echo "$off") <(echo "$on"))"
-  ((i <= t0 + 5)) || fail "$c waited for the check: $i s against $t0 s"
-  for q in $(seq 40); do [[ -s "$NP/pid" ]] && break; sleep 0.25; done
-  read -r pid ppid < "$NP/pid"; kill -0 "$pid" 2>/dev/null || fail "$c: the check had ended when it returned"
+  for q in $(seq 120); do [[ -s "$NP/pid" ]] && break; sleep 0.25; done
+  read -r pid ppid < "$NP/pid"; kill -0 "$pid" 2>/dev/null || fail "$c waited for the check: it had ended when $c returned"
   kill "$pid" 2>/dev/null; settle
 done
 # 4. The background check stops itself at 30 seconds and leaves nothing.
