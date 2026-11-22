@@ -10284,11 +10284,16 @@ psum() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256
 mkdir -p "$PH" "$PB" "$PT"
 
 # 4. The gate on each input. Refused: exit 2 for Claude Code, a deny decision on stdout (exit 0) for Antigravity.
-# Let through: exit 0 and no output. Claude Code's input form, then Antigravity's (toolCall.name, from its hook docs).
+# Let through: exit 0 and no output. Claude Code's input form, then Antigravity's, as owner probe f5 recorded it
+# (agy-hook-input.jsonl, Antigravity 1.5.14): every MCP call is the tool call_mcp_tool, with args.ServerName and
+# args.ToolName; mcp__<server>__<tool> below is sent to Antigravity as that server and tool.
 gate() { st=0; o="$(printf '%s' "$2" | node "$GATE" "$1" 2>/dev/null)" || st=$?; }
 refused() { if [[ $1 == claude ]]; then ((st == 2)) && [[ -z "$o" ]]; else ((st == 0)) && j -e '$.decision == "deny"' <<<"$o" >/dev/null; fi; }
 through() { ((st == 0)) && [[ -z "$o" ]]; }
-form() { if [[ $1 == claude ]]; then printf '{"tool_name": "%s", "tool_input": {}}' "$2"; else printf '{"toolCall": {"id": "t1", "name": "%s", "args": {}}}' "$2"; fi; }
+form() {
+  if [[ $1 == claude ]]; then printf '{"tool_name": "%s", "tool_input": {}}' "$2"
+  else local t="${2#mcp__}"; printf '{"hookEventName": "PreToolUse", "cwd": "/w", "stepIdx": 4, "toolCall": {"args": {"Arguments": {"text": "hi"}, "ServerName": "%s", "ToolName": "%s"}, "id": "c1", "name": "call_mcp_tool"}}' "${t%%__*}" "${t#*__}"; fi
+}
 for k in claude agy; do
   for n in mcp__x__merge_pull_request mcp__x__push_files mcp__x__create_or_update_file mcp__x__delete_branch mcp__x__create_release \
            mcp__x__publish_package mcp__x__deploy_site mcp__x__send_email mcp__x__MergePullRequest mcp__x__list_releases mcp__pushover__list_items; do
@@ -10298,6 +10303,20 @@ for k in claude agy; do
   for i in 'not json' '' '{}'; do gate $k "$i"; refused $k || fail "criterion 4 ($k): input [$i] was not refused (exit $st, $o)"; done
 done
 gate other '{"tool_name": "mcp__x__list_issues"}'; ((st == 2)) || fail "criterion 4: the gate without its tool let a call through"
+# Antigravity (f5): its first call in the probe, read_file on the tool's schema, is no MCP tool: let through, as is
+# any other of its own tools, a verb in the name or not. A call_mcp_tool whose ToolName is not a string is refused.
+for i in '{"hookEventName": "PreToolUse", "toolCall": {"args": {"Path": "/h/.gemini/antigravity-cli/mcp/standin/merge_probe.json"}, "id": "c0", "name": "read_file"}}' \
+         '{"toolCall": {"name": "delete_file", "args": {}}}' '{"toolCall": {"name": "run_command", "args": {"CommandLine": "git push"}}}'; do
+  gate agy "$i"; through || fail "criterion 4 (agy): a tool that is not MCP was not let through: $i (exit $st, $o)"
+done
+for i in '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "standin"}}}' '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "s", "ToolName": 5}}}' \
+         '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": 1, "ToolName": "list_issues"}}}' '{"toolCall": {"name": "call_mcp_tool"}}' \
+         '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "s", "ToolName": ""}}}' '{"toolCall": {"args": {"ToolName": "x"}}}'; do
+  gate agy "$i"; refused agy || fail "criterion 4 (agy): $i was not refused (exit $st, $o)"
+done
+gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "standin", "ToolName": "merge_probe", "Arguments": {"text": "hi"}}}}'
+refused agy && [[ "$o" == *standin/merge_probe* ]] || fail "criterion 4 (agy): the f5 probe's call was not refused by its whole name: $o"
+gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ToolName": "list_probe"}}}'; through || fail "criterion 4 (agy): a call with no ServerName and a read tool: exit $st, $o"
 
 # Rule 10 (E2, E10, E6): hook-merge keeps every hook there, adds the kit's once, and leaves a file it cannot read.
 f="$T/p2-settings.json" P="$T/it's here/gate.js"
@@ -10316,9 +10335,9 @@ st=0; form claude mcp__x__list_issues | sh -c "$c" >/dev/null 2>&1 || st=$?; ((s
 st=0; form claude mcp__x__list_issues | PATH=/nowhere /bin/sh -c "$c" >/dev/null 2>&1 || st=$?; ((st == 2)) || fail "criterion 4: with no node the command gave $st"
 L hook-merge agy "$T/p2-none.json" 'mcp_.*' "$P" > "$f.agy" || fail "hook-merge agy"
 c="$(j -r '$["cabinet-mcp-gate"].PreToolUse[0].hooks[0].command' "$f.agy")"
-o="$(form agy view_file | PATH=/nowhere /bin/sh -c "$c" 2>/dev/null)"; j -e '$.decision == "deny"' <<<"$o" >/dev/null || fail "criterion 4: agy's command with no node: $o"
-o="$(form agy mcp_x_push | sh -c "$c" 2>/dev/null)"; [[ "$(j -c '$.decision' <<<"$o")" == '"deny"' ]] || fail "criterion 4: agy's command printed: $o"
-o="$(form agy view_file | sh -c "$c" 2>/dev/null)"; [[ -z "$o" ]] || fail "criterion 4: agy's command printed for a read: $o"
+o="$(form agy mcp__x__list_issues | PATH=/nowhere /bin/sh -c "$c" 2>/dev/null)"; j -e '$.decision == "deny"' <<<"$o" >/dev/null || fail "criterion 4: agy's command with no node: $o"
+o="$(form agy mcp__x__push_files | sh -c "$c" 2>/dev/null)"; [[ "$(j -c '$.decision' <<<"$o")" == '"deny"' ]] || fail "criterion 4: agy's command printed: $o"
+o="$(form agy mcp__x__list_issues | sh -c "$c" 2>/dev/null)"; [[ -z "$o" ]] || fail "criterion 4: agy's command printed for a read: $o"
 for i in '{ "hooks": ' '{"hooks": []}' '{"hooks": {"PreToolUse": {}}}' '[]'; do
   printf '%s' "$i" > "$f.bad"; st=0; L hook-merge claude "$f.bad" 'mcp__.*' /g.js >/dev/null 2>&1 || st=$?; ((st == 4)) || fail "E6: [$i] gave exit $st"
 done
@@ -10363,6 +10382,66 @@ for n in .agents .agent .antigravity; do
     || fail "criterion 8 ($n): stray read, or a FIX"
   for d in "$W/app" "$W" "$W/stray"; do rmdir "$d/$n"; done
 done
+
+# Step 2, from the owner's probes (22 Nov 2026, H-20261122-14; the evidence's rule-1-probes-2.md). HOLDS is every
+# Rule 1 row that held: a (MCP deny), c (file and read denies, the ~/ and // forms), f6 (agy's server list) and g
+# (github-mcp-server v2.2.0's tool list). Docs only: b and f2 to f4 (shown in runs, the session step not run yet), f5
+# (the gate saw call_mcp_tool; read since this change, awaiting the owner's confirmation), f1 and f7 (shell denies
+# did not hold in a run), f8, h1 and h2 (no file, or not run), and every d and e row (not probed). A row that holds
+# is built and checked below; a docs-only row builds nothing, and the check says so.
+local HOLDS=" a c f6 g " H1="$T/p2-h1" GH="create_or_update_file delete_file get_latest_release get_release_by_tag list_releases merge_pull_request push_files"
+local FILES="~/.claude/settings.json ~/.qwen/settings.json ~/.config/opencode/opencode.json ~/.cursor/cli-config.json ~/.gemini/antigravity-cli/settings.json
+  ~/.gemini/config/hooks.json ~/.gemini/settings.json ~/.gemini/policies/owner-control.toml ~/.codex/rules/default.rules ~/.codex/config.toml
+  ~/.config/git/hooks/** ~/.gitconfig ~/.config/git/config /$W/.git/config /$W/app/.git/config /$W/lib/.git/config"
+local CREDS="~/.git-credentials ~/.config/gh/hosts.yml ~/.npmrc" CS="$H1/.claude/settings.json" AS1="$H1/.gemini/antigravity-cli/settings.json" sums sums2 baks sudo0
+[[ "$HOLDS" == *" a "* && "$HOLDS" == *" c "* && "$HOLDS" == *" g "* && "$HOLDS" != *" b "* && "$HOLDS" != *" f"[1-5]" "* ]] || fail "HOLDS changed: build and check the rows it adds"
+git init -q "$W/lib"; printf 'lib\t-\t-\tno\n' >> "$W/repos.tsv"
+mkdir -p "$H1/.claude" "$H1/.gemini/config" "$H1/.codex"
+printf '%s\n' '{"permissions": {"allow": ["mcp__github__merge_pull_request"]}, "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}]}}' > "$CS"
+printf '{ "hooks": ' > "$H1/.gemini/config/hooks.json"; c="$(psum "$H1/.gemini/config/hooks.json")"
+printf 'approval_policy = "on-request"\n\n[mcp_servers.github]\ncommand = "true"\n' > "$H1/.codex/config.toml"; k="$(psum "$H1/.codex/config.toml")"
+sudo0="$(grep -c '^sudo ' "$T/fake.log" 2>/dev/null || true)"
+st=0; out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+((st == 0)) || fail "fixture home: bootstrap exit $st: $out"
+# 1 and 2. Claude Code's file: the GitHub write tools by name (a, g), the file and read denies (c), git credential; the
+# owner's allow and hook kept (E1, E2), and one backup.
+m=""
+for n in $GH; do j -e --arg r "mcp__github__$n" '$.permissions.deny.includes($r)' "$CS" >/dev/null || m+=" mcp__github__$n"; done
+for n in $FILES; do for i in Edit Write; do j -e --arg r "$i($n)" '$.permissions.deny.includes($r)' "$CS" >/dev/null || m+=" $i($n)"; done; done
+for n in $CREDS; do j -e --arg r "Read($n)" '$.permissions.deny.includes($r)' "$CS" >/dev/null || m+=" Read($n)"; done
+j -e '$.permissions.deny.includes("Bash(*git credential*)")' "$CS" >/dev/null || m+=" git-credential"
+[[ -z "$m" ]] || fail "criterion 1: ~/.claude/settings.json lacks:$m"
+j -e '$.permissions.allow.length == 1 && $.permissions.allow[0] == "mcp__github__merge_pull_request" && $.hooks.PreToolUse.length == 1
+  && $.hooks.PreToolUse[0].matcher == "Bash" && $.hooks.PreToolUse[0].hooks[0].command == "true"' "$CS" >/dev/null || fail "criterion 2: the owner's allow or hook changed: $(cat "$CS")"
+# 3 (b docs only): no mcp__.* hook entry. 1 (d, e docs only): Qwen Code, opencode and Cursor get no MCP or file entries.
+! j -e '$.hooks.PreToolUse.some((e) => e.matcher == "mcp__.*")' "$CS" >/dev/null || fail "criterion 3: a hook entry for b, which is docs only"
+for f in "$H1/.qwen/settings.json" "$H1/.config/opencode/opencode.json" "$H1/.cursor/cli-config.json"; do
+  [[ ! -e "$f" ]] || ! grep -qE 'mcp__|Mcp\(|"(Edit|Write|Read)\(' "$f" || fail "criterion 1: $f holds an MCP or file entry, docs only for it"
+done
+# 5 (f1 to f4 docs only): agy's file holds no mcp(, write_file(, read_file( or command(regex: entry, and git credential.
+j -e '$.permissions.deny.includes("command(git credential)") && ![...$.permissions.deny, ...($.permissions.ask || [])].some((r) => /^(mcp|write_file|read_file)\(|^command\(regex:/.test(r))' "$AS1" >/dev/null \
+  || fail "criterion 5: $(cat "$AS1")"
+# 11 and 18 (f5 docs only): hooks.json left as it was, with no backup, and not named; bootstrap exits 0 (above).
+[[ "$(psum "$H1/.gemini/config/hooks.json")" == "$c" ]] && ! ls "$H1/.gemini/config/" | grep -q '\.bak\.' && [[ "$out" != *hooks.json* ]] || fail "criteria 11, 18: hooks.json was touched or named"
+# 9 (h1, h2, f8 docs only): no admin folder, and no sudo line, run or printed.
+[[ -z "$(find "$H1" -type d -name admin)" && "$out" != *sudo* && "$(grep -c '^sudo ' "$T/fake.log" 2>/dev/null || true)" == "$sudo0" ]] || fail "criterion 9: an admin file or sudo"
+# 10 (i): Codex's config.toml with approval_policy set is not changed or backed up; its rules gain git credential.
+[[ "$(psum "$H1/.codex/config.toml")" == "$k" && "$(ls "$H1/.codex" | grep -c '^config\.toml')" == 1 ]] || fail "criterion 10: config.toml changed or backed up"
+grep -qF 'pattern = ["git", "credential"]' "$H1/.codex/rules/default.rules" || fail "criterion 10: Codex's rules lack git credential"
+[[ "$(ls "$H1/.claude" | grep -c '^settings\.json\.bak\.')" == 1 ]] || fail "criterion 2: not exactly one backup: $(ls "$H1/.claude")"
+# The doctor counts claude-tools.json as kit rules: ok after bootstrap, a fix with one taken out.
+out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
+j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "ok")' <<<"$out" >/dev/null || fail "doctor: guardrails.claude after bootstrap"
+# 2 and 19 (E10): a second bootstrap adds nothing, changes none of the files and writes no backup.
+sums="$(for f in "$CS" "$AS1" "$H1/.codex/rules/default.rules" "$H1/.codex/config.toml" "$H1/.gemini/config/hooks.json"; do psum "$f"; echo; done)"
+baks="$(cd "$H1" && find . -name '*.bak.*' | sort)"
+st=0; out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+sums2="$(for f in "$CS" "$AS1" "$H1/.codex/rules/default.rules" "$H1/.codex/config.toml" "$H1/.gemini/config/hooks.json"; do psum "$f"; echo; done)"
+((st == 0)) && [[ "$sums" == "$sums2" && "$baks" == "$(cd "$H1" && find . -name '*.bak.*' | sort)" ]] && ! grep -q "added .*settings.json" <<<"$out" || fail "criterion 19: the second bootstrap: exit $st, $out"
+node -e 'const fs = require("node:fs"), f = process.argv[1], o = JSON.parse(fs.readFileSync(f, "utf8"));
+  o.permissions.deny = o.permissions.deny.filter((r) => r != "Read(~/.npmrc)"); fs.writeFileSync(f, JSON.stringify(o))' "$CS"
+out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
+j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "fix" && r.message.includes("missing 1 deny"))' <<<"$out" >/dev/null || fail "doctor: guardrails.claude with a file deny taken out"
 
 # 12. Gemini CLI as it was at 4539550 (H-20261120-23): its policy file and bootstrap's block, 18 lines there.
 [[ "$(psum "$KIT/guardrails/gemini-owner-control.toml")" == 71ef1e1164056cbedb917235ad55509386030f9385f6cea1c6888d9e5e8fbac1 ]] || fail "criterion 12: gemini-owner-control.toml changed"

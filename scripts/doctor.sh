@@ -211,6 +211,9 @@ done
 # Every deny rule the kit ships must be live; extra live rules are fine. Read with json -s <live> <kit's>.
 deny_missing='((a, b) => list(b).filter((x) => !list(a).includes(x)).length)(obj(obj($[0]).permissions).deny, obj(obj($[1]).permissions).deny)'
 missing="$(json -s "$deny_missing" ~/.claude/settings.json "$K/guardrails/claude-permissions.json" 2>/dev/null || echo all)"
+# The MCP, file-tool and read denies (claude-tools.json) count too; the per-repo .git/config ones are this machine's.
+m2="$(json -s "$deny_missing" ~/.claude/settings.json "$K/guardrails/claude-tools.json" 2>/dev/null || echo all)"
+[[ "$missing" == all || "$m2" == all ]] && missing=all || missing=$((missing + m2))
 [[ "$missing" == 0 ]] && ok guardrails.claude "Claude Code denies push and publish" || bad guardrails.claude "Claude Code is missing $missing deny rule(s) (run bin/bootstrap.sh)"
 # Codex, agy and Gemini CLI: every kit rule, counted in the file (an older copy lacks the newer ones); Codex is also asked itself.
 if [[ -e ~/.codex/rules/default.rules ]] || command -v codex >/dev/null; then

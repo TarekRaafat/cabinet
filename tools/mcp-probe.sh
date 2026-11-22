@@ -274,6 +274,8 @@ if ((part == 2)); then
         lists agy-f6-list agy standin decoy agy mcp list
         act agy-f6-run agy called-list_probe reached bash -c 'agy_run "$0"' "$PL"
         patch "$AS" "{\"permissions\": {\"deny\": [\"command(regex:^touch\\\\s+.*cmd-ran)\"]}}"; act agy-f1 agy ran stopped bash -c 'agy_run "$0"' "$PC"
+        # f1-prefix: a plain prefix deny, the form agy-permissions.json ships, in the same run (no --settings).
+        patch "$AS" '{"permissions": {"deny": ["command(touch)"]}}'; act agy-f1-prefix agy ran stopped bash -c 'agy_run "$0"' "$PC"
         unpatch "$AS"; act agy-f1-control agy ran reached bash -c 'agy_run "$0"' "$PC"
         patch "$AS" '{"permissions": {"deny": ["mcp(standin/merge_probe)"]}}'; act agy-f2 agy called-merge_probe stopped bash -c 'agy_run "$0"' "$PM"
         unpatch "$AS"; act agy-f2-control agy called-merge_probe reached bash -c 'agy_run "$0"' "$PM"
@@ -320,7 +322,8 @@ Five steps this script cannot run. Each touches only stand-ins:
      node scripts/lib.js hook-merge claude <folder>/.claude/settings.json 'mcp__.*' "\$PWD/guardrails/cabinet-mcp-gate.js"
    then HOME=<folder> claude, add an echo-only stand-in server (claude mcp add), ask it to call a tool named
    merge_probe, and note whether the hook refused it. Take the entry out of that file afterwards.
-2. Antigravity in a session (f1 to f5): the same, with HOME=<folder> agy, for each of the rules in the rows agy-f1 to agy-f5.
+2. Antigravity in a session (f1 to f5): the same, with HOME=<folder> agy, for each of the rules in the rows agy-f1,
+   agy-f1-prefix and agy-f2 to agy-f5 (f5: node scripts/lib.js hook-merge agy <folder>/.gemini/config/hooks.json '' "\$PWD/guardrails/cabinet-mcp-gate.js").
 3. Claude Code's admin file (h1), on a test account or in a container: put a managed-settings.json holding the kit's
    denies, a deny of the stand-in "Bash(*cabinet-probe-h1*)", and "disableBypassPermissionsMode": "disable" under
    "permissions", at /Library/Application Support/ClaudeCode/ (macOS) or /etc/claude-code/ (Linux), then

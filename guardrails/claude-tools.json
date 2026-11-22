@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__github__create_or_update_file",
+      "mcp__github__delete_file",
+      "mcp__github__get_latest_release",
+      "mcp__github__get_release_by_tag",
+      "mcp__github__list_releases",
+      "mcp__github__merge_pull_request",
+      "mcp__github__push_files",
+      "Edit(~/.claude/settings.json)",
+      "Write(~/.claude/settings.json)",
+      "Edit(~/.qwen/settings.json)",
+      "Write(~/.qwen/settings.json)",
+      "Edit(~/.config/opencode/opencode.json)",
+      "Write(~/.config/opencode/opencode.json)",
+      "Edit(~/.cursor/cli-config.json)",
+      "Write(~/.cursor/cli-config.json)",
+      "Edit(~/.gemini/antigravity-cli/settings.json)",
+      "Write(~/.gemini/antigravity-cli/settings.json)",
+      "Edit(~/.gemini/config/hooks.json)",
+      "Write(~/.gemini/config/hooks.json)",
+      "Edit(~/.gemini/settings.json)",
+      "Write(~/.gemini/settings.json)",
+      "Edit(~/.gemini/policies/owner-control.toml)",
+      "Write(~/.gemini/policies/owner-control.toml)",
+      "Edit(~/.codex/rules/default.rules)",
+      "Write(~/.codex/rules/default.rules)",
+      "Edit(~/.codex/config.toml)",
+      "Write(~/.codex/config.toml)",
+      "Edit(~/.config/git/hooks/**)",
+      "Write(~/.config/git/hooks/**)",
+      "Edit(~/.gitconfig)",
+      "Write(~/.gitconfig)",
+      "Edit(~/.config/git/config)",
+      "Write(~/.config/git/config)",
+      "Read(~/.git-credentials)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Read(~/.npmrc)"
+    ]
+  }
+}

@@ -2,6 +2,11 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
+## 0.8.6 - Unreleased
+
+- Claude Code's guardrails reach past the shell. `cabinet bootstrap` adds to `~/.claude/settings.json` MCP denies for the GitHub MCP server's tools whose names hold a write word (`mcp__github__merge_pull_request`, `push_files`, `create_or_update_file`, `delete_file`, and the release tools, reads included), file-tool denies (`Edit`, `Write`) on each settings file bootstrap writes rules to, the global hooks folder, `~/.gitconfig`, `~/.config/git/config` and the `.git/config` of the workspace and each repo it lists, and read denies on `~/.git-credentials`, `~/.config/gh/hosts.yml` and `~/.npmrc`. They are in the new `guardrails/claude-tools.json`. Until you run `cabinet bootstrap`, the doctor's `guardrails.claude` says rules are missing. The other tools' MCP and file denies, the verb hook and the admin settings files stay docs only until probes confirm them (docs/guardrails.md, "Outside the shell").
+- The kit's MCP hook script reads Antigravity's MCP calls, which reach a hook as the tool `call_mcp_tool` with the server and tool in its arguments: it refuses one whose server and tool name hold a write word, and lets Antigravity's other tools through. Bootstrap does not install the hook yet.
+
 ## 0.8.5 - 22 Nov 2026
 
 - A new backup archive format: `cabinet backup create` seals each archive with authenticated encryption (AES-256-GCM, from Node's own crypto, with a key from PBKDF2-SHA-256), starting with the bytes `CBNTBAK1`, and records the workspace's slug and the archive's stamp inside it. `backup verify` and `backup restore` check the whole archive before anything is unpacked: one that was changed, cut short or opened with the wrong passphrase is refused as `changed or damaged, or the passphrase is wrong`, and restore writes nothing. The passphrase still never appears in a command's arguments.

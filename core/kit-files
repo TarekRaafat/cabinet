@@ -7,6 +7,7 @@ guardrails/agy-permissions.json
 guardrails/cabinet-mcp-gate.js
 guardrails/cabinet-push-gate.js
 guardrails/claude-permissions.json
+guardrails/claude-tools.json
 guardrails/codex-default.rules
 guardrails/cursor-permissions.json
 guardrails/gemini-context.json

@@ -2630,6 +2630,23 @@ function hookMerge(kind, file, matcher, gate, check) {
   process.stdout.write(JSON.stringify(there ? o : put([...list, entry]), null, 2) + "\n");
 }
 
+// tool-rules <shell rules> <tool rules> <folder>...: Claude Code's permissions snippet for this machine, printed for
+// bootstrap's one merge into ~/.claude/settings.json: the kit's shell rules, its MCP and file rules, and an Edit and a
+// Write deny on <folder>/.git/config for the workspace and each repo it lists, in the // form for an absolute path
+// (owner probe claude-c-write-abs). ponytail: a path holding a glob character (* ? [) is written as it is, so it
+// can only match more and widen the deny; escape it if a deny ever needs to be exact.
+function toolRules(shell, tools, ...dirs) {
+  if (!shell || !tools) die("usage: node lib.js tool-rules <shell rules> <tool rules> <folder>...", 2);
+  const read = (p) => { const o = JSON.parse(fs.readFileSync(p, "utf8")).permissions || {}; return [o.deny || [], o.ask || []]; };
+  const [sd, sa] = read(shell), [td] = read(tools);
+  const deny = [...sd, ...td];
+  for (const d of dirs) {
+    const c = "/" + path.resolve(d, ".git/config");
+    for (const r of ["Edit(" + c + ")", "Write(" + c + ")"]) if (!deny.includes(r)) deny.push(r);
+  }
+  process.stdout.write(JSON.stringify({ permissions: { deny, ask: sa } }, null, 2) + "\n");
+}
+
 // The backup archive format from 0.8.5 (docs/backups.md): CBNTBAK1, a 16-byte salt and a 12-byte IV,
 // then the payload (a tar.gz) in AES-256-GCM with the key from PBKDF2-SHA-256, and the 16-byte tag
 // last, over the ciphertext with the first 36 bytes as additional data. An archive made before 0.8.5
@@ -2704,7 +2721,7 @@ function backupOpen(archive, out) {
 
 const COMMANDS = {
   "backup-seal": backupSeal, "backup-open": backupOpen,
-  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "hook-merge": hookMerge, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
+  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "hook-merge": hookMerge, "tool-rules": toolRules, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,
