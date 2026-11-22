@@ -290,14 +290,17 @@ echo "== Claude Code"
 # on this machine (tool-rules in lib.js), in one merge, so the file gets one backup. Grok reads the same file.
 cl_dirs=()
 while IFS= read -r d; do cl_dirs+=("$d"); done < <(printf '%s\n' "$WS"; repo_dirs)
-cl_snip="$(mktemp)"
-if node "$LIBJS" tool-rules "$G/claude-permissions.json" "$G/claude-tools.json" "${cl_dirs[@]}" > "$cl_snip" 2>/dev/null; then
+# A folder tool-rules leaves out, and why it could not read a file, come on its stderr and are printed.
+cl_snip="$(mktemp)" cl_err="$(mktemp)"
+if node "$LIBJS" tool-rules "$G/claude-permissions.json" "$G/claude-tools.json" "${cl_dirs[@]}" > "$cl_snip" 2> "$cl_err"; then
   merge_permissions "$cl_snip" "$HOME/.claude/settings.json"
+  sed 's/^/  /' "$cl_err"
 else
   echo "  the kit's MCP and file rules could not be read, so only its shell rules were added: run cabinet bootstrap again"; failures=1
+  sed 's/^/    /' "$cl_err"
   merge_permissions "$G/claude-permissions.json" "$HOME/.claude/settings.json"
 fi
-rm -f "$cl_snip"
+rm -f "$cl_snip" "$cl_err"
 
 echo "== Codex"
 # The rules file, then approval_policy = "on-request" at the top level of config.toml, so Codex asks before

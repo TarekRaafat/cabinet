@@ -2633,15 +2633,25 @@ function hookMerge(kind, file, matcher, gate, check) {
 // tool-rules <shell rules> <tool rules> <folder>...: Claude Code's permissions snippet for this machine, printed for
 // bootstrap's one merge into ~/.claude/settings.json: the kit's shell rules, its MCP and file rules, and an Edit and a
 // Write deny on <folder>/.git/config for the workspace and each repo it lists, in the // form for an absolute path
-// (owner probe claude-c-write-abs). ponytail: a path holding a glob character (* ? [) is written as it is, so it
-// can only match more and widen the deny; escape it if a deny ever needs to be exact.
+// (owner probe claude-c-write-abs). A folder whose path holds ( ) \ or a control character gets no deny, said on
+// stderr: Claude Code wants a parenthesis in a rule escaped and skips a whole settings file with errors, so one such
+// rule could cost every kit deny. ponytail: * and ? are written as they are and [ as ?, so each can only match more
+// and widen the deny; escape them if a deny ever needs to be exact, once a probe shows Claude Code's escape form.
 function toolRules(shell, tools, ...dirs) {
   if (!shell || !tools) die("usage: node lib.js tool-rules <shell rules> <tool rules> <folder>...", 2);
-  const read = (p) => { const o = JSON.parse(fs.readFileSync(p, "utf8")).permissions || {}; return [o.deny || [], o.ask || []]; };
+  const read = (p) => {
+    let o; try { o = JSON.parse(fs.readFileSync(p, "utf8")).permissions || {}; } catch (e) { die(escapePath(p) + ": " + escapePath(e.message)); }
+    return [o.deny || [], o.ask || []];
+  };
   const [sd, sa] = read(shell), [td] = read(tools);
   const deny = [...sd, ...td];
   for (const d of dirs) {
-    const c = "/" + path.resolve(d, ".git/config");
+    const p = path.resolve(d, ".git/config");
+    if (/[()\\\x00-\x1f\x7f\u0080-\u009f]/.test(p)) {
+      process.stderr.write(escapePath(path.dirname(path.dirname(p))) + ": its path holds a character a Claude Code rule cannot carry, so its .git/config gets no Edit or Write deny\n");
+      continue;
+    }
+    const c = "/" + p.replace(/\[/g, "?");
     for (const r of ["Edit(" + c + ")", "Write(" + c + ")"]) if (!deny.includes(r)) deny.push(r);
   }
   process.stdout.write(JSON.stringify({ permissions: { deny, ask: sa } }, null, 2) + "\n");

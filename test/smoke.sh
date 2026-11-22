@@ -10317,6 +10317,8 @@ done
 gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "standin", "ToolName": "merge_probe", "Arguments": {"text": "hi"}}}}'
 refused agy && [[ "$o" == *standin/merge_probe* ]] || fail "criterion 4 (agy): the f5 probe's call was not refused by its whole name: $o"
 gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ToolName": "list_probe"}}}'; through || fail "criterion 4 (agy): a call with no ServerName and a read tool: exit $st, $o"
+gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "", "ToolName": "list_probe"}}}'; through || fail "criterion 4 (agy): an empty ServerName and a read tool: exit $st, $o"
+gate agy '{"toolCall": {"name": "call_mcp_tool", "args": {"ServerName": "", "ToolName": "merge_probe"}}}'; refused agy || fail "criterion 4 (agy): an empty ServerName and a write tool: exit $st, $o"
 
 # Rule 10 (E2, E10, E6): hook-merge keeps every hook there, adds the kit's once, and leaves a file it cannot read.
 f="$T/p2-settings.json" P="$T/it's here/gate.js"
@@ -10396,6 +10398,9 @@ local FILES="~/.claude/settings.json ~/.qwen/settings.json ~/.config/opencode/op
 local CREDS="~/.git-credentials ~/.config/gh/hosts.yml ~/.npmrc" CS="$H1/.claude/settings.json" AS1="$H1/.gemini/antigravity-cli/settings.json" sums sums2 baks sudo0
 [[ "$HOLDS" == *" a "* && "$HOLDS" == *" c "* && "$HOLDS" == *" g "* && "$HOLDS" != *" b "* && "$HOLDS" != *" f"[1-5]" "* ]] || fail "HOLDS changed: build and check the rows it adds"
 git init -q "$W/lib"; printf 'lib\t-\t-\tno\n' >> "$W/repos.tsv"
+# A repo path holding [ gets its deny with [ as ? (a glob class would miss the real folder); one holding ( gets none,
+# said, since Claude Code may skip a whole file with a rule it cannot parse.
+git init -q "$W/x[1]"; git init -q "$W/it's (here)"; printf 'b1\t-\t-\tno\tx[1]\nc1\t-\t-\tno\tit'"'"'s (here)\n' >> "$W/repos.tsv"
 mkdir -p "$H1/.claude" "$H1/.gemini/config" "$H1/.codex"
 printf '%s\n' '{"permissions": {"allow": ["mcp__github__merge_pull_request"]}, "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}]}}' > "$CS"
 printf '{ "hooks": ' > "$H1/.gemini/config/hooks.json"; c="$(psum "$H1/.gemini/config/hooks.json")"
@@ -10411,6 +10416,12 @@ for n in $FILES; do for i in Edit Write; do j -e --arg r "$i($n)" '$.permissions
 for n in $CREDS; do j -e --arg r "Read($n)" '$.permissions.deny.includes($r)' "$CS" >/dev/null || m+=" Read($n)"; done
 j -e '$.permissions.deny.includes("Bash(*git credential*)")' "$CS" >/dev/null || m+=" git-credential"
 [[ -z "$m" ]] || fail "criterion 1: ~/.claude/settings.json lacks:$m"
+for i in Edit Write; do j -e --arg r "$i(/$W/x?1]/.git/config)" '$.permissions.deny.includes($r)' "$CS" >/dev/null || fail "Rule 4: no $i deny for x[1] with [ as ?"; done
+node -e 'const m = require("node:path").matchesGlob; process.exit(!m || m(process.argv[1], process.argv[2]) ? 0 : 1)' "$W/x[1]/.git/config" "$W/x?1]/.git/config" \
+  || fail "Rule 4: the x[1] deny does not match its own .git/config"
+! grep -qF "it's (here)" "$CS" && ! grep -q 'x\[1\]' "$CS" || fail "Rule 4: a rule holds a path with ( or [: $(grep -F "$W" "$CS")"
+[[ "$out" == *"  $W/it's (here): its path holds a character a Claude Code rule cannot carry, so its .git/config gets no Edit or Write deny"* ]] \
+  || fail "Rule 4: bootstrap did not say it's (here) gets no deny: $out"
 j -e '$.permissions.allow.length == 1 && $.permissions.allow[0] == "mcp__github__merge_pull_request" && $.hooks.PreToolUse.length == 1
   && $.hooks.PreToolUse[0].matcher == "Bash" && $.hooks.PreToolUse[0].hooks[0].command == "true"' "$CS" >/dev/null || fail "criterion 2: the owner's allow or hook changed: $(cat "$CS")"
 # 3 (b docs only): no mcp__.* hook entry. 1 (d, e docs only): Qwen Code, opencode and Cursor get no MCP or file entries.
@@ -10433,15 +10444,29 @@ grep -qF 'pattern = ["git", "credential"]' "$H1/.codex/rules/default.rules" || f
 out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
 j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "ok")' <<<"$out" >/dev/null || fail "doctor: guardrails.claude after bootstrap"
 # 2 and 19 (E10): a second bootstrap adds nothing, changes none of the files and writes no backup.
-sums="$(for f in "$CS" "$AS1" "$H1/.codex/rules/default.rules" "$H1/.codex/config.toml" "$H1/.gemini/config/hooks.json"; do psum "$f"; echo; done)"
+# Every file under HOME (Qwen Code's, opencode's and Cursor's among them), with the list, is hashed.
+hsum() { (cd "$H1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s %s\n' "$(psum "$f")" "$f"; done); }
+sums="$(hsum)"
 baks="$(cd "$H1" && find . -name '*.bak.*' | sort)"
 st=0; out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
-sums2="$(for f in "$CS" "$AS1" "$H1/.codex/rules/default.rules" "$H1/.codex/config.toml" "$H1/.gemini/config/hooks.json"; do psum "$f"; echo; done)"
+sums2="$(hsum)"
 ((st == 0)) && [[ "$sums" == "$sums2" && "$baks" == "$(cd "$H1" && find . -name '*.bak.*' | sort)" ]] && ! grep -q "added .*settings.json" <<<"$out" || fail "criterion 19: the second bootstrap: exit $st, $out"
 node -e 'const fs = require("node:fs"), f = process.argv[1], o = JSON.parse(fs.readFileSync(f, "utf8"));
   o.permissions.deny = o.permissions.deny.filter((r) => r != "Read(~/.npmrc)"); fs.writeFileSync(f, JSON.stringify(o))' "$CS"
 out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
 j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "fix" && r.message.includes("missing 1 deny"))' <<<"$out" >/dev/null || fail "doctor: guardrails.claude with a file deny taken out"
+# 3 (f5 docs only) in a home with no hooks.json: bootstrap makes none. Then the fallback: with the workspace's
+# claude-tools.json damaged, bootstrap says so and why, adds only the shell rules (one backup) and exits 1.
+local H2="$T/p2-h2" TJ="$W/.cabinet/guardrails/claude-tools.json"
+mkdir -p "$H2/.claude"; printf '{}\n' > "$H2/.claude/settings.json"
+cp "$TJ" "$T/p2-tools.json"; printf '{ "permissions": ' > "$TJ"
+st=0; out="$(cd "$W" && HOME="$H2" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+cp "$T/p2-tools.json" "$TJ"
+((st == 1)) && [[ "$out" == *"the kit's MCP and file rules could not be read, so only its shell rules were added: run cabinet bootstrap again"* && "$out" == *"claude-tools.json: "* ]] \
+  || fail "fallback: exit $st, $out"
+j -e '$.permissions.deny.includes("Bash(*git credential*)") && !$.permissions.deny.some((r) => /^mcp__|^(Edit|Write|Read)\(/.test(r))' "$H2/.claude/settings.json" >/dev/null \
+  && [[ "$(ls "$H2/.claude" | grep -c '^settings\.json\.bak\.')" == 1 ]] || fail "fallback: $(ls "$H2/.claude"; cat "$H2/.claude/settings.json")"
+[[ ! -e "$H2/.gemini/config/hooks.json" ]] || fail "criterion 3: bootstrap made ~/.gemini/config/hooks.json"
 
 # 12. Gemini CLI as it was at 4539550 (H-20261120-23): its policy file and bootstrap's block, 18 lines there.
 [[ "$(psum "$KIT/guardrails/gemini-owner-control.toml")" == 71ef1e1164056cbedb917235ad55509386030f9385f6cea1c6888d9e5e8fbac1 ]] || fail "criterion 12: gemini-owner-control.toml changed"
