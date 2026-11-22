@@ -637,11 +637,14 @@ builds_repos() {
 # builds_git <name>: true when work sent to the name has commits to name (record --commits none): a repo in
 # repos.tsv that is not a folder without git (no_git), a role owning a team-table repo that is not one, or a
 # name that builds (builds_repos) and owns no team-table repo at all, a kit builder included. A repo not on
-# this machine counts as git.
+# this machine counts as git, and so does a team-table repo with no row in repos.tsv (security S2), other
+# than a workspace folder such as specs/.
 builds_git() {
-  local n=$1 name url files link path a o mine="" owns=0
+  local n=$1 name url files link path a o mine="" owns=0 names
   builds_repos "$n" || return 1
   while IFS=$'\t' read -r a o; do [[ "$o" == "$n" ]] && mine+=" $a"; done < <(team_rows)
+  names="$(repos 2>/dev/null | cut -f1 | tr '\n' ' ')"
+  for a in $mine; do has "$names" "$a" || [[ -d "$WS/$a" && ! -e "$WS/$a/.git" ]] || return 0; done   # a workspace area is not a repo
   while IFS=$'\t' read -r name url files link path; do
     [[ "$name" == "$n" ]] || has "$mine" "$name" || continue
     owns=1
