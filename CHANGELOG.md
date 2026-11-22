@@ -2,7 +2,7 @@
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.8.5 - Unreleased
+## 0.8.5 - 22 Nov 2026
 
 - A new backup archive format: `cabinet backup create` seals each archive with authenticated encryption (AES-256-GCM, from Node's own crypto, with a key from PBKDF2-SHA-256), starting with the bytes `CBNTBAK1`, and records the workspace's slug and the archive's stamp inside it. `backup verify` and `backup restore` check the whole archive before anything is unpacked: one that was changed, cut short or opened with the wrong passphrase is refused as `changed or damaged, or the passphrase is wrong`, and restore writes nothing. The passphrase still never appears in a command's arguments.
 - `backup restore` refuses, writing nothing, an archive whose top is not exactly one folder, one whose slug or stamp differs from its file name, and a target folder whose `cabinet.env` names another workspace (read as text, never run): restore into an empty folder instead. It now needs the archive's own file name, `<slug>-YYYYMMDD-HHMMSS.tar.gz.enc`, where 0.8.4 took a slug from any name; a renamed archive is refused with the name to give it back. `backup verify` reports an archive made for another workspace, or with another stamp than its file name, as a problem.
