@@ -41,8 +41,7 @@
 #       reviewer a critical area requires counts only when the area's check (a command in tools/)
 #       passes at those commits; its output is kept as evidence on the entry, as check-<area>.txt
 #       or the next free check-<area>-<n>.txt, never over a file already there. --commits none is for
-#       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder,
-#       unless every repo the work is for is a folder without git (builds_git in lib.sh).
+#       work that changes no repo (copy, research, a campaign), so not for work addressed to a builder.
 #   bin/handoff.sh list [name] [--ready] [--json]
 #       No name: every open or acknowledged entry, and each whose status word the kit does not know:
 #       age in days, status, ID, addressee, title, oldest first, then by status and ID (idOrder).
@@ -511,10 +510,10 @@ lock_handoffs
 info="$(entry "$id" info)" || { echo "$id is not an open entry in HANDOFFS.md (bin/handoff.sh list)" >&2; exit 1; }
 # Split by hand: read would merge the two tabs around an empty field.
 sender="${info%%$'\t'*}" rest="${info#*$'\t'}"; hasev="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; size="${rest%%$'\t'*}" rest="${rest#*$'\t'}"; hasback="${rest%%$'\t'*}" to="${rest#*$'\t'}"
-# Work for a repo or a builder has commits: none is only for work that changes no repo, or only folders without git.
+# Work for a repo or a builder has commits: none is only for work that changes no repo.
 if [[ "$commits" == none ]]; then
   while IFS= read -r n; do
-    builds_git "$n" && { echo "$id is work for $n, which builds: name its commits (--commits <hash,...>)" >&2; exit 1; }
+    builds_repos "$n" && { echo "$id is work for $n, which builds: name its commits (--commits <hash,...>)" >&2; exit 1; }
   done < <(names_of "$to")
 fi
 [[ "$role" != "$(lc "$sender")" ]] || { echo "$id was filed by $role: the builder never verifies its own work (CABINET.md, \"The builder never verifies\")" >&2; exit 1; }

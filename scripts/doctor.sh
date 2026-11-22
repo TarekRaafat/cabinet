@@ -61,10 +61,7 @@ before=$problems
 while IFS= read -r m; do [[ "$m" == *"skipped the local-only file"* ]] && bad repos.local-path "$m: list it as a path inside the repo"; done < <(repos 2>&1 >/dev/null)
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  nogit=0
-  if no_git "$repo" "$url"; then nogit=1; ok repos.present "$name: a folder without git at $repo"
-  elif [[ ! -e "$repo/.git" ]]; then bad repos.present "$name: no repo at $repo (run bin/bootstrap.sh)"; continue
-  fi
+  [[ -e "$repo/.git" ]] || { bad repos.present "$name: no repo at $repo (run bin/bootstrap.sh)"; continue; }
   if [[ "${files:--}" != "-" ]]; then
     set -f; fl=($files); set +f
     for f in "${fl[@]}"; do
@@ -75,15 +72,14 @@ while IFS=$'\t' read -r name url files link path; do
       elif [[ ! -f "$snap" ]]; then bad repos.snapshot "$name/$f not in snapshot (run bin/repo.sh snapshot)"
       elif ! cmp -s "$live" "$snap"; then note repos.snapshot "$name/$f changed since last snapshot"
       fi
-      ((nogit)) || { git -C "$repo" ls-files --error-unmatch "$f" >/dev/null 2>&1 && bad repos.local-file-tracked "$name/$f is tracked in the product repo but listed as local-only"; }
+      git -C "$repo" ls-files --error-unmatch "$f" >/dev/null 2>&1 && bad repos.local-file-tracked "$name/$f is tracked in the product repo but listed as local-only"
     done
   fi
-  # A folder without git gets the link once it has an AGENTS.md, as bootstrap makes it, and has no git to exclude it from.
-  if [[ "${link:-}" == "yes" ]] && { ((nogit == 0)) || [[ -f "$repo/AGENTS.md" ]]; }; then
+  if [[ "${link:-}" == "yes" ]]; then
     [[ -L "$repo/CLAUDE.md" && "$(readlink "$repo/CLAUDE.md")" == "AGENTS.md" ]] || bad repos.claude-link "$name/CLAUDE.md is not a link to AGENTS.md"
   fi
   # Only repos whose instruction files the workspace manages (link yes) must keep them out of git.
-  if [[ "${link:-}" == "yes" ]] && ((nogit == 0)); then
+  if [[ "${link:-}" == "yes" ]]; then
     st="$(git -C "$repo" status --porcelain -- AGENTS.md CLAUDE.md 2>/dev/null | grep '^??' || true)"
     [[ -n "$st" ]] && bad repos.instructions-excluded "$name: instruction files show as untracked (missing exclude entry)"
   fi

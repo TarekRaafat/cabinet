@@ -133,9 +133,7 @@ url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]
 echo "== Product repos"
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  if no_git "$repo" "$url"; then
-    echo "  $name: a folder without git, kept as it is"
-  elif [[ ! -e "$repo/.git" ]]; then
+  if [[ ! -e "$repo/.git" ]]; then
     [[ "$url" == - ]] && { echo "  $name: no repo at $repo and no clone URL in repos.tsv"; continue; }
     url_ok "$url" || { echo "  $name: '$url' is not a git URL, not cloned"; failures=1; continue; }
     # One repo that cannot be reached never stops the rest of the setup.

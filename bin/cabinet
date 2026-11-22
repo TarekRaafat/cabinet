@@ -2152,16 +2152,12 @@ cmd_push_check() {
   local json=0 x
   for x in "$@"; do case "$x" in --json) json=1 ;; *) bad_usage "unknown option $x (see: cabinet push-check --help)" ;; esac; done
   local ws; ws="$(need_ws)" || exit 1
-  local rows="" rn ru rf rl rp hs out nogit
-  # The workspace first, when it has its own git; then each repo in repos.tsv, where it lives, with
-  # "nogit" in a third column for a folder without git (no_git, asked of the workspace's own scripts;
-  # an older kit has none, so such a folder is "not on this machine" as before).
+  local rows="" rn ru rf rl rp hs out
+  # The workspace first, when it has its own git; then each repo in repos.tsv, where it lives.
   [[ "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$ws" ]] && rows+="workspace"$'\t'"$ws"$'\n'
-  nogit="$(bash -c 'source "$1/bin/lib.sh" 2>/dev/null && declare -F no_git >/dev/null || exit 0
-    while IFS=$(printf "\t") read -r n u f l p; do no_git "$(repo_dir "$p")" "$u" && printf "%s\n" "$n"; done < <(repos 2>/dev/null); exit 0' _ "$ws")"
   while IFS=$'\t' read -r rn ru rf rl rp; do
     rp="${rp:-$rn}"; case "$rp" in /*) ;; "~/"*) rp="$HOME/${rp#"~/"}" ;; *) rp="$ws/$rp" ;; esac
-    rows+="$rn"$'\t'"$rp"$'\t'"$(grep -qxF -- "$rn" <<<"$nogit" && echo nogit || true)"$'\n'
+    rows+="$rn"$'\t'"$rp"$'\n'
   done < <(awk -F'\t' -v OFS='\t' '{ sub(/\r$/, "") } !/^#/ && NF >= 2' "$ws/repos.tsv" 2>/dev/null)
   hs="$("$ws/bin/handoff.sh" list --json 2>/dev/null)" || hs="[]"
   out="$(REPOS="$rows" HANDOFFS="$hs" WS="$ws" node "$LIBJS" push-check)" || die "could not read the repos' git state"

@@ -48,18 +48,6 @@ A [session](concepts.md#sessions) of the project is a worktree at `cabinet/sessi
 
 The project is not changed at all. The workspace is a folder next to it and points at it with a relative path (`../<project>`) in `repos.tsv`, so the project stays where it is and nothing is cloned again. Fits a product with several repos, or a project you would rather not touch.
 
-## Folders without git
-
-The workspace uses git; a project folder needs none. A folder listed in `repos.tsv` that is there, has no `.git`, and holds anything, or has the clone URL `-`, or has its own path as its URL (what `cabinet repo add <its path>` writes), is a folder without git: plain files, another version control system (its `.svn/` and the like are kept as files), or a synced drive. Nothing in `repos.tsv` marks it: the kit reads it from the folder.
-
-- `cabinet bootstrap` keeps it as it is (`<name>: a folder without git, kept as it is`): no clone, no `.git` made; its local-only files are placed, and `repo snapshot` copies them back, as for a repo.
-- `cabinet doctor` says `ok`, `<name>: a folder without git at <path>`; `repo list` shows `no git`, and `push-check` gives the reason `no git`.
-- Backups hold every file in it, as files (`<name>: a folder without git, <n> files`), and restore puts them back, moving what is in the way to `recovered/` first. A git repo inside it is left out of its files: the workspace and a listed repo are backed up on their own, and any other is named, `<sub> not archived, a git repo inside (list it with cabinet repo add)`.
-
-What a folder without git does not get, since each needs git: sessions (`session start` refuses it), undo of commits, reviews on commits (a review of work on it is recorded with `--commits none`), and updating from a remote.
-
-`cabinet repo add <path>` lists the folder at `<workspace>/<name>`. For a folder somewhere else (the `new` or `beside` layout), write its path in the fifth column of `repos.tsv`; until then it is reported as missing.
-
 ## What lives where
 
 | | What | Who changes it |
