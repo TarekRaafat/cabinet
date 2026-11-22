@@ -10553,6 +10553,9 @@ st=0; PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/o'q" grok > /d
 ((st == 2)) || fail "probe: an out folder holding a quote gave $st"
 st=0; CABINET_PROBE_HOME="$PP/h'q" PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out-q" grok > /dev/null 2>&1 || st=$?
 ((st == 2)) && [[ ! -e "$PP/h'q" ]] || fail "probe: a kept HOME holding a quote gave $st"
+mkdir -p "$PP/t'q"; ln -s "$PP/t'q" "$PP/hl"
+st=0; CABINET_PROBE_HOME="$PP/hl" PATH="$PP/bin:$PATH" "$KIT/tools/mcp-probe.sh" --part2 "$PP/out-l" grok > /dev/null 2>&1 || st=$?
+((st == 2)) || fail "probe: a kept HOME linked to a folder holding a quote gave $st"
 HOME="$PH" wsrm "$W"
   return 0
 }

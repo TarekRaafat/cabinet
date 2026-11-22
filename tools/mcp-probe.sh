@@ -55,6 +55,8 @@ R="$(mktemp -d)"; trap 'rm -rf "$R"' EXIT; trap 'exit 130' INT; trap 'exit 143' 
 sig() { case "$1" in 129|130|143) echo "stopped (exit $1)" >&2; exit "$1" ;; esac; }
 H="$R/home" W="$R/work" M="$R/marks" O="$R/other"
 [[ -z "${CABINET_PROBE_HOME:-}" ]] || { mkdir -p "$CABINET_PROBE_HOME" && H="$(cd "$CABINET_PROBE_HOME" && pwd -P)" || exit 2; }
+# Checked again as resolved: the steps print $H, and a link's target may hold what its own name does not.
+case "$H" in *[\'\"\\\$\`]*) echo "CABINET_PROBE_HOME's real path cannot hold a quote, a backslash, \$ or a backtick" >&2; exit 2 ;; esac
 mkdir -p "$H" "$W" "$M" "$O" "$R/tmp" "$R/fakes"
 git init -q "$W"
 for t in security secret-tool launchctl systemctl crontab gh osascript notify-send; do
