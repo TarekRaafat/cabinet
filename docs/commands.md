@@ -397,7 +397,7 @@ Options: `--name`, `--slug`, `--owner`, `--email`, `--roles`, `--runner`, `--run
 | Setting | Where |
 |---|---|
 | Name | `CABINET_PROJECT`, and the titles setup wrote in `AGENTS.md`, `HANDOFFS.md`, `OPERATIONS.md`, `README.md`, `specs/ROADMAP.md`, plus the workspace's own `package.json`; rebuilds the roles, so the heading of `ORG.md` names the project |
-| Slug | `CABINET_SLUG`; stops the old schedules, renames them in `OPERATIONS.md`, `README.md` and `jobs/*.job`, claims the new slug and releases the old one, and says how to move the backup passphrase in the keychain |
+| Slug | `CABINET_SLUG`; stops the old schedules, renames them in `OPERATIONS.md`, `README.md` and `jobs/*.job`, claims the new slug and releases the old one, carries this week's spending to the new log folder (so the weekly budget still holds; old logs stay in the old folder), and says to add the backup passphrase under the new name and keep the old one while any archive named with the old slug is kept |
 | Owner and email | the "Commits" line in `AGENTS.md` |
 | Roles | `CABINET_ROLES`, the team tables in `AGENTS.md` and `OPERATIONS.md` (a dropped role's row leaves; a returning kit role's row comes back; a project role gets a `TBD` row), and the built roles |
 | Runner | `CABINET_RUNNER`, `CABINET_RUNNER_CMD` |

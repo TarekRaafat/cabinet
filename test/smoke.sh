@@ -10800,6 +10800,90 @@ HOME="$NH" wsrm "$NW"
   return 0
 }
 
+section "config --slug keeps the week's spending and the old backup key" ""
+s137() {
+# Criteria 1 to 9 of specs/config-slug.md, on its Fixture: a workspace made with --slug old and a $1 budget, the
+# scheduled runner on (small, $5 a run) and bootstrapped, so its schedules are in the scheduler fake. HOME is $SH;
+# L is its log root. old/spend.tsv holds A (before this week), B (just after its start) and C (now), in the 7 fields
+# the spec gives. Snapshot S is taken just before the command under test.
+local SH="$T/sl-home" W="$T/sl/ws" BK L A B C D w0 now out st snap A_OLD A_NEW
+local x=()
+mkdir -p "$SH"; L="$SH/$LOGS"
+sl() { HOME="$SH" "$F" -C "$W" "$@" 2>&1; }
+# fixture [<backup folder>]: the Fixture, with backups to that folder (off without one).
+fixture() {
+  [[ ! -f "$W/cabinet.env" ]] || HOME="$SH" wsrm "$W" || fail "remove the last Fixture"
+  rm -rf "$T/sl" "$L/old" "$L/new"; mkdir -p "$T/sl"
+  HOME="$SH" "$F" new "$W" --slug old --budget 1 --backup-dir "${1:-off}" --yes >/dev/null 2>&1 || fail "Fixture: new"
+  sl config --yes --pipeline small --pipeline-limit 5 >/dev/null || fail "Fixture: config --pipeline small"
+  sl bootstrap >/dev/null || fail "Fixture: bootstrap: $(sl bootstrap)"
+  ls "$SH/$SD"/ai.cabinet.old.*"$SX" >/dev/null 2>&1 || fail "Fixture: no schedule under the old slug"
+  w0="$(HOME="$SH" bash -c 'cd "$1" && source bin/lib.sh && week_start' _ "$W")"; now="$(date +%s)"
+  A="$((w0 - 60))"$'\tbrief\tclaude\t9.00\t-\t-\t-'
+  B="$((w0 + 60))"$'\tbrief\tclaude\t2.00\t-\t-\t-'
+  C="$now"$'\tpipeline\tclaude\t3.00\t-\t-\t-'
+  printf '%s\n' "$A" "$B" "$C" > "$L/old/spend.tsv"
+}
+sha() { [[ -f "$1" ]] && node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1" || echo none; }
+snapshot() { printf '%s %s %s %s\n' "$(sha "$L/old/spend.tsv")" "$(sha "$W/cabinet.env")" "$(sha "$T/fake.log")" "$(sha "$T/crontab")"; }
+budget_line() { HOME="$SH" "$W/bin/doctor.sh" --json | j -r --each '$.results.filter((r) => r.id == "spend.budget").map((r) => r.message)'; }
+scheduled() { rm -f "$W/PIPELINE.md"; (cd "$W" && HOME="$SH" bin/handoff.sh run --scheduled >/dev/null 2>&1) || true; grep -qF "This week's budget (\$1) is spent, so nothing ran." "$W/PIPELINE.md" 2>/dev/null; }
+# Criteria 1 and 2: B then C carried, byte for byte, the old file unchanged; the budget still spent after.
+fixture
+scheduled || fail "criterion 2 control: the budget before the change: $(cat "$W/PIPELINE.md" 2>&1)"
+snap="$(snapshot)"
+out="$(sl config --slug new --yes)" || fail "criterion 1: config --slug new: $out"
+[[ "$(cat "$L/new/spend.tsv" 2>&1)" == "$(printf '%s\n' "$B" "$C")" ]] || fail "criterion 1: new/spend.tsv: $(cat "$L/new/spend.tsv" 2>&1)"
+[[ "$(sha "$L/old/spend.tsv")" == "${snap%% *}" ]] || fail "criterion 1: old/spend.tsv changed"
+scheduled || fail "criterion 2: the budget after the change: $(cat "$W/PIPELINE.md" 2>&1)"
+budget_line | grep -qF 'agent runs cost $5.00 this week' || fail "criterion 2: budget line: $(budget_line)"
+# Criterion 3: old, then new, then old, with D recorded under new: each row once, A B C first, $6.00.
+D="$(date +%s)"$'\tbrief\tclaude\t1.00\t-\t-\t-'
+printf '%s\n' "$D" >> "$L/new/spend.tsv"
+out="$(sl config --slug old --yes)" || fail "criterion 3: config --slug old: $out"
+[[ "$(cat "$L/old/spend.tsv")" == "$(printf '%s\n' "$A" "$B" "$C" "$D")" ]] || fail "criterion 3: old/spend.tsv: $(cat "$L/old/spend.tsv")"
+budget_line | grep -qF 'agent runs cost $6.00 this week' || fail "criterion 3: budget line: $(budget_line)"
+# Criterion 4: nothing to carry (no file, or only last week's row): exit 0 and no new/spend.tsv.
+fixture; rm -f "$L/old/spend.tsv"
+out="$(sl config --slug new --yes)" && [[ ! -e "$L/new/spend.tsv" ]] || fail "criterion 4 (i): no spend.tsv: $out"
+fixture; printf '%s\n' "$A" > "$L/old/spend.tsv"
+out="$(sl config --slug new --yes)" && [[ ! -e "$L/new/spend.tsv" ]] || fail "criterion 4 (ii): only last week's row: $out"
+# Criterion 5: the dry run says the new change line and writes nothing.
+fixture; snap="$(snapshot)"
+out="$(sl config --slug new --dry-run)" || fail "criterion 5: --dry-run: $out"
+grep -qxF "  - slug: old -> new (schedules, the backup key and this week's spending move to the new name; old logs stay in the old folder)" <<<"$out" || fail "criterion 5: the change line: $out"
+[[ ! -e "$L/new/spend.tsv" && "$(snapshot)" == "$snap" ]] || fail "criterion 5: the dry run wrote"
+# Criterion 6: new/spend.tsv cannot be written: refused, and nothing else changed.
+fixture; mkdir -p "$L/new/spend.tsv"; snap="$(snapshot)"
+st=0; out="$(sl config --slug new --yes)" || st=$?
+((st == 1)) && grep -qF "could not carry this week's spending to $(pf eval 'echo $LOGROOT_SHOWN')/new/spend.tsv: the slug is unchanged" <<<"$out" || fail "criterion 6: not refused (exit $st): $out"
+[[ "$(snapshot)" == "$snap" && ! -e "$L/new/workspace" ]] && grep -qxF 'CABINET_SLUG="old"' "$W/cabinet.env" || fail "criterion 6: a half-made change"
+rmdir "$L/new/spend.tsv"
+# Criterion 7: the old key is kept, and the archives made under each slug restore, each with its own key.
+BK="$(cd "$T" && pwd -P)/sl-bk"; rm -rf "$BK"; mkdir -p "$BK"
+fixture "$BK"
+mkdir -p "$SH/.config/cabinet/passphrases"; (umask 077; echo slug-pass-1 > "$SH/.config/cabinet/passphrases/cabinet.old.backup")
+(unset CABINET_BACKUP_PASSPHRASE; HOME="$SH" "$W/bin/backup.sh" create >/dev/null 2>&1) || fail "criterion 7: backup create under old"
+x=("$BK"/old-*.tar.gz.enc); [[ ${#x[@]} == 1 && -f "${x[0]}" ]] || fail "criterion 7: no archive A_OLD"; A_OLD="${x[0]}"
+out="$(sl config --slug new --yes)" || fail "criterion 7: config --slug new: $out"
+grep -qF 'Add it once, with the same passphrase:' <<<"$out" && grep -qxF "Keep cabinet.old.backup too: the archives named old-*.tar.gz.enc in $BK open only with it. Remove it once none of them is kept." <<<"$out" \
+  && ! grep -qF 'then remove the old one' <<<"$out" || fail "criterion 7: the key advice: $out"
+(umask 077; echo slug-pass-1 > "$SH/.config/cabinet/passphrases/cabinet.new.backup")
+(unset CABINET_BACKUP_PASSPHRASE; HOME="$SH" "$W/bin/backup.sh" create >/dev/null 2>&1) || fail "criterion 7: backup create under new"
+x=("$BK"/new-*.tar.gz.enc); [[ ${#x[@]} == 1 && -f "${x[0]}" ]] || fail "criterion 7: no archive A_NEW named new-<stamp>.tar.gz.enc"; A_NEW="${x[0]}"
+(unset CABINET_BACKUP_PASSPHRASE; HOME="$SH" "$W/bin/backup.sh" restore "$A_OLD" "$T/sl-r" >/dev/null 2>&1) && grep -qxF 'CABINET_SLUG="old"' "$T/sl-r/cabinet.env" || fail "criterion 7: restore of A_OLD with the kept key"
+(unset CABINET_BACKUP_PASSPHRASE; HOME="$SH" "$W/bin/backup.sh" restore "$A_NEW" "$T/sl-r2" >/dev/null 2>&1) || fail "criterion 7: restore of A_NEW"
+# Criterion 8: no backup folder, no key lines.
+fixture
+out="$(sl config --slug new --yes)" && ! grep -qF 'cabinet.new.backup' <<<"$out" && ! grep -qF 'Keep cabinet.old.backup' <<<"$out" || fail "criterion 8: key lines with no backups: $out"
+# Criterion 9: the docs say so.
+awk '/^## cabinet config$/ { on = 1; next } on && /^## / { exit } on' "$KIT/docs/commands.md" | grep -qF "this week's spending" || fail "criterion 9: commands.md config section"
+grep -qxF "After cabinet config --slug, keep the old key (cabinet.<old slug>.backup) while any archive named with the old slug is kept: restore reads the key named in the archive's file name." "$KIT/docs/backups.md" || fail "criterion 9: backups.md"
+awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | head -1 | grep -q Unreleased && awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | grep -qF -- '--slug' || fail "criterion 9: CHANGELOG"
+HOME="$SH" wsrm "$W"
+  return 0
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.

@@ -28,6 +28,8 @@ security add-generic-password -a "$USER" -s cabinet.<slug>.backup -w
 
 Or set `CABINET_BACKUP_PASSPHRASE` in the environment. Never put it in `cabinet.env`, which git tracks.
 
+After cabinet config --slug, keep the old key (cabinet.<old slug>.backup) while any archive named with the old slug is kept: restore reads the key named in the archive's file name.
+
 ## Restoring
 
 ```sh

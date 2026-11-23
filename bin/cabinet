@@ -1462,7 +1462,7 @@ cmd_config() {
   # What changes, shown before anything is written.
   local changes=() rn
   [[ "$name" != "$o_name" ]] && changes+=("project name: $o_name -> $name")
-  [[ "$slug" != "$o_slug" ]] && changes+=("slug: $o_slug -> $slug (schedules and the backup key move to the new name; old logs stay in the old folder)")
+  [[ "$slug" != "$o_slug" ]] && changes+=("slug: $o_slug -> $slug (schedules, the backup key and this week's spending move to the new name; old logs stay in the old folder)")
   [[ "$owner" != "$o_owner" || "$email" != "$o_email" ]] && changes+=("owner: $o_owner <$o_email> -> $owner <$email>")
   [[ "$roles" != "$o_roles" ]] && changes+=("roles: $o_roles -> $roles")
   [[ "$runner" != "$o_runner" || "$runner_cmd" != "$o_cmd" ]] && changes+=("runner: $o_runner${o_cmd:+ ($o_cmd)} -> $runner${runner_cmd:+ ($runner_cmd)}")
@@ -1521,6 +1521,21 @@ cmd_config() {
   local cfg_clean=0
   [[ -z "${CABINET_NO_COMMIT:-}" && "$(cd "$(git -C "$ws" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" == "$(cd "$ws" && pwd -P)" &&
      -z "$(git -C "$ws" status --porcelain 2>/dev/null)" ]] && cfg_clean=1
+  # This week's spending moves with the slug, so the weekly budget still holds (D1). It runs before any
+  # other write, so a carry that fails leaves the slug, the schedules and the claims as they were. Rows
+  # are copied as text in their order, once: a line the new file already holds is skipped. The old file
+  # is only read. The week is the resulting one, the day mapped as week_start in lib.sh maps it.
+  if [[ "$slug" != "$o_slug" && -f "$LOGROOT/$o_slug/spend.tsv" ]]; then
+    local w0 wd=0 wi=0 wx rows nsp="$LOGROOT/$slug/spend.tsv" carry_err
+    carry_err="could not carry this week's spending to $LOGROOT_SHOWN/$slug/spend.tsv: the slug is unchanged"
+    for wx in sun mon tue wed thu fri sat; do [[ "$wx" == "${week:0:3}" ]] && wd=$wi; wi=$((wi + 1)); done
+    w0="$(node "$LIBJS" week-start "$wd")" || die "$carry_err"
+    rows="$(awk -F'\t' -v s="$w0" 'FILENAME == ARGV[1] { seen[$0] = 1; next } $1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && !($0 in seen)' \
+      "$( [[ -f "$nsp" ]] && echo "$nsp" || echo /dev/null)" "$LOGROOT/$o_slug/spend.tsv")" || die "$carry_err"
+    if [[ -n "$rows" ]]; then
+      { mkdir -p -m 700 "$LOGROOT/$slug" && printf '%s\n' "$rows" >> "$nsp"; } 2>/dev/null || die "$carry_err"
+    fi
+  fi
 
   # Write them.
   setenv() {  # setenv <key> <value> [single]: set a cabinet.env line, or add it
@@ -1677,7 +1692,7 @@ JOB
   if [[ "$slug" != "$o_slug" && -n "$backup" ]]; then
     echo "The backup passphrase is now read from cabinet.$slug.backup in the $PASS_STORE. Add it once, with the same passphrase:"
     echo "  $(pass_add_cmd "cabinet.$slug.backup")"
-    echo "then remove the old one, cabinet.$o_slug.backup."
+    echo "Keep cabinet.$o_slug.backup too: the archives named $o_slug-*.tar.gz.enc in $backup open only with it. Remove it once none of them is kept."
   fi
   local keys="" c
   for c in "${changes[@]}"; do keys+="${keys:+, }${c%%:*}"; done
