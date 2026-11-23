@@ -10718,6 +10718,10 @@ hf web; st=0; out="$(rec)" || st=$?
 row docs backend; row app backend
 hf web; st=0; out="$(rec)" || st=$?
 ((st != 0)) && grep -qF 'which builds: name its commits' <<<"$out" || fail "criterion 13 (web owns no row): exit $st: $out"
+# Security S2: a team-table repo with no row in repos.tsv counts as git.
+row docs web; awk '{ print } /^\| `docs` \|/ { print "| `site` | The site | web |" }' "$NW/AGENTS.md" > "$NW/AGENTS.md.n" && mv "$NW/AGENTS.md.n" "$NW/AGENTS.md"
+hf web; st=0; out="$(rec)" || st=$?
+((st != 0)) && grep -qF 'which builds: name its commits' <<<"$out" || fail "criterion 13 (S2, web owns docs and site, not in repos.tsv): exit $st: $out"
 # 14. The docs say so.
 grep -qF 'The workspace uses git; a project folder needs none' "$KIT/docs/layouts.md" || fail "criterion 14: layouts.md sentence"
 for c in sessions undo 'reviews on commits' remote; do
