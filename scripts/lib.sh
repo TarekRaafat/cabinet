@@ -499,17 +499,39 @@ abspath() {
 # within <path> <folder>: true when path is the folder or inside it.
 within() { local a b; a="$(abspath "$1")" b="$(abspath "$2")"; [[ "$a" == "$b" || "$a" == "$b"/* ]]; }
 
-# no_git <folder> <clone URL>: true for a project folder without git: the folder is there with no .git, and
+# projects_dir: the owner's projects folder, resolved (Decision 3 A, docs/layouts.md "Folders without git"):
+# the workspace in the around and new layouts, the project around it in inside, and in beside the folder of the
+# first row repos prints (the project cabinet init --beside lists first), only while it holds a .git. Nothing
+# when that is /, the home folder or a folder holding it, so no folder is inside. Worked out on every call,
+# never cached: in beside, bootstrap clones the first row and then asks for the rows after it.
+projects_dir() {
+  local p="" h name url files link path
+  case "$CABINET_LAYOUT" in
+    inside) p="$HOST" ;;
+    beside) IFS=$'\t' read -r name url files link path < <(repos 2>/dev/null) || true
+      [[ -n "${path:-}" && -e "$(repo_dir "$path")/.git" ]] && p="$(abspath "$(repo_dir "$path")")" ;;
+    *) p="$(abspath "$WS")" ;;
+  esac
+  h="$(abspath "$HOME")"
+  [[ -z "$p" || "$p" == / || "$h" == "$p" || "$h" == "$p"/* ]] || printf '%s' "$p"
+}
+# no_git <folder> <clone URL>: 0 for a project folder without git: the folder is there with no .git, and
 # holds anything at all, or its URL is -, or its URL is a local path to the folder itself, both resolved
-# (cabinet repo add <path> writes that; a folder never clones into itself). A missing folder, or one with a
-# .git (no commits included), is never one. The one test bootstrap, the doctor, repo, session, push-check,
-# backup and handoff record ask (docs/layouts.md, "Folders without git").
+# (cabinet repo add <path> writes that; a folder never clones into itself); and it is strictly inside the
+# projects folder (projects_dir) and neither is nor holds the home folder or the workspace, all compared
+# resolved. 2 for a folder of that shape that is not, which gets nothing (Rule 2: bootstrap, the doctor,
+# snapshot and backup say so); 1 for anything else, a missing folder or one with a .git (no commits
+# included). Under set -e, a caller that reads 2 asks it as no_git ... || rc=$?. The one test bootstrap,
+# the doctor, repo, session, push-check, backup and handoff record ask (docs/layouts.md, "Folders without git").
 no_git() {
-  local d="$1" u="$2"
+  local d="$1" u="$2" a p h w
   [[ -d "$d" && ! -e "$d/.git" ]] || return 1
-  [[ -n "$(ls -A "$d" 2>/dev/null)" || "$u" == - ]] && return 0
-  case "$u" in /*|"~/"*) ;; ./*|../*) u="$WS/$u" ;; *) return 1 ;; esac
-  [[ "$(abspath "$u")" == "$(abspath "$d")" ]]
+  if [[ -z "$(ls -A "$d" 2>/dev/null)" && "$u" != - ]]; then
+    case "$u" in /*|"~/"*) ;; ./*|../*) u="$WS/$u" ;; *) return 1 ;; esac
+    [[ "$(abspath "$u")" == "$(abspath "$d")" ]] || return 1
+  fi
+  a="$(abspath "$d")" p="$(projects_dir)" h="$(abspath "$HOME")" w="$(abspath "$WS")"
+  [[ -n "$p" && "$a" == "$p"/* && "$h" != "$a" && "$h" != "$a"/* && "$w" != "$a" && "$w" != "$a"/* ]] || return 2
 }
 
 # The folders the workspace holds data in: itself, its repos, and the project around it.

@@ -403,14 +403,17 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # Newest first by the time in the name, never by modified time, which a synced drive or a copy changes.
 mine() { ls -1 "$dest" 2>/dev/null | grep -E "^${CABINET_SLUG//./\\.}-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$" | LC_ALL=C sort -r || true; }
 # What the backup holds: "label<TAB>folder<TAB>place in the archive<TAB>kind", the kind git, nogit (a
-# folder without git, no_git in lib.sh) or missing. A shared workspace inside a project has no git of its
+# folder without git, no_git in lib.sh), outside (one outside the projects folder, never archived) or missing. A shared workspace inside a project has no git of its
 # own: the project's repo holds it.
 targets() {
-  local name url files link path d
+  local name url files link path d kind rc
   [[ "$(git -C "$WS" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$WS" && pwd -P)" ]] && printf 'workspace\t%s\tworkspace\tgit\n' "$WS"
   while IFS=$'\t' read -r name url files link path; do
     d="$(repo_dir "$path")"
-    printf '%s\t%s\trepos/%s\t%s\n' "$name" "$d" "$name" "$(if [[ -e "$d/.git" ]]; then echo git; elif no_git "$d" "$url"; then echo nogit; else echo missing; fi)"
+    rc=0; no_git "$d" "$url" || rc=$?
+    case $rc in 0) kind=nogit ;; 2) kind=outside ;; *) kind=missing ;; esac
+    [[ ! -e "$d/.git" ]] || kind=git
+    printf '%s\t%s\trepos/%s\t%s\n' "$name" "$d" "$name" "$kind"
   done < <(repos)
 }
 
@@ -454,6 +457,7 @@ if ((verify)); then
     }
     while IFS=$'\t' read -r name dir sub kind; do
       o="$src/$sub" r="$tmp/check/$sub"
+      [[ "$kind" != outside ]] || { problem "$name" "not archived, outside the projects folder"; continue; }
       [[ "$kind" != missing ]] || { say "$name" skipped "no repo at $dir, not checked"; continue; }
       [[ -d "$o" ]] || { problem "$name" "not in the archive (back up again)"; continue; }
       if [[ "$kind" == nogit ]]; then
@@ -601,6 +605,7 @@ save_sessions() {
 
 echo "== Repos"
 while IFS=$'\t' read -r name dir sub kind; do
+  [[ "$kind" != outside ]] || { echo "  $name: not archived, outside the projects folder"; continue; }
   if [[ "$kind" == nogit ]]; then save_files "$name" "$dir" "$sub"; continue; fi
   save_repo "$name" "$dir" "$sub"
   [[ "$sub" != repos/* || ! -e "$dir/.git" ]] || save_sessions "$name" "$dir" "$sub"

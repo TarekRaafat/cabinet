@@ -61,8 +61,9 @@ before=$problems
 while IFS= read -r m; do [[ "$m" == *"skipped the local-only file"* ]] && bad repos.local-path "$m: list it as a path inside the repo"; done < <(repos 2>&1 >/dev/null)
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  nogit=0
-  if no_git "$repo" "$url"; then nogit=1; ok repos.present "$name: a folder without git at $repo"
+  nogit=0 rc=0; no_git "$repo" "$url" || rc=$?
+  if ((rc == 0)); then nogit=1; ok repos.present "$name: a folder without git at $repo"
+  elif ((rc == 2)); then bad repos.present "$name: a folder without git outside the projects folder, not used (move it inside, or give it a .git)"; continue
   elif [[ ! -e "$repo/.git" ]]; then bad repos.present "$name: no repo at $repo (run bin/bootstrap.sh)"; continue
   fi
   if [[ "${files:--}" != "-" ]]; then

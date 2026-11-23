@@ -63,7 +63,9 @@ copy_if() {
 
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  [[ -e "$repo/.git" ]] || no_git "$repo" "$url" || { echo "skip $name: not at $repo"; continue; }
+  rc=0; no_git "$repo" "$url" || rc=$?
+  ((rc != 2)) || { echo "skip $name: a folder without git outside the projects folder"; continue; }
+  [[ -e "$repo/.git" ]] || ((rc == 0)) || { echo "skip $name: not at $repo"; continue; }
   dest="$WS/local/$name"
   if [[ "${files:--}" != "-" ]]; then
     set -f; fl=($files); set +f   # checked plain paths (repos in lib.sh), never matched against files

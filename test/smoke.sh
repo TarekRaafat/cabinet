@@ -10669,7 +10669,9 @@ echo plain-1 > "$T/Plain/notes.md"; a="$(cd "$T/Plain/ws" && pwd -P)"
 sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$NB\"|" "$a/cabinet.env"
 printf 'Plain\t-\t-\t-\t%s\n' "$T/Plain" >> "$a/repos.tsv"
 rm -rf "$NB"; out="$(HOME="$NH" CABINET_BACKUP_PASSPHRASE=fixture-pass-1 "$a/bin/backup.sh" create 2>&1)" || fail "criterion 9: create, workspace inside: $out"
-grep -qxF '  Plain: a folder without git, 1 file' <<<"$out" && ! grep -qF 'ws not archived' <<<"$out" || fail "criterion 9: workspace inside: $out"
+grep -qF 'Plain: not archived, outside the projects folder' <<<"$out" && ! grep -qF 'Plain: a folder without git' <<<"$out" || fail "criterion 9: workspace inside: $out"
+R="$T/ng-r9p"; rm -rf "$R"; out="$(HOME="$NH" CABINET_BACKUP_PASSPHRASE=fixture-pass-1 "$a/bin/backup.sh" restore "$(ls "$NB"/*.enc)" "$R" 2>&1)" || fail "criterion 9: restore, workspace inside: $out"
+[[ ! -e "$R/Plain" ]] || fail "criterion 9: a folder above the workspace restored: $(ls "$R")"
 # 10. A folder listed after the newest archive: verify gives a problem, not "skipped".
 fixture "$T/ng10" nolegacy
 rm -rf "$NB"; ngb create >/dev/null || fail "criterion 10: create"
@@ -10722,6 +10724,69 @@ hf web; st=0; out="$(rec)" || st=$?
 row docs web; awk '{ print } /^\| `docs` \|/ { print "| `site` | The site | web |" }' "$NW/AGENTS.md" > "$NW/AGENTS.md.n" && mv "$NW/AGENTS.md.n" "$NW/AGENTS.md"
 hf web; st=0; out="$(rec)" || st=$?
 ((st != 0)) && grep -qF 'which builds: name its commits' <<<"$out" || fail "criterion 13 (S2, web owns docs and site, not in repos.tsv): exit $st: $out"
+# 16 and 17. Rule 2: a row outside the projects folder gets nothing, and each command says so.
+# outside <name> <path> <criterion>: on a Fixture after bootstrap, the row by hand with URL - and the local-only
+# file planted.txt (local/<name>/planted.txt holds planted-1).
+outside() {
+  local n=$1 p=$2 st out
+  printf '%s\t-\tplanted.txt\t-\t%s\n' "$n" "$p" >> "$NW/repos.tsv"
+  mkdir -p "$NW/local/$n"; echo planted-1 > "$NW/local/$n/planted.txt"
+  st=0; out="$(ng bootstrap)" || st=$?
+  ((st == 1)) && grep -qF "$n: a folder without git outside the projects folder, not used (move it inside, or give it a .git)" <<<"$out" || fail "$3 ($n): bootstrap: exit $st: $out"
+  [[ ! -e "$p/planted.txt" ]] || fail "$3 ($n): planted.txt placed in $p: $out"
+  dj "\$.results.some((r) => r.id == \"repos.present\" && r.level == \"fix\" && r.message.includes(\"$n: a folder without git outside the projects folder\"))" | grep -qx true \
+    || fail "$3 ($n): no fix repos.present: $(ng doctor --json)"
+  echo planted-2 > "$p/planted.txt"
+  out="$(ng repo snapshot)" || fail "$3 ($n): snapshot: $out"
+  [[ "$(cat "$NW/local/$n/planted.txt")" == planted-1 ]] || fail "$3 ($n): snapshot copied from $p: $out"
+  rm -rf "$NB"; out="$(ngb create)" || fail "$3 ($n): create: $out"
+  grep -qF "$n: not archived, outside the projects folder" <<<"$out" || fail "$3 ($n): create: $out"
+  st=0; out="$(ngb verify)" || st=$?
+  ((st == 1)) && grep -q "PROBLEM $n" <<<"$out" || fail "$3 ($n): verify: exit $st: $out"
+  rm -f "$p/planted.txt"
+}
+fixture "$T/ng16"; ng bootstrap >/dev/null || true
+echo keep > "$NH/keep.txt"; outside home "$NH" "criterion 16"; rm -f "$NH/keep.txt"
+fixture "$T/w"; ng bootstrap >/dev/null || true
+outside above "$T/w" "criterion 16"
+# root: no bootstrap, snapshot or backup, so a broken build cannot touch the machine.
+fixture "$T/ng16"; ng bootstrap >/dev/null || true
+printf 'root\t-\t-\t-\t/\n' >> "$NW/repos.tsv"
+ng repo list --json | j -e '((r) => r.git === false && r.present === false)($.find((r) => r.name == "root"))' >/dev/null || fail "criterion 16 (root): repo list: $(ng repo list --json)"
+dj '$.results.some((r) => r.id == "repos.present" && r.level == "fix" && /\broot\b/.test(r.message))' | grep -qx true || fail "criterion 16 (root): doctor: $(ng doctor --json)"
+L drop "$NW/repos.tsv" '/^root\t/'
+mkdir -p "$T/elsewhere"; echo book > "$T/elsewhere/book.md"; outside elsewhere "$T/elsewhere" "criterion 17"
+HOME="$NH" wsrm "$NW"
+# 18. The projects folder in inside and beside, compared resolved, never by string prefix.
+# both <in name> <in path> <out name> <out path> <criterion>: each row by hand with URL - and planted.txt, one
+# bootstrap: the first kept and its file placed, the second not used and nothing placed.
+both() {
+  local st out n p
+  for n in "$1" "$3"; do [[ "$n" == "$1" ]] && p="$2" || p="$4"
+    printf '%s\t-\tplanted.txt\t-\t%s\n' "$n" "$p" >> "$NW/repos.tsv"; mkdir -p "$NW/local/$n"; echo planted-1 > "$NW/local/$n/planted.txt"
+  done
+  st=0; out="$(ng bootstrap)" || st=$?
+  ((st == 1)) && grep -qF "$1: a folder without git, kept as it is" <<<"$out" && grep -qF "$3: a folder without git outside the projects folder, not used" <<<"$out" \
+    || fail "$5: bootstrap: exit $st: $out"
+  [[ "$(cat "$2/planted.txt" 2>/dev/null)" == planted-1 && ! -e "$4/planted.txt" ]] || fail "$5: planted.txt: $out"
+}
+mkrepo "$T/Proj"; mkdir -p "$T/Proj/assets" "$T/Proj-out"; echo a > "$T/Proj/assets/a.txt"; echo b > "$T/Proj-out/b.txt"
+(cd "$T/Proj" && HOME="$NH" "$F" init --yes --inside) >/dev/null 2>&1 || fail "criterion 18: init --inside"
+NW="$(cd "$T/Proj/cabinet" && pwd -P)"
+both assets "$T/Proj/assets" out "$T/Proj-out" "criterion 18 (inside)"
+HOME="$NH" wsrm "$NW"
+mkrepo "$T/Beta"; mkdir -p "$T/Beta/assets"; echo a > "$T/Beta/assets/a.txt"
+(cd "$T/Beta" && HOME="$NH" "$F" init --yes --beside) >/dev/null 2>&1 || fail "criterion 18: init --beside"
+NW="$(cd "$T/Beta-hq" && pwd -P)"; mkdir -p "$NW/notes"; echo c > "$NW/notes/c.txt"
+both assets "$T/Beta/assets" notes "$NW/notes" "criterion 18 (beside)"
+# ADR-036 N6: a projects folder that is the home folder holds nothing: the beside first row pointed at a HOME
+# kept in git, and a folder inside that HOME, is outside.
+mkrepo "$T/n6-home"; mkdir -p "$T/n6-home/sub"; echo s > "$T/n6-home/sub/s.txt"; cp "$NW/repos.tsv" "$T/ng-tsv-beside"
+awk -F'\t' -v OFS='\t' -v h="$T/n6-home" '!/^#/ && NF >= 2 && !d { $5 = h; d = 1 } { print }' "$NW/repos.tsv" > "$T/ng-tsv" && cat "$T/ng-tsv" > "$NW/repos.tsv"
+printf 'hsub\t-\t-\t-\t%s\n' "$T/n6-home/sub" >> "$NW/repos.tsv"
+st=0; out="$(HOME="$T/n6-home" PATH="$T/shim:$PATH" "$F" -C "$NW" bootstrap 2>&1)" || st=$?
+grep -qF 'hsub: a folder without git outside the projects folder, not used' <<<"$out" || fail "N6: a folder in a HOME kept in git used: exit $st: $out"
+cat "$T/ng-tsv-beside" > "$NW/repos.tsv"   # the section's last line removes it
 # 14. The docs say so.
 grep -qF 'The workspace uses git; a project folder needs none' "$KIT/docs/layouts.md" || fail "criterion 14: layouts.md sentence"
 for c in sessions undo 'reviews on commits' remote; do

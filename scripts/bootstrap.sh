@@ -133,7 +133,11 @@ url_ok() { [[ "$1" =~ ^(https://|http://|ssh://|git://|file://|git@[A-Za-z0-9.-]
 echo "== Product repos"
 while IFS=$'\t' read -r name url files link path; do
   repo="$(repo_dir "$path")"
-  if no_git "$repo" "$url"; then
+  rc=0; no_git "$repo" "$url" || rc=$?
+  if ((rc == 2)); then
+    # Outside the projects folder (Rule 2): nothing placed, linked or cloned.
+    echo "  $name: a folder without git outside the projects folder, not used (move it inside, or give it a .git)"; failures=1; continue
+  elif ((rc == 0)); then
     echo "  $name: a folder without git, kept as it is"
   elif [[ ! -e "$repo/.git" ]]; then
     [[ "$url" == - ]] && { echo "  $name: no repo at $repo and no clone URL in repos.tsv"; continue; }
