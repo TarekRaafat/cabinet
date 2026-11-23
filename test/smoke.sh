@@ -5611,13 +5611,13 @@ rm -f "$KC/.git/config.worktree" || fail "dropping config.worktree from the kit 
 # The kit as a repo of the workspace, beside it, as the step 3 workspace lists it: its copy is <HOME>/cabinet.
 printf 'cabinet\t-\t-\tno\t../cabinet\n' >> "$PW/repos.tsv"
 # probe <mode> <out> <probe options>...: the probe with the fakes first on PATH; its exit code in $st. Each tool
-# run stops at PL seconds, 60 by default, so a run that ends is never cut off on a loaded machine (8 shards at
+# run stops at GP_LIMIT seconds, 60 by default, so a run that ends is never cut off on a loaded machine (8 shards at
 # once, a 3 second limit timed out the control: H-20261123-10). Only the fakes that hang, where the stop is
 # what is checked, set a short one.
 probe() {
   local mode=$1 out=$2; shift 2; st=0
   o="$(TMPDIR="$T/gp-tmp" PATH="$PB:$PATH" FAKE_PROBE_MODE="$mode" FAKE_PROBE_LOG="$T/gp-fake.log" CABINET_PROBE_KEY="$KEYT" \
-    node "$KIT/tools/guardrail-probe.js" --kit "${PK:-$KC}" --ws "$PW" --out "$out" --limit "${PL:-60}" "$@" 2>&1)" || st=$?
+    node "$KIT/tools/guardrail-probe.js" --kit "${PK:-$KC}" --ws "$PW" --out "$out" --limit "${GP_LIMIT:-60}" "$@" 2>&1)" || st=$?
 }
 # nokey <text> <path>...: true only when grep ran and found no file holding the text (exit 1, never an error).
 nokey() { local t=$1 s=0; shift; grep -rqF -e "$t" "$@" || s=$?; ((s == 1)); }
@@ -5654,11 +5654,11 @@ j -e '$.cells.fileRulesSkipped && !$.phases.reads' "$T/gp-out-lazy/probe-claude.
 probe deny "$PO" --tool claude --phase reads
 [[ "$(j -r '$.cells.reads' "$PO/probe-claude.json")" == confirmed ]] || fail "Claude Code after a clear Grok probe: $o"
 # A hang is stopped at the limit and recorded as waited, and goes to the owner after denied steps.
-PL=3 probe hang "$T/gp-out-hang" --tool grok --phase asks --phase deny-continues
+GP_LIMIT=3 probe hang "$T/gp-out-hang" --tool grok --phase asks --phase deny-continues
 [[ "$(j -r '$.cells.ask + " " + $.phases["deny-continues"][0].result + " " + $.owner.join(";").includes("Rule 0 b")' "$T/gp-out-hang/probe-grok.json")" == "waited waited true" ]] \
   || fail "a hung run: $(j -r '$.phases' "$T/gp-out-hang/probe-grok.json")"
 # A tool that runs the ask rule's command and then hangs ran it: ran, and it goes to the owner.
-PL=15 probe runhang "$T/gp-out-runhang" --tool grok --phase asks
+GP_LIMIT=15 probe runhang "$T/gp-out-runhang" --tool grok --phase asks
 [[ "$(j -r '$.cells.ask + " " + $.owner.join(";").includes("Rule 10")' "$T/gp-out-runhang/probe-grok.json")" == "ran true" ]] \
   || fail "an ask rule's command run before a hang: $(j -r '$.phases' "$T/gp-out-runhang/probe-grok.json")"
 # Letter case changes in the folders too: a tool that refuses only the lower-case ws/ folder lets the
