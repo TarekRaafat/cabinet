@@ -1232,7 +1232,7 @@ function changelogRender(width) {
   process.stdout.write(out.join("\n"));
 }
 
-// push-check: what is ready to push, per repo (cabinet push-check). REPOS holds "<name>\t<path>" lines,
+// push-check: what is ready to push, per repo (cabinet push-check). REPOS holds "<name>\t<path>\t<nogit or nothing>" lines,
 // HANDOFFS what handoff list --json gives, WS the workspace's folder. Local refs only: no fetch, nothing written.
 // In the workspace's row, a coordination commit (not a merge, and every path it changes, at least one,
 // is HANDOFFS.md, BRIEF.md or under one of COORD's folders) needs no handoff; a verdict naming it still counts.
@@ -1243,8 +1243,9 @@ function pushCheck() {
   const real = (p) => { try { return fs.realpathSync(p); } catch (e) { return null; } };
   const state = (e) => [["missing", e.missing], ["blocking", e.blocking], ["stale", e.stale]].filter(([, r]) => r.length).map(([k, r]) => k + " " + r.join(", ")).join("; ")
     || (e.ready === null ? "needs no review" : "not ready");
-  const repos = env("REPOS").split("\n").filter(Boolean).map((l) => l.split("\t")).map(([name, p]) => {
+  const repos = env("REPOS").split("\n").filter(Boolean).map((l) => l.split("\t")).map(([name, p, kind]) => {
     const o = { name, path: p, branch: null, upstream: null, commits: [], files: 0, insertions: 0, deletions: 0, ready: false, why: null };
+    if (kind === "nogit") return { ...o, why: "no git" };   // a folder without git (no_git in lib.sh): nothing to push
     // Its own repo, not a folder inside another (a repo not cloned yet, inside the workspace's own git).
     if (!real(p) || git(p, "rev-parse", "--show-toplevel") === null || real(git(p, "rev-parse", "--show-toplevel")) !== real(p)) return { ...o, why: "not on this machine" };
     o.branch = git(p, "symbolic-ref", "--short", "-q", "HEAD");

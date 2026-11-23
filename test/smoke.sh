@@ -10560,6 +10560,177 @@ HOME="$PH" wsrm "$W"
   return 0
 }
 
+section "project folders without git" ""
+s136() {
+# Criteria 1 to 14 of specs/no-git-folders.md, on its Fixture: a workspace made with cabinet init around Acme,
+# which holds app/ (a repo, the control), docs/ (plain files) and legacy/ (files and .svn/), then docs and
+# legacy listed with cabinet repo add. HOME is $NH; backups go to $NB with a test passphrase.
+local NH="$T/ng-home" NB="$T/ng-bk" NW="" R out st c id base a b
+mkdir -p "$NH"
+mkrepo() { mkdir -p "$1" && git -C "$1" init -q -b main && echo x > "$1/f" && git -C "$1" add -A && git -C "$1" commit -qm init; }
+ng() { HOME="$NH" PATH="$T/shim:$PATH" "$F" -C "$NW" "$@" 2>&1; }
+ngb() { HOME="$NH" CABINET_BACKUP_PASSPHRASE=fixture-pass-1 "$NW/bin/backup.sh" "$@" 2>&1; }
+# fixture <folder> [noadd|nolegacy]: the Fixture at <folder>/Acme, its workspace NW.
+fixture() {
+  local A="$1/Acme"
+  [[ -z "${NW:-}" || ! -f "$NW/cabinet.env" ]] || HOME="$NH" wsrm "$NW"
+  rm -rf "$1"; mkdir -p "$A/docs/img" "$A/legacy/.svn"
+  mkrepo "$A/app"
+  echo "# Guide" > "$A/docs/guide.md"; head -c 1024 /dev/urandom > "$A/docs/img/logo.png"
+  echo 'int main(void) { return 0; }' > "$A/legacy/main.c"; echo 'svn entries' > "$A/legacy/.svn/entries"
+  HOME="$NH" "$F" init "$A" --yes >/dev/null 2>&1 || fail "fixture: init around $A"
+  NW="$(cd "$A" && pwd -P)"
+  sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$NB\"|" "$NW/cabinet.env"; grep -q "^CABINET_BACKUP_DIR=\"$NB\"$" "$NW/cabinet.env" || fail "fixture: backup dir"
+  [[ "${2:-}" == noadd ]] && return 0
+  ng repo add "$A/docs" >/dev/null || fail "fixture: repo add docs: $(ng repo add "$A/docs")"
+  [[ "${2:-}" == nolegacy ]] && return 0
+  ng repo add "$A/legacy" >/dev/null || fail "fixture: repo add legacy"
+  return 0
+}
+dj() { ng doctor --json | j -c "$1"; }
+
+# 2, baseline: the doctor on the Fixture before the two repo add commands, bootstrapped.
+fixture "$T/ng" noadd
+ng bootstrap >/dev/null || true
+st=0; ng doctor >/dev/null || st=$?; base=$st
+ng repo add "$T/ng/Acme/docs" >/dev/null && ng repo add "$T/ng/Acme/legacy" >/dev/null || fail "repo add"
+# 1. Bootstrap twice: no clone tried, no failure counted.
+for c in 1 2; do
+  st=0; out="$(ng bootstrap)" || st=$?
+  ((st == 0)) || fail "criterion 1: bootstrap run $c exit $st: $out"
+  ! grep -qE 'clone failed|fatal:' <<<"$out" || fail "criterion 1: bootstrap run $c tried a clone: $out"
+  for a in docs legacy; do grep -qF "$a: a folder without git, kept as it is" <<<"$out" || fail "criterion 1: run $c, no line for $a: $out"; done
+done
+# 2. The doctor: same exit as the baseline, repos.present ok for each folder, no fix naming either.
+st=0; ng doctor >/dev/null || st=$?
+((st == base)) || fail "criterion 2: doctor exit $st, baseline $base: $(ng doctor)"
+for a in docs legacy; do
+  dj "\$.results.some((r) => r.id == \"repos.present\" && r.level == \"ok\" && r.message.includes(\"$a: a folder without git at\"))" | grep -qx true || fail "criterion 2: no ok repos.present for $a: $(ng doctor --json)"
+done
+dj '$.results.some((r) => r.level == "fix" && /\b(docs|legacy)\b/.test(r.message))' | grep -qx false || fail "criterion 2: a fix names docs or legacy: $(ng doctor)"
+# 3. repo list and --json, with a row for a folder that is not there (E2).
+printf 'ghost\tgit@example.com:me/ghost.git\t-\tno\n' >> "$NW/repos.tsv"
+out="$(ng repo list)"
+for a in docs legacy; do grep -E "^$a " <<<"$out" | grep -q 'no git' && ! grep -E "^$a " <<<"$out" | grep -q missing || fail "criterion 3: $a line: $out"; done
+grep -E '^app ' <<<"$out" | grep -q here || fail "criterion 3: app line: $out"
+ng repo list --json | j -e '((f) => f("docs").present === true && f("docs").git === false && f("legacy").present === true && f("legacy").git === false
+  && f("app").present === true && f("app").git === true && f("ghost").present === false && f("ghost").git === false)((n) => $.find((r) => r.name == n))' >/dev/null \
+  || fail "criterion 3: repo list --json: $(ng repo list --json)"
+L drop "$NW/repos.tsv" '/^ghost\t/'
+# 4. push-check: why "no git".
+out="$(cd "$NW" && HOME="$NH" "$F" push-check --json)" || fail "criterion 4: push-check --json: $out"
+j -e '["docs", "legacy"].every((n) => $.repos.find((r) => r.name == n).why == "no git")' <<<"$out" >/dev/null || fail "criterion 4: push-check: $out"
+# 5. session start refused, with no bootstrap hint.
+st=0; out="$(HOME="$NH" "$F" -C "$NW" session start s1 --repo docs 2>&1 >/dev/null)" || st=$?
+((st != 0)) && grep -qF 'docs is a folder without git: sessions need git' <<<"$out" && ! grep -q bootstrap <<<"$out" || fail "criterion 5: session start: exit $st: $out"
+# 6. backup create holds every file; restore gives them back byte for byte (E1).
+rm -rf "$NB"; out="$(ngb create)" || fail "criterion 6: create: $out"
+grep -qF 'docs: a folder without git, 2 files' <<<"$out" && grep -qF 'legacy: a folder without git, 2 files' <<<"$out" || fail "criterion 6: create: $out"
+a="$(ls "$NB"/*.enc)"; R="$T/ng-r"; rm -rf "$R"
+out="$(ngb restore "$a" "$R")" || fail "criterion 6: restore: $out"
+for c in docs/guide.md docs/img/logo.png legacy/main.c legacy/.svn/entries; do cmp -s "$NW/$c" "$R/$c" || fail "criterion 6: $c not restored as it was: $out"; done
+# 8. verify reads the folders' files.
+out="$(ngb verify)" || fail "criterion 8: verify: $out"
+grep -qF 'docs: its files restore (a folder without git)' <<<"$out" && ! grep -q 'not checked' <<<"$out" || fail "criterion 8: verify: $out"
+# 11. Restore over a file: the archive's copy wins, the other is moved under recovered/.
+rm -rf "$R"; mkdir -p "$R/docs"; echo "other text" > "$R/docs/guide.md"
+out="$(ngb restore "$a" "$R")" || fail "criterion 11: restore: $out"
+cmp -s "$NW/docs/guide.md" "$R/docs/guide.md" && grep -rqx "other text" "$R/recovered" || fail "criterion 11: restore over a file: $out; $(find "$R/recovered" -type f 2>/dev/null)"
+# 7. Local-only files placed and snapshotted; no .git made.
+awk -F'\t' -v OFS='\t' '$1 == "docs" { $3 = "notes.local" } { print }' "$NW/repos.tsv" > "$T/ng-tsv" && cat "$T/ng-tsv" > "$NW/repos.tsv"
+mkdir -p "$NW/local/docs"; echo local-1 > "$NW/local/docs/notes.local"
+st=0; out="$(ng bootstrap)" || st=$?
+((st == 0)) && [[ "$(cat "$NW/docs/notes.local")" == local-1 && ! -e "$NW/docs/.git" ]] || fail "criterion 7: bootstrap: exit $st: $out"
+echo local-2 > "$NW/docs/notes.local"
+out="$(ng repo snapshot)" || fail "criterion 7: snapshot: $out"
+[[ "$(cat "$NW/local/docs/notes.local")" == local-2 ]] || fail "criterion 7: snapshot did not copy: $out"
+awk -F'\t' -v OFS='\t' '$1 == "docs" { $3 = "-" } { print }' "$NW/repos.tsv" > "$T/ng-tsv" && cat "$T/ng-tsv" > "$NW/repos.tsv"; rm -rf "$NW/local/docs" "$NW/docs/notes.local"
+# 9. E4: a nested repo, a listed repo inside, and the workspace inside.
+mkrepo "$NW/docs/sub"; echo x > "$NW/docs/sub/x.txt"; git -C "$NW/docs/sub" add -A; git -C "$NW/docs/sub" commit -qm x
+rm -rf "$NB"; out="$(ngb create)" || fail "criterion 9: create, nested repo: $out"
+grep -qF 'docs: a folder without git, 2 files' <<<"$out" && grep -qF 'docs: sub not archived, a git repo inside' <<<"$out" || fail "criterion 9: nested repo: $out"
+R="$T/ng-r9"; rm -rf "$R"; out="$(ngb restore "$(ls "$NB"/*.enc)" "$R")" || fail "criterion 9: restore: $out"
+[[ -f "$R/docs/guide.md" && ! -e "$R/docs/sub" ]] || fail "criterion 9: nested repo restored in docs: $(find "$R/docs")"
+rm -rf "$NW/docs/sub"
+mkrepo "$NW/docs/sub2"; echo y > "$NW/docs/sub2/y.txt"; git -C "$NW/docs/sub2" add -A; git -C "$NW/docs/sub2" commit -qm y
+printf 'sub2\t-\t-\t-\tdocs/sub2\n' >> "$NW/repos.tsv"
+rm -rf "$NB"; out="$(ngb create)" || fail "criterion 9: create, listed repo: $out"
+grep -qF 'docs: a folder without git, 2 files' <<<"$out" && ! grep -qF 'sub2 not archived' <<<"$out" || fail "criterion 9: listed repo inside: $out"
+L drop "$NW/repos.tsv" '/^sub2\t/'; rm -rf "$NW/docs/sub2"
+# A listed folder without git inside docs, at a path find would read as a pattern (ADR-033 N4): pruned by
+# its path, so it is archived once, as its own.
+mkdir -p "$NW/docs/n[1]"; echo n > "$NW/docs/n[1]/n.txt"; printf 'n1\t-\t-\t-\tdocs/n[1]\n' >> "$NW/repos.tsv"
+rm -rf "$NB"; out="$(ngb create)" || fail "criterion 9: create, listed folder inside: $out"
+grep -qF 'docs: a folder without git, 2 files' <<<"$out" && grep -qF 'n1: a folder without git, 1 file' <<<"$out" && ! grep -q 'not archived' <<<"$out" \
+  || fail "criterion 9: listed folder without git inside docs: $out"
+L drop "$NW/repos.tsv" '/^n1\t/'; rm -rf "$NW/docs/n[1]"
+mkdir -p "$T/Plain"; HOME="$NH" "$F" new "$T/Plain/ws" --yes --backup-dir off >/dev/null 2>&1 || fail "criterion 9: new in Plain"
+echo plain-1 > "$T/Plain/notes.md"; a="$(cd "$T/Plain/ws" && pwd -P)"
+sedi "s|^CABINET_BACKUP_DIR=.*|CABINET_BACKUP_DIR=\"$NB\"|" "$a/cabinet.env"
+printf 'Plain\t-\t-\t-\t%s\n' "$T/Plain" >> "$a/repos.tsv"
+rm -rf "$NB"; out="$(HOME="$NH" CABINET_BACKUP_PASSPHRASE=fixture-pass-1 "$a/bin/backup.sh" create 2>&1)" || fail "criterion 9: create, workspace inside: $out"
+grep -qxF '  Plain: a folder without git, 1 file' <<<"$out" && ! grep -qF 'ws not archived' <<<"$out" || fail "criterion 9: workspace inside: $out"
+# 10. A folder listed after the newest archive: verify gives a problem, not "skipped".
+fixture "$T/ng10" nolegacy
+rm -rf "$NB"; ngb create >/dev/null || fail "criterion 10: create"
+ng repo add "$T/ng10/Acme/legacy" >/dev/null || fail "criterion 10: repo add"
+st=0; out="$(ngb verify)" || st=$?
+((st == 1)) && grep -q 'PROBLEM legacy' <<<"$out" && grep -qF 'not in the archive' <<<"$out" || fail "criterion 10: verify: exit $st: $out"
+# 12. An empty folder (E3, E7), a clone into an empty folder, a folder holding only img/logo.png, and E6.
+mkrepo "$T/ng-src"; git clone -q --bare "$T/ng-src" "$T/bare.git"
+for c in dash add url deep new; do
+  fixture "$T/ng12" noadd; mkdir -p "$NW/empty"
+  case "$c" in
+    dash) printf 'empty\t-\t-\t-\tempty\n' >> "$NW/repos.tsv"
+          st=0; out="$(ng bootstrap)" || st=$?
+          ((st == 0)) && grep -qF 'empty: a folder without git, kept as it is' <<<"$out" || fail "criterion 12 (-): exit $st: $out" ;;
+    add) ng repo add "$NW/empty" >/dev/null || fail "criterion 12: repo add empty"
+         for b in 1 2; do
+           st=0; out="$(ng bootstrap)" || st=$?
+           ((st == 0)) && grep -qF 'empty: a folder without git, kept as it is' <<<"$out" && ! grep -q 'clone failed' <<<"$out" || fail "criterion 12 (repo add, run $b): exit $st: $out"
+         done ;;
+    url) printf 'empty\t%s\t-\t-\tempty\n' "$T/bare.git" >> "$NW/repos.tsv"
+         st=0; out="$(ng bootstrap)" || st=$?
+         ((st == 0)) && [[ -e "$NW/empty/.git" ]] || fail "criterion 12 (clone into empty): exit $st: $out" ;;
+    deep) mkdir -p "$NW/deep/img"; echo png > "$NW/deep/img/logo.png"; printf 'deep\t%s\t-\t-\tdeep\n' "$T/nothere.git" >> "$NW/repos.tsv"
+          st=0; out="$(ng bootstrap)" || st=$?
+          ((st == 0)) && grep -qF 'deep: a folder without git, kept as it is' <<<"$out" && ! grep -qE 'clone failed|fatal:' <<<"$out" && [[ ! -e "$NW/deep/.git" ]] \
+            || fail "criterion 12 (any depth): exit $st: $out" ;;
+    new) git init -q "$NW/new"; ng repo add "$NW/new" >/dev/null || fail "criterion 12: repo add new"
+         ng repo list --json | j -e '$.find((r) => r.name == "new").git === true' >/dev/null || fail "criterion 12 (E6): $(ng repo list --json)" ;;
+  esac
+done
+# 13. record --commits none: for a folder without git, or a role owning only such folders; refused otherwise.
+fixture "$T/ng13"; ng bootstrap >/dev/null || true
+mkdir -p "$NW/specs/qa"; echo checked > "$NW/specs/qa/n.md"; echo shown > "$NW/specs/ev.md"
+git -C "$NW" add -A >/dev/null 2>&1; git -C "$NW" commit -qm fixture >/dev/null 2>&1 || true
+row() { L sub "$NW/AGENTS.md" -- "/^(\\| \`$1\` \\|[^|]*\\|)[^|]*\\|\\s*\$/" "\$1 $2 |" || fail "criterion 13: team row $1"; }
+hf() { id="$(cd "$NW" && bin/handoff.sh add --from chief-of-staff --to "$1" --changed "Nothing yet." --needed "Done when it shows." --small --evidence specs/ev.md "Work for $1")" || fail "criterion 13: add to $1: $id"; id="${id%% *}"; }
+rec() { (cd "$NW" && bin/handoff.sh record "$id" --role qa PASS --commits none --note specs/qa/n.md 2>&1); }
+hf docs; out="$(rec)" || fail "criterion 13 (docs): $out"
+grep -A12 "^### $id:" "$NW/HANDOFFS.md" | grep -q '^- Verdict: qa PASS' || fail "criterion 13 (docs): no verdict line"
+row docs web; row legacy web; row app backend
+hf web; out="$(rec)" || fail "criterion 13 (web owns docs and legacy): $out"
+grep -A12 "^### $id:" "$NW/HANDOFFS.md" | grep -q '^- Verdict: qa PASS' || fail "criterion 13 (web, folders): no verdict line"
+row legacy backend; row app web
+hf web; st=0; out="$(rec)" || st=$?
+((st != 0)) && grep -qF 'which builds: name its commits' <<<"$out" || fail "criterion 13 (E5, web owns docs and app): exit $st: $out"
+row docs backend; row app backend
+hf web; st=0; out="$(rec)" || st=$?
+((st != 0)) && grep -qF 'which builds: name its commits' <<<"$out" || fail "criterion 13 (web owns no row): exit $st: $out"
+# 14. The docs say so.
+grep -qF 'The workspace uses git; a project folder needs none' "$KIT/docs/layouts.md" || fail "criterion 14: layouts.md sentence"
+for c in sessions undo 'reviews on commits' remote; do
+  awk -v w="$c" '/^## / { h = $0; t = "" } { t = t $0 "\n" } index(t, "The workspace uses git; a project folder needs none") && index(t, w) { f = 1 } END { exit !f }' "$KIT/docs/layouts.md" \
+    || fail "criterion 14: layouts.md section lacks $c"
+done
+grep -qF 'no git' "$KIT/docs/commands.md" && grep -qF '"git"' "$KIT/docs/commands.md" || fail "criterion 14: commands.md"
+awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | head -1 | grep -q Unreleased || fail "criterion 14: the top CHANGELOG section is not Unreleased"
+awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | grep 'present' | grep -q 'no git' || fail "criterion 14: CHANGELOG line with present and no git"
+HOME="$NH" wsrm "$NW"
+  return 0
+}
+
 # The section list for test/shards.js: "<name><tab><needs>" per line.
 if [[ -n "$_list" ]]; then for ((_i = 0; _i < ${#_names[@]}; _i++)); do printf '%s\t%s\n' "${_names[$_i]}" "${_needs[$_i]}"; done; exit 0; fi
 # Which sections to run: the matches (or a shard's own sections), then everything they need, in suite order.

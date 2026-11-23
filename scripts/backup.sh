@@ -232,7 +232,10 @@ restore_one() {  # restore_one <name> <archived repo> <folder> <in place: 0 or 1
   local name=$1 o=$2 repo=$3 inplace=$4 keep=$5 head f
   if [[ ! -f "$o/repo.bundle" ]]; then
     # A repo with no commits yet was archived as its files only.
-    if [[ -f "$o/untracked.tar" ]]; then mkdir -p "$repo"; tar -C "$repo" -xf "$o/untracked.tar"; echo "  $name: files restored (it had no commits)"; fi
+    if [[ -f "$o/untracked.tar" ]]; then
+      mkdir -p "$repo"; tar -C "$repo" -xf "$o/untracked.tar"
+      if [[ -f "$o/no-git" ]]; then echo "  $name: files restored (a folder without git)"; else echo "  $name: files restored (it had no commits)"; fi
+    fi
     return 0
   fi
   if [[ -e "$repo/.git" && ! -e "$repo/.git/cabinet-restore" ]]; then
@@ -399,11 +402,16 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # This workspace's archives only: <slug>-YYYYMMDD-HHMMSS.tar.gz.enc exactly, so app never takes app-web's.
 # Newest first by the time in the name, never by modified time, which a synced drive or a copy changes.
 mine() { ls -1 "$dest" 2>/dev/null | grep -E "^${CABINET_SLUG//./\\.}-[0-9]{8}-[0-9]{6}\.tar\.gz\.enc$" | LC_ALL=C sort -r || true; }
-# What the backup holds: "label<TAB>folder<TAB>place in the archive". A shared workspace inside a
-# project has no git of its own: the project's repo holds it.
+# What the backup holds: "label<TAB>folder<TAB>place in the archive<TAB>kind", the kind git, nogit (a
+# folder without git, no_git in lib.sh) or missing. A shared workspace inside a project has no git of its
+# own: the project's repo holds it.
 targets() {
-  [[ "$(git -C "$WS" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$WS" && pwd -P)" ]] && printf 'workspace\t%s\tworkspace\n' "$WS"
-  while IFS=$'\t' read -r name url files link path; do printf '%s\t%s\trepos/%s\n' "$name" "$(repo_dir "$path")" "$name"; done < <(repos)
+  local name url files link path d
+  [[ "$(git -C "$WS" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$WS" && pwd -P)" ]] && printf 'workspace\t%s\tworkspace\tgit\n' "$WS"
+  while IFS=$'\t' read -r name url files link path; do
+    d="$(repo_dir "$path")"
+    printf '%s\t%s\trepos/%s\t%s\n' "$name" "$d" "$name" "$(if [[ -e "$d/.git" ]]; then echo git; elif no_git "$d" "$url"; then echo nogit; else echo missing; fi)"
+  done < <(repos)
 }
 
 if ((verify)); then
@@ -444,10 +452,14 @@ if ((verify)); then
         else cmp -s "$1/$f" "$2/$f" || echo "$f"; fi
       done | wc -l | tr -d ' '
     }
-    while IFS=$'\t' read -r name dir sub; do
+    while IFS=$'\t' read -r name dir sub kind; do
       o="$src/$sub" r="$tmp/check/$sub"
-      [[ -e "$dir/.git" ]] || { say "$name" skipped "no repo at $dir, not checked"; continue; }
+      [[ "$kind" != missing ]] || { say "$name" skipped "no repo at $dir, not checked"; continue; }
       [[ -d "$o" ]] || { problem "$name" "not in the archive (back up again)"; continue; }
+      if [[ "$kind" == nogit ]]; then
+        [[ -f "$o/no-git" ]] && tar -tf "$o/untracked.tar" >/dev/null 2>&1 && say "$name" ok "its files restore (a folder without git)" || problem "$name" "its files do not restore (back up again)"
+        continue
+      fi
       if [[ ! -f "$o/repo.bundle" ]]; then
         tar -tf "$o/untracked.tar" >/dev/null 2>&1 && say "$name" ok "its files restore (it had no commits)" || problem "$name" "its files do not restore"
         continue
@@ -531,6 +543,45 @@ save_repo() {
   echo "  $name: $(git -C "$repo" rev-list --count --all) commits, $n stashes"
 }
 
+# A folder without git (no_git in lib.sh): every file and folder in it, .env files and .svn/ included, as
+# files only (the no-commits path), with a no-git mark for restore and verify. Left out: each folder holding
+# a .git (a nested repo), named unless it is the workspace or a listed repo, which are backed up on their
+# own; and the workspace and every other listed folder inside it, by their resolved paths. find compares
+# those paths with -path, so * ? [ and \ in them are escaped; it never follows a symlink, so a link is kept
+# as a link.
+# ponytail: one test process per folder visited, as the .env walk; a walk in lib.js if a real folder is slow.
+save_files() {
+  local name=$1 dir=$2 o="$out/$3" top d x n other url files link path e kind nf=0 rel
+  local -a prune
+  local -a known
+  prune=() known=("$(abspath "$WS")")
+  top="$(abspath "$dir")"
+  while IFS=$'\t' read -r other url files link path; do
+    [[ "$other" == "$name" ]] || known+=("$(abspath "$(repo_dir "$path")")")
+  done < <(repos 2>/dev/null)
+  for d in "${known[@]}"; do
+    [[ "$d" == "$top"/* ]] || continue
+    rel="$(printf '%s' "${d#"$top"/}" | sed 's/[][*?\\]/\\&/g')"
+    prune+=(-path "./$rel" -o)
+  done
+  mkdir -p "$o"; : > "$o/no-git"; : > "$tmp/files-list"
+  (cd "$dir" && find . -mindepth 1 \( -type d \( ${prune[@]+"${prune[@]}"} -exec test -e '{}/.git' \; \) -prune -exec printf 'G%s\0' {} \; \) \
+    -o \( -type d -exec printf 'D%s\0' {} + \) -o -exec printf 'F%s\0' {} +) > "$tmp/files-walk"
+  while IFS= read -r -d '' e; do
+    kind="${e:0:1}" e="${e:1}"
+    case "$kind" in
+      G) d="$(abspath "$top/${e#./}")" n=0
+         for x in "${known[@]}"; do [[ "$x" != "$d" ]] || n=1; done
+         ((n)) || echo "  $name: $(printf '%s\n' "${e#./}" | term_text) not archived, a git repo inside (list it with cabinet repo add)" ;;
+      F) nf=$((nf + 1)); printf '%s\0' "$e" >> "$tmp/files-list" ;;
+      D) printf '%s\0' "$e" >> "$tmp/files-list" ;;
+    esac
+  done < "$tmp/files-walk"
+  (cd "$dir" && tar --null --no-recursion -T "$tmp/files-list" -cf "$o/untracked.tar")
+  rm -f "$tmp/files-walk" "$tmp/files-list"
+  echo "  $name: a folder without git, $nf $( ((nf == 1)) && echo file || echo files)"
+}
+
 # Fresh snapshot first, so local-only files are current.
 "$WS/bin/repo.sh" snapshot >/dev/null
 
@@ -549,7 +600,8 @@ save_sessions() {
 }
 
 echo "== Repos"
-while IFS=$'\t' read -r name dir sub; do
+while IFS=$'\t' read -r name dir sub kind; do
+  if [[ "$kind" == nogit ]]; then save_files "$name" "$dir" "$sub"; continue; fi
   save_repo "$name" "$dir" "$sub"
   [[ "$sub" != repos/* || ! -e "$dir/.git" ]] || save_sessions "$name" "$dir" "$sub"
 done < <(targets)
