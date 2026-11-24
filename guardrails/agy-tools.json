@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp(github/create_or_update_file)",
+      "mcp(github/delete_file)",
+      "mcp(github/get_latest_release)",
+      "mcp(github/get_release_by_tag)",
+      "mcp(github/list_releases)",
+      "mcp(github/merge_pull_request)",
+      "mcp(github/push_files)",
+      "write_file(~/.claude/settings.json)",
+      "write_file(~/.qwen/settings.json)",
+      "write_file(~/.config/opencode/opencode.json)",
+      "write_file(~/.cursor/cli-config.json)",
+      "write_file(~/.gemini/antigravity-cli/settings.json)",
+      "write_file(~/.gemini/config/hooks.json)",
+      "write_file(~/.gemini/settings.json)",
+      "write_file(~/.gemini/policies/owner-control.toml)",
+      "write_file(~/.codex/rules/default.rules)",
+      "write_file(~/.codex/config.toml)",
+      "write_file(~/.gitconfig)",
+      "write_file(~/.config/git/config)",
+      "read_file(~/.git-credentials)",
+      "read_file(~/.config/gh/hosts.yml)",
+      "read_file(~/.npmrc)"
+    ]
+  }
+}

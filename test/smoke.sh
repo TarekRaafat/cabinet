@@ -5233,8 +5233,9 @@ printf '#!/bin/sh\n[ "$1 $2" = "execpolicy check" ] || exit 1\nif [ -e "%s" ] &&
 CX="$GH/.codex/rules/default.rules" GM="$GH/.gemini/policies/owner-control.toml" AG="$GH/.gemini/antigravity-cli/settings.json" FX="$KIT/test/fixtures/30017c9"
 dp() { local p=$1; shift; (cd "$GW" && PATH="$p" "$F" doctor "$@" 2>/dev/null) || true; }
 three() { for i in guardrails.codex guardrails.gemini guardrails.agy; do res "$1" "$i"; done; }
-# Criterion 10: all present.
-cp "$KIT/guardrails/codex-default.rules" "$CX"; cp "$KIT/guardrails/gemini-owner-control.toml" "$GM"; cp "$KIT/guardrails/agy-permissions.json" "$AG"; touch "$GS/codex-forbids"
+# Criterion 10: all present. Antigravity's rules as bootstrap writes them for this machine (agy_rules, which the doctor reads).
+local AGF="$GS/agy-full.json"; (cd "$GW" && bash -c 'source bin/lib.sh; agy_rules .cabinet/guardrails' > "$AGF" 2>/dev/null) || fail "agy_rules in the workspace"
+cp "$KIT/guardrails/codex-default.rules" "$CX"; cp "$KIT/guardrails/gemini-owner-control.toml" "$GM"; cp "$AGF" "$AG"; touch "$GS/codex-forbids"
 out="$(dp "$FP" --json)"
 [[ "$(three "$out" | grep -c '^ok ')" == 3 && -z "$(three "$out" | grep -v '^ok ')" ]] || fail "criterion 10: $(three "$out")"
 rm -f "$GS/codex-forbids"; out="$(dp "$FP" --json)"
@@ -5247,12 +5248,12 @@ c11() {  # c11 <what> [<Codex's count>]: each FIX names the missing rules (1, un
     && res "$out" guardrails.agy | grep -qxF 'fix agy is missing 1 deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)' \
     && [[ "$(dp "$CP" | tail -1)" != "All good"* ]] || fail "criterion 11, $1: $(three "$out")"
 }
-j '({...$, permissions: {...$.permissions, deny: $.permissions.deny.slice(1)}})' "$KIT/guardrails/agy-permissions.json" > "$AG"
+j '({...$, permissions: {...$.permissions, deny: $.permissions.deny.slice(1)}})' "$AGF" > "$AG"
 # The 0.1.0 Codex file lacks two: secret-tool (0.1.1) and git credential (0.8.5).
 cp "$FX/codex-default.rules" "$CX"; cp "$FX/gemini-owner-control.toml" "$GM"; c11 "the 0.1.0 files" 2
 grep -v 'gh", "release' "$KIT/guardrails/codex-default.rules" > "$CX"
 awk 'BEGIN { RS = ""; ORS = "\n\n" } !/commandPrefix = "gh release"/' "$KIT/guardrails/gemini-owner-control.toml" > "$GM"; c11 "the kit's files less one rule"
-cp "$KIT/guardrails/agy-permissions.json" "$AG"
+cp "$AGF" "$AG"
 # Criterion 12: bootstrap adds the missing rules after the owner's lines, with one backup, once.
 own_c='prefix_rule(pattern = ["make", "deploy"], decision = "prompt")'
 own_g=$'\n[[rule]]\ntoolName = "run_shell_command"\ncommandPrefix = "make deploy"\ndecision = "ask_user"\npriority = 500\n'
@@ -10280,9 +10281,17 @@ s135() {
 # specs/guardrails-outside-the-shell-2.md: the verb hook's script (Rule 3, criterion 4), its merge into a hook file
 # (Rule 10, E2, E6, E10), the runner's program (Rule 8, criterion 6), Antigravity's project settings (Rule 7,
 # criterion 8), the git credential deny in every shell rules file (Rule 4), Gemini CLI left as it was (criterion 12)
-# and the doctor's IDs (criterion 16). The rows of Rule 1 that the owner's probes confirm come with step 2.
+# and the doctor's IDs (criterion 16); then each Rule 1 row the owner's probes confirmed (HOLDS), built and checked.
 local PH="$T/p2-home" PB="$T/p2-bin" PT="$T/p2-tools" P W out st n f c o i k ids m
 local GATE="$KIT/guardrails/cabinet-mcp-gate.js"
+# Every Rule 1 row that held, from the owner's probes (22 Nov 2026: H-20261122-14's rule-1-probes-2.md, H-20261122-18's
+# probe-agy-c1.tsv and session-steps.md): a, c, g (Claude Code's MCP, file and read denies; github-mcp-server v2.2.0's
+# tool list), f1p (a plain command(...) prefix deny in the kit's run line), f2 to f5 (Antigravity's mcp(...),
+# write_file(...) and read_file(...) denies and its hook, each in a run and in a session) and f6. Docs only: b (Claude
+# Code held; the Grok row was not run, ADR-034), f1 (a regex deny let its command run), f7 (a user deny did not hold
+# beside --settings), f8, h1, h2 and every d and e row. Each criterion runs the branch HOLDS picks.
+local HOLDS=" a c f1p f2 f3 f4 f5 f6 g "
+has() { [[ "$HOLDS" == *" $1 "* ]]; }
 psum() { node -e 'process.stdout.write(require("node:crypto").createHash("sha256").update(require("node:fs").readFileSync(process.argv[1])).digest("hex"))' "$1"; }
 mkdir -p "$PH" "$PB" "$PT"
 
@@ -10297,7 +10306,9 @@ form() {
   if [[ $1 == claude ]]; then printf '{"tool_name": "%s", "tool_input": {}}' "$2"
   else local t="${2#mcp__}"; printf '{"hookEventName": "PreToolUse", "cwd": "/w", "stepIdx": 4, "toolCall": {"args": {"Arguments": {"text": "hi"}, "ServerName": "%s", "ToolName": "%s"}, "id": "c1", "name": "call_mcp_tool"}}' "${t%%__*}" "${t#*__}"; fi
 }
+# Claude Code's input form runs only where b holds (criterion 4); Antigravity's where f5 holds.
 for k in claude agy; do
+  if [[ $k == claude ]]; then has b || continue; else has f5 || continue; fi
   for n in mcp__x__merge_pull_request mcp__x__push_files mcp__x__create_or_update_file mcp__x__delete_branch mcp__x__create_release \
            mcp__x__publish_package mcp__x__deploy_site mcp__x__send_email mcp__x__MergePullRequest mcp__x__list_releases mcp__pushover__list_items; do
     gate $k "$(form $k $n)"; refused $k || fail "criterion 4 ($k): $n was not refused (exit $st, $o)"
@@ -10388,25 +10399,65 @@ for n in .agents .agent .antigravity; do
   for d in "$W/app" "$W" "$W/stray"; do rmdir "$d/$n"; done
 done
 
-# Step 2, from the owner's probes (22 Nov 2026, H-20261122-14; the evidence's rule-1-probes-2.md). HOLDS is every
-# Rule 1 row that held: a (MCP deny), c (file and read denies, the ~/ and // forms), f6 (agy's server list) and g
-# (github-mcp-server v2.2.0's tool list). Docs only: b and f2 to f4 (shown in runs, the session step not run yet), f5
-# (the gate saw call_mcp_tool; read since this change, awaiting the owner's confirmation), f1 and f7 (shell denies
-# did not hold in a run), f8, h1 and h2 (no file, or not run), and every d and e row (not probed). A row that holds
-# is built and checked below; a docs-only row builds nothing, and the check says so.
-local HOLDS=" a c f6 g " H1="$T/p2-h1" GH="create_or_update_file delete_file get_latest_release get_release_by_tag list_releases merge_pull_request push_files"
+# Step 2, from the owner's probes (HOLDS, at the top). A row that holds is built and checked below; a docs-only row
+# builds nothing, and the check says so. Fixed lists, copied from the evidence: GH (line g), FILES and CREDS in Claude
+# Code's form, AFILES and ACREDS in Antigravity's (absolute paths only, as f3 and f4 held: the 12 fixed files, each of
+# the 19 files bootstrap places in the hooks folder, and the three .git/config of the workspace, app and lib), AGY085
+# (the 31 command(...) entries of agy-permissions.json at v0.8.5) and STANDINS (one stand-in command per Claude rule
+# a prefix can match, with that rule's decision: the evidence maps the other 39 rules to docs only).
+local H1="$T/p2-h1" GH="create_or_update_file delete_file get_latest_release get_release_by_tag list_releases merge_pull_request push_files"
 local FILES="~/.claude/settings.json ~/.qwen/settings.json ~/.config/opencode/opencode.json ~/.cursor/cli-config.json ~/.gemini/antigravity-cli/settings.json
   ~/.gemini/config/hooks.json ~/.gemini/settings.json ~/.gemini/policies/owner-control.toml ~/.codex/rules/default.rules ~/.codex/config.toml
   ~/.config/git/hooks/** ~/.gitconfig ~/.config/git/config /$W/.git/config /$W/app/.git/config /$W/lib/.git/config"
 local CREDS="~/.git-credentials ~/.config/gh/hosts.yml ~/.npmrc" CS="$H1/.claude/settings.json" AS1="$H1/.gemini/antigravity-cli/settings.json" sums sums2 baks sudo0
-[[ "$HOLDS" == *" a "* && "$HOLDS" == *" c "* && "$HOLDS" == *" g "* && "$HOLDS" != *" b "* && "$HOLDS" != *" f"[1-5]" "* ]] || fail "HOLDS changed: build and check the rows it adds"
+local AH1="$H1/.gemini/config/hooks.json" HK="$H1/.config/git/hooks"
+local AFILES="$H1/.claude/settings.json $H1/.qwen/settings.json $H1/.config/opencode/opencode.json $H1/.cursor/cli-config.json
+  $H1/.gemini/antigravity-cli/settings.json $H1/.gemini/config/hooks.json $H1/.gemini/settings.json $H1/.gemini/policies/owner-control.toml
+  $H1/.codex/rules/default.rules $H1/.codex/config.toml $H1/.gitconfig $H1/.config/git/config
+  $HK/applypatch-msg $HK/pre-applypatch $HK/post-applypatch $HK/pre-commit $HK/pre-merge-commit $HK/commit-msg $HK/post-commit $HK/post-checkout
+  $HK/post-merge $HK/post-rewrite $HK/pre-auto-gc $HK/reference-transaction $HK/post-index-change $HK/sendemail-validate $HK/pre-push
+  $HK/prepare-commit-msg $HK/pre-rebase $HK/cabinet-push-gate.js $HK/cabinet-mcp-gate.js $W/.git/config $W/app/.git/config $W/lib/.git/config"
+local ACREDS="$H1/.git-credentials $H1/.config/gh/hosts.yml $H1/.npmrc"
+local AGY085="git push|env -u|env -i|git send-pack|gh pr merge|gh release|gh repo edit|gh repo archive|gh repo delete|gh repo rename|npm publish|bun publish
+|pnpm publish|yarn publish|npx npm publish|yarn npm publish|script|gh auth token|security find-generic-password|security dump-keychain|secret-tool lookup
+|secret-tool search|git credential|expect|unbuffer|gh api|gh pr create|git reset --hard|git rebase|git -c|gh auth status"
+local STANDINS="deny|git push x
+deny|env -i x
+deny|env -u x
+deny|script x
+deny|expect x
+deny|unbuffer x
+deny|gh pr merge x
+deny|gh release x
+deny|gh repo edit x
+deny|gh repo archive x
+deny|gh repo delete x
+deny|gh repo rename x
+deny|gh auth token x
+deny|npm publish x
+deny|npx npm publish x
+deny|bun publish x
+deny|pnpm publish x
+deny|yarn publish x
+deny|yarn npm publish x
+deny|security find-generic-password x
+deny|security dump-keychain x
+deny|secret-tool lookup x
+deny|secret-tool search x
+ask|git reset --hard x
+ask|git rebase x
+ask|gh pr create x"
+# Rows whose build no branch below writes yet: a change to any of them needs that build first.
+! has b && ! has f1 && ! has f7 && ! has f8 && ! has h1 && ! has h2 || fail "HOLDS changed: build and check the rows it adds"
 git init -q "$W/lib"; printf 'lib\t-\t-\tno\n' >> "$W/repos.tsv"
-# A repo path holding [ gets its deny with [ as ? (a glob class would miss the real folder); one holding ( gets none,
-# said, since Claude Code may skip a whole file with a rule it cannot parse.
+# A repo path holding [ gets its Claude Code deny with [ as ? (a glob class would miss the real folder), and no
+# Antigravity rule (its exact-path form has no escape a probe showed); one holding ( gets neither, said, since Claude
+# Code may skip a whole file with a rule it cannot parse.
 git init -q "$W/x[1]"; git init -q "$W/it's (here)"; printf 'b1\t-\t-\tno\tx[1]\nc1\t-\t-\tno\tit'"'"'s (here)\n' >> "$W/repos.tsv"
 mkdir -p "$H1/.claude" "$H1/.gemini/config" "$H1/.codex"
 printf '%s\n' '{"permissions": {"allow": ["mcp__github__merge_pull_request"]}, "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "true"}]}]}}' > "$CS"
-printf '{ "hooks": ' > "$H1/.gemini/config/hooks.json"; c="$(psum "$H1/.gemini/config/hooks.json")"
+# 18 (E2): the owner's own Antigravity hook, in the named form the f5 row recorded, running true.
+printf '%s\n' '{"mine": {"PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "true"}]}]}}' > "$AH1"
 printf 'approval_policy = "on-request"\n\n[mcp_servers.github]\ncommand = "true"\n' > "$H1/.codex/config.toml"; k="$(psum "$H1/.codex/config.toml")"
 sudo0="$(grep -c '^sudo ' "$T/fake.log" 2>/dev/null || true)"
 st=0; out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
@@ -10428,53 +10479,157 @@ node -e 'const m = require("node:path").matchesGlob; process.exit(!m || m(proces
 j -e '$.permissions.allow.length == 1 && $.permissions.allow[0] == "mcp__github__merge_pull_request" && $.hooks.PreToolUse.length == 1
   && $.hooks.PreToolUse[0].matcher == "Bash" && $.hooks.PreToolUse[0].hooks[0].command == "true"' "$CS" >/dev/null || fail "criterion 2: the owner's allow or hook changed: $(cat "$CS")"
 # 3 (b docs only): no mcp__.* hook entry. 1 (d, e docs only): Qwen Code, opencode and Cursor get no MCP or file entries.
-! j -e '$.hooks.PreToolUse.some((e) => e.matcher == "mcp__.*")' "$CS" >/dev/null || fail "criterion 3: a hook entry for b, which is docs only"
+if has b; then fail "criterion 3: b holds, but its hook entry is not built"
+else ! j -e '$.hooks.PreToolUse.some((e) => e.matcher == "mcp__.*")' "$CS" >/dev/null || fail "criterion 3: a hook entry for b, which is docs only"; fi
 for f in "$H1/.qwen/settings.json" "$H1/.config/opencode/opencode.json" "$H1/.cursor/cli-config.json"; do
   [[ ! -e "$f" ]] || ! grep -qE 'mcp__|Mcp\(|"(Edit|Write|Read)\(' "$f" || fail "criterion 1: $f holds an MCP or file entry, docs only for it"
 done
-# 5 (f1 to f4 docs only): agy's file holds no mcp(, write_file(, read_file( or command(regex: entry, and git credential.
-j -e '$.permissions.deny.includes("command(git credential)") && ![...$.permissions.deny, ...($.permissions.ask || [])].some((r) => /^(mcp|write_file|read_file)\(|^command\(regex:/.test(r))' "$AS1" >/dev/null \
-  || fail "criterion 5: $(cat "$AS1")"
-# 11 and 18 (f5 docs only): hooks.json left as it was, with no backup, and not named; bootstrap exits 0 (above).
-[[ "$(psum "$H1/.gemini/config/hooks.json")" == "$c" ]] && ! ls "$H1/.gemini/config/" | grep -q '\.bak\.' && [[ "$out" != *hooks.json* ]] || fail "criteria 11, 18: hooks.json was touched or named"
+# 5. Antigravity's file, each kind on its own: mcp(github/<tool>) for each GH tool (f2), write_file(<path>) for each of
+# AFILES (f3), read_file(<path>) for each of ACREDS (f4), each where its row holds, none where docs only; always
+# git credential, and never a command(regex:...) entry (f1 docs only). Nothing in ~/ or glob form, and no rule for a
+# folder whose path holds [ or (, each said by bootstrap (security S1).
+m=""
+for n in $GH; do j -e --arg r "mcp(github/$n)" '$.permissions.deny.includes($r)' "$AS1" >/dev/null || m+=" mcp(github/$n)"; done
+has f2 && [[ -n "$m" ]] && fail "criterion 5 (f2): agy's file lacks:$m"
+! has f2 && j -e '$.permissions.deny.some((r) => r.startsWith("mcp("))' "$AS1" >/dev/null && fail "criterion 5: an mcp(...) entry, f2 docs only"
+m=""; for n in $AFILES; do j -e --arg r "write_file($n)" '$.permissions.deny.includes($r)' "$AS1" >/dev/null || m+=" write_file($n)"; done
+has f3 && [[ -n "$m" ]] && fail "criterion 5 (f3): agy's file lacks:$m"
+! has f3 && j -e '$.permissions.deny.some((r) => r.startsWith("write_file("))' "$AS1" >/dev/null && fail "criterion 5: a write_file(...) entry, f3 docs only"
+m=""; for n in $ACREDS; do j -e --arg r "read_file($n)" '$.permissions.deny.includes($r)' "$AS1" >/dev/null || m+=" read_file($n)"; done
+has f4 && [[ -n "$m" ]] && fail "criterion 5 (f4): agy's file lacks:$m"
+! has f4 && j -e '$.permissions.deny.some((r) => r.startsWith("read_file("))' "$AS1" >/dev/null && fail "criterion 5: a read_file(...) entry, f4 docs only"
+j -e '$.permissions.deny.includes("command(git credential)") && ![...$.permissions.deny, ...($.permissions.ask || [])].some((r) => /^command\(regex:|^(write_file|read_file)\((~|.*\*)/.test(r))' "$AS1" >/dev/null \
+  || fail "criterion 5: git credential missing, or a regex, ~/ or glob entry: $(cat "$AS1")"
+[[ "$(j -r '$.permissions.deny.filter((r) => /^(write_file|read_file)\(/.test(r)).length' "$AS1")" == $(( $(wc -w <<<"$AFILES") + 3 )) ]] \
+  || fail "criterion 5: agy's file holds a file rule not in AFILES or ACREDS: $(j -r '$.permissions.deny.filter((r) => /^(write_file|read_file)\(/.test(r)).join("\n")' "$AS1")"
+for n in "x[1]" "it's (here)"; do
+  [[ "$out" == *"  $W/$n: its path holds a character an Antigravity rule cannot carry, so its .git/config gets no write_file deny"* ]] || fail "S1: bootstrap did not say $n gets no Antigravity rule: $out"
+done
+! grep -qF "it's (here)" "$AS1" && ! grep -qF 'x[1]' "$AS1" && ! grep -qF 'x?1]' "$AS1" || fail "S1: an Antigravity rule names x[1] or it's (here)"
+# Rule 5 (f1p holds): each stand-in, matched the way f1p showed agy matches command(P) (the command is P, or starts with
+# P and a space), is refused or asked about as its Claude rule is; AGY085 is all still there. Where f1p is docs only,
+# no matching is run, AGY085 is still there, and the docs say the prefixes do not hold in the kit's runs.
+m=""; while IFS= read -r i; do j -e --arg r "command($i)" '[...$.permissions.deny, ...$.permissions.ask].includes($r)' "$AS1" >/dev/null || m+=" command($i)"; done < <(tr -d '\n' <<<"$AGY085" | tr '|' '\n')
+[[ -z "$m" ]] || fail "criterion 5: AGY085 entries gone:$m"
+if has f1p; then
+  m="$(node -e 'const s = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).permissions;
+    const p = (l) => (l || []).map((r) => /^command\((.*)\)$/.exec(r)).filter(Boolean).map((x) => x[1]);
+    const hit = (c, l) => p(l).some((x) => c === x || c.startsWith(x + " "));
+    for (const line of process.argv[2].split("\n")) { const [want, c] = line.split("|");
+      const got = hit(c, s.deny) ? "deny" : hit(c, s.ask) ? "ask" : "allow"; if (got !== want) console.log(c + ": " + got + ", wanted " + want); }' "$AS1" "$STANDINS")"
+  [[ -z "$m" ]] || fail "criterion 5 (f1p): $m"
+  grep -qF 'The shell denies in your Antigravity settings hold in the kit'"'"'s runs as plain prefixes: `command(git push)` stops a command that starts with `git push`, so a Claude Code rule that matches a word anywhere in a command is docs only for Antigravity.' "$KIT/docs/guardrails.md" \
+    || fail "criterion 5 (f1p): docs/guardrails.md's Antigravity line lacks the prefix sentence"
+else grep -qF "The shipped prefixes do not hold in the kit's runs." "$KIT/docs/guardrails.md" || fail "criterion 5 (f1p docs only): the docs sentence"; fi
+# 3 and 18 (f5 holds): the gate placed as the kit's; hooks.json holds exactly one kit entry beside the owner's own,
+# with exactly one backup. 4, through the command bootstrap wrote: a write tool refused, a read let through, and
+# with no node on PATH still refused.
+if has f5; then
+  cmp -s "$GATE" "$HK/cabinet-mcp-gate.js" || fail "criterion 3: the gate is not placed at $HK/cabinet-mcp-gate.js"
+  j -e '$.mine.PreToolUse.length == 1 && $.mine.PreToolUse[0].hooks[0].command == "true" && $["cabinet-mcp-gate"].PreToolUse.length == 1
+    && Object.keys($).length == 2' "$AH1" >/dev/null || fail "criteria 3, 18: hooks.json: $(cat "$AH1")"
+  [[ "$(ls "$H1/.gemini/config" | grep -c '^hooks\.json\.bak\.')" == 1 ]] || fail "criterion 18: not exactly one backup: $(ls "$H1/.gemini/config")"
+  [[ "$out" == *"added the kit's MCP gate hook to $AH1"* ]] || fail "criterion 3: bootstrap did not say it added the hook: $out"
+  c="$(j -r '$["cabinet-mcp-gate"].PreToolUse[0].hooks[0].command' "$AH1")"
+  [[ "$c" == *"'$HK/cabinet-mcp-gate.js' agy"* ]] || fail "criterion 3: the hook runs $c"
+  o="$(form agy mcp__github__merge_pull_request | sh -c "$c" 2>/dev/null)"; j -e '$.decision == "deny"' <<<"$o" >/dev/null || fail "criterion 4: bootstrap's command let a merge through: $o"
+  o="$(form agy mcp__github__list_issues | sh -c "$c" 2>/dev/null)"; [[ -z "$o" ]] || fail "criterion 4: bootstrap's command refused a read: $o"
+  o="$(form agy mcp__github__list_issues | PATH=/nowhere /bin/sh -c "$c" 2>/dev/null)"; j -e '$.decision == "deny"' <<<"$o" >/dev/null || fail "criterion 4: bootstrap's command with no node: $o"
+else [[ ! -e "$HK/cabinet-mcp-gate.js" ]] && j -e '!$["cabinet-mcp-gate"]' "$AH1" >/dev/null && [[ "$out" != *hooks.json* ]] || fail "criteria 3, 18: f5 docs only, but hooks.json was touched"; fi
 # 9 (h1, h2, f8 docs only): no admin folder, and no sudo line, run or printed.
 [[ -z "$(find "$H1" -type d -name admin)" && "$out" != *sudo* && "$(grep -c '^sudo ' "$T/fake.log" 2>/dev/null || true)" == "$sudo0" ]] || fail "criterion 9: an admin file or sudo"
 # 10 (i): Codex's config.toml with approval_policy set is not changed or backed up; its rules gain git credential.
 [[ "$(psum "$H1/.codex/config.toml")" == "$k" && "$(ls "$H1/.codex" | grep -c '^config\.toml')" == 1 ]] || fail "criterion 10: config.toml changed or backed up"
 grep -qF 'pattern = ["git", "credential"]' "$H1/.codex/rules/default.rules" || fail "criterion 10: Codex's rules lack git credential"
 [[ "$(ls "$H1/.claude" | grep -c '^settings\.json\.bak\.')" == 1 ]] || fail "criterion 2: not exactly one backup: $(ls "$H1/.claude")"
-# The doctor counts claude-tools.json as kit rules: ok after bootstrap, a fix with one taken out.
+[[ "$(ls "$H1/.gemini/antigravity-cli" | grep -c '^settings\.json\.bak\.')" == 0 ]] || fail "one merge: agy's settings, made new, got a backup"
+# The doctor counts claude-tools.json, and Antigravity's rules as bootstrap wrote them for this machine (ADR-038 N2):
+# ok after bootstrap, a fix with one taken out.
 out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
-j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "ok")' <<<"$out" >/dev/null || fail "doctor: guardrails.claude after bootstrap"
+j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "ok") && $.results.some((r) => r.id == "guardrails.agy" && r.level == "ok")' <<<"$out" >/dev/null \
+  || fail "doctor after bootstrap: $(j -r '$.results.filter((r) => /^guardrails\.(claude|agy)$/.test(r.id)).map((r) => r.level + " " + r.message).join("\n")' <<<"$out")"
 # 2 and 19 (E10): a second bootstrap adds nothing, changes none of the files and writes no backup.
-# Every file under HOME (Qwen Code's, opencode's and Cursor's among them), with the list, is hashed.
+# Every file under HOME (Qwen Code's, opencode's, Cursor's, hooks.json and the placed gate among them), with the list, is hashed.
 hsum() { (cd "$H1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s %s\n' "$(psum "$f")" "$f"; done); }
 sums="$(hsum)"
 baks="$(cd "$H1" && find . -name '*.bak.*' | sort)"
 st=0; out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
 sums2="$(hsum)"
-((st == 0)) && [[ "$sums" == "$sums2" && "$baks" == "$(cd "$H1" && find . -name '*.bak.*' | sort)" ]] && ! grep -q "added .*settings.json" <<<"$out" || fail "criterion 19: the second bootstrap: exit $st, $out"
+((st == 0)) && [[ "$sums" == "$sums2" && "$baks" == "$(cd "$H1" && find . -name '*.bak.*' | sort)" ]] && ! grep -q "added .*settings.json\|added the kit's MCP gate hook\|placed the MCP gate" <<<"$out" \
+  || fail "criterion 19: the second bootstrap: exit $st, $out"
+[[ "$sums" == *" ./.gemini/config/hooks.json"* && "$sums" == *" ./.config/git/hooks/cabinet-mcp-gate.js"* ]] || fail "criterion 19: hooks.json or the gate was not hashed"
+! has f5 || j -e '$["cabinet-mcp-gate"].PreToolUse.length == 1' "$AH1" >/dev/null || fail "criterion 19: the kit's hook entry is not exactly one"
 node -e 'const fs = require("node:fs"), f = process.argv[1], o = JSON.parse(fs.readFileSync(f, "utf8"));
   o.permissions.deny = o.permissions.deny.filter((r) => r != "Read(~/.npmrc)"); fs.writeFileSync(f, JSON.stringify(o))' "$CS"
+node -e 'const fs = require("node:fs"), f = process.argv[1], o = JSON.parse(fs.readFileSync(f, "utf8"));
+  o.permissions.deny = o.permissions.deny.filter((r) => r != "write_file(" + process.argv[2] + ")"); fs.writeFileSync(f, JSON.stringify(o))' "$AS1" "$HK/cabinet-mcp-gate.js"
 out="$(cd "$W" && HOME="$H1" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" "$F" doctor --json 2>/dev/null)" || true
 j -e '$.results.some((r) => r.id == "guardrails.claude" && r.level == "fix" && r.message.includes("missing 1 deny"))' <<<"$out" >/dev/null || fail "doctor: guardrails.claude with a file deny taken out"
-# 3 (f5 docs only) in a home with no hooks.json: bootstrap makes none. Then the fallback: with the workspace's
-# claude-tools.json damaged, bootstrap says so and why, adds only the shell rules (one backup) and exits 1.
-local H2="$T/p2-h2" TJ="$W/.cabinet/guardrails/claude-tools.json"
+j -e '$.results.some((r) => r.id == "guardrails.agy" && r.level == "fix" && r.message == "agy is missing 1 deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)")' <<<"$out" >/dev/null \
+  || fail "doctor: guardrails.agy with the gate's write_file taken out"
+# S1, agy-rules on its own: a HOME holding ( gives no file rule under it, a workspace holding [ no .git/config rule,
+# each said on stderr; the shell rules and the mcp(...) denies stay.
+mkdir -p "$T/p2-s1/h(1" "$T/p2-s1/w[1]"
+o="$(HOME="$T/p2-s1/h(1" L agy-rules "$KIT/guardrails/agy-permissions.json" "$KIT/guardrails/agy-tools.json" --hook "$T/p2-s1/h(1/.config/git/hooks/pre-push" "$T/p2-s1/w[1]" 2> "$T/p2-s1/err")" || fail "S1: agy-rules exit"
+j -e '!$.permissions.deny.some((r) => /^(write_file|read_file)\(/.test(r)) && $.permissions.deny.includes("command(git push)") && $.permissions.deny.includes("mcp(github/push_files)")' <<<"$o" >/dev/null \
+  || fail "S1: agy-rules with HOME and a folder it cannot carry: $o"
+grep -qxF "$T/p2-s1/h(1: its path holds a character an Antigravity rule cannot carry, so no file in the home folder gets a write_file or read_file deny" "$T/p2-s1/err" \
+  && grep -qxF "$T/p2-s1/w[1]: its path holds a character an Antigravity rule cannot carry, so its .git/config gets no write_file deny" "$T/p2-s1/err" || fail "S1: stderr: $(cat "$T/p2-s1/err")"
+# 11 (E6, f5 holds): a hooks.json that is not JSON is left as it was, named, the rest still installed (criterion 1),
+# and bootstrap exits non-zero. 9 (E8) in the same home with no claude on PATH: still no admin folder and no sudo
+# line (no codex is on the section's PATH, so its removed case is every run's).
+local H3="$T/p2-h3" NS="$T/p2-shim"
+mkdir -p "$H3/.gemini/config" "$NS"; cp -p "$T/shim/"* "$NS/"; rm -f "$NS/claude"
+printf '{ "hooks": ' > "$H3/.gemini/config/hooks.json"; c="$(psum "$H3/.gemini/config/hooks.json")"
+st=0; out="$(cd "$W" && HOME="$H3" PATH="$PB:$NS:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
+if has f5; then
+  ((st != 0)) && [[ "$(psum "$H3/.gemini/config/hooks.json")" == "$c" && "$out" == *"$H3/.gemini/config/hooks.json is not plain JSON, or not in the shape the kit expects, left as is"* ]] \
+    && ! ls "$H3/.gemini/config" | grep -q '\.bak\.' || fail "criterion 11: exit $st, $out"
+else ((st == 0)) && [[ "$(psum "$H3/.gemini/config/hooks.json")" == "$c" && "$out" != *hooks.json* ]] || fail "criterion 11 (f5 docs only): exit $st, $out"; fi
+j -e '$.permissions.deny.includes("mcp__github__push_files") && $.permissions.deny.includes("Read(~/.npmrc)")' "$H3/.claude/settings.json" >/dev/null \
+  && j -e '$.permissions.deny.includes("mcp(github/push_files)")' "$H3/.gemini/antigravity-cli/settings.json" >/dev/null || fail "criterion 11: the other files were not installed"
+[[ -z "$(find "$H3" -type d -name admin)" && "$out" != *sudo* ]] || fail "criterion 9 (no claude): an admin file or sudo"
+# 3 (f5 holds) in a home with no hooks.json: bootstrap makes it with the kit's entry only. Then the fallback: with the
+# workspace's claude-tools.json and agy-tools.json damaged, bootstrap says so and why for each, adds only the shell
+# rules (Claude Code's file with one backup) and exits 1.
+local H2="$T/p2-h2" TJ="$W/.cabinet/guardrails/claude-tools.json" AJ="$W/.cabinet/guardrails/agy-tools.json"
 mkdir -p "$H2/.claude"; printf '{}\n' > "$H2/.claude/settings.json"
-cp "$TJ" "$T/p2-tools.json"; printf '{ "permissions": ' > "$TJ"
+cp "$TJ" "$T/p2-tools.json"; printf '{ "permissions": ' > "$TJ"; cp "$AJ" "$T/p2-agy-tools.json"; printf '[' > "$AJ"
 st=0; out="$(cd "$W" && HOME="$H2" PATH="$PB:$T/shim:$PT:/usr/bin:/bin" bin/bootstrap.sh 2>&1)" || st=$?
-cp "$T/p2-tools.json" "$TJ"
+cp "$T/p2-tools.json" "$TJ"; cp "$T/p2-agy-tools.json" "$AJ"
 ((st == 1)) && [[ "$out" == *"the kit's MCP and file rules could not be read, so only its shell rules were added: run cabinet bootstrap again"* && "$out" == *"claude-tools.json: "* ]] \
+  && [[ "$out" == *"the kit's MCP and file rules for Antigravity could not be read, so only its shell rules were added: run cabinet bootstrap again"* && "$out" == *"agy-tools.json: "* ]] \
   || fail "fallback: exit $st, $out"
 j -e '$.permissions.deny.includes("Bash(*git credential*)") && !$.permissions.deny.some((r) => /^mcp__|^(Edit|Write|Read)\(/.test(r))' "$H2/.claude/settings.json" >/dev/null \
   && [[ "$(ls "$H2/.claude" | grep -c '^settings\.json\.bak\.')" == 1 ]] || fail "fallback: $(ls "$H2/.claude"; cat "$H2/.claude/settings.json")"
-[[ ! -e "$H2/.gemini/config/hooks.json" ]] || fail "criterion 3: bootstrap made ~/.gemini/config/hooks.json"
+j -e '$.permissions.deny.includes("command(git credential)") && !$.permissions.deny.some((r) => /^(mcp|write_file|read_file)\(/.test(r))' "$H2/.gemini/antigravity-cli/settings.json" >/dev/null \
+  || fail "fallback (agy): $(cat "$H2/.gemini/antigravity-cli/settings.json")"
+if has f5; then j -e 'Object.keys($).length == 1 && $["cabinet-mcp-gate"].PreToolUse.length == 1' "$H2/.gemini/config/hooks.json" >/dev/null \
+  && ! ls "$H2/.gemini/config" | grep -q '\.bak\.' || fail "criterion 3: hooks.json in a home with none: $(cat "$H2/.gemini/config/hooks.json" 2>&1)"
+else [[ ! -e "$H2/.gemini/config/hooks.json" ]] || fail "criterion 3: bootstrap made ~/.gemini/config/hooks.json"; fi
 
 # 12. Gemini CLI as it was at 4539550 (H-20261120-23): its policy file and bootstrap's block, 18 lines there.
 [[ "$(psum "$KIT/guardrails/gemini-owner-control.toml")" == 71ef1e1164056cbedb917235ad55509386030f9385f6cea1c6888d9e5e8fbac1 ]] || fail "criterion 12: gemini-owner-control.toml changed"
 awk '/^echo "== Gemini CLI"/ {on = 1; print; next} on && /^echo "== / {exit} on' "$KIT/scripts/bootstrap.sh" > "$T/p2-gemini"
 [[ "$(psum "$T/p2-gemini")" == 703582ed0e7a138a17c0e3e31b1f8eb80a15e4dbba3a349d23bf7a7c6abe6b21 ]] || fail "criterion 12: bootstrap's Gemini CLI block changed"
+
+# 13. The docs and the changelog (Rule 11): a per-tool line for each tool, each naming what is docs only for it; the
+# eight verbs, list_releases, the admin files with sudo, disabled_tools on Codex's line, no OS sandbox; and the top
+# Unreleased section of CHANGELOG.md naming each new rule kind, the hook and the admin files.
+local sec cl
+sec="$(awk '/^## Outside the shell/ {on = 1; next} on && /^## / {exit} on' "$KIT/docs/guardrails.md")"
+for n in "Claude Code" Codex Grok "Qwen Code" opencode Antigravity Cursor; do
+  grep "^- \*\*$n\*\*: " <<<"$sec" | grep -qF "docs only" || fail "criterion 13: no per-tool line for $n saying what is docs only"
+done
+grep -q '^- \*\*Codex\*\*: .*`disabled_tools`' <<<"$sec" || fail "criterion 13: Codex's line lacks disabled_tools"
+for n in '`merge`' '`push`' '`create_or_update`' '`delete`' '`release`' '`publish`' '`deploy`' '`send`' list_releases sudo managed-settings.json requirements.toml "no OS sandbox"; do
+  grep -qF -- "$n" <<<"$sec" || fail "criterion 13: the docs lack $n"
+done
+cl="$(awk '/^## / {n++} n == 1' "$KIT/CHANGELOG.md")"
+[[ "$cl" == "## "*"- Unreleased"* ]] || fail "criterion 13: the top CHANGELOG section is not Unreleased"
+for n in "MCP denies" "mcp(github/merge_pull_request)" "file-tool denies" "read denies" "verb hook" "cabinet-mcp-gate" "Antigravity's shell rules" managed-settings.json requirements.toml; do
+  grep -qF -- "$n" <<<"$cl" || fail "criterion 13: CHANGELOG's top section lacks $n"
+done
 
 # 16. Part 1's IDs (its criterion 17), and guardrails.mcp, are all still in the doctor.
 ids="agents.hard-to-undo areas.declared backups.dir-absolute backups.dir-outside backups.enabled backups.passphrase backups.recent

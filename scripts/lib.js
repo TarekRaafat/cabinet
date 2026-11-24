@@ -2638,22 +2638,63 @@ function hookMerge(kind, file, matcher, gate, check) {
 // stderr: Claude Code wants a parenthesis in a rule escaped and skips a whole settings file with errors, so one such
 // rule could cost every kit deny. ponytail: * and ? are written as they are and [ as ?, so each can only match more
 // and widen the deny; escape them if a deny ever needs to be exact, once a probe shows Claude Code's escape form.
+const readRules = (p) => {
+  let o; try { o = JSON.parse(fs.readFileSync(p, "utf8")).permissions || {}; } catch (e) { die(escapePath(p) + ": " + escapePath(e.message)); }
+  return [o.deny || [], o.ask || []];
+};
+const RULE_BAD = /[()\\\x00-\x1f\x7f\u0080-\u009f]/;
 function toolRules(shell, tools, ...dirs) {
   if (!shell || !tools) die("usage: node lib.js tool-rules <shell rules> <tool rules> <folder>...", 2);
-  const read = (p) => {
-    let o; try { o = JSON.parse(fs.readFileSync(p, "utf8")).permissions || {}; } catch (e) { die(escapePath(p) + ": " + escapePath(e.message)); }
-    return [o.deny || [], o.ask || []];
-  };
-  const [sd, sa] = read(shell), [td] = read(tools);
+  const [sd, sa] = readRules(shell), [td] = readRules(tools);
   const deny = [...sd, ...td];
   for (const d of dirs) {
     const p = path.resolve(d, ".git/config");
-    if (/[()\\\x00-\x1f\x7f\u0080-\u009f]/.test(p)) {
+    if (RULE_BAD.test(p)) {
       process.stderr.write(escapePath(path.dirname(path.dirname(p))) + ": its path holds a character a Claude Code rule cannot carry, so its .git/config gets no Edit or Write deny\n");
       continue;
     }
     const c = "/" + p.replace(/\[/g, "?");
     for (const r of ["Edit(" + c + ")", "Write(" + c + ")"]) if (!deny.includes(r)) deny.push(r);
+  }
+  process.stdout.write(JSON.stringify({ permissions: { deny, ask: sa } }, null, 2) + "\n");
+}
+
+// agy-rules <shell rules> <tool rules> [--hook <file>]... <folder>...: Antigravity's permissions snippet for this
+// machine, printed for bootstrap's one merge into ~/.gemini/antigravity-cli/settings.json and read by the doctor.
+// The shell rules and mcp(...) denies as they are; each write_file(~/...) and read_file(~/...) with ~/ written as
+// HOME; a write_file for each --hook file (every file bootstrap places in the global hooks folder, KIT_HOOK_FILES in
+// lib.sh); and one on <folder>/.git/config for the workspace and each repo. The owner's probes (Antigravity 1.5.14)
+// showed these hold on an exact absolute path only, so a path holding ( ) \ * ? [ or a control character, or not
+// absolute, gets no rule, said on stderr, and is never rewritten: no probe shows how Antigravity reads those
+// characters. When HOME is such a path, every file rule under it is left out; the shell and mcp(...) rules stay.
+function agyRules(shell, tools, ...args) {
+  const usage = "usage: node lib.js agy-rules <shell rules> <tool rules> [--hook <file>]... <folder>...";
+  if (!shell || !tools) die(usage, 2);
+  const [sd, sa] = readRules(shell), [td] = readRules(tools);
+  const bad = (p) => RULE_BAD.test(p) || /[*?[]/.test(p) || !path.isAbsolute(p);
+  const say = (p, what) => process.stderr.write(escapePath(p) + ": its path holds a character an Antigravity rule cannot carry, so " + what + "\n");
+  const home = process.env.HOME || "", homeBad = bad(home);
+  if (homeBad) say(home, "no file in the home folder gets a write_file or read_file deny");
+  const under = (p) => home !== "" && p.startsWith(path.resolve(home) + "/");
+  const deny = [...sd];
+  const add = (r) => { if (!deny.includes(r)) deny.push(r); };
+  for (const r of td) {
+    const m = /^(write_file|read_file)\(~\/(.+)\)$/.exec(r);
+    if (!m) add(r);
+    else if (!homeBad) add(m[1] + "(" + path.join(home, m[2]) + ")");
+  }
+  const dirs = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "--hook") { dirs.push(path.resolve(args[i])); continue; }
+    if (args[i + 1] === undefined) die(usage, 2);
+    const p = path.resolve(args[++i]);
+    if (homeBad && under(p)) continue;
+    if (bad(p)) say(p, "it gets no write_file deny"); else add("write_file(" + p + ")");
+  }
+  for (const d of dirs) {
+    if (homeBad && under(d)) continue;
+    const p = path.join(d, ".git/config");
+    if (bad(p)) say(d, "its .git/config gets no write_file deny"); else add("write_file(" + p + ")");
   }
   process.stdout.write(JSON.stringify({ permissions: { deny, ask: sa } }, null, 2) + "\n");
 }
@@ -2732,7 +2773,7 @@ function backupOpen(archive, out) {
 
 const COMMANDS = {
   "backup-seal": backupSeal, "backup-open": backupOpen,
-  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "hook-merge": hookMerge, "tool-rules": toolRules, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
+  settings, "mcp-config": mcpConfig, "mcp-list": mcpList, "hook-merge": hookMerge, "tool-rules": toolRules, "agy-rules": agyRules, "approval-id": approvalId, "show-command": showCommand, "ws-facts": wsFacts,
   "delete-plan": deletePlan,
   "kit-map": kitMap,
   "rules-missing": rulesMissingCmd, "rules-add": rulesAdd, "toml-top": tomlTop, "verdict-origin": verdictOrigin,

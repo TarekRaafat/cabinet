@@ -96,6 +96,24 @@ merge_permissions() {
   return 0
 }
 
+# Add the kit's PreToolUse entry for the MCP gate to a hooks file (hook-merge in lib.js), beside every hook already
+# there, with the same steps as merge_permissions: a file that is not plain JSON or not in the shape the kit expects
+# is left as is and named, nothing changes when the entry is there, and a backup comes first.
+merge_hook() {  # merge_hook claude|agy <file> <matcher> <gate path>
+  local kind=$1 target=$2 matcher=$3 gate=$4 st=0
+  json_ok "$target" && { node "$LIBJS" hook-merge "$kind" "$target" "$matcher" "$gate" --check 2>/dev/null || st=$?; } || st=4
+  ((st == 0)) && return 0
+  if ((st != 1)); then
+    echo "  $target is not plain JSON, or not in the shape the kit expects, left as is: add the kit's MCP gate hook by hand (docs/guardrails.md, \"Outside the shell\")"
+    failures=1; return 0
+  fi
+  if ((DRY)); then echo "  would add the kit's MCP gate hook to $target"; return 0; fi
+  if [[ -f "$target" ]]; then backup "$target" || return 0
+  else mkdir -p "$(dirname "$target")" || { echo "  $target could not be created: add the kit's MCP gate hook by hand"; failures=1; return 0; }; fi
+  write_into "$target" json node "$LIBJS" hook-merge "$kind" "$target" "$matcher" "$gate" && echo "  added the kit's MCP gate hook to $target"
+  return 0
+}
+
 # Complete an older copy of the Codex rules or the Gemini policy with the kit's rules it lacks (counted as
 # the doctor counts them): the result is built and checked first, then the file is backed up (a plain copy
 # beside the path given), then written in place; it only adds lines at the end, after a comment line. A file
@@ -359,7 +377,25 @@ fi
 
 echo "== Antigravity CLI (agy)"
 if [[ -d "$HOME/.gemini/antigravity-cli" ]] || command -v agy >/dev/null; then
-  merge_permissions "$G/agy-permissions.json" "$HOME/.gemini/antigravity-cli/settings.json"
+  # The shell rules, and the MCP, file and read denies of agy-tools.json written for this machine (agy_rules in
+  # lib.sh), in one merge, so the file gets one backup. A path agy-rules leaves out comes on its stderr and is printed.
+  ag_snip="$(mktemp)" ag_err="$(mktemp)"
+  if agy_rules "$G" > "$ag_snip" 2> "$ag_err"; then
+    merge_permissions "$ag_snip" "$HOME/.gemini/antigravity-cli/settings.json"
+    sed 's/^/  /' "$ag_err"
+  else
+    echo "  the kit's MCP and file rules for Antigravity could not be read, so only its shell rules were added: run cabinet bootstrap again"; failures=1
+    sed 's/^/    /' "$ag_err"
+    merge_permissions "$G/agy-permissions.json" "$HOME/.gemini/antigravity-cli/settings.json"
+  fi
+  rm -f "$ag_snip" "$ag_err"
+  # The MCP gate, beside the push gate's helper (inside the folder the file denies cover), then its hook entry.
+  if ! cmp -s "$G/cabinet-mcp-gate.js" "$hooks/cabinet-mcp-gate.js"; then
+    if ((DRY)); then echo "  would place the MCP gate at $hooks/cabinet-mcp-gate.js"
+    else mkdir -p "$hooks" && cp "$G/cabinet-mcp-gate.js" "$hooks/cabinet-mcp-gate.js.cabinet-new" && mv -f "$hooks/cabinet-mcp-gate.js.cabinet-new" "$hooks/cabinet-mcp-gate.js" && echo "  placed the MCP gate at $hooks/cabinet-mcp-gate.js" ||
+      { echo "  could not place the MCP gate at $hooks/cabinet-mcp-gate.js, so Antigravity refuses every MCP call: run cabinet bootstrap again"; failures=1; }; fi
+  fi
+  merge_hook agy "$HOME/.gemini/config/hooks.json" '' "$hooks/cabinet-mcp-gate.js"
 fi
 
 echo "== Gemini CLI"

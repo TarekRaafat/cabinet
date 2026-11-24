@@ -253,7 +253,13 @@ if [[ -d ~/.codex ]] || command -v codex >/dev/null; then
   fi
 fi
 if [[ -e ~/.gemini/antigravity-cli/settings.json ]] || command -v agy >/dev/null; then
-  missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$K/guardrails/agy-permissions.json" 2>/dev/null || echo all)"
+  # The rules as bootstrap writes them for this machine (agy_rules in lib.sh): HOME, the placed hooks and each repo's
+  # .git/config written out, so a machine bootstrap set up is ok and one set up by 0.8.5 is told to run it.
+  ag_snip="$(mktemp)"
+  if agy_rules "$K/guardrails" > "$ag_snip" 2>/dev/null; then
+    missing="$(json -s "$deny_missing" ~/.gemini/antigravity-cli/settings.json "$ag_snip" 2>/dev/null || echo all)"
+  else missing=all; fi
+  rm -f "$ag_snip"
   [[ "$missing" == 0 ]] && ok guardrails.agy "agy denies push and publish" || bad guardrails.agy "agy is missing $missing deny rule(s) in ~/.gemini/antigravity-cli/settings.json (run cabinet bootstrap)"
 fi
 if [[ -e ~/.gemini/policies/owner-control.toml ]] || command -v gemini >/dev/null; then

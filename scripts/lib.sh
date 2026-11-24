@@ -457,6 +457,10 @@ secrets_hook() {
 # The hooks bootstrap gives the pass-through stub in the global hooks folder, and the doctor checks:
 # one list for both. Not push-to-checkout or fsmonitor-watchman: git changes its behavior when those merely exist.
 PASSTHROUGH_HOOKS="applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit commit-msg post-commit post-checkout post-merge post-rewrite pre-auto-gc reference-transaction post-index-change sendemail-validate"
+# Every file bootstrap places in the global hooks folder: the stubs, the kit's own hooks and their helpers.
+# Antigravity's write_file denies name each one (agy_rules), since its rules hold on an exact path only: a file
+# bootstrap starts placing there is added here in the same change, so it gets its deny.
+KIT_HOOK_FILES="$PASSTHROUGH_HOOKS pre-push prepare-commit-msg pre-rebase cabinet-push-gate.js cabinet-mcp-gate.js"
 # The SHA-256 of each released copy of guardrails/pre-commit-secrets that is not the current one: bootstrap
 # replaces them, the doctor names them. 0.1.0 to 0.5.0 shipped one copy, which let a commit through when
 # bin/secret.sh could not run. Add the current one's here when the hook changes in a release.
@@ -632,6 +636,17 @@ readiness() {
 # repo_dirs: each repo's main folder, one per line, where the branch the owner pushes is checked out
 # (readiness, and build_commits; sessions: lib.js readiness).
 repo_dirs() { local name url files link path; while IFS=$'\t' read -r name url files link path; do printf '%s\n' "$(repo_dir "$path")"; done < <(repos 2>/dev/null); }
+# agy_rules <guardrails folder>: Antigravity's rules for this machine (agy-rules in lib.js), as bootstrap merges them
+# and the doctor checks them: the shell rules, the MCP denies, the file and read denies with HOME written out, and a
+# write_file for each of KIT_HOOK_FILES and for the .git/config of the workspace and each repo it lists. A path left
+# out is said on stderr; exit 1 when a rules file cannot be read.
+agy_rules() {
+  local h d
+  local a=()
+  for h in $KIT_HOOK_FILES; do a+=(--hook "$HOME/.config/git/hooks/$h"); done
+  while IFS= read -r d; do a+=("$d"); done < <(printf '%s\n' "$WS"; repo_dirs)
+  node "$LIBJS" agy-rules "$1/agy-permissions.json" "$1/agy-tools.json" "${a[@]}"
+}
 # build_commits <ID> [workspace]: the commits a build's status line names, and the ones no ready open review
 # of it covers, as {"named": [...], "uncovered": [...]}, with readiness's JSON on stdin (lib.js build-commits).
 # With workspace (work for a role that is not a builder), the workspace's commits count too, and the output
