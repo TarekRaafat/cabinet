@@ -10620,7 +10620,7 @@ awk '/^echo "== Gemini CLI"/ {on = 1; print; next} on && /^echo "== / {exit} on'
 
 # 13. The docs and the changelog (Rule 11): a per-tool line for each tool, each naming what is docs only for it; the
 # eight verbs, list_releases, the admin files with sudo, disabled_tools on Codex's line, no OS sandbox; and the top
-# Unreleased section of CHANGELOG.md naming each new rule kind, the hook and the admin files.
+# 0.8.6 section of CHANGELOG.md (Unreleased before the release commit, dated after it) naming each new rule kind, the hook and the admin files.
 local sec cl
 sec="$(awk '/^## Outside the shell/ {on = 1; next} on && /^## / {exit} on' "$KIT/docs/guardrails.md")"
 for n in "Claude Code" Codex Grok "Qwen Code" opencode Antigravity Cursor; do
@@ -10630,8 +10630,8 @@ grep -q '^- \*\*Codex\*\*: .*`disabled_tools`' <<<"$sec" || fail "criterion 13: 
 for n in '`merge`' '`push`' '`create_or_update`' '`delete`' '`release`' '`publish`' '`deploy`' '`send`' list_releases sudo managed-settings.json requirements.toml "no OS sandbox"; do
   grep -qF -- "$n" <<<"$sec" || fail "criterion 13: the docs lack $n"
 done
-cl="$(awk '/^## / {n++} n == 1' "$KIT/CHANGELOG.md")"
-[[ "$cl" == "## "*"- Unreleased"* ]] || fail "criterion 13: the top CHANGELOG section is not Unreleased"
+cl="$(awk '/^## /{on = /^## 0\.8\.6 /} on' "$KIT/CHANGELOG.md")"   # Unreleased before the release commit, dated after it
+[[ -n "$cl" ]] || fail "criterion 13: CHANGELOG has no 0.8.6 section"
 for n in "MCP denies" "mcp(github/merge_pull_request)" "file-tool denies" "read denies" "verb hook" "cabinet-mcp-gate" "Antigravity's shell rules" managed-settings.json requirements.toml; do
   grep -qF -- "$n" <<<"$cl" || fail "criterion 13: CHANGELOG's top section lacks $n"
 done
@@ -10957,8 +10957,7 @@ for c in sessions undo 'reviews on commits' remote; do
     || fail "criterion 14: layouts.md section lacks $c"
 done
 grep -qF 'no git' "$KIT/docs/commands.md" && grep -qF '"git"' "$KIT/docs/commands.md" || fail "criterion 14: commands.md"
-awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | head -1 | grep -q Unreleased || fail "criterion 14: the top CHANGELOG section is not Unreleased"
-awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | grep 'present' | grep -q 'no git' || fail "criterion 14: CHANGELOG line with present and no git"
+awk '/^## /{on = /^## 0\.8\.6 /} on' "$KIT/CHANGELOG.md" | grep 'present' | grep -q 'no git' || fail "criterion 14: CHANGELOG line with present and no git"
 HOME="$NH" wsrm "$NW"
   return 0
 }
@@ -11042,7 +11041,7 @@ out="$(sl config --slug new --yes)" && ! grep -qF 'cabinet.new.backup' <<<"$out"
 # Criterion 9: the docs say so.
 awk '/^## cabinet config$/ { on = 1; next } on && /^## / { exit } on' "$KIT/docs/commands.md" | grep -qF "this week's spending" || fail "criterion 9: commands.md config section"
 grep -qxF "After cabinet config --slug, keep the old key (cabinet.<old slug>.backup) while any archive named with the old slug is kept: restore reads the key named in the archive's file name." "$KIT/docs/backups.md" || fail "criterion 9: backups.md"
-awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | head -1 | grep -q Unreleased && awk '/^## [0-9]/ { n++ } n == 1' "$KIT/CHANGELOG.md" | grep -qF -- '--slug' || fail "criterion 9: CHANGELOG"
+awk '/^## /{on = /^## 0\.8\.6 /} on' "$KIT/CHANGELOG.md" | grep -qF -- '--slug' || fail "criterion 9: CHANGELOG"
 HOME="$SH" wsrm "$W"
   return 0
 }
