@@ -566,7 +566,7 @@ In a terminal, `cabinet new` asks a few questions, each with a default you keep 
 roles: chief-of-staff product-manager architect qa security design-lead finance
 == Committed the new workspace as Ann Owner
 
-Created Acme at ~/dev/acme (slug acme, cabinet 0.8.5).
+Created Acme at ~/dev/acme (slug acme, cabinet 0.8.6).
 Next:
   - Fill the TBDs in AGENTS.md: what Acme is, its product rules, how to test, the repo rows.
   ...
@@ -642,7 +642,7 @@ All good. 3 note(s) below.
 == Product repos
   ok    product repos checked
 == Kit and roles
-  ok    cabinet 0.8.5
+  ok    cabinet 0.8.6
 ...
 ```
 
@@ -2623,7 +2623,7 @@ File: CHANGELOG.md
 
 Each version says what changed and anything a workspace must do by hand after `npx cabinet update`, which prints these entries.
 
-## 0.8.6 - Unreleased
+## 0.8.6 - 24 Nov 2026
 
 - `cabinet config --slug` carries this week's spending to the new log folder, so the weekly budget still stops scheduled runs after the change; the old folder's `spend.tsv` is only read. It no longer advises removing the old backup key: it says to keep `cabinet.<old>.backup` while any archive named with the old slug is kept, since restore reads the key named in the archive's file name. If the spending cannot be carried, the slug is not changed.
 - Claude Code's guardrails reach past the shell. `cabinet bootstrap` adds to `~/.claude/settings.json` MCP denies for the GitHub MCP server's tools whose names hold a write word (`mcp__github__merge_pull_request`, `push_files`, `create_or_update_file`, `delete_file`, and the release tools, reads included), file-tool denies (`Edit`, `Write`) on each settings file bootstrap writes rules to, the global hooks folder, `~/.gitconfig`, `~/.config/git/config` and the `.git/config` of the workspace and each repo it lists (except one whose path holds `(`, `)`, `\` or a control character, which bootstrap names), and read denies on `~/.git-credentials`, `~/.config/gh/hosts.yml` and `~/.npmrc`. They are in the new `guardrails/claude-tools.json`. Until you run `cabinet bootstrap`, the doctor's `guardrails.claude` says rules are missing. Claude Code's verb hook, the MCP and file denies of Grok, Qwen Code, opencode and Cursor, and the admin settings files (`managed-settings.json` for Claude Code, `requirements.toml` for Codex) stay docs only until probes confirm them: bootstrap writes no admin file and prints no `sudo` line (docs/guardrails.md, "Outside the shell").
