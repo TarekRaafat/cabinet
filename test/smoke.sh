@@ -10502,6 +10502,11 @@ j -e '$.permissions.deny.includes("command(git credential)") && ![...$.permissio
   || fail "criterion 5: git credential missing, or a regex, ~/ or glob entry: $(cat "$AS1")"
 [[ "$(j -r '$.permissions.deny.filter((r) => /^(write_file|read_file)\(/.test(r)).length' "$AS1")" == $(( $(wc -w <<<"$AFILES") + 3 )) ]] \
   || fail "criterion 5: agy's file holds a file rule not in AFILES or ACREDS: $(j -r '$.permissions.deny.filter((r) => /^(write_file|read_file)\(/.test(r)).join("\n")' "$AS1")"
+# B1 (code-reviewer M1): every file bootstrap really placed in the hooks folder has its deny, so a file placed there
+# and left out of KIT_HOOK_FILES fails here, not only one dropped from AFILES.
+if has f3; then for f in "$HK"/*; do
+  j -e --arg r "write_file($f)" '$.permissions.deny.includes($r)' "$AS1" >/dev/null || fail "B1: $f is in the hooks folder with no write_file deny"
+done; fi
 for n in "x[1]" "it's (here)"; do
   [[ "$out" == *"  $W/$n: its path holds a character an Antigravity rule cannot carry, so its .git/config gets no write_file deny"* ]] || fail "S1: bootstrap did not say $n gets no Antigravity rule: $out"
 done
